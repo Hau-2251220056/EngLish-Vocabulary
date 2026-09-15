@@ -979,7 +979,7 @@ COMMUNITY_POST
 
 - id
 - user_id
-- vocabulary_set_id
+- vocabulary_set_id (nullable)
 - title
 - content
 - created_at
@@ -1799,17 +1799,21 @@ Phiên bản đầu tiên của Database dự kiến gồm:
 
 Tổng cộng:
 
-```text
+````text
 13 tables
-```
 
-Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên 13 bảng nếu trong quá trình thiết kế chi tiết phát hiện một entity không cần thiết.
 
-Ngược lại, AI Agent không được tự ý mở rộng thành hàng chục bảng chỉ vì muốn thiết kế "enterprise".
+Phạm vi Database
 
-Các feature như Pronunciation và Spaced Repetition không tạo thêm table riêng ở phiên bản đầu nếu dữ liệu có thể được xử lý bằng các entity hiện tại.
+Database hiện tại dự kiến gồm 13 bảng theo phạm vi và yêu cầu đã được xác định.
 
----
+Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 13 bảng trong mọi trường hợp. Trong quá trình thiết kế chi tiết, nếu phát hiện một entity không cần thiết hoặc có thể xử lý bằng entity hiện tại, AI Agent có thể đề xuất loại bỏ hoặc điều chỉnh sau khi phân tích và được phê duyệt.
+
+Ngược lại, AI Agent không được tự ý mở rộng Database thành nhiều entity hoặc bảng mới chỉ vì mục đích "enterprise", overengineering hoặc dự đoán các nhu cầu chưa được xác định trong phạm vi dự án.
+
+Các feature như Pronunciation và Spaced Repetition không tạo thêm table riêng ở phiên bản đầu nếu dữ liệu có thể được xử lý bằng các entity hiện tại. Nếu phát sinh yêu cầu cần bổ sung entity hoặc table mới, AI Agent phải phân tích lý do, tác động và đề xuất trước khi thực hiện.
+
+
 
 # 35. Future Extension
 
@@ -1825,7 +1829,7 @@ COMMUNITY_REPORT
 QUIZ_SESSION
 AI_GENERATION_HISTORY
 PRONUNCIATION_ATTEMPT
-```
+````
 
 Những entity này **không thuộc Initial Database Scope**.
 
@@ -1871,29 +1875,46 @@ Mọi thay đổi làm ảnh hưởng đến domain model hoặc relationship qu
 
 # 37. Source of Truth
 
-Thứ tự ưu tiên tài liệu:
+Các tài liệu trong project có vai trò khác nhau:
 
-```text
-PROJECT_OVERVIEW.md
-        ↓
-ARCHITECTURE.md
-        ↓
-DATABASE.md
-        ↓
-API_SPEC.md
-        ↓
-Feature-specific documentation
-```
+- AGENTS.md
+  → Global project rules và development constraints.
 
-Nếu có mâu thuẫn:
+- PROJECT_OVERVIEW.md
+  → Business scope và phạm vi tổng thể của hệ thống.
 
-1. `PROJECT_OVERVIEW.md` xác định phạm vi nghiệp vụ.
-2. `ARCHITECTURE.md` xác định kiến trúc hệ thống.
-3. `DATABASE.md` xác định mô hình dữ liệu.
-4. `API_SPEC.md` xác định API contract.
-5. Feature documentation mô tả chi tiết implementation của feature.
+- ARCHITECTURE.md
+  → Kiến trúc và technical direction của hệ thống.
 
-AI Agent không được sử dụng implementation hiện tại để tự động thay đổi source of truth.
+- DATABASE.md
+  → Data model và database design.
+
+- API_SPEC.md
+  → API contract.
+
+- UI_UX_SPEC.md
+  → UI/UX behavior và user flow.
+
+- FEATURE_STATUS.md
+  → Theo dõi trạng thái implementation của feature.
+  → Không phải source of truth cho business requirement.
+
+- Approved SPEC / PLAN / TASK
+  → Requirement và implementation plan cụ thể cho từng change.
+
+Nếu có mâu thuẫn giữa implementation hiện tại và các tài liệu trên,
+AI Agent không được tự ý chọn một bên và tiếp tục.
+
+AI Agent phải:
+
+1. Xác định mâu thuẫn.
+2. Giải thích impact.
+3. Xác định tài liệu nào cần được cập nhật.
+4. Yêu cầu người phát triển phê duyệt nếu thay đổi ảnh hưởng đến scope,
+   architecture, database, API hoặc business rule.
+
+Implementation hiện tại không được tự động trở thành source of truth
+chỉ vì code đã tồn tại.
 
 ---
 

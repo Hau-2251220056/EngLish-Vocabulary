@@ -22,6 +22,7 @@ docs/PROJECT_OVERVIEW.md
 docs/ARCHITECTURE.md
 docs/DATABASE.md
 docs/API_SPEC.md
+docs/UI_UX_SPEC.md
 ```
 
 ---
@@ -712,33 +713,27 @@ It does not answer:
 
 For feature behavior, consult:
 
-```text
 PROJECT_OVERVIEW.md
-```
 
 For architecture, consult:
 
-```text
 ARCHITECTURE.md
-```
 
 For database structure, consult:
 
-```text
 DATABASE.md
-```
 
 For API contracts, consult:
 
-```text
 API_SPEC.md
-```
+
+For UI/UX behavior and user flows, consult:
+
+UI_UX_SPEC.md
 
 For AI Agent behavior, consult:
 
-```text
 AGENTS.md
-```
 
 For implementation workflow:
 
