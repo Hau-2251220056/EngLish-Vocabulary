@@ -21,13 +21,14 @@ Hệ thống sử dụng:
 Database được thiết kế theo hướng relational database vì hệ thống có nhiều mối quan hệ giữa:
 
 - Người dùng.
+- Topic.
 - Từ vựng.
 - Nghĩa của từ.
 - Ví dụ.
 - Vocabulary Set.
 - Tiến độ học tập.
+- Daily Goal.
 - Quiz.
-- Lịch sử làm quiz.
 - Achievement.
 - Streak.
 - Community.
@@ -64,6 +65,7 @@ USER
 │
 ├── Learning
 │   ├── LEARNING_PROGRESS
+│   ├── USER_DAILY_PROGRESS
 │   ├── QUIZ_ATTEMPT
 │   └── STREAK
 │
@@ -72,6 +74,7 @@ USER
 │   └── USER_ACHIEVEMENT
 │
 ├── Vocabulary
+│   ├── TOPIC
 │   ├── VOCABULARY
 │   ├── VOCABULARY_MEANING
 │   ├── VOCABULARY_EXAMPLE
@@ -81,52 +84,44 @@ USER
 └── Community
     ├── COMMUNITY_POST
     └── COMMUNITY_COMMENT
-```
-
----
-
-# 4. Entity List
+4. Entity List
 
 Phiên bản đầu tiên của hệ thống dự kiến có các entity chính sau:
 
-| Entity              | Mục đích                              |
-| ------------------- | ------------------------------------- |
-| USER                | Người dùng và Admin                   |
-| VOCABULARY          | Từ vựng                               |
-| VOCABULARY_MEANING  | Các nghĩa khác nhau của một từ        |
-| VOCABULARY_EXAMPLE  | Ví dụ sử dụng từ                      |
-| VOCABULARY_SET      | Bộ từ vựng                            |
-| VOCABULARY_SET_ITEM | Liên kết Vocabulary và Vocabulary Set |
-| LEARNING_PROGRESS   | Tiến độ học của user đối với từng từ  |
-| QUIZ_ATTEMPT        | Lịch sử làm quiz                      |
-| STREAK              | Theo dõi chuỗi ngày học               |
-| ACHIEVEMENT         | Danh sách thành tích                  |
-| USER_ACHIEVEMENT    | Thành tích user đã đạt                |
-| COMMUNITY_POST      | Bài đăng cộng đồng                    |
-| COMMUNITY_COMMENT   | Bình luận bài đăng                    |
+Entity	Mục đích
+USER	Người dùng và Admin
+TOPIC	Chủ đề từ vựng
+VOCABULARY	Từ vựng
+VOCABULARY_MEANING	Các nghĩa khác nhau của một từ
+VOCABULARY_EXAMPLE	Ví dụ sử dụng từ
+VOCABULARY_SET	Bộ từ vựng
+VOCABULARY_SET_ITEM	Liên kết Vocabulary và Vocabulary Set
+LEARNING_PROGRESS	Tiến độ học của user đối với từng từ
+USER_DAILY_PROGRESS	Tiến độ XP và Daily Goal theo từng ngày
+QUIZ_ATTEMPT	Lịch sử làm quiz
+STREAK	Theo dõi chuỗi ngày học
+ACHIEVEMENT	Danh sách thành tích
+USER_ACHIEVEMENT	Thành tích user đã đạt
+COMMUNITY_POST	Bài đăng cộng đồng
+COMMUNITY_COMMENT	Bình luận bài đăng
 
-> Không bắt buộc phải tạo riêng một bảng `QUIZ` ở giai đoạn đầu nếu quiz được sinh dựa trên vocabulary và quiz type.
->
-> Chỉ tạo entity `QUIZ` riêng khi nghiệp vụ thực tế yêu cầu lưu các quiz cố định hoặc quiz session phức tạp.
+Không bắt buộc phải tạo riêng một bảng QUIZ ở giai đoạn đầu nếu quiz được sinh dựa trên Vocabulary và Quiz Type.
 
----
+Chỉ tạo entity QUIZ riêng khi nghiệp vụ thực tế yêu cầu lưu các quiz cố định hoặc quiz session phức tạp.
 
-# 5. USER
-
-## 5.1. Mục đích
+5. USER
+5.1. Mục đích
 
 Lưu thông tin tài khoản người dùng và Admin.
 
-Hệ thống chỉ có hai role:
+Hệ thống chỉ có hai authenticated role:
 
-```text
 USER
 ADMIN
-```
 
-## 5.2. Dữ liệu dự kiến
+Guest là trạng thái chưa đăng nhập, không phải một role được lưu trong Database.
 
-```text
+5.2. Dữ liệu dự kiến
 USER
 
 - id
@@ -137,57 +132,87 @@ USER
 - role
 - is_active
 - total_xp
+- daily_xp_goal
 - created_at
 - updated_at
-```
-
-### Role
-
-```text
+5.3. Role
 USER
 ADMIN
-```
+5.4. Quy tắc
+Email phải unique.
+Password phải được lưu dưới dạng hash.
+Không lưu plaintext password.
+role dùng để phân quyền Backend.
+is_active xác định tài khoản có đang hoạt động hay không.
+total_xp là tổng XP của user.
+daily_xp_goal là mục tiêu XP mỗi ngày của user.
+Level được tính dựa trên total_xp ở Backend Service.
+Không lưu level trực tiếp trong Database ở phiên bản đầu.
+5.5. Daily XP Goal
 
-### Quy tắc
+Mục tiêu mặc định:
 
-- Email phải unique.
-- Password phải được lưu dưới dạng hash.
-- Không lưu plaintext password.
-- `role` dùng để phân quyền Backend.
-- `is_active` xác định tài khoản có đang hoạt động hay không.
-- `total_xp` là tổng XP của user.
-- Level được tính dựa trên `total_xp` ở Backend Service.
-- Không lưu `level` trực tiếp trong database ở phiên bản đầu để tránh dữ liệu XP và Level bị lệch.
+50 XP / day
 
-### Account Status
+Khoảng giá trị được hỗ trợ ở phiên bản đầu:
 
-```text
-is_active = true
-→ Tài khoản đang hoạt động.
+50 - 200 XP / day
 
-is_active = false
-→ Tài khoản bị vô hiệu hóa.
-```
+User có thể thay đổi Daily XP Goal trong Settings.
 
----
+Thay đổi Daily Goal không reset XP đã đạt trong ngày.
 
-# 6. VOCABULARY
+6. TOPIC
+6.1. Mục đích
 
-## 6.1. Mục đích
+TOPIC dùng để phân loại nội dung học tập theo chủ đề.
+
+Ví dụ:
+
+Daily Life
+Education
+Travel
+Food
+Work
+Technology
+6.2. Dữ liệu dự kiến
+TOPIC
+
+- id
+- name
+- description
+- created_at
+- updated_at
+6.3. Relationship
+
+Topic được tổ chức theo:
+
+TOPIC
+   ↓
+VOCABULARY_SET
+   ↓
+VOCABULARY
+
+Một Topic có thể có nhiều Vocabulary Set.
+
+Một Vocabulary Set thuộc về một Topic trong phạm vi hệ thống.
+
+6.4. Quy tắc
+Topic hệ thống do Admin quản lý.
+User không tự ý tạo hoặc chỉnh sửa Topic hệ thống.
+Không lưu trực tiếp topic_id trong VOCABULARY ở phiên bản đầu.
+Một Vocabulary có thể xuất hiện trong nhiều Set thuộc các Topic khác nhau.
+7. VOCABULARY
+7.1. Mục đích
 
 Lưu thông tin cơ bản của một từ tiếng Anh.
 
 Ví dụ:
 
-```text
 work
 dessert
 book
-```
-
-## 6.2. Dữ liệu dự kiến
-
-```text
+7.2. Dữ liệu dự kiến
 VOCABULARY
 
 - id
@@ -197,74 +222,54 @@ VOCABULARY
 - difficulty_level
 - created_at
 - updated_at
-```
-
-## 6.3. Giải thích
-
-### `word`
+7.3. Giải thích
+word
 
 Từ tiếng Anh.
 
 Ví dụ:
 
-```text
 work
-```
-
-### `phonetic`
+phonetic
 
 Phiên âm của từ.
 
 Ví dụ:
 
-```text
 /wɜːrk/
-```
-
-### `pronunciation_url`
+pronunciation_url
 
 Đường dẫn tới audio phát âm mẫu nếu hệ thống sử dụng file audio bên ngoài.
 
-### `difficulty_level`
+difficulty_level
 
 Mức độ khó của từ.
 
 Có thể sử dụng:
 
-```text
 BEGINNER
 INTERMEDIATE
 ADVANCED
-```
 
-`part_of_speech` không được lưu trực tiếp trong `VOCABULARY` vì một từ có thể có nhiều Meaning và mỗi Meaning có thể có Part of Speech khác nhau.
+part_of_speech không được lưu trực tiếp trong VOCABULARY vì một từ có thể có nhiều Meaning và mỗi Meaning có thể có Part of Speech khác nhau.
 
----
-
-# 7. VOCABULARY_MEANING
-
-## 7.1. Mục đích
+8. VOCABULARY_MEANING
+8.1. Mục đích
 
 Một từ tiếng Anh có thể có nhiều nghĩa.
 
 Ví dụ:
 
-```text
 book
-```
 
 có thể là:
 
-```text
 quyển sách
 đặt trước
-```
 
-Do đó không nên lưu duy nhất một trường `meaning` trong `VOCABULARY`.
+Do đó không nên lưu duy nhất một trường meaning trong VOCABULARY.
 
-## 7.2. Dữ liệu dự kiến
-
-```text
+8.2. Dữ liệu dự kiến
 VOCABULARY_MEANING
 
 - id
@@ -274,65 +279,19 @@ VOCABULARY_MEANING
 - context
 - created_at
 - updated_at
-```
-
-## 7.3. Giải thích
-
-### `part_of_speech`
-
-Loại từ của Meaning.
-
-Ví dụ:
-
-```text
-noun
-verb
-adjective
-adverb
-```
-
-Một Vocabulary có thể có nhiều Meaning với Part of Speech khác nhau.
-
-Ví dụ:
-
-```text
-Vocabulary:
-work
-
-Meaning 1:
-Part of Speech: noun
-Meaning: công việc
-
-Meaning 2:
-Part of Speech: verb
-Meaning: làm việc
-```
-
-### `context`
-
-Ngữ cảnh sử dụng của Meaning.
-
-## 7.4. Relationship
-
-```text
+8.3. Relationship
 VOCABULARY 1 ─── N VOCABULARY_MEANING
-```
 
 Một Vocabulary có thể có nhiều Meaning.
 
 Một Meaning chỉ thuộc về một Vocabulary.
 
----
-
-# 8. VOCABULARY_EXAMPLE
-
-## 8.1. Mục đích
+9. VOCABULARY_EXAMPLE
+9.1. Mục đích
 
 Lưu các câu ví dụ giúp người học hiểu cách sử dụng từ trong ngữ cảnh.
 
-## 8.2. Dữ liệu dự kiến
-
-```text
+9.2. Dữ liệu dự kiến
 VOCABULARY_EXAMPLE
 
 - id
@@ -340,241 +299,152 @@ VOCABULARY_EXAMPLE
 - example_en
 - example_vi
 - created_at
-```
-
-## 8.3. Relationship
-
-```text
+9.3. Relationship
 VOCABULARY
     │
     └── VOCABULARY_MEANING
             │
             └── VOCABULARY_EXAMPLE
-```
 
 Một Meaning có thể có nhiều Example.
 
-Ví dụ:
-
-```text
-Vocabulary:
-
-work
-
-Meaning:
-
-công việc
-
-Example:
-
-I have a lot of work today.
-```
-
----
-
-# 9. VOCABULARY_SET
-
-## 9.1. Mục đích
+10. VOCABULARY_SET
+10.1. Mục đích
 
 Vocabulary Set là một tập hợp các từ vựng được sử dụng để tổ chức nội dung học tập.
 
 Set có thể:
 
-- Do Admin tạo.
-- Do User tạo.
-- Được chia sẻ thông qua Community.
-- Được User khác sao chép về tài khoản cá nhân.
-
-## 9.2. Dữ liệu dự kiến
-
-```text
+Do Admin tạo.
+Do User tạo.
+Được chia sẻ thông qua Community.
+Được User khác sao chép về tài khoản cá nhân.
+10.2. Dữ liệu dự kiến
 VOCABULARY_SET
 
 - id
+- topic_id
 - owner_id
 - name
 - description
 - is_public
 - created_at
 - updated_at
-```
 
-`owner_id` tham chiếu tới `USER`.
+topic_id tham chiếu tới TOPIC.
 
-## 9.3. Ownership Rules
+owner_id tham chiếu tới USER.
 
-### Admin-created Vocabulary Set
+10.3. Ownership Rules
+Admin-created Vocabulary Set
 
 Vocabulary Set do Admin tạo là Public Set.
 
-```text
 ADMIN
   ↓
 PUBLIC VOCABULARY SET
-```
 
 User có thể:
 
-- Xem Set.
-- Học trực tiếp Set.
-- Sao chép Set vào tài khoản cá nhân.
+Xem Set.
+Học Set.
+Sao chép Set.
 
 User không có quyền:
 
-- Chỉnh sửa Set gốc.
-- Xóa Set gốc.
-
-### User-created Vocabulary Set
+Chỉnh sửa Set gốc.
+Xóa Set gốc.
+User-created Vocabulary Set
 
 Vocabulary Set do User tạo là Private Set mặc định.
 
-```text
 USER
   ↓
 PRIVATE VOCABULARY SET
-```
 
 Owner có thể:
 
-- Xem.
-- Học.
-- Thêm Vocabulary.
-- Xóa Vocabulary.
-- Chỉnh sửa thông tin Set.
-- Xóa Set.
+Xem.
+Học.
+Thêm Vocabulary.
+Xóa Vocabulary.
+Chỉnh sửa thông tin Set.
+Xóa Set.
 
 User không thể trực tiếp chuyển Set cá nhân thành Public Set.
 
-### Community Sharing
+Community Sharing
 
 Nếu User muốn chia sẻ Set cá nhân:
 
-```text
 USER VOCABULARY SET
         ↓
    COMMUNITY POST
         ↓
    OTHER USERS
-```
 
 Vocabulary Set gốc vẫn thuộc quyền sở hữu của User tạo ra.
 
-### Copy Vocabulary Set
+Copy Vocabulary Set
 
 User có thể sao chép:
 
-- Public Set của Admin.
-- Set được User khác chia sẻ thông qua Community.
+Public Set của Admin.
+Set được User khác chia sẻ thông qua Community.
 
 Khi copy:
 
-```text
 Original Vocabulary Set
         ↓
    Copy / Add to My Sets
         ↓
 New Vocabulary Set
-```
 
-Hệ thống tạo một `VOCABULARY_SET` mới với:
+Hệ thống tạo một VOCABULARY_SET mới với:
 
-```text
 owner_id = User thực hiện copy
 is_public = false
-```
 
-Các `VOCABULARY_SET_ITEM` của Set gốc cũng được sao chép sang Set mới.
+Các VOCABULARY_SET_ITEM của Set gốc cũng được sao chép sang Set mới.
 
 Bản sao là một Set độc lập.
 
 User thực hiện copy:
 
-- Có thể học bản sao.
-- Có thể chỉnh sửa bản sao.
-- Có thể xóa bản sao.
-- Không có quyền chỉnh sửa Set gốc.
-- Không có quyền xóa Set gốc.
+Có thể học bản sao.
+Có thể chỉnh sửa bản sao.
+Có thể xóa bản sao.
+Không có quyền chỉnh sửa Set gốc.
+Không có quyền xóa Set gốc.
 
 Việc chỉnh sửa bản sao không ảnh hưởng tới Set gốc.
 
-## 9.4. Relationship
-
-```text
-USER 1 ─── N VOCABULARY_SET
-```
-
-Một User có thể sở hữu nhiều Vocabulary Set.
-
-```text
-VOCABULARY_SET N ─── N VOCABULARY
-```
-
-Quan hệ này được xử lý thông qua `VOCABULARY_SET_ITEM`.
-
----
-
-# 10. VOCABULARY_SET_ITEM
-
-## 10.1. Mục đích
+11. VOCABULARY_SET_ITEM
+11.1. Mục đích
 
 Bảng trung gian kết nối Vocabulary và Vocabulary Set.
 
-## 10.2. Dữ liệu
-
-```text
+11.2. Dữ liệu
 VOCABULARY_SET_ITEM
 
 - id
 - vocabulary_set_id
 - vocabulary_id
 - created_at
-```
-
-## 10.3. Relationship
-
-```text
-VOCABULARY_SET
-        │
-        └── N VOCABULARY_SET_ITEM N ── VOCABULARY
-```
-
-Một Set có nhiều Vocabulary.
-
-Một Vocabulary có thể xuất hiện trong nhiều Set.
-
-## 10.4. Constraint
+11.3. Constraint
 
 Không cho phép một Vocabulary xuất hiện nhiều lần trong cùng một Set.
 
-Logical constraint:
-
-```text
 UNIQUE(vocabulary_set_id, vocabulary_id)
-```
-
----
-
-# 11. LEARNING_PROGRESS
-
-## 11.1. Mục đích
+12. LEARNING_PROGRESS
+12.1. Mục đích
 
 Theo dõi tiến độ học của từng User đối với từng Vocabulary.
 
-Đây là entity quan trọng của hệ thống.
-
-Ví dụ:
-
-```text
-User A
-    ↓
-work
-    ↓
-Learning Progress
-```
-
-## 11.2. Dữ liệu dự kiến
-
-```text
+USER + VOCABULARY
+        ↓
+LEARNING_PROGRESS
+12.2. Dữ liệu dự kiến
 LEARNING_PROGRESS
 
 - id
@@ -590,113 +460,165 @@ LEARNING_PROGRESS
 - ease_factor
 - created_at
 - updated_at
-```
+12.3. Status
 
-## 11.3. Status
+Phiên bản đầu sử dụng:
 
-Có thể sử dụng:
-
-```text
 NEW
 LEARNING
-REVIEW
-MASTERED
-```
+LEARNED
+NEEDS_REVIEW
+NEW
 
-### NEW
+User chưa có hoạt động học đối với Vocabulary.
 
-User chưa học từ này.
+LEARNING
 
-### LEARNING
+User đã bắt đầu học nhưng chưa đạt trạng thái ghi nhớ ổn định.
 
-User đã bắt đầu học nhưng chưa ghi nhớ ổn định.
+LEARNED
 
-### REVIEW
+User đã đạt điều kiện học thành công theo rule của hệ thống.
 
-Từ đang được đưa vào quá trình ôn tập.
+NEEDS_REVIEW
 
-### MASTERED
+Vocabulary đã từng được học nhưng cần được ôn tập lại.
 
-User đã đạt mức độ ghi nhớ tốt theo rule của hệ thống.
+Các điều kiện chuyển trạng thái cụ thể được xác định trong Business Logic / PLAN khi triển khai.
 
-## 11.4. User-specific Progress
+12.4. Constraint
 
-Learning Progress thuộc về từng User.
+Mỗi User chỉ có một Learning Progress cho một Vocabulary:
 
-Ví dụ:
+UNIQUE(user_id, vocabulary_id)
 
-```text
-User A + work
-→ Learning Progress của User A
+Tiến độ học của User không phụ thuộc vào việc Vocabulary nằm trong Set nào.
 
-User B + work
-→ Learning Progress của User B
-```
-
-Hai User không sử dụng chung Learning Progress.
-
----
-
-# 12. Spaced Repetition
+13. Spaced Repetition
 
 Spaced Repetition không cần tạo một bảng riêng.
 
 Thông tin cần thiết có thể được lưu trong:
 
-```text
 LEARNING_PROGRESS
-```
 
-Các trường quan trọng:
+Các trường liên quan:
 
-```text
 last_reviewed_at
 next_review_at
 interval_days
 ease_factor
 review_count
-```
 
-Backend sẽ chịu trách nhiệm tính toán lịch ôn tập.
+Backend chịu trách nhiệm tính toán lịch ôn tập.
+
+Luồng khái niệm:
+
+User completes learning activity
+        ↓
+Learning Service
+        ↓
+Evaluate learning result
+        ↓
+Update Learning Progress
+        ↓
+Calculate next review
+
+Thuật toán Spaced Repetition cụ thể chưa được cố định trong Database Design.
+
+AI Agent không được tự ý thêm entity hoặc bảng riêng chỉ để phục vụ thuật toán Spaced Repetition.
+
+14. USER_DAILY_PROGRESS
+14.1. Mục đích
+
+Lưu tiến độ XP của User theo từng ngày để phục vụ:
+
+Daily XP Goal.
+Daily XP progress.
+Goal completion.
+Daily Goal bonus.
+
+Không reset một trường today_xp trực tiếp trong USER.
+
+14.2. Dữ liệu dự kiến
+USER_DAILY_PROGRESS
+
+- id
+- user_id
+- date
+- activity_xp
+- bonus_xp
+- goal_completed
+- created_at
+- updated_at
+14.3. Quy tắc
+
+Mỗi User chỉ có một record cho một ngày:
+
+UNIQUE(user_id, date)
+
+Nếu User chưa có record của ngày hiện tại:
+
+today_xp = 0
+
+Khi User phát sinh learning activity:
+
+Learning Activity
+        ↓
+Calculate XP
+        ↓
+Create / Update USER_DAILY_PROGRESS
+
+Không cần cron job để reset XP hàng ngày.
+
+14.4. Activity XP
+
+activity_xp chỉ lưu XP từ các hoạt động học.
+
+Không bao gồm Daily Goal bonus.
+
+Điều này giúp tránh việc bonus XP tự tạo điều kiện để hoàn thành Daily Goal.
+
+14.5. Daily Goal Bonus
+
+Daily Goal bonus được tính:
+
+20% of Daily XP Goal
+
+với giới hạn:
+
+Minimum = 10 XP
+Maximum = 40 XP
 
 Ví dụ:
 
-```text
-User trả lời đúng
-        ↓
-Spaced Repetition Service
-        ↓
-Tăng interval
-        ↓
-Tính next_review_at
-        ↓
-Update LEARNING_PROGRESS
-```
+Goal 50  → Bonus 10 XP
+Goal 100 → Bonus 20 XP
+Goal 150 → Bonus 30 XP
+Goal 200 → Bonus 40 XP
 
-Business logic của Spaced Repetition phải nằm ở Backend Service, không nằm ở Controller hoặc Frontend.
+Bonus chỉ được nhận tối đa một lần trong một ngày.
 
-Thuật toán Spaced Repetition cụ thể có thể được điều chỉnh trong quá trình phát triển nhưng không tạo entity riêng chỉ để lưu thuật toán.
+goal_completed = true khi:
 
----
+activity_xp >= user's daily_xp_goal
 
-# 13. QUIZ_ATTEMPT
+Bonus không được tính vào điều kiện hoàn thành Daily Goal.
 
-## 13.1. Mục đích
+15. QUIZ_ATTEMPT
+15.1. Mục đích
 
 Lưu lịch sử User thực hiện các câu hỏi luyện tập.
 
-Hệ thống hiện tại chỉ hỗ trợ **2 Quiz Type**:
+Hệ thống hiện tại chỉ hỗ trợ 2 Quiz Type:
 
-```text
 VI_TO_ENGLISH
+
 MISSING_LETTER
-```
 
 AI Agent không được tự ý thêm Quiz Type mới nếu chưa được người phát triển phê duyệt.
 
-## 13.2. Dữ liệu dự kiến
-
-```text
+15.2. Dữ liệu dự kiến
 QUIZ_ATTEMPT
 
 - id
@@ -709,98 +631,69 @@ QUIZ_ATTEMPT
 - score
 - response_time_ms
 - created_at
-```
-
-## 13.3. Quiz Type
-
-```text
+15.3. Quiz Type
 VI_TO_ENGLISH
 MISSING_LETTER
-```
-
-### VI_TO_ENGLISH
+VI_TO_ENGLISH
 
 User nhìn thấy nghĩa tiếng Việt hoặc thông tin ngữ cảnh và nhập từ tiếng Anh.
 
-### MISSING_LETTER
+MISSING_LETTER
 
 User hoàn thành từ tiếng Anh bị thiếu một hoặc nhiều ký tự.
 
-## 13.4. Character-level Feedback
+15.4. Character-level Feedback
 
 Đối với Quiz yêu cầu nhập câu trả lời, hệ thống có thể so sánh từng ký tự giữa:
 
-```text
 user_answer
 correct_answer
-```
 
 để tạo feedback theo từng vị trí.
 
 Ví dụ:
 
-```text
 User answer:
+
 deserst
 
 Correct answer:
+
 dessert
-```
 
 Backend có thể xác định:
 
-- Ký tự đúng.
-- Ký tự sai.
-- Vị trí tương ứng.
+Ký tự đúng.
+Ký tự sai.
+Vị trí tương ứng.
 
 Không tạo bảng riêng để lưu kết quả từng ký tự nếu không thực sự cần thiết.
 
-## 13.5. Quiz Data Principle
+15.5. XP Rule
 
-Quiz không nên lưu toàn bộ nội dung Quiz một cách dư thừa nếu câu hỏi có thể được tạo từ dữ liệu Vocabulary.
+Quiz trả lời đúng:
 
-Luồng:
++3 XP
 
-```text
-VOCABULARY
-      ↓
-Quiz Service
-      ↓
-Generate Question
-      ↓
-User Answers
-      ↓
-QUIZ_ATTEMPT
-```
+Quiz trả lời sai:
 
-`QUIZ_ATTEMPT` chủ yếu lưu kết quả và lịch sử.
++0 XP
 
-Không tạo nhiều bảng như:
+Một Quiz attempt hợp lệ không được làm phát sinh XP lần thứ hai do Frontend gọi lại API hoặc do retry request.
 
-```text
-VI_TO_ENGLISH_QUIZ
-MISSING_LETTER_QUIZ
-```
-
-trừ khi nghiệp vụ trong tương lai chứng minh rằng các Quiz Type có cấu trúc dữ liệu hoàn toàn khác nhau.
-
----
-
-# 14. Pronunciation Data Principle
+16. Pronunciation Data Principle
 
 Pronunciation là một module học tập riêng, không phải Quiz Type.
 
 Thông tin phát âm mẫu được lưu trong:
 
-```text
 VOCABULARY
+
 ├── phonetic
 └── pronunciation_url
-```
 
 User có thể:
 
-```text
 Nghe phát âm mẫu
         ↓
 Tự phát âm
@@ -808,27 +701,23 @@ Tự phát âm
 Hệ thống phân tích
         ↓
 Feedback
-```
 
 Ở phiên bản đầu:
 
-- Không bắt buộc lưu audio của User vào Database.
-- Không bắt buộc tạo `PRONUNCIATION_ATTEMPT`.
-- Không tạo các bảng pronunciation riêng nếu chưa có nhu cầu thực tế.
+Không bắt buộc lưu audio của User vào Database.
+Không bắt buộc tạo PRONUNCIATION_ATTEMPT.
+Không tạo các bảng pronunciation riêng nếu chưa có nhu cầu thực tế.
+
+Nếu pronunciation practice được xác định là một qualifying learning activity, Backend có thể cập nhật LEARNING_PROGRESS, XP và Streak theo business rules đã được phê duyệt.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, phải thiết kế migration và cập nhật tài liệu Database trước khi triển khai.
 
----
-
-# 15. STREAK
-
-## 15.1. Mục đích
+17. STREAK
+17.1. Mục đích
 
 Theo dõi chuỗi ngày học liên tiếp của User.
 
-## 15.2. Dữ liệu dự kiến
-
-```text
+17.2. Dữ liệu dự kiến
 STREAK
 
 - id
@@ -837,58 +726,73 @@ STREAK
 - longest_streak
 - last_activity_date
 - updated_at
-```
 
 Relationship:
 
-```text
 USER 1 ─── 1 STREAK
-```
 
 Một User có một Streak record chính.
 
-## 15.3. Quy tắc
+17.3. Qualifying Learning Activity
 
-Khi User có hoạt động học hợp lệ:
+Streak được tính dựa trên hoạt động học hợp lệ.
 
-```text
-Activity today
-        ↓
-Check last_activity_date
-        ↓
-Nếu là ngày liên tiếp
-        → tăng current_streak
+Ví dụ:
 
-Nếu bị gián đoạn
-        → reset current_streak
+Học Vocabulary.
+Flashcard learning.
+Quiz.
+Pronunciation Practice.
+Review.
 
-Nếu current_streak > longest_streak
-        → update longest_streak
-```
+Không tính:
 
-Logic này thuộc Backend Service.
+Login.
+Mở Dashboard.
+Xem Profile.
+Xem Vocabulary Set.
+Chỉ điều hướng trong hệ thống mà không có learning activity.
+17.4. Quy tắc
 
----
+Nếu User đã có learning activity hôm nay:
 
-# 16. ACHIEVEMENT
+Không tăng streak thêm lần nữa.
 
-## 16.1. Mục đích
+Nếu hôm qua có activity và hôm nay có activity:
+
+current_streak + 1
+
+Nếu có một hoặc nhiều ngày bị bỏ qua:
+
+current_streak = 1
+
+Nếu:
+
+current_streak > longest_streak
+
+thì cập nhật:
+
+longest_streak = current_streak
+
+Streak không yêu cầu một mức XP tối thiểu.
+
+Một ngày chỉ cần có ít nhất một qualifying learning activity.
+
+Phiên bản đầu không có Streak Freeze.
+
+18. ACHIEVEMENT
+18.1. Mục đích
 
 Lưu danh sách thành tích của hệ thống.
 
 Ví dụ:
 
-```text
 First Lesson
 Vocabulary Beginner
 7 Day Streak
 100 Words
 500 XP
-```
-
-## 16.2. Dữ liệu dự kiến
-
-```text
+18.2. Dữ liệu dự kiến
 ACHIEVEMENT
 
 - id
@@ -899,82 +803,140 @@ ACHIEVEMENT
 - condition_value
 - created_at
 - updated_at
-```
-
-`condition_type` xác định loại điều kiện.
+18.3. Condition Type
 
 Ví dụ:
 
-```text
 WORDS_LEARNED
 XP_REACHED
 STREAK_REACHED
 QUIZ_COMPLETED
-```
 
-`condition_value` là giá trị cần đạt.
+condition_value là giá trị cần đạt.
 
 Ví dụ:
 
-```text
 condition_type = STREAK_REACHED
 condition_value = 7
-```
-
----
-
-# 17. USER_ACHIEVEMENT
-
-## 17.1. Mục đích
+19. USER_ACHIEVEMENT
+19.1. Mục đích
 
 Lưu Achievement mà User đã đạt được.
 
-## 17.2. Dữ liệu
-
-```text
+19.2. Dữ liệu
 USER_ACHIEVEMENT
 
 - id
 - user_id
 - achievement_id
 - achieved_at
-```
-
-## 17.3. Relationship
-
-```text
-USER N ─── N ACHIEVEMENT
-```
-
-Thông qua:
-
-```text
-USER_ACHIEVEMENT
-```
-
-## 17.4. Constraint
+19.3. Constraint
 
 Không cho phép User nhận cùng một Achievement nhiều lần nếu Achievement đó chỉ có thể đạt một lần.
 
-Logical constraint:
-
-```text
 UNIQUE(user_id, achievement_id)
-```
+20. Level Data Principle
 
----
+Level là một phần của Gamification nhưng không được lưu trực tiếp trong Database ở phiên bản đầu.
 
-# 18. COMMUNITY_POST
+Level được tính từ:
 
-## 18.1. Mục đích
+USER.total_xp
+
+Backend Service chịu trách nhiệm xác định Level.
+
+20.1. Level Range
+
+Phiên bản đầu có:
+
+LEVEL 1 → LEVEL 15
+
+Level 15 là Level tối đa.
+
+User vẫn có thể tiếp tục nhận XP sau khi đạt Level 15.
+
+Ví dụ:
+
+User đạt Level 15
+        ↓
+Tiếp tục học
+        ↓
+Total XP tiếp tục tăng
+        ↓
+Level vẫn = 15
+
+Không giới hạn total_xp ở Level 15.
+
+20.2. Level Threshold
+
+Level 2 bắt đầu tại:
+
+50 XP
+
+Bảng Level threshold cụ thể chưa được xem là Database Schema và phải được quản lý ở Backend configuration/business logic.
+
+AI Agent không được tự ý tạo cột level hoặc bảng LEVEL nếu chưa có requirement mới.
+
+21. Gamification Data Principle
+
+Gamification bao gồm:
+
+XP
+Level
+Daily Goal
+Streak
+Achievement
+
+Trong đó:
+
+XP được lưu trong USER.total_xp.
+Level được tính từ USER.total_xp.
+Daily Goal được lưu trong USER.daily_xp_goal.
+Daily XP được lưu trong USER_DAILY_PROGRESS.
+Streak được quản lý bởi STREAK.
+Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
+21.1. XP Rules
+
+Phiên bản đầu sử dụng một XP rule chung cho tất cả User:
+
+Activity	XP
+Học từ mới lần đầu	+3
+Review từ đã học	+1
+Quiz đúng	+3
+Quiz sai	+0
+Lặp lại cùng learning event	+0
+
+Daily Goal bonus được tính riêng theo quy tắc tại USER_DAILY_PROGRESS.
+
+XP chỉ được cộng cho learning event hợp lệ.
+
+Không cộng XP chỉ vì:
+
+Mở Flashcard.
+Refresh trang.
+Click lại cùng một action không tạo learning event mới.
+Gửi lại cùng request do retry/network issue.
+21.2. XP và Learning Progress
+
+Learning Progress và XP là hai khái niệm độc lập.
+
+LEARNING_PROGRESS
+→ User đã học gì và đang ở trạng thái nào.
+
+XP
+→ User đã thực hiện bao nhiêu hoạt động được tính điểm.
+
+Không được suy luận rằng:
+
+1 XP = 1 learned word
+22. COMMUNITY_POST
+22.1. Mục đích
 
 Lưu bài đăng trong khu vực Community.
 
 Community là feature hỗ trợ việc chia sẻ và khám phá nội dung học tập liên quan đến Vocabulary Set.
 
-## 18.2. Dữ liệu dự kiến
-
-```text
+22.2. Dữ liệu dự kiến
 COMMUNITY_POST
 
 - id
@@ -984,29 +946,10 @@ COMMUNITY_POST
 - content
 - created_at
 - updated_at
-```
-
-`vocabulary_set_id` tham chiếu tới Vocabulary Set được chia sẻ.
-
-## 18.3. Relationship
-
-```text
-USER 1 ─── N COMMUNITY_POST
-
-VOCABULARY_SET 1 ─── N COMMUNITY_POST
-```
-
-Một Community Post thuộc về một User.
-
-Một Community Post có thể liên kết với một Vocabulary Set được chia sẻ.
-
-## 18.4. Sharing Rule
+22.3. Sharing Rule
 
 Community Post không chuyển quyền sở hữu Vocabulary Set.
 
-Ví dụ:
-
-```text
 User A
   ↓
 Owns Vocabulary Set A
@@ -1016,23 +959,17 @@ Creates Community Post
 Shares Set A
   ↓
 User B copies Set A
-```
 
 Set gốc vẫn thuộc User A.
 
 User B nhận được một Vocabulary Set mới thuộc User B.
 
----
-
-# 19. COMMUNITY_COMMENT
-
-## 19.1. Mục đích
+23. COMMUNITY_COMMENT
+23.1. Mục đích
 
 Lưu bình luận của User trên bài đăng.
 
-## 19.2. Dữ liệu dự kiến
-
-```text
+23.2. Dữ liệu
 COMMUNITY_COMMENT
 
 - id
@@ -1041,327 +978,199 @@ COMMUNITY_COMMENT
 - content
 - created_at
 - updated_at
-```
 
-## 19.3. Relationship
+Relationship:
 
-```text
 COMMUNITY_POST 1 ─── N COMMUNITY_COMMENT
 
 USER 1 ─── N COMMUNITY_COMMENT
-```
-
----
-
-# 20. Entity Relationship Overview
+24. Entity Relationship Overview
 
 Mô hình quan hệ tổng quát:
 
-```text
-                           ┌──────────────────┐
-                           │       USER       │
-                           └────────┬─────────┘
+                         ┌──────────────────┐
+                         │       USER       │
+                         └────────┬─────────┘
+                                  │
+              ┌───────────────────┼────────────────────┐
+              │                   │                    │
+              ▼                   ▼                    ▼
+     ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+     │ LEARNING_       │ │ USER_DAILY_     │ │     STREAK      │
+     │ PROGRESS        │ │ PROGRESS        │ └─────────────────┘
+     └────────┬────────┘ └─────────────────┘
+              │
+              │
+              ▼
+       ┌─────────────────┐
+       │   VOCABULARY    │
+       └────────┬────────┘
+                │
+        ┌───────┴──────────────┐
+        │                      │
+        ▼                      ▼
+┌─────────────────────┐ ┌─────────────────────┐
+│ VOCABULARY_MEANING  │ │ VOCABULARY_SET_ITEM │
+└──────────┬──────────┘ └──────────┬──────────┘
+           │                       │
+           ▼                       ▼
+┌─────────────────────┐    ┌─────────────────┐
+│ VOCABULARY_EXAMPLE  │    │ VOCABULARY_SET  │
+└─────────────────────┘    └────────┬────────┘
                                     │
-              ┌─────────────────────┼────────────────────────┐
-              │                     │                        │
-              ▼                     ▼                        ▼
-     ┌─────────────────┐   ┌─────────────────┐    ┌─────────────────┐
-     │ LEARNING_       │   │ QUIZ_ATTEMPT    │    │     STREAK      │
-     │ PROGRESS        │   └────────┬────────┘    └─────────────────┘
-     └────────┬────────┘            │
-              │                     │
-              └──────────┬──────────┘
-                         ▼
-                ┌─────────────────┐
-                │   VOCABULARY    │
-                └────────┬────────┘
-                         │
-                  ┌──────┴──────────────┐
-                  │                     │
-                  ▼                     ▼
-       ┌─────────────────────┐  ┌─────────────────────┐
-       │ VOCABULARY_MEANING  │  │ VOCABULARY_SET_ITEM │
-       └──────────┬──────────┘  └──────────┬──────────┘
-                  │                        │
-                  ▼                        ▼
-       ┌─────────────────────┐   ┌─────────────────┐
-       │ VOCABULARY_EXAMPLE  │   │ VOCABULARY_SET  │
-       └─────────────────────┘   └────────┬────────┘
-                                         │
-                                         │
-                                         ▼
-                                ┌─────────────────┐
-                                │ COMMUNITY_POST  │
-                                └────────┬────────┘
-                                         │
-                                         ▼
-                                ┌─────────────────┐
-                                │ COMMUNITY_      │
-                                │ COMMENT         │
-                                └─────────────────┘
+                                    ▼
+                                  TOPIC
 
-
-                ┌─────────────────┐
-                │   ACHIEVEMENT   │
-                └────────┬────────┘
-                         │
-                         │
-                         ▼
-                ┌─────────────────┐
-                │ USER_ACHIEVEMENT│
-                └────────┬────────┘
-                         │
-                         │
-                         ▼
-                        USER
-```
-
-Các quan hệ quan trọng:
-
-```text
 USER
- ├── LEARNING_PROGRESS
  ├── QUIZ_ATTEMPT
- ├── STREAK
  ├── VOCABULARY_SET
  ├── COMMUNITY_POST
  ├── COMMUNITY_COMMENT
  └── USER_ACHIEVEMENT
-
-VOCABULARY
- ├── VOCABULARY_MEANING
- ├── LEARNING_PROGRESS
- ├── QUIZ_ATTEMPT
- └── VOCABULARY_SET_ITEM
-
-VOCABULARY_MEANING
- └── VOCABULARY_EXAMPLE
-
-VOCABULARY_SET
- ├── VOCABULARY_SET_ITEM
- └── COMMUNITY_POST
-
-ACHIEVEMENT
- └── USER_ACHIEVEMENT
+                  │
+                  ▼
+            ACHIEVEMENT
 
 COMMUNITY_POST
- └── COMMUNITY_COMMENT
-```
-
----
-
-# 21. Main Relationships
-
-| Relationship                            | Cardinality |
-| --------------------------------------- | ----------- |
-| USER → LEARNING_PROGRESS                | 1:N         |
-| VOCABULARY → LEARNING_PROGRESS          | 1:N         |
-| USER → QUIZ_ATTEMPT                     | 1:N         |
-| VOCABULARY → QUIZ_ATTEMPT               | 1:N         |
-| USER → STREAK                           | 1:1         |
-| VOCABULARY → VOCABULARY_MEANING         | 1:N         |
-| VOCABULARY_MEANING → VOCABULARY_EXAMPLE | 1:N         |
-| USER → VOCABULARY_SET                   | 1:N         |
-| VOCABULARY_SET → VOCABULARY_SET_ITEM    | 1:N         |
-| VOCABULARY → VOCABULARY_SET_ITEM        | 1:N         |
-| USER → COMMUNITY_POST                   | 1:N         |
-| VOCABULARY_SET → COMMUNITY_POST         | 1:N         |
-| COMMUNITY_POST → COMMUNITY_COMMENT      | 1:N         |
-| USER → COMMUNITY_COMMENT                | 1:N         |
-| USER → USER_ACHIEVEMENT                 | 1:N         |
-| ACHIEVEMENT → USER_ACHIEVEMENT          | 1:N         |
-
----
-
-# 22. Indexing Strategy
+       │
+       ▼
+COMMUNITY_COMMENT
+25. Main Relationships
+Relationship	Cardinality
+USER → LEARNING_PROGRESS	1:N
+VOCABULARY → LEARNING_PROGRESS	1:N
+USER → USER_DAILY_PROGRESS	1:N
+USER → QUIZ_ATTEMPT	1:N
+VOCABULARY → QUIZ_ATTEMPT	1:N
+USER → STREAK	1:1
+TOPIC → VOCABULARY_SET	1:N
+VOCABULARY → VOCABULARY_MEANING	1:N
+VOCABULARY_MEANING → VOCABULARY_EXAMPLE	1:N
+USER → VOCABULARY_SET	1:N
+VOCABULARY_SET → VOCABULARY_SET_ITEM	1:N
+VOCABULARY → VOCABULARY_SET_ITEM	1:N
+USER → COMMUNITY_POST	1:N
+VOCABULARY_SET → COMMUNITY_POST	1:N
+COMMUNITY_POST → COMMUNITY_COMMENT	1:N
+USER → COMMUNITY_COMMENT	1:N
+USER → USER_ACHIEVEMENT	1:N
+ACHIEVEMENT → USER_ACHIEVEMENT	1:N
+26. Indexing Strategy
 
 Index chỉ được thêm khi có nhu cầu truy vấn thực tế.
 
 Các index quan trọng dự kiến:
 
-## USER
-
-```text
+USER
 UNIQUE(email)
-```
-
-## VOCABULARY
+TOPIC
 
 Có thể index:
 
-```text
+name
+
+Nếu Topic được tìm kiếm thường xuyên.
+
+VOCABULARY
+
+Có thể index:
+
 word
 difficulty_level
-```
 
-Nếu `word` được tìm kiếm thường xuyên, `word` nên có index phù hợp.
+Nếu word được tìm kiếm thường xuyên, word nên có unique/index phù hợp theo business rule.
 
-## VOCABULARY_MEANING
-
-```text
+VOCABULARY_MEANING
 vocabulary_id
-```
-
-## VOCABULARY_EXAMPLE
-
-```text
+VOCABULARY_EXAMPLE
 meaning_id
-```
-
-## VOCABULARY_SET
-
-```text
+VOCABULARY_SET
 owner_id
+topic_id
 is_public
-```
-
-## VOCABULARY_SET_ITEM
-
-```text
+VOCABULARY_SET_ITEM
 vocabulary_set_id
 vocabulary_id
+
 UNIQUE(vocabulary_set_id, vocabulary_id)
-```
-
-## LEARNING_PROGRESS
-
-```text
+LEARNING_PROGRESS
 user_id
 vocabulary_id
 next_review_at
+
 UNIQUE(user_id, vocabulary_id)
-```
+USER_DAILY_PROGRESS
+user_id
+date
 
-## QUIZ_ATTEMPT
-
-```text
+UNIQUE(user_id, date)
+QUIZ_ATTEMPT
 user_id
 vocabulary_id
 created_at
-```
-
-## STREAK
-
-```text
+STREAK
 UNIQUE(user_id)
-```
-
-## ACHIEVEMENT
+ACHIEVEMENT
 
 Có thể index:
 
-```text
 condition_type
-```
 
 nếu cần cho truy vấn kiểm tra Achievement.
 
-## USER_ACHIEVEMENT
-
-```text
+USER_ACHIEVEMENT
 user_id
 achievement_id
+
 UNIQUE(user_id, achievement_id)
-```
-
-## COMMUNITY_POST
-
-```text
+COMMUNITY_POST
 user_id
 vocabulary_set_id
 created_at
-```
-
-## COMMUNITY_COMMENT
-
-```text
+COMMUNITY_COMMENT
 post_id
 user_id
 created_at
-```
-
----
-
-# 23. Foreign Key Rules
+27. Foreign Key Rules
 
 Các relationship quan trọng phải sử dụng Foreign Key.
 
 Ví dụ:
 
-```text
+VOCABULARY_SET.topic_id
+    → TOPIC.id
 VOCABULARY_MEANING.vocabulary_id
-        → VOCABULARY.id
-```
-
-```text
+    → VOCABULARY.id
 VOCABULARY_EXAMPLE.meaning_id
-        → VOCABULARY_MEANING.id
-```
-
-```text
+    → VOCABULARY_MEANING.id
 VOCABULARY_SET.owner_id
-        → USER.id
-```
-
-```text
+    → USER.id
 VOCABULARY_SET_ITEM.vocabulary_set_id
-        → VOCABULARY_SET.id
-```
-
-```text
+    → VOCABULARY_SET.id
 VOCABULARY_SET_ITEM.vocabulary_id
-        → VOCABULARY.id
-```
-
-```text
+    → VOCABULARY.id
 LEARNING_PROGRESS.user_id
-        → USER.id
-```
-
-```text
+    → USER.id
 LEARNING_PROGRESS.vocabulary_id
-        → VOCABULARY.id
-```
-
-```text
+    → VOCABULARY.id
+USER_DAILY_PROGRESS.user_id
+    → USER.id
 QUIZ_ATTEMPT.user_id
-        → USER.id
-```
-
-```text
+    → USER.id
 QUIZ_ATTEMPT.vocabulary_id
-        → VOCABULARY.id
-```
-
-```text
+    → VOCABULARY.id
 COMMUNITY_POST.user_id
-        → USER.id
-```
-
-```text
+    → USER.id
 COMMUNITY_POST.vocabulary_set_id
-        → VOCABULARY_SET.id
-```
-
-```text
+    → VOCABULARY_SET.id
 COMMUNITY_COMMENT.post_id
-        → COMMUNITY_POST.id
-```
-
-```text
+    → COMMUNITY_POST.id
 COMMUNITY_COMMENT.user_id
-        → USER.id
-```
-
-```text
+    → USER.id
 USER_ACHIEVEMENT.user_id
-        → USER.id
-```
-
-```text
+    → USER.id
 USER_ACHIEVEMENT.achievement_id
-        → ACHIEVEMENT.id
-```
+    → ACHIEVEMENT.id
 
 Foreign Key behavior phải được cân nhắc theo từng entity.
 
@@ -1369,159 +1178,111 @@ Không được sử dụng cascade delete một cách tùy tiện.
 
 Đặc biệt cần thận trọng với:
 
-- User.
-- Vocabulary.
-- Vocabulary Set.
-- Learning Progress.
-- Quiz History.
-- Community Post.
-- Achievement.
+User.
+Vocabulary.
+Vocabulary Set.
+Learning Progress.
+Daily Progress.
+Quiz History.
+Community Post.
+Achievement.
 
 Dữ liệu lịch sử học tập không nên bị xóa ngoài ý muốn chỉ vì một entity liên quan bị thay đổi.
 
----
-
-# 24. Data Integrity
+28. Data Integrity
 
 Database phải đảm bảo:
 
-## Unique
+Unique
 
 Các dữ liệu cần unique phải được kiểm soát ở Database.
 
 Ví dụ:
 
-```text
 USER.email
-```
-
-```text
 LEARNING_PROGRESS(user_id, vocabulary_id)
-```
-
-```text
+USER_DAILY_PROGRESS(user_id, date)
 VOCABULARY_SET_ITEM(vocabulary_set_id, vocabulary_id)
-```
-
-```text
 USER_ACHIEVEMENT(user_id, achievement_id)
-```
+Not Null
 
-## Not Null
-
-Các trường bắt buộc phải được xác định rõ là `NOT NULL`.
+Các trường bắt buộc phải được xác định rõ là NOT NULL.
 
 Ví dụ:
 
-```text
 USER.email
 USER.password_hash
+USER.role
 VOCABULARY.word
 VOCABULARY_MEANING.meaning_vi
+TOPIC.name
 VOCABULARY_SET.name
-```
-
-## Foreign Key
+USER_DAILY_PROGRESS.date
+Foreign Key
 
 Các relationship quan trọng phải được đảm bảo bằng Foreign Key.
 
----
+29. Soft Delete
 
-# 25. Soft Delete
-
-Không mặc định thêm `deleted_at` vào tất cả các bảng.
+Không mặc định thêm deleted_at vào tất cả các bảng.
 
 Chỉ sử dụng soft delete cho entity khi nghiệp vụ thực tế yêu cầu khôi phục hoặc giữ lịch sử.
 
 Ví dụ có thể cân nhắc:
 
-```text
 COMMUNITY_POST
-```
 
 hoặc dữ liệu quản trị cần giữ lịch sử.
 
 AI Agent không được tự động thêm soft delete vào toàn bộ schema.
 
----
-
-# 26. Timestamps
+30. Timestamps
 
 Các entity chính nên sử dụng:
 
-```text
 created_at
 updated_at
-```
 
-Không phải mọi bảng đều bắt buộc có `updated_at`.
+Không phải mọi bảng đều bắt buộc có updated_at.
 
-Ví dụ:
+Các bảng event/history có thể chỉ cần:
 
-```text
-USER
-VOCABULARY
-VOCABULARY_MEANING
-VOCABULARY_SET
-LEARNING_PROGRESS
-COMMUNITY_POST
-COMMUNITY_COMMENT
-ACHIEVEMENT
-```
-
-Các bảng chỉ lưu event/history có thể chỉ cần:
-
-```text
 created_at
-```
 
 Ví dụ:
 
-```text
 QUIZ_ATTEMPT
 USER_ACHIEVEMENT
 VOCABULARY_EXAMPLE
-```
-
----
-
-# 27. Learning Data Principle
+31. Learning Data Principle
 
 Learning Progress là dữ liệu theo User.
 
-Do đó:
-
-```text
 USER + VOCABULARY
         ↓
 LEARNING_PROGRESS
-```
 
 Mỗi cặp:
 
-```text
 (user_id, vocabulary_id)
-```
 
 chỉ nên có một Learning Progress record.
 
 Điều này giúp hệ thống có thể truy vấn:
 
-```text
 Các từ User chưa học.
 
 Các từ User đang học.
 
 Các từ cần ôn hôm nay.
 
-Các từ đã mastered.
-```
+Các từ đã learned.
+
 
 Tiến độ học của User không phụ thuộc vào việc Vocabulary nằm trong Set nào.
 
 Ví dụ:
 
-```text
 User A học "work" từ Admin Set
         ↓
 Learning Progress của User A
@@ -1529,46 +1290,38 @@ Learning Progress của User A
 User A học "work" từ Community Set
         ↓
 Vẫn sử dụng Learning Progress của User A đối với "work"
-```
-
----
-
-# 28. Gamification Data Principle
+32. Gamification Data Principle
 
 Gamification bao gồm:
 
-```text
 XP
 Level
+Daily Goal
 Streak
 Achievement
-```
 
 Trong đó:
 
-- XP được lưu trực tiếp trong `USER` ở phiên bản đầu.
-- Level được tính từ `USER.total_xp` ở Backend Service.
-- Không lưu Level riêng trong Database ở phiên bản đầu.
-- Streak được quản lý bởi `STREAK`.
-- Achievement được quản lý bởi `ACHIEVEMENT + USER_ACHIEVEMENT`.
+XP được lưu trực tiếp trong USER.
+Level được tính từ USER.total_xp.
+Level tối đa là 15 ở phiên bản đầu.
+Daily Goal được lưu trong USER.daily_xp_goal.
+Daily XP được lưu trong USER_DAILY_PROGRESS.
+Streak được quản lý bởi STREAK.
+Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 
 Không tạo thêm bảng riêng cho từng loại XP event nếu chưa có nhu cầu audit XP chi tiết.
 
 Nếu sau này cần lịch sử XP, có thể bổ sung:
 
-```text
 XP_TRANSACTION
-```
 
-nhưng **không tạo ở phiên bản đầu nếu chưa cần thiết**.
+nhưng không tạo ở phiên bản đầu nếu chưa cần thiết.
 
----
-
-# 29. Vocabulary Set Data Principle
+33. Vocabulary Set Data Principle
 
 Vocabulary Set có hai nguồn chính:
 
-```text
 ADMIN
   ↓
 PUBLIC SET
@@ -1576,78 +1329,59 @@ PUBLIC SET
 USER
   ↓
 PRIVATE SET
-```
-
-### Admin Public Set
+Admin Public Set
 
 User có thể:
 
-```text
 View
 Learn
 Copy
-```
 
 nhưng không thể:
 
-```text
 Edit original
 Delete original
-```
-
-### User Private Set
+User Private Set
 
 Owner có thể:
 
-```text
 View
 Learn
 Edit
 Delete
-```
-
-### Copy
+Copy
 
 Copy Set không tạo relationship ownership mới với Set gốc.
 
 Hệ thống tạo:
 
-```text
 New VOCABULARY_SET
         +
 New VOCABULARY_SET_ITEM records
-```
 
 Set mới thuộc User thực hiện copy.
 
 Không cần tạo các bảng:
 
-```text
 VOCABULARY_SET_DOWNLOAD
 VOCABULARY_SET_COPY
 VOCABULARY_SET_OWNER
-```
 
 cho nghiệp vụ này.
 
----
-
-# 30. Community Data Principle
+34. Community Data Principle
 
 Community là module hỗ trợ hệ thống học từ vựng.
 
 Database Community ở phiên bản đầu tập trung vào:
 
-```text
 COMMUNITY_POST
 COMMUNITY_COMMENT
-```
 
-`COMMUNITY_POST` có thể liên kết với `VOCABULARY_SET` để hỗ trợ chia sẻ Vocabulary Set.
+COMMUNITY_POST có thể liên kết với VOCABULARY_SET để hỗ trợ chia sẻ Vocabulary Set.
 
 Luồng chia sẻ:
 
-```text
 USER
   ↓
 Owns VOCABULARY_SET
@@ -1661,55 +1395,48 @@ Other User
 Copies VOCABULARY_SET
   ↓
 New Private VOCABULARY_SET
-```
 
 Community không làm thay đổi ownership của Set gốc.
 
 Không mặc định triển khai:
 
-- Chat realtime.
-- Follow user.
-- Friend system.
-- Notification system.
-- Reaction system.
-- Report system.
+Chat realtime.
+Follow user.
+Friend system.
+Notification system.
+Reaction system.
+Report system.
 
 Các feature này chỉ được thêm khi được xác định rõ trong phạm vi dự án.
 
----
+35. Admin Data
 
-# 31. Admin Data
-
-Không tạo bảng `ADMIN` riêng.
+Không tạo bảng ADMIN riêng.
 
 Admin là một User có:
 
-```text
 USER.role = ADMIN
-```
 
 Admin sử dụng các quyền đặc biệt để:
 
-- Quản lý Vocabulary.
-- Quản lý Vocabulary Meaning.
-- Quản lý Vocabulary Example.
-- Quản lý Vocabulary Set hệ thống.
-- Quản lý Achievement.
-- Quản lý Community Content.
-- Quản lý User khi cần.
-- Xem dữ liệu thống kê hệ thống.
+Quản lý Vocabulary.
+Quản lý Vocabulary Meaning.
+Quản lý Vocabulary Example.
+Quản lý Topic.
+Quản lý Vocabulary Set hệ thống.
+Quản lý Achievement.
+Quản lý Community Content.
+Quản lý User khi cần.
+Xem dữ liệu thống kê hệ thống.
 
 Authorization phải được xử lý ở Backend.
 
----
-
-# 32. Database Security
+36. Database Security
 
 Frontend không được truy cập trực tiếp PostgreSQL.
 
 Luồng dữ liệu:
 
-```text
 React
   ↓
 REST API
@@ -1721,29 +1448,23 @@ Service
 Repository / Prisma
   ↓
 PostgreSQL / Supabase
-```
 
 Database credentials phải được lưu trong environment variables.
 
 Không commit:
 
-```text
 DATABASE_URL
 JWT_SECRET
 SUPABASE_SECRET_KEY
-```
 
 hoặc các secret tương tự vào Git repository.
 
----
-
-# 33. Transaction
+37. Transaction
 
 Transaction được sử dụng khi một business operation cập nhật nhiều dữ liệu và cần đảm bảo tính toàn vẹn.
 
 Ví dụ:
 
-```text
 Submit Quiz
     ↓
 Save Quiz Attempt
@@ -1752,74 +1473,66 @@ Update Learning Progress
     ↓
 Update XP
     ↓
+Update Daily Progress
+    ↓
 Update Streak
     ↓
 Check Achievement
-```
 
 Nếu nghiệp vụ yêu cầu các bước trên thành một atomic operation, Backend Service phải sử dụng Database Transaction.
 
-### Copy Vocabulary Set
+Copy Vocabulary Set
 
 Copy Vocabulary Set cũng nên được thực hiện trong một transaction:
 
-```text
 Create New Vocabulary Set
         ↓
 Copy Vocabulary Set Items
         ↓
 Commit
-```
 
 Nếu một bước thất bại, toàn bộ operation phải được rollback để tránh tạo Set không đầy đủ.
 
 Không tự động sử dụng transaction cho mọi query đơn giản.
 
----
-
-# 34. Initial Database Scope
+38. Initial Database Scope
 
 Phiên bản đầu tiên của Database dự kiến gồm:
 
-```text
 1. USER
-2. VOCABULARY
-3. VOCABULARY_MEANING
-4. VOCABULARY_EXAMPLE
-5. VOCABULARY_SET
-6. VOCABULARY_SET_ITEM
-7. LEARNING_PROGRESS
-8. QUIZ_ATTEMPT
-9. STREAK
-10. ACHIEVEMENT
-11. USER_ACHIEVEMENT
-12. COMMUNITY_POST
-13. COMMUNITY_COMMENT
-```
+2. TOPIC
+3. VOCABULARY
+4. VOCABULARY_MEANING
+5. VOCABULARY_EXAMPLE
+6. VOCABULARY_SET
+7. VOCABULARY_SET_ITEM
+8. LEARNING_PROGRESS
+9. USER_DAILY_PROGRESS
+10. QUIZ_ATTEMPT
+11. STREAK
+12. ACHIEVEMENT
+13. USER_ACHIEVEMENT
+14. COMMUNITY_POST
+15. COMMUNITY_COMMENT
 
 Tổng cộng:
 
-````text
-13 tables
+15 tables
 
+Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 15 bảng trong mọi trường hợp.
 
-Phạm vi Database
-
-Database hiện tại dự kiến gồm 13 bảng theo phạm vi và yêu cầu đã được xác định.
-
-Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 13 bảng trong mọi trường hợp. Trong quá trình thiết kế chi tiết, nếu phát hiện một entity không cần thiết hoặc có thể xử lý bằng entity hiện tại, AI Agent có thể đề xuất loại bỏ hoặc điều chỉnh sau khi phân tích và được phê duyệt.
+Trong quá trình thiết kế chi tiết, nếu phát hiện một entity không cần thiết hoặc có thể xử lý bằng entity hiện tại, AI Agent có thể đề xuất loại bỏ hoặc điều chỉnh sau khi phân tích và được phê duyệt.
 
 Ngược lại, AI Agent không được tự ý mở rộng Database thành nhiều entity hoặc bảng mới chỉ vì mục đích "enterprise", overengineering hoặc dự đoán các nhu cầu chưa được xác định trong phạm vi dự án.
 
-Các feature như Pronunciation và Spaced Repetition không tạo thêm table riêng ở phiên bản đầu nếu dữ liệu có thể được xử lý bằng các entity hiện tại. Nếu phát sinh yêu cầu cần bổ sung entity hoặc table mới, AI Agent phải phân tích lý do, tác động và đề xuất trước khi thực hiện.
+Các feature như Pronunciation và Spaced Repetition không tạo thêm table riêng ở phiên bản đầu nếu dữ liệu có thể được xử lý bằng các entity hiện tại.
 
+Nếu phát sinh yêu cầu cần bổ sung entity hoặc table mới, AI Agent phải phân tích lý do, tác động và đề xuất trước khi thực hiện.
 
-
-# 35. Future Extension
+39. Future Extension
 
 Các entity sau có thể được xem xét trong tương lai:
 
-```text
 XP_TRANSACTION
 NOTIFICATION
 VOCABULARY_FAVORITE
@@ -1829,100 +1542,83 @@ COMMUNITY_REPORT
 QUIZ_SESSION
 AI_GENERATION_HISTORY
 PRONUNCIATION_ATTEMPT
-````
 
-Những entity này **không thuộc Initial Database Scope**.
+Những entity này không thuộc Initial Database Scope.
 
 Đây chỉ là các hướng mở rộng tiềm năng, không phải thiết kế đã được phê duyệt.
 
 AI Agent không được tự tạo các entity này nếu feature tương ứng chưa được xác định và phê duyệt.
 
----
-
-# 36. Database Change Rules
+40. Database Change Rules
 
 AI Agent phải tuân thủ:
 
-## Không được tự ý
-
-- Đổi PostgreSQL sang Database khác.
-- Xóa entity quan trọng.
-- Đổi relationship quan trọng.
-- Thêm hàng loạt bảng không có trong scope.
-- Đưa business logic vào Database thay vì Backend.
-- Cho Frontend truy cập Database trực tiếp.
-- Lưu plaintext password.
-- Bỏ Foreign Key khỏi relationship quan trọng.
-- Tạo bảng riêng cho từng Quiz Type nếu chưa có lý do nghiệp vụ.
-- Tạo bảng riêng cho USER và ADMIN.
-- Tạo bảng riêng cho Copy/Download Vocabulary Set nếu nghiệp vụ hiện tại không yêu cầu.
-- Tạo bảng riêng cho Spaced Repetition chỉ vì có thuật toán ôn tập.
-- Tạo bảng riêng cho Pronunciation nếu chưa có nhu cầu lưu lịch sử pronunciation attempt.
-
-## Được phép
-
-- Bổ sung index khi có lý do về query performance.
-- Bổ sung constraint để bảo vệ data integrity.
-- Điều chỉnh tên field cho nhất quán.
-- Điều chỉnh kiểu dữ liệu nếu có lý do kỹ thuật.
-- Đề xuất entity mới khi feature yêu cầu.
-- Tạo migration khi business requirement thay đổi.
-- Điều chỉnh Foreign Key behavior nếu có lý do rõ ràng về data integrity.
+Không được tự ý
+Đổi PostgreSQL sang Database khác.
+Xóa entity quan trọng.
+Đổi relationship quan trọng.
+Thêm hàng loạt bảng không có trong scope.
+Đưa business logic vào Database thay vì Backend.
+Cho Frontend truy cập Database trực tiếp.
+Lưu plaintext password.
+Bỏ Foreign Key khỏi relationship quan trọng.
+Tạo bảng riêng cho từng Quiz Type nếu chưa có lý do nghiệp vụ.
+Tạo bảng riêng cho USER và ADMIN.
+Tạo bảng riêng cho Copy/Download Vocabulary Set nếu nghiệp vụ hiện tại không yêu cầu.
+Tạo bảng riêng cho Spaced Repetition chỉ vì có thuật toán ôn tập.
+Tạo bảng riêng cho Pronunciation nếu chưa có nhu cầu lưu lịch sử pronunciation attempt.
+Tạo bảng riêng cho Level chỉ để lưu Level hiện tại.
+Tạo bảng riêng cho Daily Goal nếu dữ liệu có thể được quản lý bằng USER và USER_DAILY_PROGRESS.
+Được phép
+Bổ sung index khi có lý do về query performance.
+Bổ sung constraint để bảo vệ data integrity.
+Điều chỉnh tên field cho nhất quán.
+Điều chỉnh kiểu dữ liệu nếu có lý do kỹ thuật.
+Đề xuất entity mới khi feature yêu cầu.
+Tạo migration khi business requirement thay đổi.
+Điều chỉnh Foreign Key behavior nếu có lý do rõ ràng về data integrity.
 
 Mọi thay đổi làm ảnh hưởng đến domain model hoặc relationship quan trọng phải được người phát triển phê duyệt trước.
 
----
-
-# 37. Source of Truth
+41. Source of Truth
 
 Các tài liệu trong project có vai trò khác nhau:
 
-- AGENTS.md
-  → Global project rules và development constraints.
-
-- PROJECT_OVERVIEW.md
-  → Business scope và phạm vi tổng thể của hệ thống.
-
-- ARCHITECTURE.md
-  → Kiến trúc và technical direction của hệ thống.
-
-- DATABASE.md
-  → Data model và database design.
-
-- API_SPEC.md
-  → API contract.
-
-- UI_UX_SPEC.md
-  → UI/UX behavior và user flow.
-
-- FEATURE_STATUS.md
-  → Theo dõi trạng thái implementation của feature.
-  → Không phải source of truth cho business requirement.
-
-- Approved SPEC / PLAN / TASK
-  → Requirement và implementation plan cụ thể cho từng change.
+AGENTS.md
+→ Global project rules và development constraints.
+PROJECT_OVERVIEW.md
+→ Business scope và phạm vi tổng thể của hệ thống.
+ARCHITECTURE.md
+→ Kiến trúc và technical direction của hệ thống.
+DATABASE.md
+→ Data model và database design.
+API_SPEC.md
+→ API contract.
+UI_UX_SPEC.md
+→ UI/UX behavior và user flow.
+FEATURE_STATUS.md
+→ Theo dõi trạng thái implementation của feature.
+→ Không phải source of truth cho business requirement.
+Approved SPEC / PLAN / TASK
+→ Requirement và implementation plan cụ thể cho từng change.
 
 Nếu có mâu thuẫn giữa implementation hiện tại và các tài liệu trên,
+
 AI Agent không được tự ý chọn một bên và tiếp tục.
 
 AI Agent phải:
 
-1. Xác định mâu thuẫn.
-2. Giải thích impact.
-3. Xác định tài liệu nào cần được cập nhật.
-4. Yêu cầu người phát triển phê duyệt nếu thay đổi ảnh hưởng đến scope,
-   architecture, database, API hoặc business rule.
+Xác định mâu thuẫn.
+Giải thích impact.
+Xác định tài liệu nào cần được cập nhật.
+Yêu cầu người phát triển phê duyệt nếu thay đổi ảnh hưởng đến scope, architecture, database, API hoặc business rule.
 
-Implementation hiện tại không được tự động trở thành source of truth
-chỉ vì code đã tồn tại.
+Implementation hiện tại không được tự động trở thành source of truth chỉ vì code đã tồn tại.
 
----
-
-# 38. Core Database Principle
+42. Core Database Principle
 
 Database của hệ thống phải hướng tới:
 
-```text
 Simple
    ↓
 Clear
@@ -1934,16 +1630,16 @@ Maintainable
 Testable
    ↓
 Scalable when necessary
-```
 
 Không thiết kế Database phức tạp chỉ để thể hiện công nghệ.
 
 Mục tiêu là xây dựng một Database:
 
-- Đủ cho phạm vi đồ án.
-- Dễ hiểu.
-- Dễ triển khai với PostgreSQL/Supabase.
-- Dễ sử dụng với Prisma.
-- Dễ test.
-- Dễ mở rộng khi feature thực sự cần.
-- Phù hợp với kiến trúc Backend REST API.
+Đủ cho phạm vi đồ án.
+Dễ hiểu.
+Dễ triển khai với PostgreSQL/Supabase.
+Dễ sử dụng với Prisma.
+Dễ test.
+Dễ mở rộng khi feature thực sự cần.
+Phù hợp với kiến trúc Backend REST API.
+```

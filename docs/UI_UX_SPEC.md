@@ -34,17 +34,18 @@ The main goal is to help users:
 - Create and manage personal vocabulary sets.
 - Share vocabulary-related content with the community.
 
-The system has two main roles:
+The system has two authenticated roles:
 
-- Guest
 - User
 - Admin
+
+Guest users are unauthenticated visitors.
 
 Guest users can access public content and authentication-related pages.
 
 User accounts can learn vocabulary, manage personal vocabulary sets, participate in the community, and track learning progress.
 
-Admins manage users, vocabulary data, vocabulary sets, and community content.
+Admins manage users, topics, vocabulary data, vocabulary sets, achievements, and community content.
 
 # 3. Design Direction
 
@@ -52,7 +53,9 @@ Admins manage users, vocabulary data, vocabulary sets, and community content.
 
 Use a:
 
-**Modern Educational SaaS** design style.
+**Modern Educational SaaS**
+
+design style.
 
 The interface should feel:
 
@@ -93,6 +96,7 @@ The application should be organized into the following main areas:
 
 ```text
 Guest
+
 │
 ├── Landing Page
 ├── Login
@@ -100,12 +104,14 @@ Guest
 ├── Public Vocabulary Sets
 └── Vocabulary Set Detail
 
+
 User
+
 │
 ├── Dashboard
 ├── Learn Vocabulary
 │   ├── Flashcard
-|   ├── Pronunciation Practice
+│   ├── Pronunciation Practice
 │   ├── Vietnamese → English Quiz
 │   ├── Missing Letter Quiz
 │   └── Quiz Result
@@ -115,7 +121,7 @@ User
 │
 ├── Vocabulary Sets
 │   ├── My Sets
-│   ├── Public Sets
+│   ├── Public / Shared Sets
 │   ├── Create Set
 │   └── Edit Set
 │
@@ -127,13 +133,20 @@ User
 ├── Profile
 └── Settings
 
+
 Admin
+
 │
 ├── Admin Dashboard
 ├── User Management
+├── Topic Management
 ├── Vocabulary Management
 ├── Vocabulary Set Management
+├── Achievement Management
 └── Community Management
+
+Vocabulary Set Detail is a shared screen that may be accessed by Guest and authenticated users according to the system's access rules.
+
 5. Global Layout
 5.1 Desktop Layout
 
@@ -142,7 +155,7 @@ The application should use a modern dashboard layout.
 For authenticated users:
 
 ┌─────────────────────────────────────────────────────┐
-│ Logo                     Search      Notification    │
+│ Logo                         Search      Profile     │
 ├──────────────┬──────────────────────────────────────┤
 │              │                                      │
 │ Sidebar      │           Main Content               │
@@ -168,11 +181,17 @@ The active navigation item must be clearly highlighted.
 On mobile devices:
 
 Sidebar becomes a mobile navigation.
+
 Use bottom navigation or collapsible navigation.
+
 Main content uses full available width.
+
 Cards should stack vertically.
+
 Buttons should remain easy to tap.
+
 Avoid horizontal scrolling whenever possible.
+
 6. Design System
 6.1 Color System
 
@@ -358,13 +377,18 @@ Validation messages
 
 Purpose:
 
-Allow guests to discover public vocabulary sets.
+Allow guests to discover publicly available vocabulary sets.
+
+Public vocabulary sets include:
+
+System-created vocabulary sets
+User-created vocabulary sets shared through the Community according to the system's sharing rules
 
 Elements:
 
 Page title
 Search
-Category/topic filters
+Topic filters
 Vocabulary set cards
 Pagination
 Empty state
@@ -379,12 +403,17 @@ Number of vocabulary words
 Vocabulary preview
 Creator information
 Start Learning button
-Copy Set button if applicable
+Copy Set button when copying is permitted
 
 The page must clearly distinguish between:
 
-System-created public sets
-User-created public sets
+System-created vocabulary sets
+User-created vocabulary sets shared through the Community
+
+Copy Set is available only when the vocabulary set is accessible for copying according to the system's sharing rules.
+
+Copied vocabulary sets become private sets owned by the copying user.
+
 10. User Screens
 10.1 Dashboard
 
@@ -396,15 +425,29 @@ Welcome message
 Current level
 XP
 Current streak
-Learning progress
-Recommended vocabulary set
+Daily XP Goal progress
+Topic learning progress
+Words to review
 Continue Learning
+Current learning progress
 Recent learning activity
 Achievement preview
+
+Topic progress should provide a concise overview of the user's learning progress by topic.
+
+Each topic progress item may display:
+
+Topic name
+Progress percentage
+Learned words / total words
+Words to review
+Continue Learning action
 
 The dashboard should focus on encouraging the user to continue learning.
 
 Do not overload the dashboard with too many statistics.
+
+The dashboard is a summary view and is not the source of truth for learning progress.
 
 10.2 Learn Vocabulary
 
@@ -421,7 +464,6 @@ Topic
 Word count
 Learning progress
 Start / Continue button
-
 10.3 Flashcard
 
 Purpose:
@@ -437,13 +479,9 @@ English word or learning prompt
 Back:
 
 Vietnamese meaning
-
 Part of speech
-
 Example sentence
-
 Contextual meaning
-
 Pronunciation information if available
 
 Pronunciation:
@@ -459,11 +497,8 @@ User voice recording and pronunciation evaluation belong to the separate Pronunc
 Actions:
 
 Show Answer
-
 Previous
-
 Next
-
 Finish
 
 The interaction should feel focused and distraction-free.
@@ -479,61 +514,37 @@ The Pronunciation Practice activity is separate from the Flashcard activity.
 The activity should display:
 
 Vocabulary word
-
 IPA pronunciation
-
-🔊 Model pronunciation button
-
-🎙️ Record pronunciation button
-
+Model pronunciation button
+Record pronunciation button
 Recording state
-
 Processing state
-
 Pronunciation result
-
 Feedback
-
 Retry button
 
 Example flow:
 
 Display vocabulary word
-
-↓
-
+        ↓
 Listen to model pronunciation
-
-↓
-
+        ↓
 Press microphone button
-
-↓
-
+        ↓
 User pronounces the word
-
-↓
-
+        ↓
 System records and analyzes the pronunciation
-
-↓
-
+        ↓
 Display pronunciation result and feedback
-
-↓
-
+        ↓
 Retry if needed
 
 UI states:
 
 Ready
-
 Recording
-
 Processing
-
 Result
-
 Error / Unsupported
 
 Example:
@@ -544,13 +555,13 @@ Example:
 │           work               │
 │          /wɜːrk/             │
 │                              │
-│            🔊                │
+│             🔊               │
 │      Listen to model         │
 │                              │
-│            🎙️                │
+│             🎙️               │
 │      Practice speaking       │
 │                              │
-│    [ Press to start ]        │
+│     [ Press to start ]       │
 └──────────────────────────────┘
 
 The exact pronunciation analysis technology and scoring mechanism will be determined during the PLAN phase.
@@ -638,7 +649,7 @@ Total vocabulary learned
 Learning accuracy
 Learning activity
 Progress by vocabulary set
-Recent learning history
+Current learning progress
 Current streak
 XP progress
 
@@ -669,7 +680,7 @@ Practice milestones
 Tabs:
 
 My Sets
-Public Sets
+Public / Shared Sets
 
 My Sets should display:
 
@@ -681,9 +692,13 @@ Edit
 Delete
 Start Learning
 
-Public Sets should display discoverable vocabulary sets.
+Public / Shared Sets should display vocabulary sets accessible to the user according to the system's sharing rules.
 
 Users must clearly understand which sets they own.
+
+User-created vocabulary sets are private by default and cannot be directly changed to public visibility.
+
+Vocabulary sets can be shared through the Community according to the system's sharing rules.
 
 10.11 Create Vocabulary Set
 
@@ -692,7 +707,6 @@ Fields:
 Set name
 Description
 Topic
-Visibility
 Vocabulary words
 
 Each vocabulary item may contain:
@@ -703,6 +717,8 @@ Part of speech
 Example sentence
 Context
 Pronunciation information
+
+User-created vocabulary sets are private by default.
 
 Actions:
 
@@ -726,6 +742,9 @@ Add vocabulary
 Remove vocabulary
 Save changes
 Cancel
+
+User-created vocabulary sets remain private and are not directly converted to public sets through this screen.
+
 10.13 Community
 
 Community v1 contains:
@@ -742,6 +761,7 @@ Friends
 Direct messages
 Chat
 Leaderboards
+Competitive ranking
 
 The community page should contain:
 
@@ -798,16 +818,20 @@ Keep the profile simple.
 
 10.17 Settings
 
-Settings should focus only on necessary account/application preferences.
+Settings should focus only on necessary account and learning preferences.
 
-Possible sections:
+Sections:
 
 Account
 Password
-Learning preferences
-Notification preferences
+Learning Preferences
+Daily Goal
 
-Do not create unnecessary configuration options.
+Daily Goal allows the user to configure their target XP per day.
+
+The default goal is 50 XP/day.
+
+Allowed values and detailed business rules are defined by the project's business rules and should not be changed at the UI/UX stage.
 
 11. Admin Screens
 11.1 Admin Dashboard
@@ -837,7 +861,27 @@ Admin actions should be clearly separated from destructive actions.
 
 Use confirmation dialogs for destructive operations.
 
-11.3 Vocabulary Management
+11.3 Topic Management
+
+Admin can manage system topics used to organize vocabulary sets.
+
+Display:
+
+Topic list
+Search
+Topic details
+Vocabulary set count
+
+Actions:
+
+Create
+Edit
+Delete
+View
+
+Use confirmation dialogs for destructive operations.
+
+11.4 Vocabulary Management
 
 Display:
 
@@ -857,7 +901,7 @@ Part of speech
 Example
 Context
 Pronunciation
-11.4 Vocabulary Set Management
+11.5 Vocabulary Set Management
 
 Admin can manage system vocabulary sets.
 
@@ -877,16 +921,46 @@ Create
 Edit
 Delete
 View
-11.5 Community Management
+11.6 Achievement Management
 
-Admin can review community content.
+Admin can manage system achievement definitions.
+
+Display:
+
+Achievement name
+Description
+Icon
+Achievement condition
+Status
+
+Actions:
+
+Create
+Edit
+Delete
+View
+
+Achievement definitions are managed by the system administrator.
+
+User achievement progress is generated by the learning system.
+
+Use confirmation dialogs for destructive operations.
+
+11.7 Community Management
+
+Admin can review and manage community content.
 
 Display:
 
 Posts
 Comments
-Reports/moderation information if implemented
 Content details
+
+Actions:
+
+View
+Delete post
+Delete comment
 
 Provide clear actions for content management.
 
@@ -944,6 +1018,7 @@ Gamification features:
 XP
 Level
 Streak
+Daily Goal
 Achievements
 
 Gamification should support learning rather than dominate the interface.
@@ -955,6 +1030,7 @@ Small reward animations
 Achievement cards
 Level indicators
 Streak indicators
+Daily goal progress
 
 Avoid:
 
@@ -971,10 +1047,8 @@ When appropriate, display:
 
 Word
 Part of Speech
-
 Meaning
 Example sentence
-
 Context
 
 Example:
@@ -984,12 +1058,15 @@ work
 verb
 
 Meaning:
+
 làm việc
 
 Example:
+
 I work every day.
 
 Context:
+
 Daily activities
 15. Pronunciation UX
 
@@ -997,32 +1074,26 @@ Pronunciation is a learning activity, not a quiz type.
 
 The pronunciation experience consists of two distinct interactions:
 
-1. Model Pronunciation
+15.1 Model Pronunciation
 
 The system provides:
 
 Pronunciation text / IPA
-
-🔊 Audio button
+Audio button
 
 The audio button is placed inside the Flashcard or Pronunciation Practice screen.
 
 Its purpose is to let users listen to the model pronunciation.
 
-2. User Pronunciation Practice
+15.2 User Pronunciation Practice
 
 The Pronunciation Practice activity provides:
 
-🎙️ Microphone button
-
+Microphone button
 Recording state
-
 Processing state
-
 Pronunciation result
-
 Feedback
-
 Retry action
 
 The microphone interaction must be visually distinct from the model pronunciation button.
@@ -1067,7 +1138,8 @@ Accessible form labels
 Error messages
 Clear button labels
 Screen-reader-friendly structure
-Do not rely on color alone to communicate correctness
+
+Do not rely on color alone to communicate correctness.
 
 For quiz feedback, combine color with visual indicators or text.
 
@@ -1082,6 +1154,7 @@ Use:
 Skeleton
 Spinner
 Disabled actions where appropriate
+
 Empty
 
 Example:
@@ -1121,6 +1194,8 @@ Examples:
 Delete vocabulary set?
 Delete post?
 Delete vocabulary?
+Delete topic?
+Delete achievement?
 
 Confirmation dialog should clearly show:
 
@@ -1198,58 +1273,43 @@ The Figma prototype should demonstrate the most important user journeys.
 
 Flow 1 - Authentication
 Landing
-  ↓
+   ↓
 Register
-  ↓
+   ↓
 Login
-  ↓
+   ↓
 Dashboard
 Flow 2 - Learn Vocabulary
-
 Dashboard
-
- ↓
-
+   ↓
 Learn Vocabulary
-
- ↓
-
+   ↓
 Vocabulary Set
-
- ↓
-
+   ↓
 Flashcard
-
- ↓
-
+   ↓
 Pronunciation Practice
-
- ↓
-
+   ↓
 Quiz
-
- ↓
-
+   ↓
 Quiz Result
-
- ↓
-
+   ↓
 Dashboard
 Flow 3 - Create Vocabulary Set
 Vocabulary Sets
-  ↓
+   ↓
 Create Set
-  ↓
+   ↓
 Add Vocabulary
-  ↓
+   ↓
 Save
-  ↓
+   ↓
 My Sets
 Flow 4 - Community
 Community
-  ↓
+   ↓
 Post Detail
-  ↓
+   ↓
 Comment
 23. UI/UX Scope Control
 
@@ -1284,7 +1344,7 @@ Follow the defined screen inventory.
 Follow the defined navigation.
 Reuse the defined design system.
 Maintain consistent components.
-Respect the two main application roles: User and Admin.
+Respect the two authenticated roles: User and Admin.
 Keep Guest access separate from authenticated User features.
 Prioritize the learning experience.
 Create responsive layouts.
@@ -1323,13 +1383,17 @@ Settings
 Admin
 Admin Dashboard
 User Management
+Topic Management
 Vocabulary Management
 Vocabulary Set Management
+Achievement Management
 Community Management
 
 Total initial screens:
 
-26 screens
+29 screens
+
+Some screens such as Vocabulary Set Detail may be shared between Guest and authenticated users and should be implemented as reusable screens where appropriate.
 
 26. Design Completion Criteria
 
