@@ -63,6 +63,8 @@ Database được chia thành các nhóm chính:
 ```text
 USER
 │
+├── AUTH_SESSION
+│
 ├── Learning
 │   ├── LEARNING_PROGRESS
 │   ├── USER_DAILY_PROGRESS
@@ -90,6 +92,7 @@ Phiên bản đầu tiên của hệ thống dự kiến có các entity chính 
 
 Entity	Mục đích
 USER	Người dùng và Admin
+AUTH_SESSION	Session xác thực phía server của User
 TOPIC	Chủ đề từ vựng
 VOCABULARY	Từ vựng
 VOCABULARY_MEANING	Các nghĩa khác nhau của một từ
@@ -104,7 +107,6 @@ ACHIEVEMENT	Danh sách thành tích
 USER_ACHIEVEMENT	Thành tích user đã đạt
 COMMUNITY_POST	Bài đăng cộng đồng
 COMMUNITY_COMMENT	Bình luận bài đăng
-
 Không bắt buộc phải tạo riêng một bảng QUIZ ở giai đoạn đầu nếu quiz được sinh dựa trên Vocabulary và Quiz Type.
 
 Chỉ tạo entity QUIZ riêng khi nghiệp vụ thực tế yêu cầu lưu các quiz cố định hoặc quiz session phức tạp.
@@ -161,6 +163,41 @@ Khoảng giá trị được hỗ trợ ở phiên bản đầu:
 User có thể thay đổi Daily XP Goal trong Settings.
 
 Thay đổi Daily Goal không reset XP đã đạt trong ngày.
+
+5.6. AUTH_SESSION
+
+### Mục đích
+
+Lưu các authentication session phía server của User.
+
+### Dữ liệu dự kiến
+
+AUTH_SESSION
+
+- id
+- user_id
+- session_identifier_hash
+- created_at
+- expires_at
+
+### Relationship
+
+USER 1 ─── N AUTH_SESSION
+
+Một User có thể có nhiều authentication session đồng thời.
+
+Mỗi AUTH_SESSION thuộc về đúng một User thông qua `user_id`.
+
+### Quy tắc và constraint
+
+- `session_identifier_hash` phải unique.
+- Chỉ lưu SHA-256 hash của session identifier.
+- Raw session token/identifier không được lưu trong Database.
+- Session hết hiệu lực sau 7 ngày thông qua `expires_at`.
+- Logout của current session sẽ xóa record AUTH_SESSION tương ứng.
+- Không có logout-all-devices trong v1.
+- Không thêm `revoked_at`, `last_used_at`, `ip_address`, `user_agent` hoặc `device_name`.
+- Không triển khai session/device history.
 
 6. TOPIC
 6.1. Mục đích
@@ -1037,6 +1074,7 @@ COMMUNITY_POST
 COMMUNITY_COMMENT
 25. Main Relationships
 Relationship	Cardinality
+USER → AUTH_SESSION	1:N
 USER → LEARNING_PROGRESS	1:N
 VOCABULARY → LEARNING_PROGRESS	1:N
 USER → USER_DAILY_PROGRESS	1:N
@@ -1063,6 +1101,8 @@ Các index quan trọng dự kiến:
 
 USER
 UNIQUE(email)
+AUTH_SESSION
+UNIQUE(session_identifier_hash)
 TOPIC
 
 Có thể index:
@@ -1171,6 +1211,8 @@ USER_ACHIEVEMENT.user_id
     → USER.id
 USER_ACHIEVEMENT.achievement_id
     → ACHIEVEMENT.id
+AUTH_SESSION.user_id
+  → USER.id
 
 Foreign Key behavior phải được cân nhắc theo từng entity.
 
@@ -1204,6 +1246,7 @@ LEARNING_PROGRESS(user_id, vocabulary_id)
 USER_DAILY_PROGRESS(user_id, date)
 VOCABULARY_SET_ITEM(vocabulary_set_id, vocabulary_id)
 USER_ACHIEVEMENT(user_id, achievement_id)
+AUTH_SESSION.session_identifier_hash
 Not Null
 
 Các trường bắt buộc phải được xác định rõ là NOT NULL.
@@ -1500,26 +1543,27 @@ Không tự động sử dụng transaction cho mọi query đơn giản.
 Phiên bản đầu tiên của Database dự kiến gồm:
 
 1. USER
-2. TOPIC
-3. VOCABULARY
-4. VOCABULARY_MEANING
-5. VOCABULARY_EXAMPLE
-6. VOCABULARY_SET
-7. VOCABULARY_SET_ITEM
-8. LEARNING_PROGRESS
-9. USER_DAILY_PROGRESS
-10. QUIZ_ATTEMPT
-11. STREAK
-12. ACHIEVEMENT
-13. USER_ACHIEVEMENT
-14. COMMUNITY_POST
-15. COMMUNITY_COMMENT
+2. AUTH_SESSION
+3. TOPIC
+4. VOCABULARY
+5. VOCABULARY_MEANING
+6. VOCABULARY_EXAMPLE
+7. VOCABULARY_SET
+8. VOCABULARY_SET_ITEM
+9. LEARNING_PROGRESS
+10. USER_DAILY_PROGRESS
+11. QUIZ_ATTEMPT
+12. STREAK
+13. ACHIEVEMENT
+14. USER_ACHIEVEMENT
+15. COMMUNITY_POST
+16. COMMUNITY_COMMENT
 
 Tổng cộng:
 
-15 tables
+16 tables
 
-Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 15 bảng trong mọi trường hợp.
+Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 16 bảng trong mọi trường hợp.
 
 Trong quá trình thiết kế chi tiết, nếu phát hiện một entity không cần thiết hoặc có thể xử lý bằng entity hiện tại, AI Agent có thể đề xuất loại bỏ hoặc điều chỉnh sau khi phân tích và được phê duyệt.
 

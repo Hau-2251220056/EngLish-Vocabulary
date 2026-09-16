@@ -10,7 +10,6 @@
 >
 > AI Agent MUST NOT change the architecture, technology direction, or architectural principles defined in this document without explicit approval from the developer.
 
-
 ---
 
 # 1. Architecture Overview
@@ -784,7 +783,7 @@ Level được quản lý dựa trên XP theo business rules của hệ thống.
 Trong v1:
 
 USER.total_xp lưu tổng XP.
-USER.level lưu level hiện tại.
+Level được xác định dựa trên USER.total_xp theo business rules của hệ thống.
 STREAK lưu trạng thái streak hiện tại và streak cao nhất.
 USER_ACHIEVEMENT lưu achievement mà user đã đạt.
 
@@ -1345,3 +1344,4 @@ Refactor when necessary
 thay vì tạo một architecture mới cho từng feature.
 
 Build what the project needs, not what the technology makes possible.
+```
