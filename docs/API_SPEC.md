@@ -1,2624 +1,1747 @@
-# API SPECIFICATION — English Vocabulary Learning Platform
+# API SPECIFICATION
 
-> Tài liệu đặc tả API chính thức của hệ thống.
-> API là contract giữa Frontend và Backend.
-> Backend là source of truth đối với business logic, quyền truy cập, dữ liệu và kết quả học tập.
+## 1. Document Purpose
 
----
+Tài liệu này định nghĩa API contract của hệ thống:
 
-# 1. Purpose
+> **Xây dựng hệ thống học từ vựng tiếng Anh**
 
-`API_SPEC.md` định nghĩa cách Frontend giao tiếp với Backend thông qua REST API.
+API Specification mô tả:
 
-Tài liệu này mô tả:
+- API phục vụ chức năng nào.
+- Actor nào được phép sử dụng.
+- Request cần gửi gì.
+- Response trả về dữ liệu gì.
+- Business rules nào phải được backend đảm bảo.
+- Authorization và ownership rules.
+- Validation và error handling.
+- Quan hệ giữa API với Database và các feature khác.
 
-- API endpoint
-- HTTP method
-- Authentication
-- Authorization
-- Request
-- Response
-- Error handling
-- Business rules liên quan đến API
-- Quyền truy cập
-- Validation
-- Các API thuộc từng domain
+Tài liệu này tập trung vào **business contract**, không khóa implementation cụ thể.
 
-API phải phù hợp với:
+Các quyết định kỹ thuật chi tiết được xác định trong:
 
-- `docs/PROJECT_OVERVIEW.md`
-- `docs/ARCHITECTURE.md`
-- `docs/DATABASE.md`
-
-Không được tự ý tạo API cho feature chưa được xác định trong phạm vi dự án.
+- `ARCHITECTURE.md`
+- `DATABASE.md`
+- PLAN của từng feature.
 
 ---
 
-# 2. API Architecture
+# 2. Source of Truth
 
-Kiến trúc giao tiếp:
+Khi triển khai hoặc thay đổi API, Agent phải tham khảo:
 
-```text
-Frontend
-React + Vite
-      |
-      | HTTPS / REST API
-      ↓
-Backend
-Node.js + Express
-      |
-      | Prisma
-      ↓
-PostgreSQL / Supabase
-```
+1. `AGENTS.md`
+2. `PROJECT_OVERVIEW.md`
+3. `ARCHITECTURE.md`
+4. `DATABASE.md`
+5. `API_SPEC.md`
+6. `UI_UX_SPEC.md`
+7. `FEATURE_STATUS.md`
 
-Frontend:
+Trong đó:
 
-- Chỉ giao tiếp với Backend thông qua API.
-- Không được truy cập trực tiếp Database.
-- Không chứa business logic quan trọng.
-- Không tự quyết định dữ liệu authoritative từ Backend.
+- `PROJECT_OVERVIEW.md`: hệ thống cần làm gì.
+- `DATABASE.md`: dữ liệu được tổ chức như thế nào.
+- `API_SPEC.md`: frontend/backend giao tiếp như thế nào.
+- `UI_UX_SPEC.md`: UI cần dữ liệu và hành vi gì.
+- `FEATURE_STATUS.md`: trạng thái triển khai.
+- Source code/tests: bằng chứng về implementation hiện tại, không tự động thay thế requirement contract.
 
-Backend:
+Nếu phát hiện mâu thuẫn:
 
-- Xác thực người dùng.
-- Phân quyền.
-- Validation.
-- Business logic.
-- Database access.
-- Tính toán kết quả học tập.
-- Tính XP, Level, Streak, Achievement.
-- Xử lý Spaced Repetition.
-- Kiểm soát ownership của Vocabulary Set.
-- Giao tiếp với external services nếu cần.
+> Không tự ý chọn một phương án nếu mâu thuẫn ảnh hưởng đến business behavior hoặc API contract.
+
+Phải báo cáo và xin quyết định.
 
 ---
 
-# 3. Base URL
+# 3. API Base
 
-API sử dụng prefix:
+API base path:
 
 ```text
 /api
-```
 
 Ví dụ:
 
-```text
-GET /api/vocabulary
-POST /api/quiz/submit
-GET /api/progress
-```
-
-Production Base URL được cấu hình thông qua environment variable.
-
-Frontend không hard-code production URL trong source code.
-
----
-
-# 4. API Versioning
-
-Versioning chưa được sử dụng trong v1.
-
-Không tự ý chuyển API sang:
-
-```text
-/api/v1
-```
-
-Nếu sau này cần API versioning, phải có quyết định kiến trúc rõ ràng trước khi thay đổi.
-
----
-
-# 5. Authentication
-
-Hệ thống có hai role:
-
-```text
-USER
-ADMIN
-```
-
-Authentication mechanism cụ thể có thể được quyết định trong quá trình implementation.
-
-Ví dụ conceptual:
-
-```http
-Authorization: Bearer <access_token>
-```
-
-Frontend không được tự quyết định quyền truy cập bằng cách chỉ dựa vào UI.
-
-Backend phải kiểm tra authentication đối với các protected endpoints.
-
----
-
-# 6. Authorization
-
-Backend là nơi enforce authorization.
-
-Các quyền chính:
-
-```text
-USER
-- Quản lý profile của chính mình
-- Học vocabulary
-- Làm quiz
-- Xem progress của chính mình
-- Tạo vocabulary set
-- Quản lý vocabulary set của chính mình
-- Chia sẻ vocabulary set thông qua Community
-- Copy vocabulary set được chia sẻ
-- Tạo và quản lý Community Post của chính mình
-- Comment Community Post
-```
-
-```text
-ADMIN
-- Có quyền của USER
-- Quản lý users
-- Quản lý vocabulary
-- Quản lý system vocabulary sets
-- Quản lý achievements
-- Moderation Community
-```
-
-Frontend authorization chỉ nhằm mục đích UX.
-
-Backend vẫn phải kiểm tra quyền ở mọi protected endpoint.
-
----
-
-# 7. Standard Response Format
-
-## 7.1 Success Response
-
-```json
-{
-  "success": true,
-  "data": {}
-}
-```
-
----
-
-## 7.2 List Response
-
-```json
-{
-  "success": true,
-  "data": [],
-  "meta": {}
-}
-```
-
-`meta` có thể chứa:
-
-```json
-{
-  "page": 1,
-  "limit": 20,
-  "total": 100
-}
-```
-
-Nếu API không cần pagination thì không bắt buộc phải có `meta`.
-
----
-
-## 7.3 Error Response
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human readable message",
-    "details": {}
-  }
-}
-```
-
-`details` có thể chứa thông tin validation hoặc dữ liệu bổ sung.
-
-Không trả về:
-
-- Password
-- Password hash
-- Secret key
-- Access token của người khác
-- Sensitive internal information
-- Stack trace trong production
-
----
-
-# 8. HTTP Status Codes
-
-API sử dụng các HTTP status code phù hợp:
-
-| Status | Meaning                                           |
-| ------ | ------------------------------------------------- |
-| `200`  | Request thành công                                |
-| `201`  | Resource được tạo thành công                      |
-| `204`  | Thành công nhưng không có response body           |
-| `400`  | Bad Request                                       |
-| `401`  | Chưa authentication / authentication không hợp lệ |
-| `403`  | Không có quyền                                    |
-| `404`  | Resource không tồn tại                            |
-| `409`  | Conflict                                          |
-| `422`  | Validation error / business validation            |
-| `500`  | Internal Server Error                             |
-
-Không sử dụng status code tùy tiện.
-
----
-
-# 9. Error Handling
-
-Backend sử dụng centralized error handling.
-
-Flow:
-
-```text
-Request
-   ↓
-Route
-   ↓
-Middleware
-   ↓
-Controller
-   ↓
-Service
-   ↓
-Error
-   ↓
-Central Error Handler
-   ↓
-Standard Error Response
-```
-
-Controller không nên tự xử lý mọi loại error một cách riêng lẻ nếu có thể sử dụng centralized error handling.
-
----
-
-# 10. Validation
-
-Input phải được validate ở Backend.
-
-Có thể validate:
-
-- Required fields
-- Data type
-- String length
-- Email format
-- Enum values
-- ID format
-- Ownership
-- Business constraints
-
-Frontend validation chỉ cải thiện UX.
-
-Frontend validation không thay thế Backend validation.
-
----
-
-# 11. API Domains
-
-API được chia thành các domain:
-
-```text
-/api/auth
-/api/users
+/api/auth/login
 /api/vocabulary
 /api/vocabulary-sets
-/api/learning
-/api/quiz
-/api/pronunciation
-/api/progress
-/api/streak
-/api/achievements
-/api/community
-/api/admin
-```
 
----
+API sử dụng JSON cho request/response nếu endpoint không quy định khác.
 
-# 12. Authentication API
+4. Actors
+4.1 Guest
 
-## 12.1 Register
+Guest là người dùng chưa đăng nhập.
 
-```http
+Guest có thể:
+
+Xem Landing Page.
+Đăng ký.
+Đăng nhập.
+Xem Vocabulary Set được phép public.
+Xem chi tiết Vocabulary Set public.
+
+Guest không thể:
+
+Học và lưu Learning Progress.
+Thực hiện Quiz có lưu kết quả.
+Pronunciation Practice có lưu kết quả.
+Tạo Vocabulary Set.
+Copy Vocabulary Set.
+Tham gia Community.
+Xem dữ liệu cá nhân.
+Sử dụng Admin API.
+4.2 User
+
+User là authenticated user thông thường.
+
+User có thể:
+
+Quản lý profile.
+Xem và học Vocabulary Set.
+Flashcard.
+Pronunciation Practice.
+Làm Quiz.
+Theo dõi Learning Progress.
+Nhận XP.
+Level.
+Daily Goal.
+Streak.
+Achievement.
+Tạo Vocabulary Set cá nhân.
+Chỉnh sửa Vocabulary Set cá nhân.
+Chia sẻ Vocabulary Set thông qua Community.
+Copy Vocabulary Set được chia sẻ.
+Tham gia Community.
+4.3 Admin
+
+Admin cũng là một record trong USER.
+
+Phân biệt bằng:
+
+USER.role = ADMIN
+
+Admin có quyền:
+
+Quản lý User.
+Quản lý Vocabulary.
+Quản lý Topic.
+Quản lý Vocabulary Set hệ thống.
+Quản lý Community content khi cần.
+Quản lý Achievement/system content.
+
+Admin API phải kiểm tra authorization ở backend.
+
+Không được xem role ở frontend như cơ chế bảo mật duy nhất.
+
+5. Authentication
+5.1 Register
 POST /api/auth/register
-```
+Access
 
-Access:
+Guest.
 
-```text
-Public
-```
-
-Request:
-
-```json
+Request
 {
-  "email": "user@example.com",
-  "password": "password",
-  "display_name": "John"
-}
-```
-
-Backend phải:
-
-1. Validate input.
-2. Kiểm tra email đã tồn tại.
-3. Hash password.
-4. Tạo USER.
-5. Không cho client tự truyền `role`.
-6. Không cho client tự truyền `total_xp`.
-7. Không cho client tự truyền `level`.
-8. Không cho client tự truyền `is_active`.
-
-Response:
-
-```http
-201 Created
-```
-
-Example:
-
-```json
-{
-  "success": true,
-  "data": {
-    "user": {
-      "id": "user-id",
-      "email": "user@example.com",
-      "display_name": "John",
-      "role": "USER"
-    }
-  }
-}
-```
-
----
-
-## 12.2 Login
-
-```http
-POST /api/auth/login
-```
-
-Access:
-
-```text
-Public
-```
-
-Request:
-
-```json
-{
-  "email": "user@example.com",
+  "username": "minhhau",
+  "email": "hau@example.com",
   "password": "password"
 }
-```
+Success
+{
+  "success": true,
+  "message": "Registration successful"
+}
+Rules
+Username không được trùng.
+Email không được trùng.
+Password phải đáp ứng validation của hệ thống.
+User mới mặc định có role:
+USER
+Daily XP Goal mặc định:
+50 XP
+6. Login
+POST /api/auth/login
+Access
 
-Backend:
+Guest.
 
-- Validate credentials.
-- Kiểm tra account status.
-- Tạo authentication session/token theo cơ chế được chọn.
-
-Response có thể chứa authentication credential theo implementation.
-
-Không trả password hoặc password hash.
-
----
-
-## 12.3 Get Current Authentication User
-
-```http
-GET /api/auth/me
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Response:
-
-```json
+Request
+{
+  "email": "hau@example.com",
+  "password": "password"
+}
+Success
 {
   "success": true,
   "data": {
     "user": {
-      "id": "user-id",
-      "email": "user@example.com",
-      "display_name": "John",
-      "avatar_url": null,
+      "id": 1,
+      "username": "minhhau",
+      "email": "hau@example.com",
       "role": "USER"
     }
   }
 }
-```
 
----
+Authentication mechanism cụ thể được quyết định trong ARCHITECTURE.md và PLAN.
 
-# 13. User API
+7. Current User
+7.1 Get Current User
+GET /api/auth/me
+Access
 
-## 13.1 Get Current User
+Authenticated User/Admin.
 
-```http
-GET /api/users/me
-```
-
-Access:
-
-```text
-Authenticated
-```
-
----
-
-## 13.2 Update Current User
-
-```http
-PUT /api/users/me
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-User có thể cập nhật:
-
-```text
-display_name
-avatar_url
-```
-
-Không cho phép User thay đổi:
-
-```text
-id
-email
-role
-is_active
-total_xp
-level
-password_hash
-```
-
-Nếu có password change trong tương lai, phải có API riêng và được scope rõ ràng.
-
----
-
-## 13.3 Get Gamification Information
-
-```http
-GET /api/users/me/gamification
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Response có thể bao gồm:
-
-```json
+Response
 {
   "success": true,
   "data": {
-    "total_xp": 1200,
-    "level": 5
+    "id": 1,
+    "username": "minhhau",
+    "email": "hau@example.com",
+    "role": "USER"
   }
 }
-```
+8. User Profile
+8.1 Get Profile
+GET /api/users/me
+Access
 
-XP và Level được Backend quản lý.
+Authenticated User.
 
-Client không được gửi request để tự tăng XP hoặc Level.
+Response
 
----
+Có thể bao gồm:
 
-# 14. Vocabulary API
-
-Vocabulary là dữ liệu từ vựng của hệ thống.
-
-Vocabulary structure:
-
-```text
-VOCABULARY
-├── VOCABULARY_MEANING
-│   └── VOCABULARY_EXAMPLE
-└── pronunciation information
-```
-
----
-
-## 14.1 Get Vocabulary List
-
-```http
-GET /api/vocabulary
-```
-
-Access:
-
-```text
-Public / Authenticated
-```
-
-Có thể hỗ trợ:
-
-```text
-?page=1
-&limit=20
-&search=work
-&difficulty_level=A1
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": [],
-  "meta": {}
-}
-```
-
----
-
-## 14.2 Get Vocabulary Detail
-
-```http
-GET /api/vocabulary/:id
-```
-
-Access:
-
-```text
-Public / Authenticated
-```
-
-Response có thể bao gồm:
-
-```json
 {
   "success": true,
   "data": {
-    "id": "vocabulary-id",
+    "id": 1,
+    "username": "minhhau",
+    "email": "hau@example.com",
+    "total_xp": 320,
+    "level": 3,
+    "streak": 7,
+    "longest_streak": 12,
+    "daily_xp_goal": 50
+  }
+}
+
+level được backend tính từ total_xp.
+
+Không lưu level như source of truth nếu Database Specification không yêu cầu.
+
+9. Update Profile
+PATCH /api/users/me
+Access
+
+Authenticated User.
+
+Request
+{
+  "username": "newusername"
+}
+
+Các field được phép thay đổi phải được xác định trong implementation contract của feature.
+
+User không được tự thay đổi:
+
+role
+total_xp
+level
+streak
+achievement data
+learning progress
+10. Daily Goal
+10.1 Get Daily Goal
+GET /api/users/me/daily-goal
+Response
+{
+  "success": true,
+  "data": {
+    "goal_xp": 50,
+    "today_xp": 30,
+    "progress_percent": 60,
+    "goal_completed": false
+  }
+}
+10.2 Update Daily Goal
+PATCH /api/users/me/daily-goal
+Request
+{
+  "goal_xp": 100
+}
+Rules
+
+Daily Goal:
+
+Đơn vị: XP/day.
+Giá trị mặc định: 50 XP.
+Giá trị hợp lệ: 50–200 XP.
+Backend phải validate.
+today_xp không bị reset khi user thay đổi goal.
+Nếu giảm goal và XP hiện tại đã đạt goal:
+goal_completed = true
+bonus được trao nếu hôm đó chưa nhận bonus.
+Nếu tăng goal:
+XP đã có vẫn được giữ nguyên.
+Chỉ thay đổi target.
+11. Topic
+
+Topic dùng để phân loại Vocabulary Set.
+
+Quan hệ:
+
+Topic
+   ↓
+Vocabulary Set
+   ↓
+Vocabulary
+
+Một Topic có thể có nhiều Vocabulary Set.
+
+11.1 Get Topics
+GET /api/topics
+Access
+
+Guest/User.
+
+Response
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Daily Life",
+      "description": "Common vocabulary used in daily life"
+    }
+  ]
+}
+11.2 Get Topic Detail
+GET /api/topics/:topicId
+Access
+
+Guest/User.
+
+Response
+
+Topic information và các Vocabulary Set thuộc Topic mà requester được phép xem.
+
+11.3 Admin Create Topic
+POST /api/admin/topics
+Access
+
+Admin.
+
+11.4 Admin Update Topic
+PATCH /api/admin/topics/:topicId
+Access
+
+Admin.
+
+11.5 Admin Delete Topic
+DELETE /api/admin/topics/:topicId
+Access
+
+Admin.
+
+Deletion behavior đối với Vocabulary Set liên quan phải tuân theo Database/PLAN.
+
+Không tự ý cascade delete nếu chưa được quyết định.
+
+12. Vocabulary
+
+Vocabulary bao gồm thông tin từ vựng và các dữ liệu liên quan.
+
+Một vocabulary có thể có:
+
+Word.
+Meaning.
+Part of Speech.
+Example.
+Context.
+Pronunciation information nếu hệ thống lưu trữ.
+
+Một từ có thể có nhiều meanings.
+
+12.1 Get Vocabulary
+GET /api/vocabulary/:vocabularyId
+Access
+
+Guest/User nếu vocabulary thuộc resource mà requester được phép xem.
+
+Response
+{
+  "success": true,
+  "data": {
+    "id": 1,
     "word": "work",
-    "phonetic": "/wɜːrk/",
-    "pronunciation_url": "...",
-    "difficulty_level": "A1",
     "meanings": [
       {
-        "id": "meaning-id",
-        "part_of_speech": "verb",
-        "meaning_vi": "làm việc",
-        "context": "general",
-        "examples": [
-          {
-            "example_en": "I work every day.",
-            "example_vi": "Tôi làm việc mỗi ngày."
-          }
-        ]
+        "id": 1,
+        "meaning_vi": "công việc",
+        "part_of_speech": "noun",
+        "context": "daily life"
+      }
+    ],
+    "examples": [
+      {
+        "id": 1,
+        "sentence": "I go to work every day."
       }
     ]
   }
 }
-```
+13. Vocabulary Set
 
----
+Vocabulary Set là đơn vị nội dung chính để User học.
 
-## 14.3 Create Vocabulary
+Vocabulary Set có thể là:
 
-```http
-POST /api/vocabulary
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-User không được tự tạo system vocabulary thông qua API này.
-
----
-
-## 14.4 Update Vocabulary
-
-```http
-PUT /api/vocabulary/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
-
----
-
-## 14.5 Delete Vocabulary
-
-```http
-DELETE /api/vocabulary/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-Backend phải kiểm tra các relationship liên quan trước khi xóa.
-
-Không được vô tình xóa learning progress hoặc historical quiz data của user.
-
----
-
-# 15. Vocabulary Set API
-
-Vocabulary Set là collection của các vocabulary.
-
-Có hai loại chính:
-
-```text
-System Set
-User Set
-```
-
----
-
-## 15.1 Get Vocabulary Set List
-
-```http
+System Vocabulary Set do Admin quản lý.
+Personal Vocabulary Set do User tạo.
+14. Public System Vocabulary Sets
+14.1 List Vocabulary Sets
 GET /api/vocabulary-sets
-```
+Access
 
-Access:
+Guest/User.
 
-```text
-Public / Authenticated
-```
+Có thể hỗ trợ filter:
 
-Có thể trả về:
-
-- Public system sets.
-- Các set public theo business rule.
-- Thông tin cơ bản của set.
-
-Private set của User khác không được hiển thị.
-
----
-
-## 15.2 Get My Vocabulary Sets
-
-```http
-GET /api/vocabulary-sets/me
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Trả về các set thuộc quyền sở hữu của current user.
-
----
-
-## 15.3 Get Vocabulary Set Detail
-
-```http
-GET /api/vocabulary-sets/:id
-```
-
-Access phụ thuộc visibility/ownership.
-
-Backend phải kiểm tra:
-
-```text
-Public set
-→ allowed
-
-Own private set
-→ allowed
-
-Another user's private set
-→ forbidden
-```
-
-Admin có thể có quyền quản lý theo policy của hệ thống.
-
----
-
-## 15.4 Create Vocabulary Set
-
-```http
-POST /api/vocabulary-sets
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Request:
-
-```json
-{
-  "name": "Daily English",
-  "description": "Common words for daily communication"
-}
-```
-
-User-created set mặc định:
-
-```text
-is_public = false
-```
-
-Client không được tự ý tạo:
-
-```json
-{
-  "is_public": true
-}
-```
-
-để biến private set thành public.
-
-Backend phải kiểm soát ownership và visibility.
-
----
-
-## 15.5 Update Vocabulary Set
-
-```http
-PUT /api/vocabulary-sets/:id
-```
-
-Access:
-
-```text
-Owner / ADMIN theo policy
-```
-
-User chỉ được sửa set của chính mình.
-
-Không được sửa private set của User khác.
-
----
-
-## 15.6 Delete Vocabulary Set
-
-```http
-DELETE /api/vocabulary-sets/:id
-```
-
-Access:
-
-```text
-Owner / ADMIN theo policy
-```
-
-Khi xóa set:
-
-- Có thể xóa các `VOCABULARY_SET_ITEM` liên quan.
-- Không được xóa `VOCABULARY`.
-- Không được vô tình xóa `LEARNING_PROGRESS`.
-
----
-
-# 16. Vocabulary Set Items API
-
-## 16.1 Add Vocabulary to Set
-
-```http
-POST /api/vocabulary-sets/:id/items
-```
-
-Access:
-
-```text
-Owner / ADMIN theo policy
-```
-
-Request:
-
-```json
-{
-  "vocabulary_id": "vocabulary-id"
-}
-```
-
-Backend phải kiểm tra:
-
-- Set tồn tại.
-- User có quyền chỉnh sửa set.
-- Vocabulary tồn tại.
-- Vocabulary chưa tồn tại trong set.
-
-Database đảm bảo unique:
-
-```text
-(vocabulary_set_id, vocabulary_id)
-```
-
----
-
-## 16.2 Remove Vocabulary from Set
-
-```http
-DELETE /api/vocabulary-sets/:id/items/:vocabularyId
-```
-
-Access:
-
-```text
-Owner / ADMIN theo policy
-```
-
-Chỉ xóa relationship trong `VOCABULARY_SET_ITEM`.
-
-Không xóa Vocabulary.
-
----
-
-# 17. Copy Vocabulary Set API
-
-## 17.1 Copy Vocabulary Set
-
-```http
-POST /api/vocabulary-sets/:id/copy
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Flow:
-
-```text
-User A's shared set
-        ↓
-User B clicks Copy
-        ↓
-Create NEW VOCABULARY_SET
-        ↓
-owner_id = User B
-        ↓
-is_public = false
-        ↓
-Copy VOCABULARY_SET_ITEM
-```
-
-Backend phải sử dụng transaction.
-
-Copying không:
-
-- Chuyển ownership.
-- Cho User B quyền sửa original set.
-- Thay đổi original set.
-- Làm original set thành public.
-
----
-
-# 18. Learning API
-
-Learning API xử lý learning session và learning result.
-
----
-
-## 18.1 Get Learning Session
-
-```http
-GET /api/learning/session
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Backend có thể sử dụng:
-
-- User progress.
-- `next_review_at`.
-- Vocabulary availability.
-- Spaced Repetition rules.
-
-Mục đích là trả về vocabulary phù hợp cho phiên học.
-
----
-
-## 18.2 Submit Learning Review
-
-```http
-POST /api/learning/review
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Request concept:
-
-```json
-{
-  "vocabulary_id": "vocabulary-id",
-  "result": "correct"
-}
-```
-
-Backend có thể cập nhật:
-
-```text
-LEARNING_PROGRESS
-        ↓
-Spaced Repetition
-        ↓
-next_review_at
-interval_days
-ease_factor
-        ↓
-XP
-        ↓
-Streak
-        ↓
-Achievement
-```
-
-Business logic không được để Frontend tự tính authoritative result.
-
----
-
-# 19. Quiz API
-
-Hệ thống chỉ có **2 loại Quiz**:
-
-```text
-VI_TO_ENGLISH
-MISSING_LETTER
-```
-
-Không tự ý thêm quiz type thứ ba.
-
-Pronunciation không phải quiz type.
-
----
-
-# 20. Get Quiz Question
-
-```http
-GET /api/quiz/question
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Backend có thể chọn vocabulary dựa trên:
-
-- Learning progress.
-- Spaced repetition.
-- Quiz type.
-- Difficulty.
-- Learning session.
-
-Response ví dụ:
-
-```json
+topic
+search
+pagination
+Response
 {
   "success": true,
-  "data": {
-    "vocabulary_id": "vocabulary-id",
-    "quiz_type": "VI_TO_ENGLISH",
-    "question": {
-      "meaning_vi": "làm việc"
-    }
-  }
-}
-```
-
-Backend không nên gửi `correct_answer` trong question response nếu điều đó làm lộ đáp án.
-
----
-
-# 21. Submit Quiz
-
-```http
-POST /api/quiz/submit
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Request:
-
-```json
-{
-  "vocabulary_id": "vocabulary-id",
-  "quiz_type": "VI_TO_ENGLISH",
-  "user_answer": "work",
-  "response_time_ms": 3200
-}
-```
-
-Backend chịu trách nhiệm:
-
-1. Validate request.
-2. Validate vocabulary.
-3. Validate quiz type.
-4. Xác định correct answer.
-5. Kiểm tra user answer.
-6. Tính correctness.
-7. Tính score.
-8. Tạo per-character feedback nếu cần.
-9. Lưu `QUIZ_ATTEMPT`.
-10. Update `LEARNING_PROGRESS`.
-11. Tính Spaced Repetition.
-12. Update XP.
-13. Update Streak.
-14. Kiểm tra Achievement.
-15. Trả kết quả.
-
-Client không được gửi:
-
-```text
-correct_answer
-is_correct
-score
-xp_earned
-level
-streak
-```
-
-để Backend tin tưởng trực tiếp.
-
----
-
-# 22. Quiz Type: Vietnamese → English
-
-Enum:
-
-```text
-VI_TO_ENGLISH
-```
-
-Question:
-
-```text
-Công việc → ______
-```
-
-Expected answer:
-
-```text
-work
-```
-
-User phải nhập đáp án đầy đủ.
-
-Backend xác định đáp án đúng dựa trên Vocabulary/Meaning data hoặc business rule đã được định nghĩa.
-
----
-
-# 23. Quiz Type: Missing Letter
-
-Enum:
-
-```text
-MISSING_LETTER
-```
-
-Ví dụ:
-
-```text
-w_rk
-```
-
-Expected:
-
-```text
-work
-```
-
-Backend kiểm tra đáp án dựa trên vocabulary word.
-
----
-
-# 24. Per-character Feedback
-
-Đối với các quiz dạng typing:
-
-```text
-VI_TO_ENGLISH
-MISSING_LETTER
-```
-
-Backend có thể trả feedback theo từng character.
-
-Ví dụ conceptual:
-
-```json
-{
-  "feedback": [
+  "data": [
     {
-      "position": 0,
-      "expected": "w",
-      "actual": "w",
-      "status": "correct"
-    },
-    {
-      "position": 1,
-      "expected": "o",
-      "actual": "e",
-      "status": "incorrect"
+      "id": 1,
+      "name": "Daily Life",
+      "description": "Common daily vocabulary",
+      "topic": {
+        "id": 1,
+        "name": "Daily Life"
+      },
+      "word_count": 200
     }
   ]
 }
-```
 
-Frontend dùng dữ liệu này để hiển thị:
+Backend chỉ trả về những Set requester được phép truy cập.
 
-```text
-Correct → green
-Incorrect → red
-```
+14.2 Vocabulary Set Detail
+GET /api/vocabulary-sets/:setId
+Access
 
-Feedback này được tính runtime.
+Guest/User.
 
-Không tạo database table riêng cho từng character feedback.
-
----
-
-# 25. Quiz Result Response
-
-Ví dụ:
-
-```json
-{
-  "success": true,
-  "data": {
-    "is_correct": false,
-    "score": 70,
-    "correct_answer": "dessert",
-    "feedback": [
-      {
-        "position": 0,
-        "expected": "d",
-        "actual": "d",
-        "status": "correct"
-      },
-      {
-        "position": 1,
-        "expected": "e",
-        "actual": "e",
-        "status": "correct"
-      }
-    ],
-    "xp_earned": 5,
-    "learning_progress": {},
-    "streak": {},
-    "achievement_updates": []
-  }
-}
-```
-
-Response thực tế có thể được tinh chỉnh trong implementation nhưng phải giữ nguyên nguyên tắc:
-
-```text
-Backend = source of truth
-```
-
----
-
-# 26. Pronunciation API
-
-Pronunciation là một learning module riêng.
-
-Không coi pronunciation là Quiz Type.
-
-Flow:
-
-```text
-Vocabulary
-    ↓
-Model Pronunciation
-    ↓
-User listens
-    ↓
-User speaks
-    ↓
-Speech Recognition / Pronunciation Evaluation
-    ↓
-Pronunciation Result
-```
-
----
-
-## 26.1 Get Pronunciation Information
-
-```http
-GET /api/pronunciation/:vocabularyId
-```
-
-Access:
-
-```text
-Public / Authenticated
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "vocabulary_id": "vocabulary-id",
-    "phonetic": "/wɜːrk/",
-    "pronunciation_url": "..."
-  }
-}
-```
-
----
-
-## 26.2 Evaluate Pronunciation
-
-```http
-POST /api/pronunciation/evaluate
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Mục đích:
-
-- Nhận pronunciation input của User.
-- Gửi tới external pronunciation/speech service nếu được sử dụng.
-- Nhận evaluation result.
-- Trả kết quả cho Frontend.
-
-Pronunciation evaluation là optional dependency.
-
-Nếu external service chưa được tích hợp thì endpoint có thể chưa được triển khai.
-
-V1 không lưu pronunciation attempt thành database entity.
-
----
-
-# 27. Progress API
-
-## 27.1 Get Learning Progress
-
-```http
-GET /api/progress
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Chỉ trả progress của current user.
-
-Không cho User truy cập progress của User khác.
-
----
-
-## 27.2 Get Vocabulary Progress
-
-```http
-GET /api/progress/:vocabularyId
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Trả progress của current user đối với vocabulary tương ứng.
-
----
-
-## 27.3 Get Progress Summary
-
-```http
-GET /api/progress/summary
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Có thể trả:
-
-```text
-Total vocabulary learned
-Reviewed vocabulary
-Mastered vocabulary
-Quiz accuracy
-Learning statistics
-```
-
-Exact calculation có thể được xác định trong implementation.
-
----
-
-# 28. Streak API
-
-## 28.1 Get Current Streak
-
-```http
-GET /api/streak
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "current_streak": 5,
-    "longest_streak": 12,
-    "last_activity_date": "2026-09-14"
-  }
-}
-```
-
-Streak được cập nhật bởi Backend.
-
-Client không được gửi:
-
-```text
-current_streak
-longest_streak
-last_activity_date
-```
-
-để tự thay đổi dữ liệu.
-
----
-
-# 29. Achievement API
-
-## 29.1 Get All Achievements
-
-```http
-GET /api/achievements
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Có thể public tùy implementation.
-
----
-
-## 29.2 Get My Achievements
-
-```http
-GET /api/achievements/me
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Trả về achievements của current user.
-
----
-
-# 30. Community API
-
-Community v1 bao gồm:
-
-```text
-Posts
-Comments
-Vocabulary Set Sharing
-```
-
-Không bao gồm:
-
-```text
-Likes
-Reactions
-Followers
-Friends
-Direct Messages
-Chat
-Leaderboard
-```
-
----
-
-# 31. Get Community Posts
-
-```http
-GET /api/community/posts
-```
-
-Access:
-
-```text
-Public / Authenticated
-```
-
-Có thể hỗ trợ:
-
-```text
-?page=1
-&limit=20
-```
-
----
-
-# 32. Get Community Post Detail
-
-```http
-GET /api/community/posts/:id
-```
-
-Access:
-
-```text
-Public / Authenticated
-```
-
-Có thể trả:
-
-```text
-Post
-Author information
-Shared vocabulary set information nếu có
-Comments
-```
-
----
-
-# 33. Create Community Post
-
-```http
-POST /api/community/posts
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Request:
-
-```json
-{
-  "title": "Useful words for travel",
-  "content": "Here are some words I learned.",
-  "vocabulary_set_id": "set-id"
-}
-```
-
-`vocabulary_set_id` là optional.
-
-Nếu không có:
-
-```text
-Normal community post
-```
-
-Nếu có:
-
-```text
-Vocabulary Set sharing post
-```
-
-Backend phải kiểm tra User có ownership hợp lệ đối với vocabulary set được chia sẻ.
-
-User không được dùng API để chia sẻ private set của người khác.
-
----
-
-# 34. Update Community Post
-
-```http
-PUT /api/community/posts/:id
-```
-
-Access:
-
-```text
-Post Owner / ADMIN
-```
-
-User không được chỉnh sửa post của User khác.
-
----
-
-# 35. Delete Community Post
-
-```http
-DELETE /api/community/posts/:id
-```
-
-Access:
-
-```text
-Post Owner / ADMIN
-```
-
----
-
-# 36. Create Community Comment
-
-```http
-POST /api/community/posts/:id/comments
-```
-
-Access:
-
-```text
-Authenticated
-```
-
-Request:
-
-```json
-{
-  "content": "This set is useful!"
-}
-```
-
-Comment được tạo dưới Community Post tương ứng.
-
----
-
-# 37. Update Community Comment
-
-```http
-PUT /api/community/comments/:id
-```
-
-Access:
-
-```text
-Comment Owner / ADMIN
-```
-
----
-
-# 38. Delete Community Comment
-
-```http
-DELETE /api/community/comments/:id
-```
-
-Access:
-
-```text
-Comment Owner / ADMIN
-```
-
----
-
-# 39. Admin API
-
-Admin API được bảo vệ bởi:
-
-```text
-Authentication
-+
-ADMIN authorization
-```
-
-USER không được truy cập các endpoint Admin.
-
----
-
-# 40. Admin User Management
-
-## 40.1 Get Users
-
-```http
-GET /api/admin/users
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-Có thể hỗ trợ:
-
-```text
-?page=1
-&limit=20
-&search=
-&status=
-```
-
----
-
-## 40.2 Get User Detail
-
-```http
-GET /api/admin/users/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
+Response
 
 Có thể bao gồm:
 
-- Basic user information
-- Account status
-- Learning statistics
-- Gamification information
+Set information.
+Topic.
+Vocabulary count.
+Vocabulary items.
+Access information nếu cần.
+15. Personal Vocabulary Sets
+15.1 Create Set
+POST /api/vocabulary-sets
+Access
 
-Không trả password hash hoặc sensitive credentials.
+User.
 
----
-
-## 40.3 Update User Status
-
-```http
-PATCH /api/admin/users/:id/status
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-Request:
-
-```json
+Request
 {
-  "is_active": false
+  "name": "My Daily Words",
+  "description": "Words I want to learn",
+  "topic_id": 1
 }
-```
+Rules
+Set mới thuộc User hiện tại.
+Set mặc định là private.
+User không được tự chuyển Set thành public system content.
+Ownership được backend xác định từ authenticated user.
+15.2 Update Personal Set
+PATCH /api/vocabulary-sets/:setId
+Access
+
+Owner only.
+
+Backend phải kiểm tra:
+
+set.owner_id == authenticated_user.id
+15.3 Delete Personal Set
+DELETE /api/vocabulary-sets/:setId
+Access
+
+Owner only.
+
+16. Vocabulary Set Items
+16.1 Add Vocabulary to Set
+POST /api/vocabulary-sets/:setId/items
+Access
+
+Set owner.
+
+Request
+{
+  "vocabulary_id": 10
+}
+
+Backend phải kiểm tra:
+
+Set tồn tại.
+User là owner.
+Vocabulary tồn tại.
+Vocabulary chưa nằm trong Set.
+16.2 Remove Vocabulary from Set
+DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
+Access
+
+Set owner.
+
+17. Copy Vocabulary Set
+POST /api/vocabulary-sets/:setId/copy
+Access
+
+Authenticated User.
+
+Purpose
+
+Cho phép User copy một Vocabulary Set mà họ được phép truy cập.
+
+Rules
+
+Copy phải tạo:
+
+New Vocabulary Set
+    ↓
+Owned by authenticated User
+    ↓
+Private
+
+Copy là một Set độc lập.
+
+Sau khi copy:
+
+Owner của Set mới là User hiện tại.
+Set mới không phụ thuộc ownership của Set cũ.
+Thay đổi Set mới không làm thay đổi Set gốc.
+Không được mutate Set gốc.
+Operation phải đảm bảo transaction integrity.
+18. Community
+
+Community V1 chỉ bao gồm:
+
+Posts.
+Comments.
+Vocabulary Set sharing.
+
+Không bao gồm:
+
+Likes.
+Reactions.
+Followers.
+Friends.
+Direct messages.
+Chat.
+Leaderboard.
+19. Community Posts
+19.1 List Posts
+GET /api/community/posts
+Access
+
+Guest/User tùy visibility rule.
+
+19.2 Get Post
+GET /api/community/posts/:postId
+19.3 Create Post
+POST /api/community/posts
+Access
+
+User.
+
+Request
+{
+  "content": "This vocabulary set is useful for beginners.",
+  "vocabulary_set_id": 12
+}
+
+vocabulary_set_id có thể nullable.
+
+Nếu post chia sẻ Set:
+
+User phải có quyền share Set đó.
+User phải là owner của personal Set nếu Set là private.
+Không được share private Set của User khác.
+
+Sharing thông qua Community Post không làm thay đổi is_public của Vocabulary Set.
+
+19.4 Update Post
+PATCH /api/community/posts/:postId
+Access
+
+Post owner hoặc Admin theo authorization rule.
+
+19.5 Delete Post
+DELETE /api/community/posts/:postId
+Access
+
+Post owner hoặc Admin.
+
+20. Community Comments
+20.1 Create Comment
+POST /api/community/posts/:postId/comments
+Access
+
+User.
+
+Request
+{
+  "content": "Thanks for sharing!"
+}
+20.2 Update Comment
+PATCH /api/community/comments/:commentId
+Access
+
+Comment owner hoặc Admin.
+
+20.3 Delete Comment
+DELETE /api/community/comments/:commentId
+Access
+
+Comment owner hoặc Admin.
+
+21. Learning / Flashcard
+
+Flashcard là learning activity.
+
+Không phải Quiz.
+
+21.1 Start Learning Set
+GET /api/learning/sets/:setId
+Access
+
+Authenticated User.
+
+Response
+
+Có thể bao gồm:
+
+{
+  "success": true,
+  "data": {
+    "set": {
+      "id": 1,
+      "name": "Daily Life"
+    },
+    "words": []
+  }
+}
+
+Backend phải chỉ trả Vocabulary mà User được phép học.
+
+22. Learning Progress
+
+Learning Progress được lưu theo:
+
+User + Vocabulary
+
+Không tạo V1 learning history table.
+
+22.1 Progress States
+
+Progress status gồm:
+
+NEW
+LEARNING
+LEARNED
+NEEDS_REVIEW
+
+Ý nghĩa:
+
+NEW
+
+User chưa có learning progress thực tế với Vocabulary.
+
+LEARNING
+
+User đã bắt đầu học nhưng chưa đạt trạng thái learned.
+
+LEARNED
+
+User đã đạt trạng thái học thành công theo learning rules.
+
+NEEDS_REVIEW
+
+Vocabulary cần được ôn lại.
+
+23. Review Learning Item
+POST /api/learning/review
+Access
+
+Authenticated User.
+
+Request
+
+Conceptual structure:
+
+{
+  "vocabulary_id": 10,
+  "activity_type": "FLASHCARD"
+}
+
+Exact request fields có thể được điều chỉnh trong PLAN.
+
+Responsibilities
+
+Backend quyết định:
+
+Learning Progress.
+XP.
+Daily Goal progress.
+Streak.
+Achievement.
+Spaced Repetition state nếu applicable.
+
+Frontend không được tự tính các giá trị này.
+
+23.1 Important Quiz Rule
+
+Nếu activity là Quiz:
+
+POST /api/quiz/submit
+
+phải là endpoint chịu trách nhiệm xử lý learning progress/gamification của Quiz attempt.
+
+Frontend không được gọi đồng thời:
+
+POST /api/quiz/submit
+POST /api/learning/review
+
+cho cùng một Quiz attempt.
+
+Mục đích là tránh:
+
+Double XP.
+Double streak update.
+Double progress update.
+Double achievement evaluation.
+24. Spaced Repetition
+
+Spaced Repetition dùng để xác định Vocabulary cần review.
+
+Backend là source of truth.
+
+Các field và thuật toán cụ thể phụ thuộc vào Database và PLAN.
+
+Ví dụ dữ liệu có thể bao gồm:
+
+next_review_at
+interval_days
+ease_factor
+
+Không được tự ý thay đổi thuật toán hoặc field contract trong IMPLEMENT nếu chưa có PLAN/approval.
+
+25. Words to Review
+GET /api/learning/review
+Access
+
+Authenticated User.
+
+Purpose
+
+Lấy các Vocabulary đang đến hạn review.
+
+Response
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "count": 0
+  }
+}
+
+Backend quyết định Vocabulary nào thuộc nhóm:
+
+NEEDS_REVIEW
+
+và đã đến thời điểm review.
+
+26. Quiz
+
+V1 chỉ có 2 loại Quiz.
+
+VI_TO_ENGLISH
+MISSING_LETTER
+
+Không thêm Quiz type thứ ba trong V1 nếu chưa có approval.
+
+27. Quiz: Vietnamese → English
+VI_TO_ENGLISH
+
+User nhận Vietnamese meaning/context và nhập English word.
+
+Ví dụ:
+
+Công việc → ______
+28. Quiz: Missing Letter
+MISSING_LETTER
+
+User nhận từ có một hoặc nhiều ký tự bị ẩn.
+
+Ví dụ:
+
+w_rk
+
+User nhập:
+
+work
+29. Generate Quiz Question
+GET /api/quiz/questions
+
+Hoặc endpoint tương đương được quyết định trong PLAN.
+
+Access
+
+Authenticated User.
+
+Backend responsibility
+
+Backend quyết định:
+
+Vocabulary được chọn.
+Quiz type.
+Question data.
+Correct answer.
+Context cần thiết.
+
+Frontend không được lấy correct_answer từ public response nếu điều đó cho phép user gian lận.
+
+30. Submit Quiz
+POST /api/quiz/submit
+Access
+
+Authenticated User.
+
+Request
+
+Conceptual:
+
+{
+  "quiz_type": "VI_TO_ENGLISH",
+  "vocabulary_id": 10,
+  "answer": "work"
+}
+Backend responsibilities
+
+Backend xác định:
+
+Correct answer.
+is_correct.
+Quiz result.
+Learning Progress.
+XP.
+Daily Goal progress.
+Streak.
+Achievement.
+Spaced Repetition state nếu applicable.
+
+Frontend không được tự quyết định:
+
+is_correct
+xp_earned
+level
+streak
+achievement
+learning_status
+31. Quiz Character Feedback
+
+Quiz typing cần hỗ trợ feedback theo từng ký tự.
+
+Ví dụ:
+
+Expected:
+dessert
+
+User:
+deserst
+
+UI có thể hiển thị:
+
+Correct position → green.
+Incorrect position → red.
+
+Character-level comparison là presentation/result logic.
+
+Không cần V1 database table riêng để lưu từng ký tự.
+
+32. Quiz Result
+
+Quiz submit response có thể bao gồm:
+
+{
+  "success": true,
+  "data": {
+    "quiz_type": "VI_TO_ENGLISH",
+    "is_correct": true,
+    "correct_answer": "work",
+    "xp_earned": 3,
+    "total_xp": 323,
+    "level": 3,
+    "streak": 7,
+    "daily_goal": {
+      "today_xp": 33,
+      "goal_xp": 50,
+      "goal_completed": false
+    }
+  }
+}
+
+Frontend sử dụng dữ liệu này để render Result Screen.
+
+33. XP
+
+XP được backend quản lý.
+
+V1 không có XP transaction/history table.
+
+Universal XP Rules
+
+Tất cả User sử dụng cùng một XP rule.
+
+New Word
++3 XP
+Review Previously Learned Word
++1 XP
+Correct Quiz
++3 XP
+Incorrect Quiz
++0 XP
+Repeated Same Activity Without New Learning Event
++0 XP
+
+Mục đích là ngăn XP farming bằng việc:
+
+mở lại flashcard liên tục.
+click lại cùng một action.
+submit/repeat meaningless activity.
+
+Backend phải xác định activity có thực sự tạo learning event hay không.
+
+34. Daily Goal XP
+
+Daily Goal tính dựa trên:
+
+activity XP
+
+Không tính bonus XP vào việc đạt goal.
+
+Ví dụ:
+
+Goal = 50 XP
+Activity XP = 50 XP
+Bonus = 10 XP
+
+Kết quả:
+
+today_xp = 50
+goal_completed = true
+bonus_xp = 10
+total earned = 60
+
+Không dùng bonus XP để tiếp tục kích hoạt Daily Goal.
+
+35. Daily Goal Bonus
+
+Khi User đạt Daily Goal lần đầu trong ngày:
+
+bonus = 20% of Daily Goal
+
+Có:
+
+minimum = 10 XP
+maximum = 40 XP
+
+Ví dụ:
+
+Goal	Bonus
+50	10
+100	20
+150	30
+200	40
+
+Bonus chỉ được nhận một lần mỗi ngày.
+
+36. Daily Progress
+
+Daily progress được lưu theo ngày.
+
+Conceptual resource:
+
+USER_DAILY_PROGRESS
+
+Key:
+
+(user_id, date)
+36.1 Get Today's Progress
+GET /api/users/me/daily-progress
+Response
+{
+  "success": true,
+  "data": {
+    "date": "2026-09-15",
+    "activity_xp": 30,
+    "bonus_xp": 0,
+    "goal_xp": 50,
+    "goal_completed": false
+  }
+}
+
+Nếu chưa có record của ngày hiện tại:
+
+activity_xp = 0
+bonus_xp = 0
+goal_completed = false
+
+Backend không cần cron reset toàn bộ User mỗi ngày.
+
+37. Level
+
+Level được tính từ:
+
+total_xp
+
+Level không phải learning progress.
+
+Level chỉ phục vụ gamification.
+
+37.1 Level Rules
+Level bắt đầu từ 1.
+Level 2 đạt khi tổng XP đạt 50.
+XP tiếp tục tăng theo hoạt động.
+Level tăng theo threshold.
+Level tối đa là 15.
+XP không có giới hạn.
+Khi đạt Level 15:
+Level giữ nguyên 15.
+XP vẫn tiếp tục tăng.
+UI có thể hiển thị:
+Level 15 — MAX
+
+Level không tự động unlock/lock Vocabulary Set hoặc Topic trong V1.
+
+38. Level Calculation
+
+Threshold cụ thể của từng Level phải được xác định trong business configuration/PLAN.
+
+Nguyên tắc:
+
+level = highest level whose threshold <= total_xp
+
+Ví dụ:
+
+total_xp < 50
+→ Level 1
+
+total_xp >= 50
+→ Level 2
+
+Không hard-code threshold ở frontend.
+
+39. Streak
+
+Streak đo tính liên tục của learning activity.
+
+Không dựa vào login.
+
+39.1 Qualifying Activities
+
+Có thể bao gồm:
+
+Vocabulary learning.
+Flashcard learning.
+Quiz.
+Pronunciation Practice.
+Review.
+
+Dashboard/login/profile/topic viewing không được tính streak.
+
+39.2 Streak Rules
+
+Nếu User có learning activity:
+
+Yesterday + Today
+→ streak +1
+
+Nếu User đã được tính streak trong hôm nay:
+
+No additional increment
+
+Nếu User bỏ qua một hoặc nhiều ngày:
+
+Next qualifying activity
+→ streak = 1
+
+Multiple activities trong cùng một ngày chỉ tính:
+
+1 learning day
+
+V1 không có Streak Freeze.
+
+Streak không yêu cầu minimum XP threshold.
+
+40. Streak API
+40.1 Get Streak
+GET /api/users/me/streak
+Response
+{
+  "success": true,
+  "data": {
+    "current_streak": 7,
+    "longest_streak": 12,
+    "last_activity_date": "2026-09-15"
+  }
+}
+
+Streak được cập nhật bởi backend khi qualifying learning activity xảy ra.
+
+Frontend không tự tăng streak.
+
+41. Achievement
+
+Achievement được quản lý bởi backend.
+
+41.1 List Achievements
+GET /api/achievements
+Access
+
+Authenticated User.
+
+Có thể trả:
+
+Achievement definition.
+User unlocked status.
+41.2 User Achievements
+GET /api/users/me/achievements
+Response
+{
+  "success": true,
+  "data": []
+}
+42. Achievement Unlock
+
+Achievement có thể được kiểm tra sau qualifying activity.
+
+Ví dụ:
+
+Learning milestone.
+Streak milestone.
+XP milestone.
+Quiz milestone.
+
+Exact achievement list không được tự ý mở rộng trong IMPLEMENT nếu chưa có business requirement/PLAN.
+
+43. Dashboard
+
+Dashboard cần tổng hợp dữ liệu từ nhiều domain.
+
+Không nhất thiết phải tạo database table riêng cho Dashboard.
+
+43.1 Dashboard Summary
+GET /api/users/me/dashboard
+Access
+
+Authenticated User.
+
+Response
+
+Conceptual:
+
+{
+  "success": true,
+  "data": {
+    "level": 3,
+    "total_xp": 320,
+    "streak": 7,
+    "daily_goal": {
+      "goal_xp": 50,
+      "today_xp": 30,
+      "goal_completed": false
+    },
+    "continue_learning": [],
+    "topic_progress": [],
+    "words_to_review": 5
+  }
+}
+
+Dashboard API có thể aggregate:
+
+Level.
+Total XP.
+Streak.
+Daily Goal.
+Today's XP.
+Topic progress.
+Continue Learning.
+Words to Review.
+
+Implementation cụ thể được quyết định trong PLAN.
+
+44. Topic Progress
+
+Topic progress được tính từ Learning Progress.
+
+Conceptual:
+
+Topic
+ ↓
+Vocabulary Sets
+ ↓
+Vocabulary
+ ↓
+User Learning Progress
+
+Ví dụ:
+
+{
+  "topic_id": 1,
+  "topic_name": "Daily Life",
+  "learned_words": 80,
+  "total_words": 100,
+  "progress_percent": 80
+}
+
+Không cần lưu một field progress percentage riêng nếu có thể tính từ dữ liệu nguồn.
+
+Tránh duplicate derived data không cần thiết.
+
+45. Continue Learning
+
+Dashboard có thể trả các Set/Topic User đang học gần đây hoặc đang có progress.
+
+Ví dụ:
+
+{
+  "set_id": 1,
+  "set_name": "Daily Life",
+  "progress_percent": 65,
+  "learned_words": 130,
+  "total_words": 200
+}
+
+Tiêu chí lựa chọn cụ thể phải được quyết định trong PLAN.
+
+Không tự ý tạo thêm recommendation algorithm nếu chưa có requirement.
+
+46. Pronunciation
+
+Pronunciation là learning activity riêng.
+
+Không phải:
+
+Quiz Type #3
+
+V1 có:
+
+Flashcard
+    ↓
+Model Pronunciation
+    ↓
+Pronunciation Practice
+    ↓
+Quiz
+47. Model Pronunciation
+
+Flashcard cung cấp pronunciation của hệ thống.
+
+UI có speaker button:
+
+🔊
+
+Model pronunciation đọc Vocabulary đang hiển thị.
+
+Cách triển khai TTS cụ thể được quyết định trong PLAN.
+
+API không nên khóa implementation vào một vendor cụ thể nếu chưa cần.
+
+48. Pronunciation Practice
+
+Pronunciation Practice gồm:
+
+Display Word
+    ↓
+Listen Model
+    ↓
+Press Microphone
+    ↓
+Record User Voice
+    ↓
+Processing
+    ↓
+Evaluate
+    ↓
+Result / Feedback
+    ↓
+Retry
+49. Pronunciation API
+
+Conceptual endpoint:
+
+POST /api/pronunciation/evaluate
+Access
+
+Authenticated User.
+
+Request
+
+Có thể bao gồm:
+
+Vocabulary ID.
+Audio recording.
+
+Ví dụ conceptual:
+
+multipart/form-data
+
+Exact request/response contract phụ thuộc implementation được chọn trong PLAN.
+
+50. Pronunciation Evaluation
+
+Backend/system có thể trả:
+
+{
+  "success": true,
+  "data": {
+    "score": 82,
+    "is_acceptable": true,
+    "feedback": "Good pronunciation"
+  }
+}
+
+Các metric chính xác:
+
+Score.
+Threshold.
+Audio processing.
+Speech recognition.
+Pronunciation comparison.
+External service/API nếu có.
+
+được quyết định trong PLAN.
+
+Không được tự ý cam kết sử dụng AI hoặc external pronunciation service chỉ vì API tồn tại.
+
+51. Pronunciation History
+
+V1 không lưu pronunciation attempt history.
+
+Không tạo API:
+
+GET /api/pronunciation/history
+
+trừ khi feature này được phê duyệt bổ sung.
+
+52. Progress Summary
+GET /api/users/me/progress
+Access
+
+Authenticated User.
+
+Có thể trả:
+
+{
+  "success": true,
+  "data": {
+    "total_words": 200,
+    "learned_words": 120,
+    "learning_words": 40,
+    "needs_review_words": 20,
+    "new_words": 20
+  }
+}
+
+Có thể bổ sung summary theo Topic/Set nếu UI cần.
+
+Không dùng các khái niệm chưa được định nghĩa trong Database Specification như một status riêng.
+
+53. Admin - Users
+53.1 List Users
+GET /api/admin/users
+Access
+
+Admin.
+
+53.2 Get User
+GET /api/admin/users/:userId
+Access
+
+Admin.
+
+53.3 Update User
+PATCH /api/admin/users/:userId
+Access
+
+Admin.
+
+Admin không được tùy tiện chỉnh:
+
+total XP.
+learning progress.
+streak.
+
+trừ khi có administrative requirement rõ ràng.
+
+53.4 Delete / Disable User
+DELETE /api/admin/users/:userId
+
+Hoặc disable mechanism tương đương nếu được quyết định trong architecture.
+
+Behavior phải tuân Database/PLAN.
+
+54. Admin - Vocabulary
+54.1 Create Vocabulary
+POST /api/admin/vocabulary
+Access
+
+Admin.
+
+Có thể bao gồm:
+
+Word.
+Meaning.
+Part of Speech.
+Example.
+Context.
+54.2 Update Vocabulary
+PATCH /api/admin/vocabulary/:vocabularyId
+Access
+
+Admin.
+
+54.3 Delete Vocabulary
+DELETE /api/admin/vocabulary/:vocabularyId
+Access
+
+Admin.
+
+Deletion behavior với các Set/Progress liên quan phải tuân Database/PLAN.
+
+55. Admin - Vocabulary Sets
+55.1 Create System Set
+POST /api/admin/vocabulary-sets
+Access
+
+Admin.
+
+System Set được Admin quản lý.
+
+55.2 Update System Set
+PATCH /api/admin/vocabulary-sets/:setId
+Access
+
+Admin.
+
+55.3 Delete System Set
+DELETE /api/admin/vocabulary-sets/:setId
+Access
+
+Admin.
+
+56. Admin - Achievements
+
+Admin có thể quản lý system Achievement definitions.
+
+Conceptual endpoints:
+
+POST   /api/admin/achievements
+PATCH  /api/admin/achievements/:id
+DELETE /api/admin/achievements/:id
+
+Exact fields phụ thuộc Database/PLAN.
+
+57. Admin - Community Moderation
+
+Admin có thể xem/xử lý Community content khi cần.
+
+Conceptual endpoints:
+
+GET    /api/admin/community/posts
+DELETE /api/admin/community/posts/:postId
+DELETE /api/admin/community/comments/:commentId
 
 Mục đích:
 
-```text
-Activate
-Deactivate
-```
+Remove inappropriate content.
+Maintain system integrity.
 
-Admin không được thông qua endpoint này để tự ý thay đổi:
+V1 không xây dựng hệ thống moderation phức tạp nếu chưa có requirement.
 
-```text
-total_xp
-level
-password_hash
-```
+58. Authorization Rules
 
----
+Backend phải enforce authorization.
 
-# 41. Admin Vocabulary Set API
+User-owned resource
 
-## 41.1 Create System Vocabulary Set
+User chỉ được sửa/xóa resource mà mình sở hữu.
 
-```http
-POST /api/admin/vocabulary-sets
-```
+Ví dụ:
 
-Access:
+Vocabulary Set
+Community Post
+Community Comment
+Admin resource
 
-```text
-ADMIN
-```
+Admin API yêu cầu:
 
-System set phải:
+authenticated
++
+role = ADMIN
+Public resource
 
-```text
-is_public = true
-```
+Guest chỉ được truy cập resource được xác định là public.
 
-và được xem là set do Admin quản lý.
+59. Ownership Rules
 
----
+Backend không tin:
 
-## 41.2 Update System Vocabulary Set
-
-```http
-PUT /api/admin/vocabulary-sets/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
-
----
-
-## 41.3 Delete System Vocabulary Set
-
-```http
-DELETE /api/admin/vocabulary-sets/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
-
----
-
-# 42. Admin Achievement API
-
-## 42.1 Get Achievements
-
-```http
-GET /api/admin/achievements
-```
-
-Access:
-
-```text
-ADMIN
-```
-
----
-
-## 42.2 Create Achievement
-
-```http
-POST /api/admin/achievements
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-Request concept:
-
-```json
 {
-  "name": "First Step",
-  "description": "Complete your first learning activity.",
-  "icon_url": "...",
-  "condition_type": "LEARNING_COUNT",
-  "condition_value": 1
+  "owner_id": 123
 }
-```
 
----
+từ frontend để xác định ownership.
 
-## 42.3 Update Achievement
+Owner phải được lấy từ authenticated identity.
 
-```http
-PUT /api/admin/achievements/:id
-```
+Ví dụ:
 
-Access:
+authenticated_user.id
+60. Visibility Rules
 
-```text
-ADMIN
-```
+System Vocabulary Set:
 
----
+Public
 
-## 42.4 Delete Achievement
+Personal User Set:
 
-```http
-DELETE /api/admin/achievements/:id
-```
+Private by default
 
-Access:
+User không có quyền trực tiếp biến personal Set thành public system Set.
 
-```text
-ADMIN
-```
+Community sharing:
 
----
+Personal Set
+    ↓
+Community Post
+    ↓
+Other User
+    ↓
+Copy Set
 
-# 43. Admin Community Moderation
+Copy tạo Set mới độc lập.
 
-## 43.1 Delete Community Post
+61. Backend Source of Truth
 
-```http
-DELETE /api/admin/community/posts/:id
-```
+Các giá trị sau phải được backend xác định:
 
-Access:
-
-```text
-ADMIN
-```
-
-Admin có thể xóa Community Post vi phạm quy định hệ thống.
-
----
-
-## 43.2 Delete Community Comment
-
-```http
-DELETE /api/admin/community/comments/:id
-```
-
-Access:
-
-```text
-ADMIN
-```
-
-Admin có thể xóa comment vi phạm quy định hệ thống.
-
----
-
-# 44. API Permission Matrix
-
-| Domain                           | USER | ADMIN |
-| -------------------------------- | ---: | ----: |
-| Register/Login                   |    ✓ |     ✓ |
-| Own Profile                      |    ✓ |     ✓ |
-| Vocabulary Read                  |    ✓ |     ✓ |
-| Vocabulary Create/Update/Delete  |    ✗ |     ✓ |
-| Own Vocabulary Set               |    ✓ |     ✓ |
-| Other Private Set                |    ✗ |   ✓\* |
-| System Set                       |    ✓ |     ✓ |
-| Copy Shared Set                  |    ✓ |     ✓ |
-| Learning                         |    ✓ |     ✓ |
-| Quiz                             |    ✓ |     ✓ |
-| Pronunciation                    |    ✓ |     ✓ |
-| Own Progress                     |    ✓ |     ✓ |
-| Other User Progress              |    ✗ |   ✓\* |
-| Streak                           |    ✓ |     ✓ |
-| Achievement                      |    ✓ |     ✓ |
-| Community Post                   |    ✓ |     ✓ |
-| Community Comment                |    ✓ |     ✓ |
-| User Management                  |    ✗ |     ✓ |
-| System Vocabulary Set Management |    ✗ |     ✓ |
-| Achievement Management           |    ✗ |     ✓ |
-| Community Moderation             |    ✗ |     ✓ |
-
-`*` Admin access depends on the management policy of the corresponding feature.
-
----
-
-# 45. Backend Source of Truth
-
-Backend là source of truth cho các dữ liệu sau:
-
-```text
 correct_answer
 is_correct
-score
-XP
-Level
-Streak
-Achievement
-Learning Progress
-Spaced Repetition
-Ownership
-Visibility
-Authorization
-```
+learning_status
+learning_progress
+xp_earned
+total_xp
+level
+streak
+daily_goal_progress
+daily_goal_bonus
+achievement unlock
+spaced repetition state
+ownership
+visibility
+authorization
 
-Frontend không được tự quyết định authoritative values.
+Frontend chỉ hiển thị hoặc gửi input cần thiết.
 
-Ví dụ không được làm:
+62. Validation
 
-```text
-User submits quiz
-↓
-Frontend tự tính XP = 100
-↓
-Frontend gửi XP = 100
-↓
-Backend lưu trực tiếp
-```
+Backend phải validate:
 
-Thay vào đó:
-
-```text
-User submits answer
-↓
-Backend validates
-↓
-Backend calculates result
-↓
-Backend calculates XP
-↓
-Backend updates database
-↓
-Backend returns result
-```
-
----
-
-# 46. Ownership Rules
-
-Backend phải enforce ownership.
+Required fields.
+Data types.
+String length.
+Numeric range.
+Enum values.
+Resource existence.
+Ownership.
+Authorization.
+Duplicate relationships.
+Invalid IDs.
+Invalid quiz type.
+Invalid learning activity.
+Daily Goal range.
 
 Ví dụ:
 
-```text
-User A
-└── Set A
-```
+daily_xp_goal < 50
+→ 400 Bad Request
+quiz_type = UNKNOWN
+→ 400 Bad Request
+63. Error Response
 
-User B không thể:
+API sử dụng format thống nhất.
 
-```http
-PUT /api/vocabulary-sets/set-a
-```
+Ví dụ:
 
-để sửa Set A.
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid request data",
+    "details": {}
+  }
+}
+64. HTTP Status Codes
 
-Backend phải trả:
+Có thể sử dụng:
 
-```http
+200 OK
+201 Created
+204 No Content
+400 Bad Request
+401 Unauthorized
 403 Forbidden
-```
+404 Not Found
+409 Conflict
+422 Unprocessable Entity
+500 Internal Server Error
 
-hoặc status phù hợp theo implementation.
+Chỉ sử dụng status code phù hợp với semantic của operation.
 
-Ownership không được kiểm tra chỉ ở Frontend.
+65. Pagination
 
----
-
-# 47. Vocabulary Set Visibility Rules
-
-Rules:
-
-```text
-Admin-created System Set
-→ Public
-
-User-created Set
-→ Private by default
-```
-
-User không được trực tiếp chuyển:
-
-```text
-Private → Public
-```
-
-thông qua `PUT /api/vocabulary-sets/:id`.
-
-Muốn chia sẻ:
-
-```text
-Private Vocabulary Set
-        ↓
-Community Post
-        ↓
-Other User
-        ↓
-Copy
-        ↓
-New Private Vocabulary Set
-```
-
-Community sharing không làm thay đổi `is_public` của original set.
-
----
-
-# 48. Transaction Requirements
-
-Các operation có nhiều bước database phải sử dụng transaction khi cần.
+Các endpoint trả danh sách lớn nên hỗ trợ pagination.
 
 Ví dụ:
 
-```text
-Copy Vocabulary Set
-```
-
-Flow:
-
-```text
-BEGIN TRANSACTION
-
-Create new set
-        ↓
-Copy set items
-        ↓
-COMMIT
-```
-
-Nếu một bước thất bại:
-
-```text
-ROLLBACK
-```
-
-Không để database rơi vào trạng thái copy không hoàn chỉnh.
-
----
-
-# 49. External Services
-
-External services có thể được sử dụng cho:
-
-```text
-Pronunciation Audio
-Speech Recognition
-Pronunciation Evaluation
-AI-assisted Learning
-```
-
-External service phải được gọi từ Backend.
-
-Frontend không được chứa secret key của external service.
-
-Ví dụ:
-
-```text
-Frontend
-   ↓
-Backend
-   ↓
-External Service
-```
-
-Không:
-
-```text
-Frontend
-   ↓
-External Service
-   ↓
-Secret API Key exposed
-```
-
-AI là optional.
-
-AI không được trở thành dependency bắt buộc của hệ thống nếu chưa có quyết định thay đổi scope.
-
----
-
-# 50. API Security Principles
-
-Backend phải:
-
-- Validate mọi input.
-- Hash password.
-- Protect authenticated endpoints.
-- Enforce role authorization.
-- Enforce ownership.
-- Không expose secrets.
-- Không trả password hash.
-- Không trust client-side authorization.
-- Không trust client-provided XP.
-- Không trust client-provided correct answer.
-- Không trust client-provided score.
-- Không log sensitive information.
-- Sử dụng HTTPS trong production.
-- Sử dụng environment variables cho secrets.
-
----
-
-# 51. Pagination
-
-Các API trả danh sách lớn nên hỗ trợ pagination.
-
-Ví dụ:
-
-```http
-GET /api/vocabulary?page=1&limit=20
-```
+GET /api/vocabulary-sets?page=1&limit=20
 
 Response:
 
-```json
 {
   "success": true,
   "data": [],
-  "meta": {
+  "pagination": {
     "page": 1,
     "limit": 20,
-    "total": 100
+    "total": 100,
+    "total_pages": 5
   }
 }
-```
 
-Exact pagination strategy có thể được quyết định trong implementation.
+Exact pagination implementation được quyết định trong PLAN.
 
-Không cần ép pagination cho endpoint có dữ liệu nhỏ.
+66. Security Requirements
 
----
+API phải đảm bảo:
 
-# 52. Filtering and Search
+Password không được trả về response.
+Password phải được hash.
+Authentication phải được kiểm tra ở backend.
+Authorization phải được kiểm tra ở backend.
+User không được tự thay đổi role.
+User không được tự tăng XP.
+User không được tự gửi is_correct=true.
+User không được tự gửi xp_earned.
+User không được truy cập private resource của User khác.
+Admin endpoint phải được bảo vệ.
+Input phải được validate.
+Database query phải tránh injection.
+Sensitive error details không được trả về production response.
+67. Transaction Requirements
 
-Các list API có thể hỗ trợ filtering/search khi cần.
+Các operation liên quan nhiều bảng phải đảm bảo transaction integrity khi cần.
 
-Ví dụ:
+Đặc biệt:
 
-```text
-Vocabulary
-- search
-- difficulty_level
+Copy Vocabulary Set
+Create Set
++
+Copy Set Items
 
-Community
-- page
-- limit
+phải thành công đồng bộ.
 
-Admin Users
-- search
-- status
-```
+Nếu operation thất bại giữa chừng:
 
-Không thêm filter chỉ để làm API phức tạp hơn nếu UI/business requirement không cần.
+Rollback
+Learning Activity
 
----
+Một learning activity có thể đồng thời cập nhật:
 
-# 53. API Naming Rules
-
-Endpoint sử dụng:
-
-- Noun-based resource names.
-- HTTP method để biểu diễn action cơ bản.
-- kebab-case cho multi-word resources.
-
-Ví dụ:
-
-```text
-/api/vocabulary
-/api/vocabulary-sets
-/api/community/posts
-/api/community/comments
-```
-
-Tránh:
-
-```text
-/api/getVocabulary
-/api/createVocabulary
-/api/deleteVocabulary
-```
-
----
-
-# 54. HTTP Method Rules
-
-Sử dụng:
-
-```text
-GET
-```
-
-cho read.
-
-```text
-POST
-```
-
-cho create hoặc command/action cần xử lý.
-
-```text
-PUT
-```
-
-cho update resource.
-
-```text
-PATCH
-```
-
-cho partial update.
-
-```text
-DELETE
-```
-
-cho delete.
-
-Ví dụ:
-
-```text
-POST /api/quiz/submit
-POST /api/vocabulary-sets/:id/copy
-```
-
-là action endpoints hợp lệ vì chúng thực hiện business operation.
-
----
-
-# 55. API and Database Relationship
-
-API không được phá vỡ database rules.
-
-Ví dụ:
-
-```text
-API
-POST /api/vocabulary-sets/:id/items
-```
-
-phải tuân thủ:
-
-```text
-VOCABULARY_SET_ITEM
-UNIQUE(vocabulary_set_id, vocabulary_id)
-```
-
-API:
-
-```text
-POST /api/quiz/submit
-```
-
-phải tạo dữ liệu phù hợp với:
-
-```text
-QUIZ_ATTEMPT
-```
-
-API:
-
-```text
-POST /api/learning/review
-```
-
-phải cập nhật:
-
-```text
-LEARNING_PROGRESS
-```
-
-theo business rules.
-
----
-
-# 56. API and Architecture Relationship
-
-API flow:
-
-```text
-Request
-   ↓
-Route
-   ↓
-Middleware
-   ↓
-Controller
-   ↓
-Service
-   ↓
-Repository / Data Access
-   ↓
-Prisma
-   ↓
-PostgreSQL
-```
-
-Không được:
-
-```text
-Route
-  ↓
-Huge Business Logic
-```
-
-Không được:
-
-```text
-Controller
-  ↓
-Complex Prisma Queries + Business Logic
-```
-
-Không được:
-
-```text
-Frontend
-  ↓
-PostgreSQL
-```
-
-Business logic nên nằm trong Service Layer.
-
----
-
-# 57. Business Logic Examples
-
-## Quiz
-
-```text
-POST /api/quiz/submit
-        ↓
-QuizController
-        ↓
-QuizService
-        ↓
-Check Answer
-        ↓
-Calculate Score
-        ↓
-Save Quiz Attempt
-        ↓
-Update Learning Progress
-        ↓
-Spaced Repetition
-        ↓
+Learning Progress
+Daily Progress
 XP
-        ↓
 Streak
-        ↓
 Achievement
-        ↓
-Response
-```
-
----
-
-## Learning Review
-
-```text
-POST /api/learning/review
-        ↓
-LearningController
-        ↓
-LearningService
-        ↓
-Update Progress
-        ↓
 Spaced Repetition
-        ↓
-XP
-        ↓
-Streak
-        ↓
-Achievement
-```
 
----
+Nếu implementation yêu cầu atomic behavior, các thay đổi liên quan phải được xử lý transactionally.
 
-## Vocabulary Set Copy
+Exact transaction boundary được xác định trong PLAN.
 
-```text
-POST /api/vocabulary-sets/:id/copy
-        ↓
-VocabularySetController
-        ↓
-VocabularySetService
-        ↓
-Check Permission
-        ↓
-Transaction
-        ↓
-Create New Set
-        ↓
-Copy Items
-        ↓
-Commit
-```
+68. API Idempotency / Duplicate Activity
 
----
+Backend phải tránh việc cùng một meaningful activity bị xử lý nhiều lần ngoài ý muốn.
 
-# 58. Testing Requirements
+Đặc biệt cần xem xét:
 
-API cần được test đối với các business-critical flows.
+Double submit.
+Retry request.
+Network retry.
+Repeated quiz submission.
+Repeated learning review.
 
-Tối thiểu nên test:
+Mục tiêu:
 
-## Authentication
+Không double XP
+Không double streak
+Không double achievement
+Không tạo duplicate progress
 
-- Register
-- Duplicate email
-- Login success
-- Login failure
-- Protected endpoint
+Cơ chế kỹ thuật cụ thể được quyết định trong PLAN.
 
-## Authorization
+69. API and Database Consistency
 
-- USER accessing ADMIN endpoint
-- Ownership violation
-- Unauthorized resource access
+Mọi API liên quan đến database phải tuân theo:
 
-## Vocabulary
+DATABASE.md
 
-- Get vocabulary
-- Get vocabulary detail
-- Admin create/update/delete
+Không được:
 
-## Vocabulary Set
+sử dụng field không tồn tại.
+tạo relationship ngoài specification.
+tự thêm table.
+tự thêm status.
+tự thêm enum.
+tự thay đổi ownership model.
 
-- Create private set
-- Update own set
-- Cannot edit another user's set
-- Add item
-- Remove item
-- Copy set
-- Copy creates independent private set
+Nếu implementation phát hiện Database Specification chưa đủ:
 
-## Learning
+STOP
+→ REPORT
+→ PLAN / DATABASE UPDATE
+→ APPROVAL
+→ IMPLEMENT
+70. Out of Scope - V1
 
-- Submit review
-- Progress update
-- Spaced repetition update
+Các API sau không thuộc V1 nếu chưa được phê duyệt:
 
-## Quiz
-
-- Correct answer
-- Incorrect answer
-- Invalid quiz type
-- Score calculation
-- Per-character feedback
-- Quiz attempt persistence
-
-## Gamification
-
-- XP
-- Level
-- Streak
-- Achievement
-
-## Community
-
-- Create post
-- Edit own post
-- Cannot edit another user's post
-- Comment
-- Admin moderation
-- Vocabulary set sharing
-
----
-
-# 59. OpenAPI / Swagger
-
-Có thể sử dụng OpenAPI/Swagger để document API.
-
-Ví dụ:
-
-```text
-/api-docs
-```
-
-Tuy nhiên việc sử dụng Swagger UI không phải business requirement.
-
-Nếu triển khai:
-
-- Specification phải đồng bộ với API thực tế.
-- Không tạo documentation sai với implementation.
-- API_SPEC.md vẫn là project-level contract.
-
----
-
-# 60. Environment Configuration
-
-API URL phải được cấu hình thông qua environment variables.
-
-Frontend:
-
-```text
-VITE_API_URL
-```
-
-Backend:
-
-```text
-DATABASE_URL
-```
-
-và các external service keys nếu cần.
-
-Không commit:
-
-```text
-.env
-```
-
-chứa secret thật lên GitHub.
-
-Nên có:
-
-```text
-.env.example
-```
-
----
-
-# 61. API Logging
-
-Backend có thể log:
-
-- Request method
-- Endpoint
-- Status code
-- Response time
-- Error code
-
-Không log:
-
-- Password
-- Password hash
-- Access token
-- External API secret
-- Sensitive user information
-
----
-
-# 62. Rate Limiting
-
-Rate limiting có thể được áp dụng cho các endpoint nhạy cảm như:
-
-```text
-Login
-Register
-Quiz submit
-Pronunciation evaluation
-```
-
-Chỉ triển khai khi cần thiết.
-
-Không thêm infrastructure phức tạp nếu không cần cho v1.
-
----
-
-# 63. API Performance
-
-API nên:
-
-- Query database hiệu quả.
-- Sử dụng pagination khi cần.
-- Tránh N+1 queries.
-- Chỉ select dữ liệu cần thiết.
-- Sử dụng indexes phù hợp với `DATABASE.md`.
-- Không thực hiện external API calls không cần thiết.
-
-Performance optimization không được làm thay đổi business behavior.
-
----
-
-# 64. API Out of Scope
-
-Các API sau không thuộc phạm vi v1:
-
-```text
 Likes
 Reactions
 Followers
@@ -2628,132 +1751,172 @@ Chat
 Leaderboard
 Payment
 Subscription
-Premium tiers
+Free/Premium tier
 XP transaction history
 Learning history
 Pronunciation attempt history
 Download history
 Third quiz type
-Mandatory AI
-```
+Streak Freeze
+AI tutor
+Mandatory AI integration
 
-Không tự ý tạo endpoint cho các feature trên.
+AI có thể được xem xét như enhancement riêng, nhưng không phải dependency bắt buộc của core system.
 
----
+71. API Endpoint Inventory
+Authentication
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/logout
+GET    /api/auth/me
+User
+GET    /api/users/me
+PATCH  /api/users/me
 
-# 65. Architecture Change Rules
+GET    /api/users/me/daily-goal
+PATCH  /api/users/me/daily-goal
 
-Không tự ý thay đổi:
+GET    /api/users/me/daily-progress
+GET    /api/users/me/streak
+GET    /api/users/me/achievements
+GET    /api/users/me/progress
+GET    /api/users/me/dashboard
+Topic
+GET    /api/topics
+GET    /api/topics/:topicId
 
-- Authentication architecture.
-- API architecture.
-- Database architecture.
-- Role model.
-- Vocabulary Set ownership rules.
-- Vocabulary Set visibility rules.
-- Quiz types.
-- Pronunciation architecture.
-- AI dependency.
-- Deployment architecture.
+POST   /api/admin/topics
+PATCH  /api/admin/topics/:topicId
+DELETE /api/admin/topics/:topicId
+Vocabulary
+GET    /api/vocabulary/:vocabularyId
 
-Nếu implementation phát sinh vấn đề:
+POST   /api/admin/vocabulary
+PATCH  /api/admin/vocabulary/:vocabularyId
+DELETE /api/admin/vocabulary/:vocabularyId
+Vocabulary Set
+GET    /api/vocabulary-sets
+GET    /api/vocabulary-sets/:setId
 
-```text
-Identify problem
-        ↓
-Explain impact
-        ↓
-Propose solution
-        ↓
-Explain trade-offs
-        ↓
-Wait for approval if architectural change is required
-        ↓
-Update documentation
-        ↓
-Implement
-```
+POST   /api/vocabulary-sets
+PATCH  /api/vocabulary-sets/:setId
+DELETE /api/vocabulary-sets/:setId
 
----
+POST   /api/vocabulary-sets/:setId/items
+DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
 
-# 66. Source of Truth
+POST   /api/vocabulary-sets/:setId/copy
 
-Khi làm việc với API, AI Agent phải tham khảo:
+POST   /api/admin/vocabulary-sets
+PATCH  /api/admin/vocabulary-sets/:setId
+DELETE /api/admin/vocabulary-sets/:setId
+Learning
+GET    /api/learning/sets/:setId
+POST   /api/learning/review
+GET    /api/learning/review
+Quiz
+GET    /api/quiz/questions
+POST   /api/quiz/submit
+Pronunciation
+POST   /api/pronunciation/evaluate
+Achievement
+GET    /api/achievements
 
-```text
-PROJECT_OVERVIEW.md
-        ↓
-ARCHITECTURE.md
-        ↓
-DATABASE.md
-        ↓
-API_SPEC.md
-```
+POST   /api/admin/achievements
+PATCH  /api/admin/achievements/:id
+DELETE /api/admin/achievements/:id
+Community
+GET    /api/community/posts
+GET    /api/community/posts/:postId
+POST   /api/community/posts
+PATCH  /api/community/posts/:postId
+DELETE /api/community/posts/:postId
 
-Trong đó:
+POST   /api/community/posts/:postId/comments
+PATCH  /api/community/comments/:commentId
+DELETE /api/community/comments/:commentId
+Admin
+GET    /api/admin/users
+GET    /api/admin/users/:userId
+PATCH  /api/admin/users/:userId
+DELETE /api/admin/users/:userId
 
-```text
-PROJECT_OVERVIEW.md
-→ Business scope
+GET    /api/admin/community/posts
+DELETE /api/admin/community/posts/:postId
+DELETE /api/admin/community/comments/:commentId
+72. API Development Rules
 
-ARCHITECTURE.md
-→ System architecture
+Khi triển khai API:
 
-DATABASE.md
-→ Data model
+Đọc AGENTS.md.
+Đọc requirement liên quan.
+Kiểm tra DATABASE.md.
+Kiểm tra API_SPEC.md.
+Kiểm tra implementation hiện tại.
+Xác định reuse/extend/create.
+Không tự ý thay đổi contract.
+Không tự ý thêm endpoint.
+Không tự ý thêm field.
+Không tự ý thêm business rule.
+Nếu cần thay đổi contract:
+cập nhật SPEC/PLAN trước.
+xin approval.
+Sau implementation phải TEST.
+Sau TEST phải REVIEW.
+Chỉ đánh dấu feature DONE sau khi REVIEW đạt APPROVE.
+73. Definition of Done for API
 
-API_SPEC.md
-→ Frontend ↔ Backend contract
-```
+API feature chỉ được xem là hoàn thành khi:
 
-Nếu phát hiện conflict:
+Endpoint đúng API contract.
+Request validation hoạt động.
+Response đúng contract.
+Authentication đúng.
+Authorization đúng.
+Ownership check đúng.
+Business rules đúng.
+Database interaction đúng.
+Error handling đúng.
+Edge cases được kiểm tra.
+Không double XP hoặc double streak.
+Không làm hỏng API hiện có.
+Tests phù hợp đã PASS.
+Documentation được đồng bộ.
+REVIEW đạt APPROVE.
+74. Final Principle
 
-```text
-Không tự đoán.
-Không tự sửa.
-Không âm thầm thay đổi.
-```
+API của hệ thống phải ưu tiên:
 
-AI Agent phải thông báo conflict và đề xuất cách xử lý.
-
----
-
-# 67. Final Principles
-
-API của hệ thống phải tuân theo:
-
-```text
-Simple
+Correctness
     ↓
-Clear
+Security
     ↓
-Consistent
+Business Rule Consistency
     ↓
-Secure
+Maintainability
     ↓
-Testable
-    ↓
-Maintainable
-```
+Simplicity
 
-Các nguyên tắc quan trọng:
+Không over-engineer API khi requirement chưa cần.
 
-1. Backend là source of truth.
-2. Frontend không truy cập Database trực tiếp.
-3. Business logic nằm ở Backend Service Layer.
-4. Authorization phải được enforce ở Backend.
-5. Ownership phải được kiểm tra ở Backend.
-6. Client không được tự quyết định XP, Level, Streak, Score hoặc Correct Answer.
-7. Chỉ có 2 quiz types.
-8. Pronunciation là module riêng.
-9. Vocabulary Set copy phải tạo resource mới.
-10. AI là optional.
-11. Không tạo API cho feature ngoài scope.
-12. Không over-engineer API.
-13. API phải đồng bộ với Database và Architecture.
-14. Mọi thay đổi lớn phải được xem xét và cập nhật documentation.
-15. Ưu tiên:
+Không thêm feature chỉ vì technically có thể làm được.
 
-```text
-Simple → Clear → Maintainable → Testable → Scalable when necessary
-```
+Nếu một quyết định ảnh hưởng đến:
+
+Database.
+API contract.
+Business rule.
+Authorization.
+Core learning flow.
+
+thì phải được đưa qua:
+
+SPEC
+→ PLAN
+→ APPROVAL
+→ TASK
+→ IMPLEMENT
+→ TEST
+→ REVIEW
+
+trước khi thay đổi implementation.

@@ -6,12 +6,12 @@ This document records the current implementation status of project features.
 
 It is used to help the AI Agent and project developer understand:
 
-* Which features are planned.
-* Which features are currently being implemented.
-* Which features have been implemented.
-* Which features have been tested.
-* Which features have passed final review.
-* Which features are completed and should be reused instead of rebuilt.
+- Which features are planned.
+- Which features are currently being implemented.
+- Which features have been implemented.
+- Which features have been tested.
+- Which features have passed final review.
+- Which features are completed and should be reused instead of rebuilt.
 
 This document describes **feature status only**.
 
@@ -22,15 +22,11 @@ docs/PROJECT_OVERVIEW.md
 docs/ARCHITECTURE.md
 docs/DATABASE.md
 docs/API_SPEC.md
-```
-
----
-
-# 2. Status Definitions
+docs/UI_UX_SPEC.md
+2. Status Definitions
 
 Use the following statuses:
 
-```text
 TODO
 PLANNED
 IN_PROGRESS
@@ -38,63 +34,35 @@ IMPLEMENTED
 TESTED
 DONE
 BLOCKED
-```
-
-## TODO
+TODO
 
 The feature is part of the approved project scope but development has not started.
 
-```text
 TODO
-```
-
----
-
-## PLANNED
+PLANNED
 
 The feature has an approved SPEC and/or PLAN but implementation has not started.
 
-```text
 PLANNED
-```
-
----
-
-## IN_PROGRESS
+IN_PROGRESS
 
 The feature is currently being implemented.
 
-```text
 IN_PROGRESS
-```
-
----
-
-## IMPLEMENTED
+IMPLEMENTED
 
 The planned implementation has been completed, but testing and/or final review is not yet complete.
 
-```text
 IMPLEMENTED
-```
-
----
-
-## TESTED
+TESTED
 
 The implementation has passed the relevant testing stage, but final review has not yet been approved.
 
-```text
 TESTED
-```
+DONE
 
----
+The feature has completed:
 
-## DONE
-
-The feature has:
-
-```text
 SPEC
 ↓
 PLAN
@@ -108,51 +76,36 @@ TEST
 REVIEW
 ↓
 APPROVE
-```
 
 and is considered complete for the current project scope.
 
-```text
 DONE
-```
 
-A feature must not be marked `DONE` merely because code exists.
+A feature must not be marked DONE merely because code exists.
 
----
-
-## BLOCKED
+BLOCKED
 
 Development cannot continue because of:
 
-* unresolved requirement
-* architecture conflict
-* unavailable dependency
-* external service problem
-* environment problem
-* unresolved technical issue
-* pending approval
-
-```text
+unresolved requirement
+architecture conflict
+unavailable dependency
+external service problem
+environment problem
+unresolved technical issue
+pending approval
 BLOCKED
-```
-
----
-
-# 3. Important Rules
-
-## 3.1 DONE Does Not Mean Rebuild
+3. Important Rules
+3.1 DONE Does Not Mean Rebuild
 
 If a feature is marked:
 
-```text
 DONE
-```
 
 AI Agent must not rebuild the feature from scratch.
 
 Instead:
 
-```text
 Read FEATURE_STATUS.md
         ↓
 Identify existing implementation
@@ -162,171 +115,343 @@ Inspect actual code
 Reuse existing implementation
         ↓
 Modify / extend / fix when required
-```
-
----
-
-## 3.2 Status Must Reflect Reality
+3.2 Status Must Reflect Reality
 
 The status must represent the actual state of the project.
 
 Do not mark a feature as:
 
-```text
 DONE
-```
 
 when:
 
-* implementation is incomplete
-* tests are failing
-* required behavior is missing
-* review has not been completed
-* important acceptance criteria are not satisfied
+implementation is incomplete
+tests are failing
+required behavior is missing
+review has not been completed
+important acceptance criteria are not satisfied
+3.3 Code Is the Final Evidence
 
----
-
-## 3.3 Code Is the Final Evidence
-
-`FEATURE_STATUS.md` is a project tracking document.
+FEATURE_STATUS.md is a project tracking document.
 
 It must not be treated as proof that implementation exists.
 
 When a feature is marked:
 
-```text
 IMPLEMENTED
 TESTED
 DONE
-```
 
 AI Agent should inspect the actual implementation and relevant tests when working on that feature.
 
 If the status conflicts with the actual code:
 
-```text
 Actual Code
     ↓
 Investigate
     ↓
 Update FEATURE_STATUS.md
-```
 
 Do not blindly trust an outdated status.
 
----
+4. Feature Status
 
-# 4. Feature Status
+All features are initially marked TODO.
 
-## 4.1 Authentication & User Management
+4.1 Authentication & User Management
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+User Registration	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Login	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Authentication	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Authorization	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Profile Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Daily Goal Settings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Admin Access	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-| Feature             | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| User Registration   | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| User Login          | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| User Authentication | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| User Authorization  | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Admin Access        | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+The system has two authenticated roles:
 
----
+USER
+ADMIN
 
-# 4.2 Vocabulary
+Guest users are unauthenticated visitors and are not treated as an authenticated role.
 
-| Feature                      | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ---------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Vocabulary Management        | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Multiple Meanings | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Context / Example | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Search            | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+4.2 Topics
 
----
+Topics organize vocabulary sets.
 
-# 4.3 Vocabulary Sets
+Conceptual hierarchy:
 
-| Feature                     | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| --------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| System Vocabulary Set       | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| User-Created Vocabulary Set | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Set Ownership    | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Set Visibility   | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Edit Own Vocabulary Set     | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Delete Own Vocabulary Set   | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Copy Vocabulary Set         | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Topic
+  ↓
+Vocabulary Set
+  ↓
+Vocabulary
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Listing	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic-based Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
----
+Topic behavior and data rules are defined in the project documentation.
 
-# 4.4 Learning
+4.3 Vocabulary
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Multiple Meanings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Context / Example	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Search	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Pronunciation Information	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-| Feature                     | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| --------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Vocabulary Learning Session | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Flashcard Learning          | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Learning Progress           | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Spaced Repetition           | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Vocabulary may have multiple meanings depending on context.
 
----
+Vocabulary pronunciation information may include model pronunciation information such as phonetic information and pronunciation audio.
 
-# 4.5 Quiz
+4.4 Vocabulary Sets
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+System Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User-Created Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Ownership	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Visibility	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Edit Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Delete Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Copy Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-| Feature                   | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Vietnamese → English Quiz | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Missing Letter Quiz       | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Per-Character Feedback    | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Quiz Result               | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+System vocabulary sets are created and managed by Admin.
+
+User-created vocabulary sets are private by default.
+
+Users cannot directly change their own vocabulary set to public.
+
+Users can share their own vocabulary sets through Community.
+
+A copied vocabulary set becomes a new private set owned by the user who copied it.
+
+4.5 Learning
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Vocabulary Learning Session	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Flashcard Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Spaced Repetition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Continue Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+
+Learning Progress represents the current learning state of a user for individual vocabulary.
+
+Conceptual learning states include:
+
+NEW
+↓
+LEARNING
+↓
+LEARNED
+↓
+NEEDS_REVIEW
+
+The exact Spaced Repetition algorithm will be determined during PLAN and must not be invented during implementation.
+
+4.6 Dashboard
+
+The Dashboard provides a summary of the user's current learning state and activity.
+
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+User Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+XP Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Level Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Streak Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Continue Learning Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+
+Dashboard data should be derived from the user's actual learning and gamification state.
+
+The Dashboard must not become a separate source of truth for business data.
+
+4.7 Quiz
+
+The system currently supports exactly two quiz types:
+
+1. Vietnamese → English
+2. Missing Letter
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Vietnamese → English Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Missing Letter Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Per-Character Feedback	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Quiz Result	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+
+For typing-based quizzes, per-character feedback may indicate:
+
+Correct position → Green
+Incorrect position → Red
+
+Quiz correctness must be determined by the Backend.
 
 Only the approved quiz types should be implemented.
 
 Do not add additional quiz types without explicit scope approval.
 
----
+4.8 Pronunciation
 
-# 4.6 Pronunciation
+Pronunciation is a learning module and is not considered a quiz type.
 
-| Feature                        | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ------------------------------ | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Vocabulary Pronunciation Audio | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Speech Recognition             | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Pronunciation Evaluation       | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Model Pronunciation Audio	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Pronunciation Practice	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Speech Recognition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Pronunciation Evaluation	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-Pronunciation is a learning module.
+Conceptual flow:
 
-It must not automatically become a new quiz type.
+Flashcard
+   ↓
+Model Pronunciation
+   ↓
+Pronunciation Practice
+   ↓
+User Speaks
+   ↓
+Speech Recognition
+   ↓
+Pronunciation Evaluation
+   ↓
+Result / Feedback
+   ↓
+Retry
 
----
+The exact pronunciation evaluation technology/provider is not fixed yet.
 
-# 4.7 Gamification
+It must be determined during PLAN.
 
-| Feature     | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ----------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| XP          | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Level       | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Streak      | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Achievement | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Pronunciation attempt history is not a required v1 feature.
 
-Do not add leaderboard, ranking system, or XP transaction history unless explicitly approved.
+Pronunciation must not automatically become a third quiz type.
 
----
+4.9 Gamification
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+XP	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Level	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Streak	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+XP Rules
 
-# 4.8 Community
+The current universal XP rules are:
+
+New word first time       → +3 XP
+Review learned word      → +1 XP
+Quiz correct              → +3 XP
+Incorrect quiz            → +0 XP
+Repeated meaningless use → +0 XP
+
+XP rules are universal for all users.
+
+Level Rules
+
+Level starts at:
+
+Level 1
+
+Level 2 is reached at:
+
+50 XP
+
+Level is capped at:
+
+Level 15
+
+XP remains unlimited.
+
+At Level 15:
+
+Level 15 — MAX
+
+The exact level threshold table must follow the approved business rules and must not be invented during implementation.
+
+Streak Rules
+
+Streak is based on qualifying learning activity, not login.
+
+Qualifying activities may include:
+
+Vocabulary learning
+Flashcard learning
+Quiz
+Pronunciation practice
+Review
+
+Multiple qualifying activities on the same calendar day count as one streak day.
+
+Skipping one or more days resets the streak to 1 when the user returns to a qualifying learning activity.
+
+No Streak Freeze is required in v1.
+
+Daily Goal Rules
+
+Daily Goal is measured using daily activity XP.
+
+Default goal:
+
+50 XP / day
+
+Allowed goal range:
+
+50–200 XP / day
+
+Daily Goal completion provides a bonus:
+
+20% of Daily Goal
+Minimum: 10 XP
+Maximum: 40 XP
+
+The bonus is granted at most once per day.
+
+Daily Goal completion is evaluated using activity XP and does not include the bonus XP itself.
+
+Daily progress is stored per calendar day.
+
+The system must not require a global cron job to reset all users' daily XP.
+
+Do not add leaderboard, ranking system, or XP transaction/history tables unless explicitly approved.
+
+4.10 Achievements
+
+Achievement functionality is part of the gamification system.
+
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Achievement Definition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Achievement Evaluation	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Achievement Tracking	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Achievement Display	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+
+Achievement rules must be evaluated by the Backend.
+
+4.11 Community
 
 Community v1 currently includes:
 
-```text
 Posts
 Comments
 Vocabulary Set Sharing
-```
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Community Posts	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Community Comments	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Sharing	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Shared Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Copy Shared Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-| Feature                | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ---------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Community Posts        | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Community Comments     | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Set Sharing | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Vocabulary Set Sharing must respect Vocabulary Set ownership rules.
+
+A user may share only a Vocabulary Set that they own.
+
+Another user may copy the shared Vocabulary Set.
+
+The copied set becomes a new private set owned by the receiving user.
+
+The original Vocabulary Set must not be modified.
 
 The following are not currently included:
 
-```text
 Likes
 Reactions
 Followers
@@ -334,45 +459,41 @@ Friends
 Direct Messages
 Chat
 Leaderboard
-```
 
 They require explicit scope approval before implementation.
 
----
-
-# 4.9 Admin
-
-| Feature                   | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| Admin Dashboard           | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Management     | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| Vocabulary Set Management | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| User Management           | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+4.12 Admin
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
 Admin functionality must remain within the approved project scope.
 
----
+Admin APIs must be protected by authentication and role-based authorization.
 
-# 4.10 AI-Assisted Features
+4.13 AI-Assisted Features
 
 AI functionality is optional.
 
-| Feature                            | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
-| ---------------------------------- | ------ | ---- | ---- | ---- | --------- | ---- | ------ |
-| AI-Assisted Vocabulary Explanation | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
-| AI-Assisted Learning Support       | TODO   | ⏳    | ⏳    | ⏳    | ⏳         | ⏳    | ⏳      |
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+AI-Assisted Vocabulary Explanation	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+AI-Assisted Learning Support	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
 AI features must not become mandatory project dependencies without explicit approval.
 
----
+If AI is not required by the final approved scope, these features may remain TODO.
 
-# 5. Feature Detail Records
+5. Feature Detail Records
 
-When a feature reaches `IN_PROGRESS`, `IMPLEMENTED`, `TESTED`, or `DONE`, additional information may be recorded below.
+When a feature reaches IN_PROGRESS, IMPLEMENTED, TESTED, or DONE, additional information may be recorded below.
 
 Use this structure:
 
-```markdown
 ## <Feature Name>
 
 Status: <STATUS>
@@ -410,21 +531,17 @@ Status: <STATUS>
 ### Review
 
 - Verdict: <APPROVE / CHANGES_REQUIRED / BLOCKED>
-```
 
 Only add implementation details that are actually known.
 
 Do not invent file paths, endpoints, tables, or test files.
 
----
-
-# 6. Updating Feature Status
+6. Updating Feature Status
 
 The status should be updated as the feature progresses.
 
 Recommended progression:
 
-```text
 TODO
   ↓
 PLANNED
@@ -436,230 +553,171 @@ IMPLEMENTED
 TESTED
   ↓
 DONE
-```
 
 If a problem prevents progress:
 
-```text
 IN_PROGRESS
     ↓
 BLOCKED
-```
 
 After the problem is resolved:
 
-```text
 BLOCKED
     ↓
 IN_PROGRESS
-```
-
----
-
-# 7. Stage Completion Rules
-
-## After SPEC
+7. Stage Completion Rules
+After SPEC
 
 When the SPEC is approved:
 
-```text
 TODO → PLANNED
-```
-
----
-
-## After PLAN
+After PLAN
 
 The feature may remain:
 
-```text
 PLANNED
-```
 
 until implementation begins.
 
----
-
-## During IMPLEMENT
+During IMPLEMENT
 
 When implementation begins:
 
-```text
 PLANNED → IN_PROGRESS
-```
-
----
-
-## After IMPLEMENT
+After IMPLEMENT
 
 When the implementation described by the approved TASK is completed:
 
-```text
 IN_PROGRESS → IMPLEMENTED
-```
 
 This does not mean the feature is complete.
 
----
-
-## After TEST
+After TEST
 
 When relevant tests and verification pass:
 
-```text
 IMPLEMENTED → TESTED
-```
 
 If tests fail:
 
-```text
 IMPLEMENTED → IN_PROGRESS
-```
 
 when implementation changes are required.
 
----
-
-## After REVIEW
+After REVIEW
 
 If review returns:
 
-```text
 APPROVE
-```
 
 then:
 
-```text
 TESTED → DONE
-```
 
 If review returns:
 
-```text
 CHANGES_REQUIRED
-```
 
 then the feature returns to the appropriate development stage.
 
 If review returns:
 
-```text
 BLOCKED
-```
 
 the feature becomes:
 
-```text
 BLOCKED
-```
-
----
-
-# 8. Status Update Rules
+8. Status Update Rules
 
 AI Agent may update this file when the status genuinely changes as a result of the current workflow.
 
 However:
 
-* Do not mark a feature complete prematurely.
-* Do not mark untested code as `TESTED`.
-* Do not mark unreviewed code as `DONE`.
-* Do not remove historical status information unnecessarily.
-* Do not change unrelated feature statuses.
-* Do not mark features as completed based only on assumptions.
-* Do not create fake implementation references.
+Do not mark a feature complete prematurely.
+Do not mark untested code as TESTED.
+Do not mark unreviewed code as DONE.
+Do not remove historical status information unnecessarily.
+Do not change unrelated feature statuses.
+Do not mark features as completed based only on assumptions.
+Do not create fake implementation references.
 
 When uncertain, leave the status unchanged and report the uncertainty.
 
----
-
-# 9. Existing Feature Check
+9. Existing Feature Check
 
 Before implementing a requested feature, AI Agent should check this document.
 
 If the requested feature is:
 
-```text
 DONE
-```
 
 AI Agent should:
 
-1. Identify the existing implementation.
-2. Inspect the actual code.
-3. Determine whether the request is:
-
-   * a bug fix
-   * an enhancement
-   * a modification
-   * a new related feature
-4. Reuse the existing implementation where appropriate.
+Identify the existing implementation.
+Inspect the actual code.
+Determine whether the request is:
+a bug fix
+an enhancement
+a modification
+a new related feature
+Reuse the existing implementation where appropriate.
 
 Do not rebuild an existing completed feature without a clear reason.
 
----
-
-# 10. Related Feature Check
+10. Related Feature Check
 
 A new feature may depend on an existing feature.
 
 Example:
 
-```text
 Existing:
+
 Vocabulary Set
+
 Status: DONE
 
 New:
+
 Community Vocabulary Set Sharing
+
 Status: TODO
-```
 
 The new feature should reuse the existing Vocabulary Set implementation where appropriate.
 
 Do not duplicate:
 
-* models
-* services
-* controllers
-* components
-* API endpoints
-* business logic
+models
+services
+controllers
+components
+API endpoints
+business logic
 
 when an existing implementation already provides the required behavior.
 
----
-
-# 11. Conflict Handling
+11. Conflict Handling
 
 If this document says:
 
-```text
 DONE
-```
 
 but the implementation appears incomplete:
 
-```text
 FEATURE_STATUS
-        ↓
+      ↓
 Conflict detected
-        ↓
+      ↓
 Inspect actual implementation
-        ↓
+      ↓
 Report conflict
-        ↓
+      ↓
 Correct status when verified
-```
 
 Do not silently assume that the status is correct.
 
 Likewise, do not downgrade a feature based only on a guess.
 
----
-
-# 12. Scope Changes
+12. Scope Changes
 
 If a requested feature does not exist in this document:
 
@@ -667,7 +725,6 @@ Do not automatically add it as an approved feature.
 
 Instead:
 
-```text
 Requested Feature
         ↓
 Check PROJECT_OVERVIEW.md
@@ -676,19 +733,14 @@ Within approved scope?
         ↓
 YES → Add / update status
 NO  → Treat as scope change
-```
 
-A scope change requires the normal approval process defined in `AGENTS.md`.
+A scope change requires the normal approval process defined in AGENTS.md.
 
----
-
-# 13. Current Project State
+13. Current Project State
 
 At the beginning of the project implementation phase, all features are intentionally marked:
 
-```text
 TODO
-```
 
 This is expected.
 
@@ -698,57 +750,46 @@ The goal is not to make this document look complete.
 
 The goal is to make it accurate.
 
----
+14. Final Principle
 
-# 14. Final Principle
+FEATURE_STATUS.md answers:
 
-`FEATURE_STATUS.md` answers:
-
-> "What features of the project have actually been completed?"
+"What features of the project have actually been completed?"
 
 It does not answer:
 
-> "How should the feature work?"
+"How should the feature work?"
 
 For feature behavior, consult:
 
-```text
 PROJECT_OVERVIEW.md
-```
 
 For architecture, consult:
 
-```text
 ARCHITECTURE.md
-```
 
 For database structure, consult:
 
-```text
 DATABASE.md
-```
 
 For API contracts, consult:
 
-```text
 API_SPEC.md
-```
+
+For UI/UX behavior and user flows, consult:
+
+UI_UX_SPEC.md
 
 For AI Agent behavior, consult:
 
-```text
 AGENTS.md
-```
 
 For implementation workflow:
 
-```text
 .agents/skills/
-```
 
 The project should maintain the following relationship:
 
-```text
 AGENTS.md
     ↓
 Defines how the Agent works
@@ -768,6 +809,10 @@ Defines data structure
 API_SPEC.md
     ↓
 Defines API contracts
+
+UI_UX_SPEC.md
+    ↓
+Defines UI/UX behavior and user flows
 
 FEATURE_STATUS.md
     ↓
