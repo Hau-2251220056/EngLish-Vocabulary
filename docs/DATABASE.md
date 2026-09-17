@@ -137,6 +137,93 @@ USER
 - daily_xp_goal
 - created_at
 - updated_at
+
+### 5.2.1. USER Data Type & Constraint Contract
+
+Các field của `USER` phải được materialize theo contract sau:
+
+| Field           | Data Type    | Nullable | Default           | Constraint / Rule                |
+| --------------- | ------------ | -------- | ----------------- | -------------------------------- |
+| `id`            | UUID         | NOT NULL | Generated UUID    | Primary Key                      |
+| `email`         | VARCHAR(255) | NOT NULL | None              | UNIQUE                           |
+| `password_hash` | TEXT         | NOT NULL | None              | Không lưu plaintext password     |
+| `display_name`  | VARCHAR(100) | NOT NULL | None              | Tên hiển thị của User            |
+| `avatar_url`    | TEXT         | NULL     | NULL              | URL avatar, nếu có               |
+| `role`          | Enum         | NOT NULL | `USER`            | Chỉ `USER` hoặc `ADMIN`          |
+| `is_active`     | BOOLEAN      | NOT NULL | `true`            | Trạng thái tài khoản             |
+| `total_xp`      | INTEGER      | NOT NULL | `0`               | Không âm                         |
+| `daily_xp_goal` | INTEGER      | NOT NULL | `50`              | Giá trị hợp lệ từ `50` đến `200` |
+| `created_at`    | TIMESTAMP    | NOT NULL | Current timestamp | Thời điểm tạo User               |
+| `updated_at`    | TIMESTAMP    | NOT NULL | Current timestamp | Tự động cập nhật khi User thay đổi |
+
+#### USER Role
+
+Database chỉ cho phép hai authenticated role:
+
+* `USER`
+* `ADMIN`
+
+`Guest` không được lưu trong `USER.role` vì Guest là trạng thái chưa xác thực.
+
+#### USER ID
+
+`USER.id` sử dụng UUID và là Primary Key.
+
+Các Foreign Key tham chiếu tới `USER.id` phải sử dụng cùng kiểu dữ liệu UUID.
+
+#### USER Email
+
+`email` phải:
+
+* NOT NULL.
+* UNIQUE.
+* Được normalize ở Backend trước khi lưu.
+* Không phân biệt chữ hoa/chữ thường ở tầng business logic.
+
+Database unique constraint phải bảo vệ uniqueness ở tầng persistence.
+
+#### USER Password
+
+`password_hash` chỉ lưu password hash được tạo bởi Backend.
+
+Database không lưu plaintext password.
+
+Cách hash và verify password được quy định trong Authentication Specification/Plan, không thuộc Database logic.
+
+#### USER XP
+
+`total_xp`:
+
+* NOT NULL.
+* Default `0`.
+* INTEGER.
+* Không được âm.
+
+Level không được lưu trong bảng `USER`.
+
+Level được tính từ `total_xp` ở Backend Service.
+
+#### USER Daily XP Goal
+
+`daily_xp_goal`:
+
+* NOT NULL.
+* Default `50`.
+* Giá trị hợp lệ trong khoảng `50` đến `200`.
+* Việc thay đổi Daily XP Goal không reset `total_xp`.
+* Business validation được thực hiện ở Backend.
+
+#### USER Timestamps
+
+`created_at` mặc định là current timestamp.
+
+`updated_at` mặc định là current timestamp và tự động cập nhật khi record `USER` thay đổi.
+
+Database có thể sử dụng constraint để bảo vệ miền giá trị nếu implementation cần và không làm thay đổi business rule đã được phê duyệt.
+
+---
+
+
 5.3. Role
 USER
 ADMIN
@@ -198,6 +285,67 @@ Mỗi AUTH_SESSION thuộc về đúng một User thông qua `user_id`.
 - Không có logout-all-devices trong v1.
 - Không thêm `revoked_at`, `last_used_at`, `ip_address`, `user_agent` hoặc `device_name`.
 - Không triển khai session/device history.
+### 5.6.1. AUTH_SESSION Data Type & Constraint Contract
+
+Các field của `AUTH_SESSION` phải được materialize theo contract sau:
+
+| Field                     | Data Type   | Nullable | Default           | Constraint / Rule              |
+| ------------------------- | ----------- | -------- | ----------------- | ------------------------------ |
+| `id`                      | UUID        | NOT NULL | Generated UUID    | Primary Key                    |
+| `user_id`                 | UUID        | NOT NULL | None              | Foreign Key → `USER.id`        |
+| `session_identifier_hash` | VARCHAR(64) | NOT NULL | None              | UNIQUE                         |
+| `created_at`              | TIMESTAMP   | NOT NULL | Current timestamp | Thời điểm tạo session          |
+| `expires_at`              | TIMESTAMP   | NOT NULL | None              | Thời điểm session hết hiệu lực |
+
+#### AUTH_SESSION ID
+
+`AUTH_SESSION.id` sử dụng UUID và là Primary Key.
+
+`AUTH_SESSION.user_id` sử dụng UUID để reference `USER.id`.
+
+#### Session Identifier Hash
+
+`session_identifier_hash`:
+
+* NOT NULL.
+* UNIQUE.
+* Lưu SHA-256 hash dưới dạng hexadecimal representation.
+* Không lưu raw session token/identifier.
+* Không lưu thêm session metadata ngoài các field được định nghĩa trong `AUTH_SESSION`.
+
+Raw session token chỉ tồn tại trong runtime/cookie theo Authentication Specification.
+
+#### Session Expiration
+
+`expires_at` là thời điểm session hết hiệu lực.
+
+Session có lifetime 7 ngày theo Authentication Specification/Plan.
+
+Backend chịu trách nhiệm tạo giá trị `expires_at` phù hợp khi tạo session.
+
+Database không tự động xóa expired session bằng cron/job ở phiên bản đầu.
+
+#### AUTH_SESSION Relationship
+
+Relationship:
+
+`USER 1 ─── N AUTH_SESSION`
+
+Một User có thể có nhiều session đồng thời.
+
+Mỗi `AUTH_SESSION.user_id` phải reference tới một `USER.id`.
+
+Không sử dụng:
+
+* `revoked_at`
+* `last_used_at`
+* `ip_address`
+* `user_agent`
+* `device_name`
+
+trong phiên bản đầu.
+
+Không tạo bảng session/device history riêng.
 
 6. TOPIC
 6.1. Mục đích
@@ -1562,6 +1710,8 @@ Phiên bản đầu tiên của Database dự kiến gồm:
 Tổng cộng:
 
 16 tables
+
+Database application schema trên Supabase hiện đang empty và chưa có migration application trước đó. Vì vậy, TASK-001 có thể tạo migration đầu tiên để materialize `USER` và `AUTH_SESSION` cùng relationship và constraints đã được phê duyệt.
 
 Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 16 bảng trong mọi trường hợp.
 

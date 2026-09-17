@@ -5,11 +5,13 @@
 - Workflow: TASK
 - SPEC: Được workflow xác nhận APPROVED.
 - PLAN: Được workflow xác nhận APPROVED.
-- Database documentation: Đã đồng bộ `AUTH_SESSION` và được workflow xác nhận APPROVED.
+- Database documentation: `AUTH_SESSION` và các database entity liên quan đã được định nghĩa trong `docs/DATABASE.md` và được workflow xác nhận APPROVED.
 - Feature status trong `docs/FEATURE_STATUS.md`: `TODO`.
 - TASK status: Technical implementation breakdown, chờ developer review/approval.
 
 TASK này chỉ phân rã implementation. Không chứa implementation code và không tự chuyển sang IMPLEMENT.
+
+---
 
 ## 2. Source Documents
 
@@ -17,12 +19,14 @@ TASK này chỉ phân rã implementation. Không chứa implementation code và 
 - `docs/PROJECT_OVERVIEW.md` — product scope và actors.
 - `docs/specs/AUTHENTICATION_SPEC.md` — Authentication business requirements.
 - `docs/plans/AUTHENTICATION_PLAN.md` — approved technical direction.
-- `docs/DATABASE.md` — approved data model, `AUTH_SESSION` và constraints.
+- `docs/DATABASE.md` — approved data model, `USER`, `AUTH_SESSION` và constraints.
 - `docs/API_SPEC.md` — API endpoints và API contract hiện có.
 - `docs/FEATURE_STATUS.md` — current feature status.
 - `docs/ARCHITECTURE.md` — layered backend và frontend architecture.
 
 `docs/SYSTEM_OVERVIEW.md` không tồn tại trong repository; `docs/PROJECT_OVERVIEW.md` là tài liệu system-level tương ứng được sử dụng.
+
+---
 
 ## 3. Task Overview
 
@@ -39,116 +43,173 @@ Authentication sẽ được triển khai theo các boundaries đã approve:
 - Backend là security boundary.
 - Frontend không nhận hoặc lưu raw session token.
 
+---
+
 ## 4. Task Dependency / Execution Order
 
 ```text
-TASK-001 Database / Prisma AUTH_SESSION
+TASK-001 Database / Prisma USER + AUTH_SESSION
+
    ├──→ TASK-002 Password security
    ├──→ TASK-003 User data access
    └──→ TASK-004 Session data access
               └──→ TASK-005 Auth Service
+
 TASK-002 ────────→ TASK-005
 TASK-003 ────────→ TASK-005
+
 TASK-005 ────────→ TASK-006 Authentication middleware
+
 TASK-006 ────────→ TASK-007 Role authorization / authenticated identity context
+
 TASK-005 ────────→ TASK-008 Auth Controller / HTTP cookie transport
 TASK-006 ────────→ TASK-008
 TASK-007 ────────→ TASK-009 Auth routes
 TASK-008 ────────→ TASK-009
+
 TASK-009 ────────→ TASK-010 Backend tests
+
 TASK-009 ────────→ TASK-011 Frontend auth service / state
+
 TASK-011 ────────→ TASK-012 Frontend pages / forms
 TASK-011 ────────→ TASK-013 Protected navigation / logout UI
+
 TASK-012 ────────→ TASK-014 Frontend tests
 TASK-013 ────────→ TASK-014
+
 TASK-010 ────────→ TASK-015 Integration / security verification
 TASK-014 ────────→ TASK-015
 ```
 
-## 5. Detailed Tasks
+---
 
-### TASK-001 — Integrate USER and AUTH_SESSION database model
+# 5. Detailed Tasks
 
-**Objective**
+## TASK-001 — Implement USER and AUTH_SESSION database models
 
-Đưa database model đã được phê duyệt vào Prisma/data-access layer để hỗ trợ server-side sessions.
+### Objective
 
-**Dependencies**
+Materialize các database entity đã được approved trong `docs/DATABASE.md` vào Prisma schema/data-access foundation để Authentication có thể sử dụng server-side sessions.
+
+`USER` đã được định nghĩa và approved ở mức database design trong `docs/DATABASE.md`, nhưng hiện chưa được materialize trong Prisma schema.
+
+`AUTH_SESSION` cũng đã được định nghĩa và approved trong `docs/DATABASE.md`.
+
+TASK-001 chỉ materialize đúng database design hiện có và không redesign domain model.
+
+### Dependencies
 
 - None.
-- `docs/DATABASE.md` đã được đồng bộ trước task này.
+- `docs/DATABASE.md` đã được approved và là source of truth cho database model.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend Prisma/database configuration và schema module hiện có hoặc sẽ được thiết lập theo architecture.
-- Không đoán path mới khi source structure chưa có module tương ứng.
+- Prisma migration thuộc database implementation.
+- Không đoán path module mới nếu source structure chưa có module tương ứng.
 
-**In Scope**
+### In Scope
 
-- Reuse `USER`.
-- Thêm entity `AUTH_SESSION` với đúng các field:
+- Materialize entity `USER` vào Prisma schema đúng theo `docs/DATABASE.md`.
+- Materialize entity `AUTH_SESSION` vào Prisma schema đúng theo `docs/DATABASE.md`.
+- Thiết lập relationship `USER 1:N AUTH_SESSION`.
+- Thiết lập foreign key từ `AUTH_SESSION.user_id` tới `USER.id`.
+- Thiết lập unique constraint/index cho `session_identifier_hash` theo `docs/DATABASE.md`.
+- Bảo đảm raw session token không có field persistence.
+- Bảo đảm các field, type, constraint, default và relationship của `USER` khớp approved database design.
+- Bảo đảm `AUTH_SESSION` có đúng các field đã approved:
   - `id`
   - `user_id`
   - `session_identifier_hash`
   - `created_at`
   - `expires_at`
-- Thiết lập `USER 1:N AUTH_SESSION`.
-- Foreign key từ `AUTH_SESSION.user_id` tới `USER.id`.
-- Unique constraint/index cho `session_identifier_hash`.
-- Bảo đảm raw session token không có field persistence.
-- Chuẩn bị migration cần thiết theo database workflow sau khi task được approve.
 
-**Out of Scope**
+- Tạo Prisma migration cần thiết để materialize database model sau khi TASK-001 được approved và bước IMPLEMENT bắt đầu.
 
+### Out of Scope
+
+- Redesign entity `USER`.
+- Thêm, xóa hoặc đổi field của `USER` ngoài `docs/DATABASE.md`.
+- Thay đổi role model.
+- Thay đổi relationship của `USER` với các entity khác.
 - `revoked_at`.
 - `last_used_at`.
 - IP, user-agent, device name.
 - Session/device history.
 - Logout-all-devices.
 - Redis hoặc JWT fields.
-- Thay đổi entity khác.
+- Các entity hoặc database feature khác ngoài phạm vi TASK-001.
+- Authentication business logic.
+- Password hashing.
+- Authentication Service.
+- Middleware, Controller hoặc API implementation.
 
-**Implementation Requirements**
+### Implementation Requirements
 
-- Tuân thủ naming và relationship notation trong `DATABASE.md`.
-- Không dùng cascade delete tùy tiện.
-- `expires_at` phải hỗ trợ session lifetime recommendation 7 ngày.
-- Chỉ tạo migration sau khi TASK và implementation được approve theo workflow.
+- `docs/DATABASE.md` là source of truth cho `USER` và `AUTH_SESSION`.
+- Không tự suy diễn hoặc thiết kế lại database model nếu thông tin đã có trong `docs/DATABASE.md`.
+- Nếu Prisma schema và `docs/DATABASE.md` có conflict, phải dừng và report conflict thay vì tự chọn một phương án.
+- `USER` phải được materialize đúng database design đã approved; không được coi `USER` là một model có sẵn nếu Prisma schema thực tế chưa có model này.
+- `AUTH_SESSION` phải có đúng năm field đã approved.
+- `session_identifier_hash` phải được bảo vệ bằng unique constraint/index theo database design.
+- Không lưu raw session token trong database.
+- Không dùng cascade delete tùy tiện; tuân thủ foreign-key rules trong `docs/DATABASE.md`.
+- `expires_at` phải hỗ trợ session lifetime 7 ngày được định nghĩa trong Authentication PLAN.
+- Migration chỉ được tạo trong bước IMPLEMENT sau khi TASK-001 được developer approve.
+- Không cài thêm dependency nếu không có requirement được approved.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
-- `AUTH_SESSION` có đúng năm field đã duyệt.
+- Prisma schema có model `USER` khớp `docs/DATABASE.md`.
+- Prisma schema có model `AUTH_SESSION` với đúng năm field:
+  - `id`
+  - `user_id`
+  - `session_identifier_hash`
+  - `created_at`
+  - `expires_at`
+
 - Relationship `USER 1:N AUTH_SESSION` tồn tại.
-- `session_identifier_hash` unique.
 - `AUTH_SESSION.user_id` tham chiếu `USER.id`.
-- Không có field session ngoài approved design.
+- `session_identifier_hash` có unique constraint/index theo approved database design.
+- Không có raw session token field.
+- Không có session metadata ngoài approved design.
+- Không có thay đổi ngoài database scope của TASK-001.
+- Prisma schema validation/generation có thể được thực hiện thành công trong IMPLEMENT/TEST stage.
 
-**Testing Requirements**
+### Testing Requirements
 
-- Prisma/schema validation hoặc tương đương pass.
-- Migration/schema verification pass khi TEST stage thực hiện.
-- Kiểm tra constraint unique và foreign key.
+- Prisma schema validation pass.
+- Prisma client generation pass.
+- Migration validation/verification pass khi TEST stage thực hiện.
+- Verify `USER` fields, types, defaults và constraints khớp `docs/DATABASE.md`.
+- Verify `AUTH_SESSION` fields, types và constraints khớp `docs/DATABASE.md`.
+- Verify unique constraint/index của `session_identifier_hash`.
+- Verify foreign key giữa `AUTH_SESSION.user_id` và `USER.id`.
+- Verify relationship `USER 1:N AUTH_SESSION`.
 
-**Traceability**
+### Traceability
 
 - PLAN: `10. Tác động Database`, `15. Thứ tự Implementation`.
 - DATABASE: `5. USER`, `5.6. AUTH_SESSION`, `25. Main Relationships`, `26. Indexing Strategy`, `27. Foreign Key Rules`, `38. Initial Database Scope`.
+- SPEC: Authentication database/session requirements where applicable.
 
-### TASK-002 — Implement password security utility
+---
 
-**Objective**
+## TASK-002 — Implement password security utility
+
+### Objective
 
 Cung cấp password hashing và verification dùng Node built-in crypto theo approved PLAN.
 
-**Dependencies**
+### Dependencies
 
 - TASK-001 có thể chạy song song về mặt data model, nhưng Auth Service phải chờ TASK-002.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend security/auth utility module trong source structure hiện có.
 
-**In Scope**
+### In Scope
 
 - Dùng `node:crypto` với `crypto.scrypt` hoặc `crypto.scryptSync`.
 - Tạo salt bằng cryptographically secure random generator.
@@ -157,23 +218,24 @@ Cung cấp password hashing và verification dùng Node built-in crypto theo app
   - parameters;
   - salt;
   - derived key/hash.
+
 - Constant-time comparison khi verify.
 - Password tối thiểu 8 ký tự được backend kiểm tra.
 
-**Out of Scope**
+### Out of Scope
 
 - bcrypt, argon2 hoặc password library khác.
 - Password reset/recovery.
 - Password policy ngoài minimum 8 ký tự nếu chưa được approve.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Không dùng SHA-256 trực tiếp làm password hash.
 - Không tự dùng weaker/default scrypt parameters chỉ vì tiện.
 - Scrypt parameters phải được technical-validate trước IMPLEMENT dựa trên security và performance deployment.
 - Không log plaintext password hoặc password hash.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Password hợp lệ được hash trước persistence.
 - Password đúng verify thành công.
@@ -181,7 +243,7 @@ Cung cấp password hashing và verification dùng Node built-in crypto theo app
 - `password_hash` chứa metadata cần thiết.
 - Plaintext password/hash không xuất hiện trong log hoặc API response.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Minimum length validation.
 - Hash/verify success.
@@ -190,27 +252,29 @@ Cung cấp password hashing và verification dùng Node built-in crypto theo app
 - Metadata parsing/verification.
 - Constant-time comparison path.
 
-**Traceability**
+### Traceability
 
 - SPEC: `BR-07` đến `BR-09`, `AC-04`, `AC-07`.
 - PLAN: `7. Password Security`, `13. Chiến lược Testing`.
 - DATABASE: `5. USER`.
 
-### TASK-003 — Implement USER repository/data access
+---
 
-**Objective**
+## TASK-003 — Implement USER repository/data access
+
+### Objective
 
 Cung cấp data access cho registration, login và current-user flow.
 
-**Dependencies**
+### Dependencies
 
 - TASK-001.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend User Repository/data-access module theo source structure hiện có.
 
-**In Scope**
+### In Scope
 
 - Tìm User theo email đã normalize.
 - Tìm User theo `id`.
@@ -221,30 +285,31 @@ Cung cấp data access cho registration, login và current-user flow.
   - `role = USER`;
   - `is_active = true`;
   - `daily_xp_goal = 50`.
+
 - Đọc role và `is_active` cho authentication/authorization.
 - Bảo vệ email uniqueness.
 
-**Out of Scope**
+### Out of Scope
 
 - User profile management.
 - Admin user management.
 - Thay đổi XP, level, streak hoặc learning progress.
 - Nhận `user_id`/`owner_id` từ client để xác định identity.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Repository chỉ làm data access, không chứa business rules.
 - Email normalization authoritative nằm ở backend service/data flow.
 - Không trả `password_hash` cho controller response.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Registration query nhận email normalized.
 - Duplicate email được phát hiện hoặc database constraint bảo vệ.
 - User mới có đúng defaults đã duyệt.
 - Current-user lookup trả được User cần thiết cho middleware/controller.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Lookup normalized email.
 - Duplicate email.
@@ -252,27 +317,29 @@ Cung cấp data access cho registration, login và current-user flow.
 - User lookup by id.
 - Không expose password hash qua response mapping.
 
-**Traceability**
+### Traceability
 
 - SPEC: `BR-05`, `BR-06`, `BR-10` đến `BR-12`, `AC-02`, `AC-03`, `AC-08`.
 - PLAN: `8. Thiết kế Backend`, `11. Kế hoạch triển khai API`.
 - DATABASE: `5. USER`, `26. Indexing Strategy`.
 
-### TASK-004 — Implement AUTH_SESSION repository/data access
+---
 
-**Objective**
+## TASK-004 — Implement AUTH_SESSION repository/data access
+
+### Objective
 
 Cung cấp persistence operations cho stateful sessions.
 
-**Dependencies**
+### Dependencies
 
 - TASK-001.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend Session Repository/data-access module theo source structure hiện có.
 
-**In Scope**
+### In Scope
 
 - Tạo một `AUTH_SESSION` mới cho mỗi login thành công.
 - Nhận và lưu SHA-256 hash của session token.
@@ -281,7 +348,7 @@ Cung cấp persistence operations cho stateful sessions.
 - Xóa current session khi Logout.
 - Có thể cleanup expired sessions theo phạm vi tối giản của PLAN.
 
-**Out of Scope**
+### Out of Scope
 
 - Raw session token persistence.
 - `revoked_at`.
@@ -290,14 +357,14 @@ Cung cấp persistence operations cho stateful sessions.
 - Logout-all-devices.
 - Session management UI.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Session token tạo ở Auth Service/security utility, không tạo tùy ý trong repository.
 - Repository không nhận `user_id` từ client.
 - Mỗi User có thể có nhiều session.
 - Delete current session không ảnh hưởng các session khác của User.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Login lần mới tạo record `AUTH_SESSION` mới.
 - Có thể lookup bằng SHA-256 hash.
@@ -305,7 +372,7 @@ Cung cấp persistence operations cho stateful sessions.
 - Logout xóa đúng current session.
 - Session khác của cùng User vẫn tồn tại.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Session creation.
 - Hash lookup.
@@ -314,29 +381,31 @@ Cung cấp persistence operations cho stateful sessions.
 - Multiple sessions per User.
 - Không lưu raw token.
 
-**Traceability**
+### Traceability
 
 - SPEC: `BR-16`, `AC-16`.
 - PLAN: `6. Credential Lifecycle`, `10. Tác động Database`, `11. Kế hoạch triển khai API`.
 - DATABASE: `5.6. AUTH_SESSION`, `25. Main Relationships`, `27. Foreign Key Rules`.
 
-### TASK-005 — Implement Authentication Service
+---
 
-**Objective**
+## TASK-005 — Implement Authentication Service
+
+### Objective
 
 Điều phối business flow registration, login, logout và current-user authentication ở Service layer.
 
-**Dependencies**
+### Dependencies
 
 - TASK-002.
 - TASK-003.
 - TASK-004.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend Auth Service module theo source structure hiện có.
 
-**In Scope**
+### In Scope
 
 - Registration:
   - validate input;
@@ -345,6 +414,7 @@ Cung cấp persistence operations cho stateful sessions.
   - hash password;
   - create `USER` defaults;
   - không auto-login.
+
 - Login:
   - normalize email;
   - tìm User;
@@ -353,13 +423,15 @@ Cung cấp persistence operations cho stateful sessions.
   - tạo 32-byte session token;
   - SHA-256 hash và persist session;
   - trả authentication result nội bộ cho Controller.
+
 - Logout:
   - xử lý current session;
   - delete session nếu hợp lệ;
   - idempotent với cookie thiếu/malformed/expired/deleted.
+
 - Current-user identity resolution.
 
-**Out of Scope**
+### Out of Scope
 
 - Set/clear HTTP cookie.
 - HTTP response mapping.
@@ -367,14 +439,14 @@ Cung cấp persistence operations cho stateful sessions.
 - JWT, refresh token, OAuth, Redis.
 - Password reset/recovery.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Auth Service không trực tiếp thao tác HTTP cookie.
 - Không trả raw session token cho frontend.
 - Invalid email, wrong password và inactive account có public behavior nhất quán.
 - Backend là authority cho account status và identity.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Registration hợp lệ tạo User đúng defaults.
 - Registration không tạo session.
@@ -382,7 +454,7 @@ Cung cấp persistence operations cho stateful sessions.
 - Inactive/invalid credentials bị từ chối mà không lộ account state.
 - Logout hiện tại idempotent và chỉ xóa current session.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Registration success/validation/duplicate email.
 - Email normalization.
@@ -392,87 +464,120 @@ Cung cấp persistence operations cho stateful sessions.
 - Session creation and deletion.
 - Logout idempotency.
 
-**Traceability**
+### Traceability
 
 - SPEC: `4. User Flow`, `5. Business Rules`, `8. Acceptance Criteria`.
 - PLAN: `6. Credential Lifecycle`, `7. Password Security`, `8. Thiết kế Backend`.
 
-### TASK-006 — Implement authentication middleware
+---
 
-**Objective**
+## TASK-006 — Implement authentication middleware
+
+### Objective
 
 Xác thực `session_id` cookie trên protected requests và attach authenticated identity.
 
-**Dependencies**
+### Dependencies
 
 - TASK-004.
 - TASK-005.
+- `cookie-parser` — dependency đã được developer approve cho TASK-006 để parse HTTP Cookie. Không chốt version package trong TASK.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend authentication middleware module theo source structure hiện có.
 
-**In Scope**
+### In Scope
 
-- Đọc raw token từ cookie `session_id`.
+- Sử dụng `cookie-parser` và đọc raw token từ `req.cookies.session_id`.
 - SHA-256 hash token.
 - Lookup `AUTH_SESSION`.
 - Kiểm tra session existence và `expires_at`.
 - Load User.
 - Kiểm tra `is_active`.
-- Attach authenticated identity vào request context.
+- Attach authenticated public user identity vào `req.user`, chỉ gồm:
+  - `id`;
+  - `email`;
+  - `display_name`;
+  - `role`.
 - Trả `401 Unauthorized` cho protected endpoints khi credential thiếu/không hợp lệ.
 
-**Out of Scope**
+Flow được approve:
+
+```text
+HTTP Request
+  ↓
+cookie-parser
+  ↓
+req.cookies.session_id
+  ↓
+Authentication Middleware
+  ↓
+authenticationService.getCurrentUser(sessionToken)
+  ↓
+req.user
+  ↓
+next()
+```
+
+### Out of Scope
 
 - Logout hard-401 flow.
 - Role authorization.
 - Ownership logic của từng domain.
 - Frontend route protection.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Raw token không log.
+- `cookie-parser` chỉ parse Cookie header; không thay thế `AUTH_SESSION` hoặc stateful server-side session architecture.
+- Không lưu raw token vào database.
 - Không tin identity do client gửi.
-- Chỉ dùng session đã xác thực và User hiện tại.
+- Chỉ dùng session đã xác thực và User hiện tại từ `authenticationService.getCurrentUser(sessionToken)`.
+- Không duplicate session token hashing, session lookup, session expiry, user lookup, `is_active` check hoặc public identity mapping trong middleware nếu không cần thiết.
+- Không đưa `password_hash`, raw session token, `session_identifier_hash`, `expires_at` hoặc authentication secret vào `req.user`.
+- Role authorization và `403 Forbidden` thuộc TASK-007, không implement trong TASK-006.
 - `POST /api/auth/logout` không bị buộc qua hard-401 authentication flow.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Session hợp lệ tạo authenticated identity.
 - Token sai, malformed, expired hoặc User inactive bị từ chối trên protected endpoint.
 - Missing credential bị từ chối trên protected endpoint.
 - Logout vẫn xử lý idempotently ngoài hard-401 flow.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Valid session.
 - Missing/malformed/expired session.
 - Deleted session.
 - Inactive User.
+- `req.user` chỉ chứa `id`, `email`, `display_name` và `role`.
 - Raw token không xuất hiện trong log/test response.
 
-**Traceability**
+### Traceability
 
 - SPEC: `BR-13`, `BR-19`, `AC-14`, `AC-15`, `AC-17`.
 - PLAN: `6. Credential Lifecycle`, `8. Thiết kế Backend`, `9. Thiết kế Authorization`.
 
-### TASK-007 — Implement role authorization and authenticated identity context
+---
 
-**Objective**
+## TASK-007 — Implement role authorization and authenticated identity context
+
+### Objective
 
 Enforce `USER`/`ADMIN` role access và cung cấp authenticated identity context cho domain features.
 
-**Dependencies**
+### Dependencies
 
 - TASK-006.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend authorization middleware/shared authorization module.
 - Authenticated identity context used by domain features.
 
-**In Scope**
+### In Scope
 
 - Authenticated active User access.
 - `ADMIN`-only access.
@@ -481,13 +586,13 @@ Enforce `USER`/`ADMIN` role access và cung cấp authenticated identity context
 - Reject client-supplied `user_id`, `owner_id` hoặc `role` as authentication/authorization authority.
 - Keep frontend role visibility as UX only.
 
-**Out of Scope**
+### Out of Scope
 
 - New roles.
 - Admin user-management feature implementation.
 - Ownership enforcement for Vocabulary Set, Community hoặc các domain resource cụ thể; domain feature tasks phải xử lý phần này.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Backend remains security boundary.
 - Role read from current authenticated User.
@@ -495,7 +600,7 @@ Enforce `USER`/`ADMIN` role access và cung cấp authenticated identity context
 - Domain features are responsible for resource-specific ownership checks using the authenticated identity.
 - Authoritative XP, level, streak and learning progress are not accepted from client.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - `ADMIN` endpoint accepts authenticated `ADMIN` only.
 - Authenticated `USER` receives `403 Forbidden` on Admin-only endpoint.
@@ -503,7 +608,7 @@ Enforce `USER`/`ADMIN` role access và cung cấp authenticated identity context
 - Authenticated identity is available to downstream domain features.
 - Authentication does not treat client-supplied `user_id`, `owner_id` or `role` as trusted identity/role data.
 
-**Testing Requirements**
+### Testing Requirements
 
 - USER authorization.
 - ADMIN authorization.
@@ -511,29 +616,31 @@ Enforce `USER`/`ADMIN` role access và cung cấp authenticated identity context
 - Forged `user_id`, `owner_id`, `role` are not used as authentication/role authority.
 - Backend-only enforcement independent of frontend visibility.
 
-**Traceability**
+### Traceability
 
 - SPEC: `BR-01`, `BR-02`, `BR-20` to `BR-23`, `AC-17` to `AC-20`.
 - PLAN: `9. Thiết kế Authorization`.
 - API_SPEC: `4. Actors`, `58. Authorization Rules`, `59. Ownership Rules`, `66. Security Requirements`.
 
-### TASK-008 — Implement Auth Controller and HTTP cookie transport
+---
 
-**Objective**
+## TASK-008 — Implement Auth Controller and HTTP cookie transport
+
+### Objective
 
 Expose HTTP behavior while keeping cookie transport in Controller/HTTP layer.
 
-**Dependencies**
+### Dependencies
 
 - TASK-005.
 - TASK-006.
 - TASK-007.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend Auth Controller/HTTP layer theo source structure hiện có.
 
-**In Scope**
+### In Scope
 
 - Receive Auth Service result.
 - Set cookie `session_id` after Login.
@@ -542,14 +649,14 @@ Expose HTTP behavior while keeping cookie transport in Controller/HTTP layer.
 - Map errors to approved status/response format.
 - Preserve raw session token only for cookie handling.
 
-**Out of Scope**
+### Out of Scope
 
 - Business logic in Controller.
 - Raw session token in JSON response.
 - Cookie name khác `session_id`.
 - Hard-401 Logout behavior.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Cookie attributes follow verified deployment topology.
 - `HttpOnly` always required; `Secure` in production/HTTPS.
@@ -562,7 +669,7 @@ Expose HTTP behavior while keeping cookie transport in Controller/HTTP layer.
 - Credentialed CORS must not use wildcard origin.
 - CSRF requirement follows deployment topology verification.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Login sets only cookie `session_id`.
 - Raw token is absent from JSON responses.
@@ -570,7 +677,7 @@ Expose HTTP behavior while keeping cookie transport in Controller/HTTP layer.
 - Logout returns `204 No Content` in all idempotent cases.
 - Register/Login/Me return the approved identity and status behavior.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Set-Cookie after Login.
 - Cookie clearing after Logout.
@@ -579,27 +686,29 @@ Expose HTTP behavior while keeping cookie transport in Controller/HTTP layer.
 - Credentialed CORS configuration.
 - Cookie topology configuration.
 
-**Traceability**
+### Traceability
 
 - SPEC: `7. API Requirements`, `8. Acceptance Criteria`.
 - PLAN: `4. Tác động kiến trúc`, `6. Credential Lifecycle`, `11. Kế hoạch triển khai API`.
 - API_SPEC: `5. Authentication`, `6. Login`, `7. Current User`, `63. Error Response`, `64. HTTP Status Codes`, `71. API Endpoint Inventory`.
 
-### TASK-009 — Register Authentication routes
+---
 
-**Objective**
+## TASK-009 — Register Authentication routes
+
+### Objective
 
 Map the approved Authentication endpoints to Controller handlers without adding duplicate routes.
 
-**Dependencies**
+### Dependencies
 
 - TASK-008.
 
-**Files / Modules**
+### Files / Modules
 
 - Backend route registration module in the existing Express application.
 
-**In Scope**
+### In Scope
 
 - `POST /api/auth/register`.
 - `POST /api/auth/login`.
@@ -609,54 +718,56 @@ Map the approved Authentication endpoints to Controller handlers without adding 
 - Keep Logout outside hard-401 authentication flow.
 - Connect routes to Controller only.
 
-**Out of Scope**
+### Out of Scope
 
 - New endpoints.
 - Duplicate endpoints.
 - Business logic in route definitions.
 - Profile, Daily Goal or Admin Management routes.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Preserve layered architecture.
 - Use centralized error handling and validation.
 - Keep endpoint names unchanged.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - All four endpoints are registered once.
 - Guest access works for Register/Login.
 - Protected Current User access requires valid session.
 - Logout remains idempotent without hard-401 dependency.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Route registration/integration tests for all four endpoints.
 - Authenticated and unauthenticated access behavior.
 - No duplicate route behavior.
 
-**Traceability**
+### Traceability
 
 - SPEC: `7. API Requirements`.
 - PLAN: `8. Thiết kế Backend`, `11. Kế hoạch triển khai API`.
 - API_SPEC: `71. API Endpoint Inventory`.
 
-### TASK-010 — Backend Authentication and security tests
+---
 
-**Objective**
+## TASK-010 — Backend Authentication and security tests
+
+### Objective
 
 Bao phủ backend unit, integration và security behavior của Authentication.
 
-**Dependencies**
+### Dependencies
 
 - TASK-009.
 
-**Files / Modules**
+### Files / Modules
 
 - Existing backend test infrastructure if available.
 - New Authentication test modules only after the test infrastructure decision is approved.
 
-**In Scope**
+### In Scope
 
 - Registration success, validation, duplicate email and defaults.
 - Email normalization.
@@ -668,51 +779,56 @@ Bao phủ backend unit, integration và security behavior của Authentication.
 - Logout deletion and idempotency.
 - Cookies and raw token exclusion.
 - `/api/auth/me`.
-- USER/ADMIN authorization and ownership.
+- USER/ADMIN authorization.
+- Authenticated identity/security boundary.
 - CORS/CSRF behavior based on verified deployment topology.
 
-**Out of Scope**
+### Out of Scope
 
 - New testing framework without approval.
 - Tests for unapproved features.
 - Performance/security scope outside approved Authentication behavior.
+- Resource-specific ownership rules belonging to individual domain features.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Backend tests cover all Authentication acceptance criteria and security boundaries.
 - Invalid credentials do not reveal account state.
 - Raw session token/password/hash are not returned or logged.
 - Logout tests cover missing, malformed, expired and deleted sessions.
-- Authorization and ownership tests pass.
+- Authentication and role authorization tests pass.
+- Authenticated identity cannot be replaced by client-supplied identity/role values.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Run relevant backend unit/API/integration tests during TEST stage.
 - Run build/lint checks where available.
 - Record unavailable test infrastructure rather than assuming success.
 
-**Traceability**
+### Traceability
 
 - SPEC: `8. Acceptance Criteria`, `9. Edge Cases`.
 - PLAN: `13. Chiến lược Testing`.
 - AGENTS: Testing Rules and Verification.
 
-### TASK-011 — Implement frontend Auth API service and authentication state
+---
 
-**Objective**
+## TASK-011 — Implement frontend Auth API service and authentication state
+
+### Objective
 
 Kết nối frontend với Authentication API và khởi tạo authenticated state từ backend.
 
-**Dependencies**
+### Dependencies
 
 - TASK-009.
 
-**Files / Modules**
+### Files / Modules
 
 - Frontend service/state/context modules theo existing frontend structure.
 - Không tự đoán path mới nếu source structure chưa có module tương ứng.
 
-**In Scope**
+### In Scope
 
 - `authService.register`.
 - `authService.login`.
@@ -724,24 +840,25 @@ Kết nối frontend với Authentication API và khởi tạo authenticated sta
   - `isAuthenticated`;
   - `isLoading`;
   - authentication error state.
+
 - Browser-managed cookie credentials.
 - UX email normalization only.
 
-**Out of Scope**
+### Out of Scope
 
 - Raw session token storage.
 - Client-side security enforcement.
 - XP/level/streak/progress calculation.
 - New API endpoints.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Frontend không nhận hoặc lưu raw session token.
 - Backend remains authoritative.
 - Frontend validation không thay thế backend validation.
 - Credential transport phù hợp với cookie topology đã verify.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - App initializes auth state from `/api/auth/me`.
 - Valid session produces authenticated state.
@@ -749,40 +866,43 @@ Kết nối frontend với Authentication API và khởi tạo authenticated sta
 - Login/register/logout service methods call approved endpoints.
 - Frontend does not persist raw session token.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Auth initialization success/error.
 - API service success/error mapping.
 - Session expiration state.
 - UX email normalization without relying on it for security.
 
-**Traceability**
+### Traceability
 
 - SPEC: `4. User Flow`, `8. Acceptance Criteria`.
 - PLAN: `12. Thiết kế Frontend`, `6. Credential Lifecycle`.
 - API_SPEC: `5. Authentication`, `6. Login`, `7. Current User`.
 
-### TASK-012 — Implement Login and Register pages/forms
+---
 
-**Objective**
+## TASK-012 — Implement Login and Register pages/forms
+
+### Objective
 
 Tạo UI cho approved Login/Register flows và form validation.
 
-**Dependencies**
+### Dependencies
 
 - TASK-011.
 
-**Files / Modules**
+### Files / Modules
 
 - Existing frontend pages/components structure.
 
-**In Scope**
+### In Scope
 
 - Login page:
   - email;
   - password;
   - show/hide password;
   - validation/error/loading states.
+
 - Register page:
   - `display_name`;
   - email;
@@ -790,11 +910,12 @@ Tạo UI cho approved Login/Register flows và form validation.
   - `confirm_password`;
   - client-side mismatch validation;
   - success/error/loading states.
+
 - Redirects:
   - Register success → Login;
   - Login success → Dashboard.
 
-**Out of Scope**
+### Out of Scope
 
 - Username field.
 - Password reset/recovery.
@@ -802,13 +923,13 @@ Tạo UI cho approved Login/Register flows và form validation.
 - Social login/MFA.
 - Profile or settings screens.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - `confirm_password` is client-side only and is not persisted.
 - Form errors must not expose sensitive account information.
 - Use approved API service and shared UI patterns where available.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Valid Register submission reaches `POST /api/auth/register`.
 - Password mismatch is rejected client-side.
@@ -817,7 +938,7 @@ Tạo UI cho approved Login/Register flows và form validation.
 - Successful Login redirects to Dashboard.
 - Loading and API error states are visible and do not duplicate submissions.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Required-field validation.
 - Password length UX validation.
@@ -826,29 +947,31 @@ Tạo UI cho approved Login/Register flows và form validation.
 - Register/Login success and error states.
 - Redirect behavior.
 
-**Traceability**
+### Traceability
 
 - SPEC: `2. Actors`, `4. User Flow`, `7. API Requirements`, `8. Acceptance Criteria`.
 - PLAN: `12. Thiết kế Frontend`.
 - UI/UX: Login and Register screen requirements.
 
-### TASK-013 — Implement protected navigation, Admin visibility and Logout UI
+---
 
-**Objective**
+## TASK-013 — Implement protected navigation, Admin visibility and Logout UI
+
+### Objective
 
 Enforce frontend navigation behavior and present authenticated/Admin UI states without treating frontend as security boundary.
 
-**Dependencies**
+### Dependencies
 
 - TASK-011.
 - TASK-012.
 
-**Files / Modules**
+### Files / Modules
 
 - Existing app navigation/routes/layout modules.
 - Existing shared UI components where available.
 
-**In Scope**
+### In Scope
 
 - Protected navigation loading state.
 - Guest redirect from protected screens to Login.
@@ -858,7 +981,7 @@ Enforce frontend navigation behavior and present authenticated/Admin UI states w
 - Reset auth state after Logout.
 - Session-expired UI state.
 
-**Out of Scope**
+### Out of Scope
 
 - Backend authorization replacement.
 - Admin user management.
@@ -866,13 +989,13 @@ Enforce frontend navigation behavior and present authenticated/Admin UI states w
 - Session management UI.
 - Device history.
 
-**Implementation Requirements**
+### Implementation Requirements
 
 - Hidden navigation is UX only; backend enforces access.
 - Logout must work with the idempotent `204 No Content` behavior.
 - No raw token access or storage in frontend.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Auth initialization does not render protected content before state is known.
 - Guest is redirected to Login.
@@ -880,7 +1003,7 @@ Enforce frontend navigation behavior and present authenticated/Admin UI states w
 - Logout clears local auth state and returns user to Guest/Landing or Login according to approved flow.
 - Expired session returns user to Guest flow.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Protected navigation.
 - Guest redirect.
@@ -888,29 +1011,31 @@ Enforce frontend navigation behavior and present authenticated/Admin UI states w
 - Logout success and repeated logout.
 - Session expiration handling.
 
-**Traceability**
+### Traceability
 
 - SPEC: `2. Actors`, `4. User Flow`, `8. Acceptance Criteria`.
 - PLAN: `9. Thiết kế Authorization`, `12. Thiết kế Frontend`.
 - UI/UX: authenticated navigation, Login/Register and global states.
 
-### TASK-014 — Frontend Authentication tests
+---
 
-**Objective**
+## TASK-014 — Frontend Authentication tests
+
+### Objective
 
 Kiểm thử frontend Authentication behavior sau khi service, state và UI được triển khai.
 
-**Dependencies**
+### Dependencies
 
 - TASK-012.
 - TASK-013.
 
-**Files / Modules**
+### Files / Modules
 
-- Existing frontend test infrastructure if available.
+- Existing frontend test infrastructure.
 - Authentication component/service/state test modules.
 
-**In Scope**
+### In Scope
 
 - Register form validation.
 - Login form validation.
@@ -923,47 +1048,49 @@ Kiểm thử frontend Authentication behavior sau khi service, state và UI đư
 - API error/loading states.
 - No raw session token in frontend storage or response handling.
 
-**Out of Scope**
+### Out of Scope
 
 - New frontend test framework without approval.
 - Tests for unapproved UI features.
 - Backend security implementation tests.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - Frontend tests cover approved Login/Register/auth state flows.
 - Protected navigation and role visibility behavior are verified.
 - Logout and expired-session behavior are verified.
 - Frontend does not rely on UI checks as backend authorization.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Run relevant frontend tests during TEST stage.
 - Run frontend lint/build where available.
 - Record missing test infrastructure honestly.
 
-**Traceability**
+### Traceability
 
 - SPEC: `8. Acceptance Criteria`, `9. Edge Cases`.
 - PLAN: `12. Thiết kế Frontend`, `13. Chiến lược Testing`.
 
-### TASK-015 — Authentication integration and security verification
+---
 
-**Objective**
+## TASK-015 — Authentication integration and security verification
+
+### Objective
 
 Verify the complete Authentication flow across backend, frontend, database session persistence and deployment-dependent security configuration.
 
-**Dependencies**
+### Dependencies
 
 - TASK-010.
 - TASK-014.
 - Database/schema implementation from TASK-001.
 
-**Files / Modules**
+### Files / Modules
 
 - No new feature module required; verification spans approved implementation areas.
 
-**In Scope**
+### In Scope
 
 - Register → Login → Dashboard flow.
 - Login → `/api/auth/me` flow.
@@ -971,7 +1098,7 @@ Verify the complete Authentication flow across backend, frontend, database sessi
 - Multiple sessions for one User.
 - Expired/deleted/malformed session behavior.
 - USER/ADMIN protected access.
-- Ownership/security boundary.
+- Authenticated identity/security boundary.
 - Cookie `session_id` and raw token exclusion.
 - Deployment topology verification:
   - origins;
@@ -980,39 +1107,44 @@ Verify the complete Authentication flow across backend, frontend, database sessi
   - credentialed CORS;
   - cookie attributes;
   - CSRF requirement.
+
 - API status recommendations and validation status.
 
-**Out of Scope**
+### Out of Scope
 
 - Production deployment changes.
 - New infrastructure.
 - Performance platform work.
 - Features outside Authentication.
+- Resource-specific ownership rules implemented by individual domain features.
 
-**Acceptance Criteria**
+### Acceptance Criteria
 
 - End-to-end approved Authentication flow works.
 - Raw session token and password data are never returned or persisted incorrectly.
 - Logout invalidates only current session and remains idempotent.
-- Protected endpoints enforce authentication, role and ownership.
+- Protected endpoints enforce authentication and role authorization.
+- Authenticated identity is established only from validated server-side session state.
 - Cookie/CORS/CSRF configuration matches verified topology.
 - No scope expansion or unapproved mechanism is introduced.
 
-**Testing Requirements**
+### Testing Requirements
 
 - Run backend and frontend test suites.
 - Run API/integration tests.
 - Run build/lint checks where available.
 - Record unresolved environment limitations.
 
-**Traceability**
+### Traceability
 
 - SPEC: all Authentication acceptance criteria.
 - PLAN: `4. Tác động kiến trúc`, `6. Credential Lifecycle`, `9. Thiết kế Authorization`, `13. Chiến lược Testing`, `16. Risks và Edge Cases`.
-- DATABASE: `AUTH_SESSION`, relationship, constraints and 16-table scope.
+- DATABASE: `USER`, `AUTH_SESSION`, relationship, constraints and approved initial database scope.
 - API_SPEC: Authentication endpoint inventory and authorization/security rules.
 
-## 6. Cross-Cutting Security Requirements
+---
+
+# 6. Cross-Cutting Security Requirements
 
 - Backend là security boundary.
 - Chỉ có role `USER` và `ADMIN`; Guest là unauthenticated state.
@@ -1029,9 +1161,12 @@ Verify the complete Authentication flow across backend, frontend, database sessi
 - Nếu frontend/backend khác site và credentialed cookie requests, CSRF protection là bắt buộc trước IMPLEMENT.
 - Không tin `user_id`, `owner_id` hoặc `role` do client gửi.
 - Backend authoritative với account status, role, ownership và business data.
+- Authentication cung cấp authenticated identity; domain feature chịu trách nhiệm resource-specific ownership.
 - Logout chỉ xóa current session và không có logout-all-devices.
 
-## 7. Out of Scope
+---
+
+# 7. Out of Scope
 
 - JWT.
 - Refresh token.
@@ -1051,37 +1186,48 @@ Verify the complete Authentication flow across backend, frontend, database sessi
 - Role mới.
 - Admin user management.
 - Session management UI.
+- Resource-specific ownership implementation của các domain feature khác.
 - Các Authentication feature chưa được approved.
 
-## 8. Open Issues / Conflicts
+---
+
+# 8. Open Issues / Conflicts
 
 - `docs/SYSTEM_OVERVIEW.md` không tồn tại; `docs/PROJECT_OVERVIEW.md` được dùng làm tài liệu system-level tương ứng.
-- Repository SPEC hiện hiển thị metadata `SPEC status: DRAFT`, và PLAN có metadata trạng thái proposal, trong khi workflow request xác nhận cả hai đã APPROVED. Đây là metadata conflict, không thay đổi source documents trong TASK.
+- Repository SPEC có thể còn hiển thị metadata `SPEC status: DRAFT` nếu chưa được đồng bộ metadata, trong khi workflow đã xác nhận SPEC APPROVED. Đây là metadata conflict, không thay đổi source documents trong TASK.
 - `API_SPEC.md` cũ còn dùng `username` trong phần Authentication, trong khi approved SPEC/PLAN dùng `display_name`. TASK theo approved SPEC/PLAN và không sửa `API_SPEC.md`.
 - `API_SPEC.md` cho phép status code `422` trong danh sách chung và chưa quy định rõ success status Authentication; approved PLAN chốt validation `400 Bad Request` và success recommendations `201/200/204/200`. TASK theo PLAN và không sửa `API_SPEC.md`.
 - `FEATURE_STATUS.md` vẫn ghi Authentication `TODO` dù workflow đã đi tới TASK. TASK không sửa status; status update thuộc workflow stage phù hợp.
-- Testing framework, Prisma setup và exact module paths chưa tồn tại trong source hiện tại. TASK không tự chọn dependency hoặc invent path; implementation phải follow approved PLAN và existing structure.
+- Testing framework, exact module paths và một số implementation details chưa tồn tại trong source hiện tại. TASK không tự chọn dependency hoặc invent path; implementation phải follow approved PLAN và existing structure.
+- `USER` đã được approved trong `docs/DATABASE.md` nhưng hiện chưa được materialize trong Prisma schema. TASK-001 chịu trách nhiệm materialize `USER` cùng với `AUTH_SESSION`.
+- `AUTH_SESSION` đã được approved và documented trong `docs/DATABASE.md`; không cần tạo hoặc đồng bộ lại entity này trong database documentation.
 
 Không có conflict nào làm thay đổi approved Authentication architecture trong TASK này.
 
-## 9. Final Validation Checklist
+---
 
-### Scope
+# 9. Final Validation Checklist
+
+## Scope
 
 - [x] Tasks chỉ thuộc approved Authentication scope.
 - [x] Không thêm JWT, refresh token, OAuth, MFA, Redis hoặc feature ngoài scope.
 - [x] Không thêm role mới.
 - [x] Không thêm `AUTH_SESSION` field ngoài `DATABASE.md`.
+- [x] Không redesign `USER` ngoài approved database design.
+- [x] Resource-specific ownership không bị kéo vào Authentication implementation.
 
-### Architecture
+## Architecture
 
 - [x] Stateful server-side session được bảo toàn.
 - [x] Layering Route → Middleware → Controller → Service → Repository/Data Access → Prisma → PostgreSQL được bảo toàn.
 - [x] Auth Service không set/clear HTTP cookie.
 - [x] Controller/HTTP layer chịu trách nhiệm cookie transport.
-- [x] Authorization và ownership được enforce ở backend.
+- [x] Authentication chịu trách nhiệm identity và role authorization.
+- [x] Domain feature chịu trách nhiệm resource-specific ownership.
+- [x] Authorization được enforce ở backend.
 
-### Security
+## Security
 
 - [x] Password `scrypt` và secure salt được phản ánh.
 - [x] Raw session token không lưu database/frontend/log/response.
@@ -1090,39 +1236,42 @@ Không có conflict nào làm thay đổi approved Authentication architecture t
 - [x] CORS/CSRF/deployment topology requirements được phản ánh.
 - [x] Không trust client identity hoặc authoritative business values.
 
-### API
+## API
 
 - [x] Bốn Authentication endpoints được trace.
 - [x] Không tạo duplicate endpoint.
 - [x] Status recommendations và validation status theo PLAN.
 - [x] Không tự sửa API contract.
 
-### Database
+## Database
 
-- [x] `USER` được reuse.
+- [x] `USER` được materialize theo approved `DATABASE.md`.
 - [x] `AUTH_SESSION` khớp `DATABASE.md`.
 - [x] `USER 1:N AUTH_SESSION` được trace.
 - [x] Unique hash và foreign key được phản ánh.
 - [x] Không thêm session metadata ngoài approved design.
+- [x] Không yêu cầu thay đổi database documentation trong TASK.
 
-### Testing
+## Testing
 
 - [x] Backend unit tests được phân rã.
 - [x] API/integration tests được phân rã.
 - [x] Frontend Authentication tests được phân rã.
 - [x] Security-sensitive behavior có test requirement.
+- [x] Resource-specific ownership testing không bị gán nhầm cho Authentication.
 
-### Traceability
+## Traceability
 
 - [x] Mỗi task có SPEC/PLAN/DATABASE/API traceability phù hợp.
 - [x] Không tạo requirement ID giả.
 - [x] Conflict được ghi nhận thay vì âm thầm sửa.
 
-### Workflow
+## Workflow
 
 - [x] Không viết implementation code.
-- [x] Không tạo migration.
+- [x] Không tạo migration trong TASK authoring stage.
 - [x] Không cài dependency.
-- [x] Không tạo file ngoài TASK này.
+- [x] Không tạo file implementation ngoài TASK này.
 - [x] Không sửa SPEC, PLAN, DATABASE hoặc FEATURE_STATUS.
 - [x] Không chuyển sang IMPLEMENT.
+- [x] TASK chỉ được chuyển sang IMPLEMENT sau khi developer review và approve.

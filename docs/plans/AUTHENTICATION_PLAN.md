@@ -1,10 +1,14 @@
 # PLAN: Authentication
 
-**Giai đoạn workflow:** PLAN  
-**Trạng thái:** Technical proposal, chờ developer review/approval  
+**Giai đoạn workflow:** PLAN
+
+**Trạng thái:** Đã được developer approve
+
 **SPEC status:** Đã được developer approve theo workflow hiện tại
 
-## 1. Mục tiêu PLAN
+---
+
+# 1. Mục tiêu PLAN
 
 Xây dựng phương án kỹ thuật cho Authentication theo SPEC đã được developer phê duyệt, gồm:
 
@@ -19,11 +23,22 @@ Xây dựng phương án kỹ thuật cho Authentication theo SPEC đã được
 - Stateful server-side session authentication được transport bằng HTTP-only cookie.
 - Kiểm thử backend, frontend, API và security boundary.
 
-PLAN này là technical proposal. Chưa implement code, chưa tạo migration, chưa cài dependency và chưa tạo TASK.
+PLAN này mô tả phương án kỹ thuật và implementation direction cho Authentication.
 
-## 2. Phạm vi SPEC đã được phê duyệt
+**PLAN không trực tiếp thực hiện:**
 
-### In Scope
+- Implement code.
+- Tạo migration.
+- Cài dependency cho Authentication.
+- Tạo hoặc approve TASK.
+
+PLAN đã được developer approve. Giai đoạn tiếp theo là hoàn thiện `AUTHENTICATION_TASK.md`, approve TASK và sau đó mới chuyển sang IMPLEMENT.
+
+---
+
+# 2. Phạm vi SPEC đã được phê duyệt
+
+## In Scope
 
 - Registration với `display_name`, `email`, `password`, `confirm_password`.
 - Email normalization về lowercase.
@@ -38,7 +53,7 @@ PLAN này là technical proposal. Chưa implement code, chưa tạo migration, c
 - Frontend Login/Register/auth state/protected navigation.
 - Error handling không tiết lộ thông tin nhạy cảm.
 
-### Out of Scope
+## Out of Scope
 
 - Password reset/recovery.
 - Email verification.
@@ -56,26 +71,29 @@ PLAN này là technical proposal. Chưa implement code, chưa tạo migration, c
 - IP tracking.
 - User-agent tracking.
 
-## 3. Phân tích implementation hiện tại
+---
 
-### Backend
+# 3. Phân tích implementation hiện tại
+
+## Backend
 
 Hiện chỉ có:
 
-- `backend/src/main.js`
-  - Khởi tạo Express.
-  - Khai báo route `/`.
-  - Chưa có API `/api`.
-  - Chưa có middleware, controller, service, repository hoặc database connection.
+`backend/src/main.js`
 
-`backend/package.json` hiện chỉ có:
+- Khởi tạo Express.
+- Khai báo route `/`.
+- Chưa có API `/api`.
+- Chưa có middleware, controller, service, repository hoặc database access trong application layer.
+
+`backend/package.json` hiện có các dependency nền tảng hiện tại như:
 
 - `express`
 - `nodemon`
 
-Chưa có:
+Chưa có implementation hoàn chỉnh cho:
 
-- Prisma setup.
+- Prisma data access trong application layer.
 - User repository.
 - Session repository.
 - Password hashing.
@@ -84,17 +102,19 @@ Chưa có:
 - Test infrastructure.
 - Authentication middleware.
 
-### Frontend
+## Frontend
 
 Hiện chỉ có:
 
-- `frontend/src/App.jsx`
-  - Render nội dung tối thiểu.
-- `frontend/src/main.jsx`
-  - Khởi tạo React application.
-- `frontend/package.json`
-  - Có React, Vite và Tailwind.
-  - Chưa có routing library.
+`frontend/src/App.jsx`
+
+- Render nội dung tối thiểu.
+
+`frontend/src/main.jsx`
+
+- Khởi tạo React application.
+
+`frontend/package.json` hiện có React, Vite và Tailwind.
 
 Chưa có:
 
@@ -106,15 +126,19 @@ Chưa có:
 - Logout flow.
 - Admin navigation visibility.
 
-### Feature status
+## Feature status
 
-Authentication và các feature User Management trong `docs/FEATURE_STATUS.md` đều đang `TODO`.
+Authentication và các feature User Management trong `docs/FEATURE_STATUS.md` hiện vẫn đang `TODO`.
 
-Feature chưa có implementation cần reuse. PLAN sẽ xây dựng các layer cần thiết theo kiến trúc hiện có.
+Đây là trạng thái đúng vì Authentication chưa được implement.
 
-## 4. Tác động kiến trúc
+Không có implementation Authentication hiện tại cần reuse. PLAN sẽ xác định các layer cần thiết theo kiến trúc đã được phê duyệt.
 
-### Backend
+---
+
+# 4. Tác động kiến trúc
+
+## Backend
 
 Tuân thủ flow:
 
@@ -148,14 +172,28 @@ Các phần bị ảnh hưởng:
 - Centralized error handling.
 - Environment configuration.
 
-Phân tách trách nhiệm cookie:
+### Phân tách trách nhiệm cookie
 
-- Auth Service không set hoặc clear HTTP cookie.
-- Auth Service verify credentials, create/delete session và trả authentication result ở mức nội bộ.
-- Controller/HTTP layer nhận result từ Auth Service, set hoặc clear HTTP-only cookie và mapping response.
-- Raw session identifier không được đưa vào response body.
+Auth Service:
 
-### Frontend
+- Verify credentials.
+- Create/delete session.
+- Trả authentication result ở mức nội bộ.
+
+Auth Service **không** set hoặc clear HTTP cookie.
+
+Controller/HTTP layer:
+
+- Nhận result từ Auth Service.
+- Set HTTP-only cookie.
+- Clear HTTP-only cookie.
+- Mapping service result thành HTTP response.
+
+Raw session identifier không được đưa vào response body.
+
+---
+
+## Frontend
 
 Tuân thủ flow:
 
@@ -184,19 +222,49 @@ Các phần bị ảnh hưởng:
 
 Frontend không nhận hoặc lưu raw session identifier.
 
-### Database
+---
 
-Tái sử dụng entity `USER` hiện có trong `DATABASE.md`.
+## Database
 
-Phương án đề xuất cần thêm session persistence bằng entity `AUTH_SESSION`. Đây là database impact mới và cần developer approval trước TASK/IMPLEMENT.
+Authentication sử dụng các entity database đã được định nghĩa và phê duyệt trong `docs/DATABASE.md`.
 
-Relationship dự kiến:
+### USER
+
+`USER` là database entity đã được định nghĩa trong `DATABASE.md`.
+
+Thiết kế `USER` đã được phê duyệt ở mức database design nhưng hiện chưa được materialize trong Prisma schema.
+
+Authentication implementation phải materialize `USER` vào Prisma schema theo đúng `DATABASE.md`.
+
+Không được:
+
+- Redesign `USER`.
+- Bổ sung field ngoài database design đã được phê duyệt.
+- Thay đổi role model.
+- Thay đổi relationship ngoài scope đã được phê duyệt.
+- Tạo entity `USER` thứ hai.
+
+### AUTH_SESSION
+
+`AUTH_SESSION` đã được định nghĩa trong `DATABASE.md` và là một phần của database design đã được phê duyệt.
+
+Authentication sử dụng đúng cấu trúc `AUTH_SESSION` đã được định nghĩa.
+
+Implementation phải materialize `AUTH_SESSION` vào Prisma schema theo đúng database design.
+
+Relationship:
 
 ```text
 USER 1 ─── N AUTH_SESSION
 ```
 
-### API
+PLAN không thay đổi database design.
+
+PLAN chỉ xác định cách Authentication sử dụng các entity đã được định nghĩa trong `DATABASE.md`.
+
+---
+
+## API
 
 Tái sử dụng các endpoint:
 
@@ -209,115 +277,144 @@ GET  /api/auth/me
 
 Không tạo duplicate endpoint.
 
-### Security
+---
+
+## Security
 
 Backend là security boundary duy nhất.
 
 Frontend chỉ điều khiển UI/navigation, không được dùng để enforce security.
 
-Cookie-based authentication phải được xem xét CSRF. `HttpOnly` chỉ ngăn JavaScript đọc cookie, không tự chống CSRF.
+Cookie-based authentication phải được xem xét CSRF.
 
-## 5. Phân tích Authentication Mechanism
+HttpOnly chỉ ngăn JavaScript đọc cookie, không tự chống CSRF.
 
-### Phương án A: JWT
+---
 
-#### Cách hoạt động
+# 5. Phân tích Authentication Mechanism
 
-- Sau Login, backend tạo JWT.
-- Credential được transport qua `HttpOnly` cookie.
-- Backend verify JWT ở mỗi protected request.
-- Backend vẫn load user hiện tại để kiểm tra `is_active` và role mới nhất.
+## Phương án A: JWT
 
-#### Ưu điểm
+### Cách hoạt động
+
+Sau Login, backend tạo JWT.
+
+Credential được transport qua HttpOnly cookie.
+
+Backend verify JWT ở mỗi protected request.
+
+Backend vẫn load user hiện tại để kiểm tra `is_active` và role mới nhất.
+
+### Ưu điểm
 
 - Không cần session table nếu không yêu cầu server-side revocation.
 - Phù hợp với REST API.
 - Dễ mở rộng khi có nhiều backend instance.
-- Có thể tránh lưu token trong `localStorage`.
+- Có thể tránh lưu token trong localStorage.
 
-#### Nhược điểm
+### Nhược điểm
 
 - Logout không thể thu hồi token đã bị sao chép nếu không có revocation mechanism.
 - Refresh token làm tăng complexity.
 - Token bị replay có thể tiếp tục hợp lệ đến khi hết hạn.
 - Revocation bằng denylist hoặc token version sẽ phát sinh persistence/schema impact.
 
-#### Logout
+### Logout
 
-- Xóa cookie phía client.
-- Nếu không có server-side revocation, credential bị sao chép vẫn có thể dùng tới khi hết hạn.
-- Có rủi ro không đáp ứng đầy đủ yêu cầu invalidation sau Logout.
+Xóa cookie phía client.
 
-### Phương án B: Stateful server-side session authentication được transport bằng HTTP-only cookie
+Nếu không có server-side revocation, credential bị sao chép vẫn có thể dùng tới khi hết hạn.
 
-#### Cách hoạt động
+Điều này có rủi ro không đáp ứng đầy đủ yêu cầu invalidation sau Logout.
 
-- Sau Login, backend tạo session token bằng cryptographically secure random generator với độ dài 32 random bytes (256-bit).
-- Backend lưu SHA-256 hash của session token trong `AUTH_SESSION`.
-- Raw session token chỉ tồn tại trong quá trình tạo session và xử lý cookie.
-- Controller/HTTP layer set raw session token vào cookie `session_id` với thuộc tính HTTP-only.
-- Backend đọc raw token từ cookie `session_id`, hash token bằng SHA-256 và tìm session tương ứng.
-- Backend kiểm tra:
-  - Session tồn tại.
-  - Session chưa hết hạn.
-  - User tồn tại.
-  - User đang active.
-  - Role hiện tại của user.
+---
 
-#### Ưu điểm
+## Phương án B: Stateful server-side session authentication
+
+Credential được transport bằng HTTP-only cookie.
+
+### Cách hoạt động
+
+Sau Login:
+
+1. Backend tạo session token bằng cryptographically secure random generator với độ dài 32 random bytes (256-bit).
+2. Backend tạo SHA-256 hash của session token.
+3. Backend lưu hash trong `AUTH_SESSION`.
+4. Raw session token được đưa vào cookie `session_id`.
+5. Backend không lưu raw session token.
+6. Khi protected request:
+   - Đọc raw token từ cookie.
+   - Hash token bằng SHA-256.
+   - Tìm session tương ứng.
+   - Kiểm tra session tồn tại.
+   - Kiểm tra session chưa hết hạn.
+   - Load user.
+   - Kiểm tra user tồn tại.
+   - Kiểm tra `is_active`.
+   - Đọc role hiện tại của user.
+
+### Ưu điểm
 
 - Logout có thể invalidate session ngay lập tức.
 - Không đưa password hoặc business data vào cookie.
 - Dễ xử lý account inactive, expiration và revocation.
-- Credential không thể được đọc bởi JavaScript khi dùng `HttpOnly`.
+- Credential không thể được đọc bởi JavaScript khi dùng HttpOnly.
 - Phù hợp với deployment nhiều instance nếu sử dụng shared PostgreSQL/Supabase.
 
-#### Nhược điểm
+### Nhược điểm
 
 - Cần persistence cho session.
-- Cần thêm `AUTH_SESSION` model/table.
+- Cần `AUTH_SESSION`.
 - Mỗi protected request cần kiểm tra session persistence.
 - Cần xử lý cleanup session hết hạn.
 
-#### Logout
+### Logout
 
-- Auth Service xóa session hiện tại.
-- Controller/HTTP layer clear cookie.
-- Credential cũ không còn sử dụng được sau Logout.
-- Không triển khai Logout all devices trong v1.
+Auth Service xóa session hiện tại.
 
-### So sánh
+Controller/HTTP layer clear cookie.
 
-| Tiêu chí                       | JWT                        | Stateful server-side session |
-| ------------------------------ | -------------------------- | ---------------------------- |
-| Complexity ban đầu             | Trung bình                 | Trung bình                   |
-| Logout tức thời                | Cần revocation bổ sung     | Có                           |
-| Database impact                | Thấp nếu không revoke      | Cần `AUTH_SESSION`           |
-| Credential exposure ở frontend | Có thể tránh bằng cookie   | Có thể tránh bằng cookie     |
-| Credential expiration          | JWT `exp`                  | `expires_at`                 |
-| Account inactive               | Kiểm tra mỗi request       | Kiểm tra mỗi request         |
-| Revocation                     | Phức tạp hơn               | Trực tiếp                    |
-| Deployment nhiều instance      | Tốt                        | Tốt với shared database      |
-| Phù hợp AC-16                  | Có rủi ro nếu không revoke | Phù hợp                      |
-| Phù hợp scope đồ án            | Ít database hơn            | Rõ ràng hơn về security      |
+Credential cũ không còn sử dụng được sau Logout.
 
-### Phương án đề xuất
+Không triển khai Logout all devices trong v1.
 
-Đề xuất **stateful server-side session authentication được transport bằng HTTP-only cookie**, với session persistence trong PostgreSQL/Supabase.
+---
+
+## So sánh
+
+| Tiêu chí                       | JWT                            | Stateful server-side session |
+| ------------------------------ | ------------------------------ | ---------------------------- |
+| Complexity ban đầu             | Trung bình                     | Trung bình                   |
+| Logout tức thời                | Cần revocation bổ sung         | Có                           |
+| Database impact                | Thấp nếu không revoke          | Cần AUTH_SESSION             |
+| Credential exposure ở frontend | Có thể tránh bằng cookie       | Có thể tránh bằng cookie     |
+| Credential expiration          | JWT `exp`                      | `expires_at`                 |
+| Account inactive               | Kiểm tra mỗi request           | Kiểm tra mỗi request         |
+| Revocation                     | Phức tạp hơn                   | Trực tiếp                    |
+| Deployment nhiều instance      | Tốt                            | Tốt với shared database      |
+| Phù hợp yêu cầu Logout         | Có limitation nếu không revoke | Phù hợp                      |
+
+## Phương án được chọn
+
+Sử dụng **stateful server-side session authentication được transport bằng HTTP-only cookie**, với session persistence trong PostgreSQL/Supabase.
 
 Lý do:
 
-1. Đáp ứng tốt hơn yêu cầu Logout và credential invalidation.
-2. Không expose credential cho JavaScript.
-3. Cho phép vô hiệu hóa credential ngay lập tức.
-4. Dễ kiểm tra `is_active` và role hiện tại.
-5. Phù hợp với Node/Express + PostgreSQL/Supabase.
-6. Tránh replay window của JWT sau Logout.
-7. Phù hợp với phạm vi đồ án nếu thiết kế session tối giản.
+- Đáp ứng tốt yêu cầu Logout và credential invalidation.
+- Không expose credential cho JavaScript.
+- Cho phép vô hiệu hóa credential ngay lập tức.
+- Dễ kiểm tra `is_active` và role hiện tại.
+- Phù hợp với Node/Express + PostgreSQL/Supabase.
+- Tránh replay window của JWT sau Logout.
+- Phù hợp với phạm vi đồ án khi session được thiết kế tối giản.
 
-## 6. Credential Lifecycle
+Đây là authentication mechanism đã được developer approve cho implementation.
 
-### Credential creation
+---
+
+# 6. Credential Lifecycle
+
+## Credential creation
 
 Sau Login thành công:
 
@@ -329,12 +426,19 @@ Sau Login thành công:
 6. Auth Service tạo SHA-256 hash của session token.
 7. Session Repository lưu session record với hash, không lưu raw token.
 8. Auth Service trả authentication result cho Controller ở mức nội bộ.
-9. Controller/HTTP layer set raw session token trong cookie `session_id` với thuộc tính HTTP-only.
+9. Controller/HTTP layer set raw session token vào cookie `session_id` với thuộc tính HTTP-only.
 10. Controller trả user identity được phép.
 
-Raw session token chỉ tồn tại trong quá trình tạo và xử lý cookie, không được lưu database, không được log và không xuất hiện trong response body.
+Raw session token:
 
-### Credential transport
+- Chỉ tồn tại trong quá trình tạo và xử lý cookie.
+- Không được lưu database.
+- Không được log.
+- Không xuất hiện trong response body.
+
+---
+
+## Credential transport
 
 Credential được transport bằng cookie `session_id`.
 
@@ -346,33 +450,47 @@ Cookie attributes gồm:
 - `Domain`.
 - `Path`.
 
-Quy tắc thiết kế:
+### Quy tắc thiết kế
 
 - `HttpOnly` là bắt buộc để JavaScript không đọc được credential.
 - `Secure` được bật trong production/HTTPS.
 - `SameSite` và `Path` được xác định dựa trên deployment topology thực tế và CORS configuration.
-- `Domain` chỉ được cấu hình nếu deployment topology thực sự yêu cầu; không đặt Domain rộng hơn cần thiết.
+- `Domain` chỉ được cấu hình nếu deployment topology thực sự yêu cầu.
+- Không đặt `Domain` rộng hơn cần thiết.
 - Không tự ý chốt một giá trị `SameSite` chỉ vì frontend và backend khác origin.
-- `cross-origin` và `cross-site` là hai khái niệm khác nhau; cấu hình cookie phải dựa trên topology thực tế.
+- Cross-origin và cross-site là hai khái niệm khác nhau.
 - Không dùng `localStorage` hoặc `sessionStorage` để lưu raw credential.
 
-Cookie name duy nhất của Authentication là `session_id`. Không sử dụng tên cookie khác.
+Cookie name duy nhất của Authentication là:
 
-### CSRF consideration
+```text
+session_id
+```
 
-- `HttpOnly` không phải biện pháp chống CSRF.
-- Cookie-based authentication phải được xem xét CSRF trước IMPLEMENT.
+Không sử dụng tên cookie khác.
+
+---
+
+## CSRF consideration
+
+HttpOnly không phải biện pháp chống CSRF.
+
+Cookie-based authentication phải được xem xét CSRF trước IMPLEMENT.
+
+Quy tắc:
+
 - Cookie `SameSite` phải phù hợp với deployment topology thực tế.
 - Backend CORS không được dùng wildcard origin khi xử lý credentialed requests.
 - Backend chỉ cho phép các frontend origin được cấu hình.
 - Nếu deployment topology cuối cùng sử dụng frontend/backend khác site và credentialed cookie requests, CSRF protection là bắt buộc trước IMPLEMENT.
 - Nếu deployment thực tế yêu cầu cross-site credentialed requests, phải bổ sung CSRF protection phù hợp trước IMPLEMENT.
-- CORS credential configuration phải chặt chẽ và chỉ cho phép các frontend origin được cấu hình.
-- PLAN không tự chọn một CSRF library cụ thể.
+- PLAN không chốt một CSRF library cụ thể.
 
-### Pre-implementation Deployment Topology Verification
+---
 
-Trước IMPLEMENT phải kiểm tra deployment topology thực tế, không để implementation tự suy đoán cookie, CORS hoặc CSRF configuration:
+## Pre-implementation Deployment Topology Verification
+
+Trước IMPLEMENT phải kiểm tra:
 
 - Frontend origin thực tế.
 - Backend origin thực tế.
@@ -384,17 +502,17 @@ Trước IMPLEMENT phải kiểm tra deployment topology thực tế, không đ�
 - Cookie name `session_id`.
 - Cookie Domain.
 - Cookie Path.
-- `SameSite`.
-- `Secure`.
-- `HttpOnly`.
+- SameSite.
+- Secure.
+- HttpOnly.
 - CSRF requirement.
 - Frontend HTTP client có cần gửi credentials hay không.
 
 Không hard-code Domain hoặc SameSite policy khi topology thực tế chưa được verification.
 
-`HttpOnly` bảo vệ cookie khỏi JavaScript access nhưng không tự nó là CSRF protection. SameSite, CORS và CSRF phải được quyết định dựa trên deployment topology thực tế.
+---
 
-### Credential storage phía frontend
+## Credential storage phía frontend
 
 Frontend chỉ lưu authentication state không nhạy cảm:
 
@@ -411,7 +529,9 @@ Frontend không lưu raw session identifier trong:
 
 Browser quản lý cookie credential.
 
-### Credential verification
+---
+
+## Credential verification
 
 Mỗi protected request:
 
@@ -425,19 +545,25 @@ Mỗi protected request:
 8. Gắn authenticated identity vào request context.
 9. Chuyển tiếp tới authorization hoặc controller.
 
-### Credential lifetime
+---
 
-Technical recommendation của PLAN:
+## Credential lifetime
 
-- Session lifetime: **7 ngày**.
-- Không remember-device.
-- Không refresh-token.
-- Không idle timeout trong v1.
-- Session hết hiệu lực khi `expires_at` đã qua.
+Session lifetime được approve là:
 
-**7 ngày là technical recommendation của PLAN và vẫn cần developer approval trước IMPLEMENT.**
+**7 ngày.**
 
-### Credential renewal
+Không triển khai:
+
+- Remember-device.
+- Refresh-token.
+- Idle timeout trong v1.
+
+Session hết hiệu lực khi `expires_at` đã qua.
+
+---
+
+## Credential renewal
 
 Không triển khai refresh-token rotation hoặc remember-device trong v1.
 
@@ -445,34 +571,48 @@ Không triển khai idle timeout trong v1.
 
 Nếu cần gia hạn session khi user đang hoạt động, phải xử lý như một thay đổi kỹ thuật riêng và không được mở rộng scope ngoài SPEC.
 
-### Logout
+---
 
-`POST /api/auth/logout`:
+## Logout
 
-1. Route Logout không phụ thuộc vào authentication middleware theo kiểu hard `401 Unauthorized`.
-2. Controller/HTTP layer đọc cookie nếu có và chuyển credential ở mức nội bộ cho Auth Service.
-3. Nếu cookie/session hợp lệ, Auth Service xóa session hiện tại thông qua Session Repository.
-4. Nếu cookie thiếu, malformed, expired hoặc session đã bị xóa, Auth Service trả kết quả idempotent và không tạo lỗi authentication.
-5. Auth Service không set hoặc clear HTTP cookie.
-6. Controller/HTTP layer clear HTTP-only cookie trong mọi trường hợp.
-7. Controller trả success response cho client.
-8. Frontend reset authentication state.
-9. User trở về trạng thái Guest.
+`POST /api/auth/logout`
 
-Logout lặp lại phải được xử lý idempotently:
+Logout không phụ thuộc vào authentication middleware theo kiểu hard `401 Unauthorized`.
+
+Controller/HTTP layer:
+
+- Đọc cookie nếu có.
+- Chuyển credential ở mức nội bộ cho Auth Service.
+- Clear HTTP-only cookie trong mọi trường hợp.
+- Trả success response cho client.
+
+Auth Service:
+
+- Nếu credential/session hợp lệ, xóa session hiện tại thông qua Session Repository.
+- Nếu credential thiếu, malformed, expired hoặc session đã bị xóa, xử lý idempotently.
+- Không tạo lỗi authentication cho các trường hợp trên.
+- Không set hoặc clear HTTP cookie.
+
+Frontend:
+
+- Reset authentication state.
+- Đưa user về trạng thái Guest.
+
+Logout lặp lại phải idempotent:
 
 - Không tạo lỗi hệ thống.
 - Cookie vẫn được clear.
 - Client trở về trạng thái Guest.
-- Cookie/session thiếu, malformed, expired hoặc đã bị xóa vẫn trả success.
 
 Logout chỉ xóa session hiện tại được xác định từ credential cookie.
 
 Không triển khai Logout all devices.
 
-## 7. Password Security
+---
 
-### Thuật toán đề xuất
+# 7. Password Security
+
+## Thuật toán
 
 Sử dụng `node:crypto` với `scrypt` bất đồng bộ.
 
@@ -484,53 +624,56 @@ Lý do:
 - Giảm dependency và complexity.
 
 Không sử dụng hash thông thường như SHA-256 trực tiếp cho password.
-Không tự thay bằng bcrypt hoặc argon2 nếu chưa được approve.
 
-Implementation phải dùng `crypto.scrypt` hoặc `crypto.scryptSync`.
+Không tự thay bằng bcrypt hoặc argon2.
 
-Salt phải được tạo bằng cryptographically secure random generator.
+---
 
-### Nội dung của `password_hash`
+## Password hash format
 
 `password_hash` phải chứa đủ thông tin cần thiết để verify password về sau, tối thiểu gồm:
 
 - Thuật toán hashing.
-- Các parameters cần thiết của thuật toán.
+- Các parameters cần thiết.
 - Salt.
 - Derived key/hash.
 
 Format lưu trữ cụ thể không được chốt ở PLAN.
 
-Cost parameters của `scrypt` không được tự ý chốt cứng khi chưa có technical validation. Không sử dụng weaker/default parameters chỉ vì tiện. Các parameters phải được xác định và technical-validate trước IMPLEMENT dựa trên:
+Cost parameters của scrypt phải được technical-validate trước IMPLEMENT dựa trên:
 
 - Security requirement.
 - Backend performance.
 - Deployment environment.
 - Khả năng chịu tải phù hợp với scope đồ án.
 
-Đây là technical decision cần được xác nhận trước IMPLEMENT; PLAN không tự chốt giá trị parameters cụ thể.
+PLAN không tự chốt giá trị parameters cụ thể.
 
-### Hashing flow
+---
+
+## Hashing flow
 
 Password hashing nằm ở Auth Service hoặc security utility được Auth Service sử dụng.
 
-Repository chỉ nhận `password_hash` đã được tạo để lưu.
-
 ```text
 Auth Controller
-  ↓
+      ↓
 Auth Service
-  ↓
+      ↓
 Validate password
-  ↓
+      ↓
 Hash password with metadata
-  ↓
+      ↓
 User Repository
-  ↓
+      ↓
 USER.password_hash
 ```
 
-### Verification flow
+Repository chỉ nhận `password_hash` đã được tạo để lưu.
+
+---
+
+## Verification flow
 
 Password verification nằm trong Auth Service/security utility:
 
@@ -538,10 +681,14 @@ Password verification nằm trong Auth Service/security utility:
 2. Đọc thuật toán, parameters, salt và derived key/hash.
 3. Hash password input với cùng metadata.
 4. So sánh bằng constant-time comparison.
-5. Không trả password ra khỏi service.
-6. Không log password hoặc hash.
 
-### Security requirements
+Không trả password ra khỏi service.
+
+Không log password hoặc hash.
+
+---
+
+## Security requirements
 
 - Password tối thiểu 8 ký tự.
 - Password phải được hash trước khi lưu.
@@ -553,45 +700,74 @@ Password verification nằm trong Auth Service/security utility:
 - Backend phải validate lại password.
 - Client-side validation chỉ phục vụ UX.
 
-Session token phải được tạo bằng cryptographically secure random generator với 32 random bytes (256-bit). Backend chỉ lưu SHA-256 hash của token trong `AUTH_SESSION`; raw token không được log hoặc lưu ở frontend.
+Session token phải được tạo bằng cryptographically secure random generator với 32 random bytes (256-bit).
 
-## 8. Thiết kế Backend
+Backend chỉ lưu SHA-256 hash của token trong `AUTH_SESSION`.
 
-### Routes
+Raw token không được log hoặc lưu ở frontend.
+
+---
+
+# 8. Thiết kế Backend
+
+## Routes
 
 Các route cần được bổ sung:
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+```
 
 Route chỉ:
 
 - Khai báo HTTP method và endpoint.
 - Gắn middleware.
 - Gọi controller.
-- Không chứa business logic.
 
-Route Logout là ngoại lệ về authentication middleware: không gắn middleware theo kiểu hard `401`, để có thể clear cookie và trả success khi credential thiếu hoặc không còn hợp lệ.
+Route không chứa business logic.
 
-### Middleware
+Logout là ngoại lệ về authentication middleware: không gắn middleware theo kiểu hard 401 để có thể clear cookie và trả success khi credential thiếu hoặc không còn hợp lệ.
 
-#### Authentication middleware
+---
+
+## Authentication middleware
 
 Trách nhiệm:
 
-- Đọc cookie `session_id`.
+- Sử dụng dependency đã được developer approve là `cookie-parser` để parse HTTP Cookie.
+- Đọc raw session token từ `req.cookies.session_id`.
 - Xác thực session.
 - Kiểm tra expiration.
 - Load user.
 - Kiểm tra `is_active`.
-- Gắn authenticated identity vào request context.
+- Gắn authenticated public user identity vào `req.user`, gồm tối thiểu:
+  - `id`;
+  - `email`;
+  - `display_name`;
+  - `role`.
+- Không đưa `password_hash`, raw session token, `session_identifier_hash`, `expires_at` hoặc authentication secret vào `req.user`.
 - Trả `401 Unauthorized` nếu credential thiếu hoặc không hợp lệ.
 
-Middleware này áp dụng cho protected endpoints. `POST /api/auth/logout` không dùng flow hard `401` này.
+Middleware áp dụng cho protected endpoints.
 
-#### Authorization middleware
+`POST /api/auth/logout` không dùng flow hard 401 này.
+
+### Developer-approved technical decisions for TASK-006
+
+- Cookie parser: `cookie-parser`.
+- Raw session token source: `req.cookies.session_id`.
+- Request identity property: `req.user`.
+
+`cookie-parser` chỉ parse HTTP Cookie; không thay thế stateful server-side session architecture. Session vẫn được lưu trong `AUTH_SESSION`, raw session token chỉ tồn tại ở runtime/request cookie và không được lưu vào database.
+
+TASK-006 không chuyển sang `express-session`, `cookie-session` hoặc JWT. Role authorization và `403 Forbidden` thuộc TASK-007.
+
+---
+
+## Authorization middleware
 
 Trách nhiệm:
 
@@ -599,7 +775,9 @@ Trách nhiệm:
 - Cho phép `USER` hoặc `ADMIN` theo endpoint.
 - Trả `403 Forbidden` nếu user authenticated nhưng không đủ quyền.
 
-#### Validation middleware
+---
+
+## Validation middleware
 
 Trách nhiệm:
 
@@ -607,9 +785,12 @@ Trách nhiệm:
 - Kiểm tra required fields.
 - Kiểm tra data types.
 - Kiểm tra password length.
-- Không xử lý persistence hoặc session lifecycle.
 
-#### Error middleware
+Không xử lý persistence hoặc session lifecycle.
+
+---
+
+## Error middleware
 
 Trách nhiệm:
 
@@ -618,7 +799,9 @@ Trách nhiệm:
 - Không trả password, hash, raw session identifier hoặc thông tin nội bộ.
 - Không tạo response khác biệt rõ ràng làm lộ trạng thái account.
 
-### Controllers
+---
+
+## Controllers
 
 Auth Controller chịu trách nhiệm:
 
@@ -629,14 +812,20 @@ Auth Controller chịu trách nhiệm:
 - Set HTTP-only cookie sau Login.
 - Clear HTTP-only cookie sau Logout.
 - Mapping service result/error thành HTTP response.
-- Không truy vấn database trực tiếp.
-- Không hash password trực tiếp.
-- Không tự xác định role hoặc ownership.
-- Không đưa raw session identifier vào response body.
 
-### Services
+Không:
 
-#### Auth Service
+- Truy vấn database trực tiếp.
+- Hash password trực tiếp.
+- Tự xác định role.
+- Tự xác định ownership.
+- Đưa raw session identifier vào response body.
+
+---
+
+## Services
+
+### Auth Service
 
 Chịu trách nhiệm:
 
@@ -648,19 +837,24 @@ Chịu trách nhiệm:
 - Tạo session.
 - Kết thúc hoặc xóa session.
 - Trả authentication result cho Controller ở mức nội bộ.
-- Không set hoặc clear HTTP cookie.
-- Không phụ trách HTTP response.
-- Không trả raw session identifier cho frontend.
 
-#### Authorization logic
+Không:
+
+- Set hoặc clear HTTP cookie.
+- Phụ trách HTTP response.
+- Trả raw session identifier cho frontend.
+
+### Authorization logic
 
 Role authorization có thể đặt trong middleware dùng chung.
 
 Business service của từng domain vẫn phải kiểm tra ownership khi xử lý resource cụ thể.
 
-### Repository / Data Access
+---
 
-#### User Repository
+## Repository / Data Access
+
+### User Repository
 
 Trách nhiệm:
 
@@ -668,10 +862,14 @@ Trách nhiệm:
 - Tìm user theo user id.
 - Tạo user mới.
 - Đọc role, `is_active` và các field cần thiết.
-- Không nhận `owner_id` từ client để xác định identity.
-- Không chứa password policy hoặc authorization business rule.
 
-#### Session Repository
+Không:
+
+- Nhận owner_id từ client để xác định identity.
+- Chứa password policy.
+- Chứa authorization business rule.
+
+### Session Repository
 
 Trách nhiệm:
 
@@ -680,20 +878,26 @@ Trách nhiệm:
 - Kiểm tra expiration.
 - Xóa session khi Logout.
 - Cleanup session hết hạn khi cần.
-- Không lưu raw session token.
 
-### Validation
+Không lưu raw session token.
+
+---
+
+## Validation
+
+### Registration
 
 Backend bắt buộc validate:
-
-Registration:
 
 - `display_name`.
 - `email`.
 - `password`.
-- Không xử lý `confirm_password` như field nghiệp vụ.
 
-Login:
+`confirm_password` chỉ phục vụ client-side validation và không phải field nghiệp vụ.
+
+### Login
+
+Backend bắt buộc validate:
 
 - `email`.
 - `password`.
@@ -707,21 +911,23 @@ SPEC đã chốt:
 
 Các giới hạn chi tiết của `display_name`, trim và email input cần được chốt trong implementation contract nếu chưa được xác định trong SPEC.
 
-### Error Handling
+---
 
-Đề xuất mapping:
+## Error Handling
 
-| Tình huống                   |                 HTTP status |
-| ---------------------------- | --------------------------: |
-| Validation failure           |           `400 Bad Request` |
-| Duplicate email              |              `409 Conflict` |
-| Invalid credentials          |          `401 Unauthorized` |
-| Missing credential           |          `401 Unauthorized` |
-| Expired/malformed credential |          `401 Unauthorized` |
-| Authenticated nhưng sai role |             `403 Forbidden` |
-| Resource không tồn tại       |             `404 Not Found` |
-| Database failure             | `500 Internal Server Error` |
-| Unexpected failure           | `500 Internal Server Error` |
+Technical mapping:
+
+| Tình huống                   |               HTTP status |
+| ---------------------------- | ------------------------: |
+| Validation failure           |           400 Bad Request |
+| Duplicate email              |              409 Conflict |
+| Invalid credentials          |          401 Unauthorized |
+| Missing credential           |          401 Unauthorized |
+| Expired/malformed credential |          401 Unauthorized |
+| Authenticated nhưng sai role |             403 Forbidden |
+| Resource không tồn tại       |             404 Not Found |
+| Database failure             | 500 Internal Server Error |
+| Unexpected failure           | 500 Internal Server Error |
 
 Login phải dùng behavior public nhất quán cho:
 
@@ -733,17 +939,19 @@ Không được tạo logic response khác biệt rõ ràng làm lộ trạng th
 
 Timing side-channel không cần tối ưu hóa quá mức ngoài scope đồ án, nhưng implementation không được tạo branch response công khai khác nhau cho các trường hợp trên.
 
-## 9. Thiết kế Authorization
+---
 
-### Authentication-required endpoint
+# 9. Thiết kế Authorization
+
+## Authentication-required endpoint
 
 ```text
 Request
-  ↓
+   ↓
 Authentication middleware
-  ↓
+   ↓
 Authenticated identity
-  ↓
+   ↓
 Controller / Service
 ```
 
@@ -753,30 +961,26 @@ Nếu không có identity hợp lệ:
 401 Unauthorized
 ```
 
-### USER access
+## USER access
 
-`USER` được phép truy cập chức năng user-facing khi:
+USER được phép truy cập chức năng user-facing khi:
 
 - Credential hợp lệ.
 - Account active.
-- Endpoint không yêu cầu `ADMIN`.
+- Endpoint không yêu cầu ADMIN.
 - Ownership check thành công nếu resource thuộc user.
 
-### ADMIN access
+## ADMIN access
 
 Admin endpoint yêu cầu:
 
-```text
-Authenticated
-  +
-USER.role = ADMIN
-  +
-Account active
-```
+- Authenticated.
+- `USER.role = ADMIN`.
+- Account active.
 
 Frontend có thể ẩn hoặc hiện Admin navigation, nhưng backend vẫn phải kiểm tra role ở mỗi request.
 
-### Ownership check
+## Ownership check
 
 Client không được quyết định ownership.
 
@@ -796,11 +1000,15 @@ Backend phải:
 
 Các authoritative values như XP, level, streak và learning progress không được lấy từ client.
 
-## 10. Tác động Database
+---
 
-### Existing model
+# 10. Tác động Database
 
-Tái sử dụng `USER` với các field:
+## USER
+
+`USER` đã được định nghĩa trong `docs/DATABASE.md`.
+
+Các field được sử dụng:
 
 - `id`
 - `email`
@@ -814,9 +1022,17 @@ Tái sử dụng `USER` với các field:
 - `created_at`
 - `updated_at`
 
-### Changes
+`USER` là database entity đã được phê duyệt về mặt thiết kế nhưng hiện chưa được materialize trong Prisma schema.
 
-Không thay đổi schema trong bước PLAN đối với `USER`.
+Implementation phải materialize `USER` theo đúng `DATABASE.md`.
+
+Không được:
+
+- Redesign entity.
+- Bổ sung field ngoài database design đã phê duyệt.
+- Thay đổi role.
+- Thay đổi business rule.
+- Tạo entity USER thứ hai.
 
 Email cần được bảo vệ bằng:
 
@@ -826,11 +1042,13 @@ UNIQUE(USER.email)
 
 Email phải được normalize trước khi insert hoặc lookup.
 
-### Dự kiến entity `AUTH_SESSION`
+---
 
-Đây là database impact mới, chỉ là thiết kế đề xuất ở mức PLAN và cần developer approval trước TASK/IMPLEMENT.
+## AUTH_SESSION
 
-Entity v1 tối thiểu gồm:
+`AUTH_SESSION` đã được định nghĩa trong `docs/DATABASE.md`.
+
+Entity v1 gồm đúng:
 
 - `id`
 - `user_id`
@@ -838,70 +1056,57 @@ Entity v1 tối thiểu gồm:
 - `created_at`
 - `expires_at`
 
-#### `id`
+Implementation phải materialize `AUTH_SESSION` theo đúng database design.
+
+### id
 
 Mục đích:
 
 - Primary key nội bộ cho session record.
 
-Cần thiết:
-
-- Có, để định danh record và tạo quan hệ rõ ràng.
-
-Constraint/index:
+Constraint:
 
 - Primary key.
 
-#### `user_id`
+### user_id
 
 Mục đích:
 
 - Liên kết session với account sở hữu session.
 
-Cần thiết:
-
-- Có, để backend xác định user sau khi session được verify.
-
-Constraint/index:
+Constraint:
 
 - Foreign key tới `USER.id`.
 - Index trên `user_id` nếu cần truy vấn session theo user.
-- Không nhận `user_id` từ client.
 
-#### `session_identifier_hash`
+Không nhận `user_id` từ client.
+
+### session_identifier_hash
 
 Mục đích:
 
 - Lưu SHA-256 hash của raw session token nhận từ cookie `session_id`.
 - Cho phép backend tìm session mà không lưu raw session token.
 
-Cần thiết:
-
-- Có, đây là field chính để verify session.
-
-Constraint/index:
+Constraint:
 
 - Unique constraint hoặc unique index.
 - Index để lookup nhanh.
 - Không lưu raw session token.
 
-#### `created_at`
+### created_at
 
 Mục đích:
 
 - Ghi nhận thời điểm session được tạo.
 - Hỗ trợ session lifecycle và debugging an toàn.
 
-Cần thiết:
-
-- Có.
-
-Constraint/index:
+Constraint:
 
 - Not null.
 - Không nhất thiết cần index riêng trong v1.
 
-#### `expires_at`
+### expires_at
 
 Mục đích:
 
@@ -909,16 +1114,14 @@ Mục đích:
 - Cho phép backend từ chối credential expired.
 - Hỗ trợ cleanup expired session.
 
-Cần thiết:
-
-- Có.
-
-Constraint/index:
+Constraint:
 
 - Not null.
 - Có thể index để cleanup hiệu quả.
 
-### Relationship
+---
+
+## Relationship
 
 ```text
 USER 1 ─── N AUTH_SESSION
@@ -934,21 +1137,26 @@ Quy tắc:
 - Không triển khai session management trong v1.
 - Không triển khai device history trong v1.
 
-### Database documentation synchronization
+---
 
-`AUTH_SESSION` là entity mới được Authentication PLAN sử dụng nhưng chưa có trong `DATABASE.md`.
+## Database design boundary
 
-Sau khi PLAN được APPROVED:
+`USER` và `AUTH_SESSION` đã được định nghĩa trong `docs/DATABASE.md`.
 
-1. Đồng bộ `DATABASE.md` để bổ sung `AUTH_SESSION`.
-2. Xác định relationship `USER 1:N AUTH_SESSION` trong database documentation.
-3. Sau đó mới lập kế hoạch migration/implementation.
+Do đó:
 
-PLAN hiện tại không sửa `DATABASE.md` và không tạo migration.
+- PLAN không cần bổ sung `AUTH_SESSION` vào `DATABASE.md`.
+- PLAN không thay đổi database design.
+- Không tạo duplicate database documentation.
+- Implementation phải materialize các entity đã được database design phê duyệt vào Prisma schema.
+- Migration chỉ được tạo ở IMPLEMENT stage thông qua TASK đã được approve.
+- Nếu implementation phát hiện Prisma schema không khớp với `DATABASE.md`, AI Agent phải dừng và báo developer thay vì tự redesign database.
 
-### Fields không thêm trong v1
+---
 
-#### `revoked_at`
+## Fields không thêm trong v1
+
+### revoked_at
 
 Không thêm trong v1.
 
@@ -958,7 +1166,7 @@ Lý do:
 - Không có requirement về audit hoặc giữ session record sau Logout.
 - Session history nằm ngoài scope.
 
-#### `last_used_at`
+### last_used_at
 
 Không thêm trong v1.
 
@@ -967,7 +1175,7 @@ Lý do:
 - Không có requirement về idle timeout.
 - Cập nhật field trên mỗi request làm tăng write load.
 
-#### IP và user-agent
+### IP và user-agent
 
 Không thêm trong v1.
 
@@ -977,7 +1185,9 @@ Lý do:
 - Không có requirement về user-agent tracking.
 - Không triển khai device history hoặc anomaly tracking.
 
-### Cleanup expired session
+---
+
+## Cleanup expired session
 
 Đề xuất v1:
 
@@ -989,35 +1199,45 @@ Lý do:
 
 Không mở rộng thành background infrastructure phức tạp.
 
-### Foreign key và delete behavior
+---
 
-- `AUTH_SESSION.user_id` tham chiếu `USER.id`.
-- Không dùng cascade delete tùy tiện.
-- Nếu account bị disable, authentication middleware vẫn từ chối session dựa trên `USER.is_active`.
-- Hành vi xóa account và các session liên quan nằm ngoài scope Authentication hiện tại.
+## Foreign key và delete behavior
 
-### Existing user data
+`AUTH_SESSION.user_id` tham chiếu `USER.id`.
+
+Không dùng cascade delete tùy tiện.
+
+Nếu account bị disable, authentication middleware vẫn từ chối session dựa trên `USER.is_active`.
+
+Hành vi xóa account và các session liên quan nằm ngoài scope Authentication hiện tại.
+
+---
+
+## Existing user data
 
 V1 không yêu cầu hỗ trợ user data cũ.
 
 Nếu phát hiện dữ liệu user đã tồn tại cần migration hoặc compatibility:
 
-- Dừng phần xử lý liên quan.
-- Báo developer.
-- Phân tích riêng migration/compatibility impact.
-- Không tự ý migrate hoặc transform dữ liệu.
+1. Dừng phần xử lý liên quan.
+2. Báo developer.
+3. Phân tích riêng migration/compatibility impact.
 
-## 11. Kế hoạch triển khai API
+Không tự ý migrate hoặc transform dữ liệu.
 
-### Register
+---
+
+# 11. Kế hoạch triển khai API
+
+## Register
 
 `POST /api/auth/register`
 
-#### Access
+### Access
 
-- Guest.
+Guest.
 
-#### Request nghiệp vụ
+### Request nghiệp vụ
 
 ```json
 {
@@ -1029,34 +1249,35 @@ Nếu phát hiện dữ liệu user đã tồn tại cần migration hoặc comp
 
 `confirm_password` chỉ được kiểm tra ở frontend và không gửi như field nghiệp vụ tới backend.
 
-#### Controller responsibility
+### Controller responsibility
 
 - Nhận request.
 - Gọi Auth Service.
 - Nhận service result.
 - Mapping result thành HTTP response.
 
-#### Service responsibility
+### Service responsibility
 
 - Validate input.
 - Normalize email.
 - Kiểm tra email unique.
 - Hash password với metadata cần thiết để verify về sau.
 - Tạo account:
-  - role `USER`.
+  - `role = USER`.
   - `is_active = true`.
   - `daily_xp_goal = 50`.
+
 - Không tạo session.
 - Không auto-login.
 - Không set HTTP cookie.
 
-#### Repository responsibility
+### Repository responsibility
 
 - Query email normalized.
 - Insert user.
 - Bảo vệ unique constraint ở database.
 
-#### Success
+### Success
 
 Giữ response body theo API contract hiện tại:
 
@@ -1067,25 +1288,33 @@ Giữ response body theo API contract hiện tại:
 }
 ```
 
-Success status recommendation: `201 Created`.
+Success status recommendation:
 
-`API_SPEC.md` hiện không quy định success status cụ thể cho endpoint này; đây là technical recommendation của PLAN. Response body hiện tại không được tự ý thay đổi.
+```text
+201 Created
+```
 
-#### Errors
+API_SPEC.md hiện không quy định success status cụ thể cho endpoint này; đây là technical recommendation của PLAN.
+
+Response body hiện tại không được tự ý thay đổi.
+
+### Errors
 
 - `400 Bad Request`: validation.
 - `409 Conflict`: duplicate email.
 - `500`: database/unexpected failure.
 
-### Login
+---
+
+## Login
 
 `POST /api/auth/login`
 
-#### Access
+### Access
 
-- Guest.
+Guest.
 
-#### Request
+### Request
 
 ```json
 {
@@ -1094,7 +1323,7 @@ Success status recommendation: `201 Created`.
 }
 ```
 
-#### Controller responsibility
+### Controller responsibility
 
 - Nhận credentials.
 - Gọi Auth Service.
@@ -1103,7 +1332,7 @@ Success status recommendation: `201 Created`.
 - Trả user identity được phép.
 - Không đưa raw session token vào response body.
 
-#### Service responsibility
+### Service responsibility
 
 - Normalize email.
 - Tìm user.
@@ -1115,7 +1344,7 @@ Success status recommendation: `201 Created`.
 - Không set cookie.
 - Không trả raw session token cho frontend.
 
-#### Success
+### Success
 
 API response chỉ trả user identity được phép, tối thiểu:
 
@@ -1128,73 +1357,113 @@ Raw session token không xuất hiện trong JSON response.
 
 Frontend không nhận hoặc lưu raw session identifier.
 
-Success status recommendation: `200 OK`.
+Success status recommendation:
 
-#### Errors
+```text
+200 OK
+```
+
+### Errors
 
 - `401 Unauthorized` cho email không tồn tại, password sai hoặc account inactive.
 - `400 Bad Request` cho request không hợp lệ.
-- Response body và status phải nhất quán để giảm account enumeration.
 
-### Logout
+Response body và status phải nhất quán để giảm account enumeration.
+
+---
+
+## Logout
 
 `POST /api/auth/logout`
 
-#### Access
+### Access
 
-- Endpoint phục vụ authenticated clients nhưng không yêu cầu authentication middleware theo kiểu hard `401`.
-- Request có thể thiếu cookie hoặc có cookie malformed, expired hoặc session đã bị xóa.
-- Tất cả các trường hợp trên đều được xử lý idempotently.
+Endpoint phục vụ authenticated clients nhưng không yêu cầu authentication middleware theo kiểu hard 401.
 
-#### Controller responsibility
+Request có thể:
+
+- Thiếu cookie.
+- Có cookie malformed.
+- Có cookie expired.
+- Có session đã bị xóa.
+
+Tất cả được xử lý idempotently.
+
+### Controller responsibility
 
 - Nhận request.
-- Đọc cookie nếu có và chuyển credential ở mức nội bộ cho Auth Service.
-- Nhận authentication result ở mức nội bộ.
+- Đọc cookie nếu có.
+- Chuyển credential ở mức nội bộ cho Auth Service.
 - Clear HTTP-only cookie.
-- Trả `204 No Content` cho client.
+- Trả `204 No Content`.
 - Không đưa raw session identifier vào response body.
 
-#### Service responsibility
+### Service responsibility
 
-- Nếu credential/session hợp lệ, xác định và xóa session hiện tại thông qua Session Repository.
-- Nếu credential thiếu, malformed, expired hoặc session đã bị xóa, trả kết quả idempotent và không tạo lỗi authentication.
-- Trả authentication result cho Controller ở mức nội bộ.
-- Không clear cookie.
-- Không tạo business data.
+Nếu credential/session hợp lệ:
 
-#### Success
+- Xác định session hiện tại.
+- Xóa session thông qua Session Repository.
 
-Success status: `204 No Content`.
+Nếu credential:
+
+- Thiếu.
+- Malformed.
+- Expired.
+- Đã bị xóa.
+
+Thì:
+
+- Trả kết quả idempotent.
+- Không tạo lỗi authentication.
+
+Auth Service không clear cookie.
+
+### Success
+
+Success status:
+
+```text
+204 No Content
+```
 
 Response không chứa session state hoặc raw session identifier.
 
-#### Errors
+Logout lặp lại hoặc credential đã expired không tạo lỗi authentication.
 
-Logout lặp lại hoặc credential đã expired không tạo lỗi authentication; Controller vẫn clear cookie và trả `204 No Content`, client được đưa về trạng thái Guest.
+Controller vẫn clear cookie và trả `204 No Content`.
 
-### Current User
+Client được đưa về trạng thái Guest.
+
+---
+
+## Current User
 
 `GET /api/auth/me`
 
-#### Access
+### Access
 
-- Authenticated `USER` hoặc `ADMIN`.
+Authenticated USER hoặc ADMIN.
 
-#### Middleware responsibility
+### Middleware responsibility
 
 - Xác thực session.
 - Load user.
 - Kiểm tra active status.
 - Gắn identity vào request context.
 
-#### Controller responsibility
+### Controller responsibility
 
-- Trả identity từ request context.
-- Không trả password hoặc session data.
-- Không đưa raw session identifier vào response body.
+Trả identity từ request context.
 
-#### Success
+Không trả:
+
+- Password.
+- Password hash.
+- Session data.
+- Raw session identifier.
+
+### Success
 
 ```json
 {
@@ -1208,38 +1477,56 @@ Logout lặp lại hoặc credential đã expired không tạo lỗi authenticat
 }
 ```
 
-Success status: `200 OK`.
+Success status:
 
-#### Errors
+```text
+200 OK
+```
+
+### Errors
 
 - `401 Unauthorized` nếu credential thiếu, malformed, expired hoặc không còn session.
 - `500` nếu backend/database failure.
 
-### API status recommendations và contract note
+---
 
-PLAN recommendation cho success status:
+## API status recommendations và contract note
 
-| Endpoint                  | Success status   |
-| ------------------------- | ---------------- |
-| `POST /api/auth/register` | `201 Created`    |
-| `POST /api/auth/login`    | `200 OK`         |
-| `POST /api/auth/logout`   | `204 No Content` |
-| `GET /api/auth/me`        | `200 OK`         |
+PLAN recommendation:
 
-`API_SPEC.md` hiện không quy định success status cụ thể cho các Authentication endpoint này. Vì vậy, đây là technical recommendations của PLAN, không phải thay đổi API contract. Endpoint names và response body contract hiện có vẫn được giữ nguyên. Nếu phát hiện API_SPEC sau này có status contract khác, phải ghi nhận conflict và không tự sửa `API_SPEC.md`.
+| Endpoint                  | Success status |
+| ------------------------- | -------------: |
+| `POST /api/auth/register` |    201 Created |
+| `POST /api/auth/login`    |         200 OK |
+| `POST /api/auth/logout`   | 204 No Content |
+| `GET /api/auth/me`        |         200 OK |
 
-## 12. Thiết kế Frontend
+`API_SPEC.md` hiện không quy định success status cụ thể cho các Authentication endpoint này.
 
-### Pages
+Vì vậy đây là technical recommendations của PLAN, không phải thay đổi API contract.
 
-Hiện chưa có page structure thực tế. Dự kiến bổ sung theo frontend architecture:
+Endpoint names và response body contract hiện có vẫn được giữ nguyên.
+
+Nếu phát hiện `API_SPEC.md` sau này có status contract khác, phải ghi nhận conflict và không tự sửa `API_SPEC.md`.
+
+---
+
+# 12. Thiết kế Frontend
+
+## Pages
+
+Hiện chưa có page structure thực tế.
+
+Dự kiến bổ sung:
 
 - Login Page.
 - Register Page.
 
 Các page giao tiếp với backend thông qua `authService`, không gọi API trực tiếp trong UI nếu có thể tách service.
 
-### Components
+---
+
+## Components
 
 Có thể tái sử dụng hoặc bổ sung:
 
@@ -1253,9 +1540,11 @@ Có thể tái sử dụng hoặc bổ sung:
 
 Không tạo abstraction lớn khi component chỉ được dùng một lần và không tăng khả năng maintain.
 
-### State / Hooks
+---
 
-Cần có authentication state dùng chung:
+## State / Hooks
+
+Authentication state dùng chung:
 
 - `user`.
 - `isAuthenticated`.
@@ -1266,9 +1555,11 @@ State được khởi tạo bằng `GET /api/auth/me` khi app bắt đầu.
 
 Không lưu raw credential trong React state.
 
-### API Services
+---
 
-Dự kiến có `authService` chịu trách nhiệm:
+## API Services
+
+`authService` chịu trách nhiệm:
 
 - `register`.
 - `login`.
@@ -1284,7 +1575,9 @@ Service không chứa business logic như:
 - Tự xác định account active.
 - Tự tính XP hoặc level.
 
-### Protected navigation
+---
+
+## Protected navigation
 
 Protected navigation cần:
 
@@ -1304,7 +1597,7 @@ Protected navigation cần:
 
 ### UI states
 
-#### Login/Register
+Login/Register:
 
 - Initial.
 - Loading.
@@ -1316,7 +1609,7 @@ Protected navigation cần:
 - Duplicate email.
 - Invalid credentials.
 
-#### Application auth state
+Application auth state:
 
 - Auth initialization loading.
 - Authenticated.
@@ -1325,13 +1618,15 @@ Protected navigation cần:
 - Logout success.
 - Logout failure.
 
-## 13. Chiến lược Testing
+---
+
+# 13. Chiến lược Testing
 
 Chỉ lập kế hoạch test trong giai đoạn PLAN.
 
-### Backend unit tests
+## Backend unit tests
 
-Auth Service:
+### Auth Service
 
 - Normalize email trước lookup/insert.
 - Registration validation.
@@ -1342,31 +1637,33 @@ Auth Service:
 - New account defaults.
 - Inactive account rejection.
 - Generic invalid-credential behavior.
-- Session token được tạo bằng cryptographically secure random generator với đúng 32 random bytes (256-bit).
-- Chỉ SHA-256 hash của session token được lưu trong `AUTH_SESSION`.
+- Session token được tạo bằng cryptographically secure random generator với đúng 32 random bytes.
+- Chỉ SHA-256 hash của session token được lưu trong AUTH_SESSION.
 - Raw session token không được log, lưu database hoặc lưu frontend.
 - Session creation.
 - Session expiration.
 - Session deletion khi Logout.
 - Logout idempotency.
 
-Authorization:
+### Authorization
 
-- `USER` được phép truy cập user endpoint.
-- `USER` bị từ chối Admin endpoint.
-- `ADMIN` được phép truy cập Admin endpoint.
+- USER được phép truy cập user endpoint.
+- USER bị từ chối Admin endpoint.
+- ADMIN được phép truy cập Admin endpoint.
 - Ownership lấy từ authenticated identity.
 - Client không thể giả mạo `owner_id`, `user_id` hoặc `role`.
 
-### Backend API/integration tests
+---
 
-- `POST /api/auth/register` success.
+## Backend API/integration tests
+
+- Register success.
 - Duplicate email.
 - Backend normalize email trước lookup/insert.
 - Email viết hoa/lowercase được xử lý nhất quán.
 - Password dưới 8 ký tự.
 - Không auto-login sau registration.
-- `POST /api/auth/login` success.
+- Login success.
 - Email không tồn tại và password sai có response public nhất quán.
 - Inactive account có response public nhất quán.
 - Controller set cookie sau Login.
@@ -1378,17 +1675,19 @@ Authorization:
 - `POST /api/auth/logout`.
 - Controller clear cookie sau Logout.
 - Logout lặp lại.
-- Logout không có cookie vẫn trả `204 No Content` và clear cookie.
-- Logout với cookie malformed vẫn trả `204 No Content` và clear cookie.
-- Logout với session expired vẫn trả `204 No Content` và clear cookie.
-- Logout với session đã bị xóa vẫn trả `204 No Content` và clear cookie.
+- Logout không có cookie vẫn trả `204 No Content`.
+- Logout với cookie malformed vẫn trả `204 No Content`.
+- Logout với session expired vẫn trả `204 No Content`.
+- Logout với session đã bị xóa vẫn trả `204 No Content`.
 - Credential không còn dùng được sau Logout.
 - Không trả password/hash/raw session credential.
 - Error response không tiết lộ account enumeration.
 - CORS không cho phép wildcard origin khi credentialed requests.
 - CSRF behavior theo deployment configuration và protection được approve.
 
-### Frontend tests
+---
+
+## Frontend tests
 
 - Register form validation.
 - `confirm_password` mismatch.
@@ -1406,7 +1705,9 @@ Authorization:
 - Admin navigation visibility.
 - Frontend không nhận hoặc lưu raw session identifier.
 
-### Regression tests
+---
+
+## Regression tests
 
 Kiểm tra không ảnh hưởng:
 
@@ -1417,59 +1718,95 @@ Kiểm tra không ảnh hưởng:
 - Frontend build/lint.
 - API error handling dùng chung.
 
-### Test infrastructure
+---
+
+## Test infrastructure
 
 Hiện repository chưa thể hiện testing framework hoặc test files liên quan Authentication.
 
-Nếu chưa có testing infrastructure, PLAN đề xuất lựa chọn framework tối thiểu phù hợp với Node/React hiện tại trong implementation preparation. Đây là dependency impact kỹ thuật, không phải product scope decision.
+Nếu chưa có testing infrastructure, implementation preparation cần lựa chọn framework tối thiểu phù hợp với Node/React hiện tại.
 
-## 14. Dependencies
+Đây là dependency impact kỹ thuật, không phải product scope decision.
 
-### Đã có
+Không tự ý mở rộng thành testing infrastructure phức tạp.
 
-- Backend: `express`.
-- Frontend: `react`, `react-dom`, `vite`, Tailwind-related packages.
+---
 
-### Có thể cần
+# 14. Dependencies
 
-#### Prisma
+## Đã có
 
-- Mục đích: data access theo `ARCHITECTURE.md`.
-- Hiện chưa có trong `backend/package.json`.
-- Cần nếu project chưa có data access implementation.
-- Đây là baseline dependency theo kiến trúc.
+### Backend
 
-#### Cookie handling
+- Express.
 
-- Mục đích: parse và set cookie an toàn.
-- Có thể dùng package nhỏ phù hợp với Express nếu implementation hiện tại chưa có cookie handling.
-- Đây là technical implementation detail.
-- Không biến lựa chọn package cụ thể thành product decision.
+### Frontend
 
-#### React Router
+- React.
+- React DOM.
+- Vite.
+- Tailwind-related packages.
 
-- Mục đích: protected navigation và redirect.
-- Hiện chưa có trong frontend dependencies.
-- Phù hợp nếu frontend chuyển sang route-based navigation.
-- Nếu không thêm router, cần một cơ chế navigation tương đương nhưng không được tạo routing abstraction phức tạp.
+---
 
-#### Password hashing
+## Có thể cần
 
-- Đề xuất dùng `node:crypto` với `scrypt`.
-- Không cần dependency hashing riêng nếu technical validation xác nhận phù hợp.
+### Prisma
 
-#### CSRF protection
+Mục đích:
 
-- Chưa chốt library cụ thể.
-- Chỉ bổ sung CSRF protection phù hợp nếu deployment thực tế yêu cầu cross-site credentialed requests.
+- Data access theo `ARCHITECTURE.md`.
 
-#### Testing
+Prisma là dependency nền tảng cần được materialize trong backend nếu application layer chưa có data access implementation.
 
-- Hiện chưa thấy test framework.
-- Đề xuất chọn framework phù hợp với Node/React hiện tại khi chuẩn bị implementation.
-- Không tự ý mở rộng scope hoặc thêm testing infrastructure phức tạp.
+### Cookie handling
 
-### Không cần
+Mục đích:
+
+- Parse và set cookie an toàn.
+
+`cookie-parser` là dependency đã được developer approve cho TASK-006 để parse HTTP Cookie. Không chốt version package ở giai đoạn PLAN. Việc thêm dependency sẽ thực hiện trong IMPLEMENT TASK-006, không thực hiện trong PLAN.
+
+Cookie parser chỉ chịu trách nhiệm parse Cookie header. Nó không thay thế `AUTH_SESSION`, không lưu session và không thay đổi stateful server-side session architecture.
+
+Đây là technical implementation detail.
+
+### React Router
+
+Mục đích:
+
+- Protected navigation.
+- Redirect.
+
+Phù hợp nếu frontend chuyển sang route-based navigation.
+
+Nếu không thêm router, cần một cơ chế navigation tương đương nhưng không được tạo routing abstraction phức tạp.
+
+### Password hashing
+
+Đề xuất:
+
+- `node:crypto` + `scrypt`.
+
+Không cần dependency hashing riêng nếu technical validation xác nhận phù hợp.
+
+### CSRF protection
+
+Chưa chốt library cụ thể.
+
+Chỉ bổ sung CSRF protection phù hợp nếu deployment thực tế yêu cầu cross-site credentialed requests.
+
+### Testing
+
+Hiện chưa thấy test framework.
+
+Cần chọn framework phù hợp với Node/React hiện tại trong implementation preparation.
+
+Không tự ý mở rộng scope hoặc thêm testing infrastructure phức tạp.
+
+---
+
+## Không cần
 
 - AI service.
 - External authentication provider.
@@ -1477,7 +1814,7 @@ Nếu chưa có testing infrastructure, PLAN đề xuất lựa chọn framework
 - Redis.
 - Microservice.
 - Session/device history service.
-- JWT library nếu stateful session được approve.
+- JWT library.
 - Refresh-token library.
 - Session history.
 - Device history.
@@ -1485,163 +1822,214 @@ Nếu chưa có testing infrastructure, PLAN đề xuất lựa chọn framework
 - User-agent tracking.
 - Background worker phức tạp.
 
-## 15. Thứ tự Implementation
+---
+
+# 15. Thứ tự Implementation
 
 Không tạo TASK ID ở giai đoạn PLAN.
 
-1. Developer review authentication mechanism và session persistence.
-2. Developer review thiết kế dự kiến của `AUTH_SESSION`.
-3. Developer review session identifier mechanism: 32 random bytes, SHA-256 hash và cookie `session_id`.
-4. Developer review session lifetime recommendation 7 ngày.
-5. Xác nhận database impact và migration boundary.
-6. Xác minh deployment topology, CORS và cookie attributes.
-7. Xác nhận CSRF requirement nếu topology là cross-site credentialed.
-8. Thiết lập backend configuration và environment contract.
-9. Thiết lập Prisma/database access theo architecture đã phê duyệt.
-10. Thiết lập password security utility bằng `node:crypto`.
-11. Thiết lập `USER` data access.
-12. Đồng bộ `DATABASE.md` sau PLAN approval nếu được approve.
-13. Thiết lập `AUTH_SESSION` data access sau khi database documentation/migration boundary được approve.
-14. Thiết lập Auth Service.
-15. Thiết lập centralized validation và error mapping.
-16. Thiết lập authentication middleware.
-17. Thiết lập authorization middleware.
-18. Thiết lập Auth Controller.
-19. Thiết lập Authentication routes.
-20. Thiết lập backend API tests.
-21. Thiết lập frontend route/navigation foundation nếu cần.
-22. Thiết lập `authService`.
-23. Thiết lập authentication state/context.
-24. Thiết lập Register Page.
-25. Thiết lập Login Page.
-26. Thiết lập protected navigation.
-27. Thiết lập Logout flow.
-28. Tích hợp frontend/backend.
-29. Chạy test, build và security verification ở TEST stage.
-30. Cập nhật documentation/status ở workflow stage phù hợp sau khi implementation được verify.
+Thứ tự implementation ở mức technical dependency:
 
-## 16. Risks và Edge Cases
+1. Xác minh deployment topology thực tế.
+2. Xác định CORS và cookie policy dựa trên topology.
+3. Xác định CSRF requirement nếu topology là cross-site credentialed.
+4. Thiết lập backend configuration và environment contract.
+5. Thiết lập Prisma/database access theo architecture đã phê duyệt.
+6. Materialize `USER` theo `DATABASE.md`.
+7. Materialize `AUTH_SESSION` theo `DATABASE.md`.
+8. Thiết lập relationship và constraints.
+9. Tạo migration trong IMPLEMENT stage sau khi TASK tương ứng được approve.
+10. Thiết lập password security utility bằng `node:crypto`.
+11. Thiết lập User Repository.
+12. Thiết lập Session Repository.
+13. Thiết lập Auth Service.
+14. Thiết lập centralized validation và error mapping.
+15. Thiết lập authentication middleware.
+16. Thiết lập authorization middleware.
+17. Thiết lập Auth Controller.
+18. Thiết lập Authentication routes.
+19. Thiết lập backend API tests.
+20. Thiết lập frontend route/navigation foundation nếu cần.
+21. Thiết lập `authService`.
+22. Thiết lập authentication state/context.
+23. Thiết lập Register Page.
+24. Thiết lập Login Page.
+25. Thiết lập protected navigation.
+26. Thiết lập Logout flow.
+27. Tích hợp frontend/backend.
+28. Chạy test, build và security verification ở TEST stage.
+29. Cập nhật documentation/status ở workflow stage phù hợp sau khi implementation được verify.
+
+Các bước trên là implementation dependency order, không thay thế TASK.
+
+Không bắt đầu IMPLEMENT cho đến khi TASK tương ứng được developer approve.
+
+---
+
+# 16. Risks và Edge Cases
 
 - Stateful session cần `AUTH_SESSION`, dẫn tới schema impact.
 - Nếu không có session persistence, Logout không thể invalidate credential bị sao chép ngay lập tức.
 - `API_SPEC.md` cũ còn chứa `username`; approved SPEC đã chốt `display_name`.
 - `API_SPEC.md` chưa mô tả mechanism cụ thể.
 - `ARCHITECTURE.md` chưa cố định JWT hoặc HTTP-only Cookie Session.
-- `DATABASE.md` nhắc `JWT_SECRET`, nhưng không được xem là quyết định dùng JWT.
+- `DATABASE.md` có thể có reference cũ liên quan JWT; không được xem đó là quyết định dùng JWT nếu database design hiện tại đã xác định `AUTH_SESSION`.
 - Không được trả error khác biệt làm lộ email tồn tại, password sai hoặc account inactive.
 - Timing side-channel không cần tối ưu hóa quá mức ngoài scope đồ án, nhưng response branch công khai phải nhất quán.
 - Cookie attributes phải phù hợp với deployment topology và CORS.
-- `cross-origin` không đồng nghĩa với `cross-site`; cần kiểm tra deployment thực tế.
-- `HttpOnly` không thay thế CSRF protection.
+- Cross-origin không đồng nghĩa với cross-site; cần kiểm tra deployment thực tế.
+- HttpOnly không thay thế CSRF protection.
 - Credentialed CORS không được dùng wildcard origin.
 - Nếu cần cross-site credentialed requests, phải có CSRF protection phù hợp trước IMPLEMENT.
 - Cookie cleanup và session cleanup không được biến thành background infrastructure phức tạp.
-- Account role có thể bị thay đổi bởi Admin; middleware nên đọc role hiện tại thay vì tin role cũ.
-- Database chưa hiện diện trong source code; Prisma/database configuration có thể là dependency nền tảng lớn hơn Authentication.
-- SPEC file trong repository hiện vẫn hiển thị `SPEC status: DRAFT` dù workflow request xác nhận SPEC đã APPROVED; không sửa SPEC trong PLAN này và cần developer xác nhận metadata khi đồng bộ tài liệu.
+- Account role có thể bị thay đổi; middleware phải đọc role hiện tại thay vì tin role cũ.
+- Database design đã có USER và AUTH_SESSION, nhưng Prisma schema hiện chưa materialize các entity này.
+- Không được nhầm database design với implementation state.
+- Nếu Prisma schema không khớp với `DATABASE.md`, AI Agent phải dừng và báo developer.
+- Database configuration có thể là dependency nền tảng lớn hơn Authentication.
+- SPEC metadata trong repository có thể vẫn hiển thị `DRAFT` dù workflow đã xác nhận SPEC `APPROVED`; không tự sửa SPEC trong PLAN này.
 - Không có testing infrastructure hiện tại; không được giả định test có thể chạy ngay.
 - Không hỗ trợ user data cũ trong v1.
 - Nếu phát hiện cần migration hoặc compatibility cho user data cũ, phải dừng và báo developer.
 
-## 17. Open Decisions / Developer Approval Required
+---
 
-1. **Authentication mechanism**
-   - Đề xuất: stateful server-side session authentication được transport bằng HTTP-only cookie.
+# 17. Approved Technical Decisions và Implementation-time Verification
 
-- JWT chỉ được giữ ở phần phân tích so sánh, không phải cơ chế được implement.
-- Cần developer approve phương án stateful session chính thức.
+PLAN đã được developer approve với các technical decisions sau.
 
-2. **Session persistence**
-   - Đề xuất bổ sung `AUTH_SESSION`.
-   - Cần developer approve việc bổ sung entity/table này.
-   - Nếu không approve, cần đánh giá lại JWT và logout limitation.
+## Approved Technical Decisions
 
-3. **Session identifier mechanism**
+### 1. Authentication mechanism
 
-- Session token: 32 random bytes (256-bit) từ cryptographically secure random generator.
+Sử dụng:
+
+**Stateful server-side session authentication được transport bằng HTTP-only cookie.**
+
+JWT chỉ được giữ ở phần phân tích so sánh và không thuộc implementation scope.
+
+### 2. Session persistence
+
+Sử dụng `AUTH_SESSION` theo database design hiện tại trong `DATABASE.md`.
+
+### 3. Session identifier mechanism
+
+- Session token: 32 random bytes (256-bit).
+- Cryptographically secure random generator.
 - Cookie name duy nhất: `session_id`.
-- Database lưu SHA-256 hash của token, không lưu raw token.
-- Cần developer approve trước IMPLEMENT cùng với `AUTH_SESSION`.
+- Database lưu SHA-256 hash của token.
+- Không lưu raw token.
 
-4. **Session lifetime**
-   - Technical recommendation: 7 ngày.
-   - Không remember-device.
-   - Không refresh-token.
-   - Không idle timeout trong v1.
-   - **7 ngày là technical recommendation của PLAN và vẫn cần developer approval trước IMPLEMENT.**
+### 4. Session lifetime
 
-5. **Logout invalidation**
-   - Đề xuất delete session record khi Logout.
-   - Cần xác nhận delete là đủ cho v1 thay vì thêm `revoked_at`.
+- Session lifetime: 7 ngày.
+- Không remember-device.
+- Không refresh-token.
+- Không idle timeout trong v1.
 
-6. **Cookie/deployment policy**
-   - Cookie attributes gồm `HttpOnly`, `Secure`, `SameSite`, `Domain`, `Path`.
-   - Giá trị cụ thể phụ thuộc deployment topology và CORS configuration.
-   - Không chốt cứng `SameSite`, `Domain` hoặc `Path` trước khi topology được kiểm chứng.
+### 5. Logout invalidation
 
-7. **CSRF protection**
-   - `HttpOnly` không chống CSRF.
-   - Nếu deployment yêu cầu cross-site credentialed requests, cần bổ sung CSRF protection phù hợp trước IMPLEMENT.
-   - Không chốt library CSRF cụ thể ở PLAN này.
+Logout xóa session record hiện tại.
 
-8. **Deployment topology verification**
+Không thêm `revoked_at`.
 
-- Phải xác minh frontend/backend origins, same-origin/cross-origin, same-site/cross-site, credentialed CORS, cookie attributes và CSRF requirement trước IMPLEMENT.
-- Không hard-code Domain hoặc SameSite trước khi topology được verification.
+### 6. Database implementation boundary
 
-9. **Database documentation synchronization**
+Implementation được phép materialize:
 
-- Sau khi PLAN được APPROVED, phải đồng bộ `DATABASE.md` với `AUTH_SESSION` và relationship `USER 1:N AUTH_SESSION` trước migration/implementation planning.
-- Không sửa `DATABASE.md` hoặc tạo migration trong PLAN hiện tại.
+- `USER`.
+- `AUTH_SESSION`.
 
-10. **Validation status code**
+Cả hai phải tuân thủ `docs/DATABASE.md`.
 
-- Authentication request validation errors dùng duy nhất `400 Bad Request`.
-- `API_SPEC.md` không quy định cụ thể status này; đây là contract decision của PLAN và implementation phải tuân thủ.
+Không redesign database.
 
-Các nội dung sau là technical implementation details, không phải product scope decision riêng:
+TASK-001 sẽ chịu trách nhiệm database foundation cho cả `USER` và `AUTH_SESSION`.
 
-- `node:crypto` + `scrypt` là password hashing recommendation.
-- Cookie handling library là technical implementation detail.
-- React Router là dependency recommendation dựa trên frontend architecture.
-- Testing framework là dependency impact kỹ thuật.
-- Không thêm `revoked_at`, `last_used_at`, IP hoặc user-agent trong v1 là design recommendation để giữ scope tối giản.
+---
 
-## 18. Traceability: SPEC → PLAN
+## Implementation-time Verification
 
-| SPEC requirement                                             | PLAN mapping                                     |
-| ------------------------------------------------------------ | ------------------------------------------------ |
-| BR-01, BR-02: Hai role và Guest không phải role              | Mục 8, Mục 9                                     |
-| BR-03, BR-04: `display_name`, `confirm_password` client-side | Mục 11 Register, Mục 12 Frontend                 |
-| BR-05, BR-06: Email unique và lowercase                      | Mục 7, Mục 8, Mục 11 Register, Mục 13 Testing    |
-| BR-07, BR-08, BR-09: Password security                       | Mục 7                                            |
-| BR-10, BR-11, BR-12: Account defaults                        | Mục 11 Register                                  |
-| BR-13, BR-14: Inactive account và chống enumeration          | Mục 6, Mục 8, Mục 11 Login                       |
-| BR-15: Không auto-login                                      | Mục 11 Register, Mục 12 Frontend                 |
-| BR-16: Logout trong scope                                    | Mục 6, Mục 11 Logout, Mục 12 Frontend            |
-| BR-17, BR-18: Mechanism và credential lifetime               | Mục 5, Mục 6, Mục 17                             |
-| BR-19, BR-20: Backend authentication/authorization           | Mục 8, Mục 9                                     |
-| BR-21, BR-22: Role protection                                | Mục 8, Mục 9                                     |
-| BR-23: Ownership từ authenticated identity                   | Mục 9                                            |
-| AC-01 đến AC-09: Registration                                | Mục 11 Register, Mục 13 Testing                  |
-| AC-10 đến AC-15: Login và Current User                       | Mục 6, Mục 11 Login/Current User, Mục 13 Testing |
-| AC-16: Logout invalidation                                   | Mục 5, Mục 6, Mục 11 Logout                      |
-| AC-17 đến AC-20: Protected/Admin authorization               | Mục 8, Mục 9, Mục 13 Testing                     |
-| AC-21, AC-22: Frontend state và security boundary            | Mục 12                                           |
-| AC-23: Test coverage                                         | Mục 13                                           |
+Các nội dung sau cần được kiểm chứng trong quá trình chuẩn bị IMPLEMENT, không phải product scope decisions mới:
 
-## 19. Tóm tắt PLAN
+### Cookie/deployment policy
 
-### Sẽ implement
+Phải xác minh:
 
-- Registration bằng `display_name`, email và password.
+- Frontend origin.
+- Backend origin.
+- Same-origin/cross-origin.
+- Same-site/cross-site.
+- Credentialed CORS.
+- Cookie Domain.
+- Cookie Path.
+- SameSite.
+- Secure.
+- HttpOnly.
+
+Không hard-code policy trước khi topology được kiểm chứng.
+
+### CSRF
+
+Nếu deployment thực tế yêu cầu cross-site credentialed requests, phải bổ sung CSRF protection phù hợp trước IMPLEMENT.
+
+PLAN không chốt library CSRF cụ thể.
+
+### Password hashing parameters
+
+Sử dụng `node:crypto` + `scrypt`.
+
+Cost parameters phải được technical validation trước IMPLEMENT dựa trên security requirement và deployment environment.
+
+### Dependencies
+
+Các lựa chọn như:
+
+- Cookie handling package.
+- React Router.
+- Testing framework.
+
+Là technical implementation details và có thể được xác định trong TASK/IMPLEMENT preparation.
+
+---
+
+# 18. Traceability: SPEC → PLAN
+
+| SPEC requirement                                         | PLAN mapping                                     |
+| -------------------------------------------------------- | ------------------------------------------------ |
+| BR-01, BR-02: Hai role và Guest không phải role          | Mục 8, Mục 9                                     |
+| BR-03, BR-04: display_name, confirm_password client-side | Mục 11 Register, Mục 12 Frontend                 |
+| BR-05, BR-06: Email unique và lowercase                  | Mục 7, Mục 8, Mục 11 Register, Mục 13 Testing    |
+| BR-07, BR-08, BR-09: Password security                   | Mục 7                                            |
+| BR-10, BR-11, BR-12: Account defaults                    | Mục 11 Register                                  |
+| BR-13, BR-14: Inactive account và chống enumeration      | Mục 6, Mục 8, Mục 11 Login                       |
+| BR-15: Không auto-login                                  | Mục 11 Register, Mục 12 Frontend                 |
+| BR-16: Logout trong scope                                | Mục 6, Mục 11 Logout, Mục 12 Frontend            |
+| BR-17, BR-18: Mechanism và credential lifetime           | Mục 5, Mục 6, Mục 17                             |
+| BR-19, BR-20: Backend authentication/authorization       | Mục 8, Mục 9                                     |
+| BR-21, BR-22: Role protection                            | Mục 8, Mục 9                                     |
+| BR-23: Ownership từ authenticated identity               | Mục 9                                            |
+| AC-01 đến AC-09: Registration                            | Mục 11 Register, Mục 13 Testing                  |
+| AC-10 đến AC-15: Login và Current User                   | Mục 6, Mục 11 Login/Current User, Mục 13 Testing |
+| AC-16: Logout invalidation                               | Mục 5, Mục 6, Mục 11 Logout                      |
+| AC-17 đến AC-20: Protected/Admin authorization           | Mục 8, Mục 9, Mục 13 Testing                     |
+| AC-21, AC-22: Frontend state và security boundary        | Mục 12                                           |
+| AC-23: Test coverage                                     | Mục 13                                           |
+
+---
+
+# 19. Tóm tắt PLAN
+
+## Sẽ implement
+
+- Registration bằng `display_name`, `email` và `password`.
 - Email lowercase normalization ở backend.
 - Frontend có thể normalize email cho UX nhưng không phải security boundary.
-- Password hashing bằng `node:crypto`/`scrypt`.
+- Password hashing bằng `node:crypto/scrypt`.
 - Metadata cần thiết trong `password_hash` để verify password về sau.
 - Login và current-user identification.
 - Stateful server-side session authentication được transport bằng HTTP-only cookie.
-- Session persistence tối giản trong `AUTH_SESSION`.
+- Session persistence trong `AUTH_SESSION`.
 - Relationship `USER 1 ─── N AUTH_SESSION`.
 - Auth Service tạo và xóa session.
 - Controller/HTTP layer set và clear cookie.
@@ -1658,7 +2046,7 @@ Các nội dung sau là technical implementation details, không phải product 
 - Logout state cleanup.
 - Backend và frontend tests theo testing plan.
 
-### Không implement
+## Không implement
 
 - Password reset/recovery.
 - Email verification.
@@ -1683,7 +2071,9 @@ Các nội dung sau là technical implementation details, không phải product 
 - Microservice.
 - Background worker phức tạp.
 
-### Technical decisions được đề xuất
+---
+
+## Technical decisions
 
 - Dùng `node:crypto` + `scrypt` cho password hashing.
 - `password_hash` lưu kèm thuật toán, parameters, salt và derived key/hash.
@@ -1691,38 +2081,49 @@ Các nội dung sau là technical implementation details, không phải product 
 - Session token được tạo bằng cryptographically secure random generator với 32 random bytes (256-bit).
 - Cookie name duy nhất là `session_id`.
 - `AUTH_SESSION.session_identifier_hash` lưu SHA-256 hash của session token.
-- Lưu session tối thiểu trong `AUTH_SESSION`.
 - `AUTH_SESSION` gồm `id`, `user_id`, `session_identifier_hash`, `created_at`, `expires_at`.
 - Relationship là `USER 1 ─── N AUTH_SESSION`.
 - Xóa session hiện tại khi Logout thay vì thêm `revoked_at`.
-- Session lifetime recommendation là 7 ngày.
+- Session lifetime là 7 ngày.
 - Không remember-device, refresh-token hoặc idle timeout trong v1.
 - Cookie attributes được xác định theo deployment topology và CORS configuration thực tế.
-- Không chốt cứng `SameSite`, `Domain` hoặc `Path` trước khi topology được kiểm chứng.
+- Không chốt cứng SameSite, Domain hoặc Path trước khi topology được kiểm chứng.
 - CSRF phải được xem xét; nếu cần cross-site credentialed requests thì phải có protection phù hợp trước IMPLEMENT.
-- Validation errors dùng duy nhất `400 Bad Request`.
-- Sau PLAN approval, `DATABASE.md` phải được đồng bộ với `AUTH_SESSION` trước migration/implementation planning.
+- Validation errors dùng `400 Bad Request`.
+- `USER` và `AUTH_SESSION` được materialize từ database design đã được định nghĩa trong `DATABASE.md`.
+- PLAN không thay đổi database design.
 
-### Developer Approval Required
+---
 
-- Xác nhận stateful server-side session authentication là cơ chế chính thức; JWT không thuộc implementation scope.
-- Cho phép bổ sung entity/table `AUTH_SESSION`.
-- Session lifetime recommendation 7 ngày.
-- Logout invalidation bằng delete session.
-- Cookie/deployment policy sau khi topology và CORS được kiểm chứng.
-- CSRF requirement nếu deployment thực tế là cross-site credentialed.
+# Workflow Status
 
-### Workflow status
+**PLAN đã được developer approve.**
 
-PLAN hiện tại chưa được developer approve.
+Đã hoàn thành:
 
-Chưa:
+- Authentication SPEC.
+- Authentication PLAN.
+- Phân tích authentication mechanism.
+- Chọn stateful server-side session authentication.
+- Xác định `AUTH_SESSION` persistence theo database design hiện tại.
+- Xác định session identifier mechanism.
+- Xác định session lifetime 7 ngày.
+- Đồng bộ PLAN với `DATABASE.md`.
+- Xác định implementation boundary cho `USER` và `AUTH_SESSION`.
 
-- Tạo TASK.
+Chưa thực hiện:
+
 - Implement code.
 - Tạo migration.
-- Cài dependency.
-- Sửa `FEATURE_STATUS.md`.
-- Sửa Authentication SPEC.
+- Cài dependency cho Authentication ngoài baseline cần thiết.
+- Cập nhật `FEATURE_STATUS` sang trạng thái implementation.
+- Review implementation.
 
-Chỉ sau khi developer approve PLAN mới được chuyển sang TASK.
+## Next workflow stage
+
+1. Cập nhật `AUTHENTICATION_TASK.md`.
+2. Điều chỉnh `TASK-001` để chịu trách nhiệm materialize cả `USER` và `AUTH_SESSION`.
+3. Developer approve `TASK-001`.
+4. Chuyển sang IMPLEMENT theo workflow trong `AGENTS.md`.
+
+**Không bắt đầu IMPLEMENT chỉ dựa trên PLAN. TASK tương ứng phải được approve trước.**
