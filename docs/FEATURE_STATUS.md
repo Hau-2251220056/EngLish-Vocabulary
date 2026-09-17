@@ -160,13 +160,15 @@ All features are initially marked TODO.
 
 4.1 Authentication & User Management
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-User Registration	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Login	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Authentication	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Authorization	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Profile Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Daily Goal Settings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Admin Access	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Registration	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
+User Login	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
+User Authentication	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
+User Authorization	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
+User Profile Management	TODO	—	—	—	—	—	—
+Daily Goal Settings	TODO	—	—	—	—	—	—
+Admin Access	TODO	—	—	—	—	—	—
+
+Stage markers: `✓` = completed at feature level; `IN_PROGRESS` = partial implementation is in progress; `—` = not started or not determinable at feature level.
 
 The system has two authenticated roles:
 
@@ -174,6 +176,59 @@ USER
 ADMIN
 
 Guest users are unauthenticated visitors and are not treated as an authenticated role.
+
+## Authentication Backend Foundation and Routes
+
+Status: IN_PROGRESS
+
+### Description
+
+Backend authentication foundation and HTTP route integration have been implemented through TASK-009. The overall Authentication feature remains in progress because frontend authentication flows/state and remaining user-management capabilities are not complete.
+
+### Related Documentation
+
+- SPEC: `docs/specs/AUTHENTICATION_SPEC.md`
+- PLAN: `docs/plans/AUTHENTICATION_ROUTES_PLAN.md`
+- TASK: `docs/tasks/AUTHENTICATION_ROUTES_TASK.md`
+
+### Backend
+
+- `backend/src/services/authentication-service.js`
+- `backend/src/middleware/authentication-middleware.js`
+- `backend/src/middleware/role-authorization-middleware.js`
+- `backend/src/controllers/auth-controller.js`
+- `backend/src/repositories/user-repository.js`
+- `backend/src/repositories/auth-session-repository.js`
+- `backend/src/utils/password-security.js`
+- `backend/src/routes/auth-routes.js`
+- `backend/src/main.js`
+
+### API
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+
+### Database
+
+- `USER` and `AUTH_SESSION` are materialized in the existing Prisma schema.
+- No new database change was introduced by TASK-009.
+
+### Tests
+
+- TASK-005: inline Node assertions passed, 13/13.
+- TASK-006: inline middleware tests passed, 12/12.
+- TASK-007: inline middleware tests passed, 16/16.
+- TASK-008: inline controller behavior tests passed, 15 behavior groups.
+- TASK-009: route integration tests passed, 16/16, covering route registration, middleware ordering, public/protected flows, unauthorized `/me`, invalid method and health route.
+
+### Review
+
+- TASK-005: approved with no findings.
+- TASK-006: approved with no findings.
+- TASK-007: approved with no findings.
+- TASK-009: approved with no findings.
 
 4.2 Topics
 
