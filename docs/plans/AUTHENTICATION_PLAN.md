@@ -6,6 +6,21 @@
 
 **SPEC status:** Đã được developer approve theo workflow hiện tại
 
+**Corrective update `TASK011-B01`:** `APPROVED`
+
+**Human approval recorded:** `2026-09-18`
+
+Corrective update này ghi nhận human architecture decision cho topology Authentication:
+
+- Development dùng Vite development proxy.
+- Production dùng browser-facing same-origin trên Vercel.
+- Frontend và Express backend được deploy thành hai Vercel projects từ cùng repository; frontend project rewrite `/api/**` tới backend Vercel project.
+- Supabase PostgreSQL tiếp tục là database.
+- Frontend luôn gọi Authentication API bằng relative path `/api/**`.
+- Không dùng Render hoặc direct browser cross-origin Authentication calls trong topology đã chọn.
+
+Base PLAN và corrective topology update đã được human approve. Approval này giải quyết `TASK011-B01` nhưng không approve TASK-011 và không authorize IMPLEMENT.
+
 ---
 
 # 1. Mục tiêu PLAN
@@ -508,7 +523,160 @@ Trước IMPLEMENT phải kiểm tra:
 - CSRF requirement.
 - Frontend HTTP client có cần gửi credentials hay không.
 
-Không hard-code Domain hoặc SameSite policy khi topology thực tế chưa được verification.
+Quy tắc trên áp dụng trước corrective decision. `TASK011-B01` bên dưới đã xác minh topology và chốt policy cho TASK-011; implementation không được chọn lại policy ngoài corrective decision đã approve.
+
+---
+
+## Corrective topology decision — TASK011-B01
+
+### Decision authority and status
+
+Developer đã chốt architecture direction sau discovery/review của TASK-011:
+
+- Development: Vite development proxy.
+- Production: same-origin browser topology trên Vercel.
+- Database: Supabase PostgreSQL.
+- Frontend API convention: relative `/api/**`.
+- Authentication mechanism không thay đổi: stateful server-side session qua browser-managed `session_id` cookie.
+
+Quyết định này thay thế deployment direction Vercel frontend + Render backend đối với Authentication PLAN. `docs/ARCHITECTURE.md` hiện vẫn mô tả Render là backend deployment baseline; đây là documentation conflict phải được đồng bộ trong một approved documentation/deployment task, không được âm thầm sửa trong corrective PLAN action này.
+
+### Repository evidence before correction
+
+- Frontend hiện dùng React/Vite và `frontend/vite.config.js` chưa có proxy.
+- `frontend/.env.example` có `VITE_API_URL=` nhưng chưa có semantics được định nghĩa.
+- Backend Express hiện mount Authentication tại `/api/auth` và local listener mặc định dùng port `5000`.
+- Backend chưa có CORS middleware.
+- Repository chưa có `vercel.json`, Vercel rewrite, reverse-proxy config hoặc deployment config tương đương.
+- Cookie hiện có `HttpOnly`, `Path=/`, lifetime 7 ngày và `Secure` trong production/secure request; `SameSite` và `Domain` chưa được set explicit.
+
+### Verified Vercel implementation mechanism
+
+Official Vercel documentation xác nhận:
+
+- Existing Express applications có thể được deploy thành một Vercel Function khi có Vercel-compatible Express entry point.
+- Mỗi directory trong monorepo có thể được cấu hình thành một Vercel project riêng.
+- Một project chính có thể expose project khác dưới cùng browser-facing domain bằng `vercel.json` rewrite/proxy.
+- Rewrite giữ browser URL không đổi và có thể route `/api/:path*` tới upstream backend project.
+- Preview deployment phải được dùng để verify rewrite trước production.
+
+Official references được dùng cho corrective analysis:
+
+- `https://vercel.com/docs/frameworks/backend/express` — Express application được deploy thành Vercel Function và yêu cầu compatible application entry/export.
+- `https://vercel.com/docs/monorepos/monorepo-faq` — các directory có thể là Vercel projects riêng và project chính có thể proxy project khác dưới một domain.
+- `https://vercel.com/docs/routing/rewrites` — rewrite giữ browser URL không đổi và route path tới upstream destination.
+- `https://vercel.com/kb/guide/structure-your-application` — multiple services/frameworks có thể được expose dưới một origin trên Vercel.
+
+Vì vậy production mechanism ở mức PLAN là:
+
+```text
+Browser
+  -> https://<frontend-project>.vercel.app/api/**
+  -> frontend Vercel project rewrite/proxy
+  -> https://<backend-project>.vercel.app/api/**
+  -> Express Vercel Function
+  -> Supabase PostgreSQL
+```
+
+Frontend và backend là hai Vercel projects, nhưng browser chỉ giao tiếp với frontend project origin. Backend project URL là upstream routing detail, không phải frontend browser API base URL.
+
+Custom domain không phải prerequisite. Initial production dùng Vercel-provided domain của frontend project làm browser-facing origin.
+
+### Development topology
+
+- Frontend tiếp tục chạy bằng Vite dev server.
+- Browser gọi relative `/api/**` trên Vite origin.
+- Vite proxy `/api/**` tới local Express backend.
+- Proxy target là development configuration; không được expose như browser API origin.
+- Không dùng direct browser cross-origin Authentication calls trong development.
+- Development proxy không được coi là production routing mechanism.
+
+### Production topology
+
+- Frontend Vite build được deploy bằng frontend Vercel project.
+- Express backend được deploy bằng backend Vercel project/Vercel Function.
+- Frontend Vercel project rewrite `/api/**` tới stable backend Vercel project origin, giữ nguyên `/api/**` path contract.
+- Browser chỉ thấy frontend Vercel-provided origin và gọi relative `/api/**`.
+- Không dùng Render trong topology đã chọn.
+- Không dùng direct browser cross-origin requests từ frontend tới backend project.
+- Authentication responses không được opt in vào public CDN caching. Rewrite/cache behavior phải được verify để auth responses và `Set-Cookie` không bị cache ngoài intended browser behavior.
+
+### Frontend API base contract
+
+- Authentication service dùng relative paths: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`.
+- `VITE_API_URL` không được dùng làm explicit cross-origin backend origin cho Authentication.
+- Corrective TASK clarification phải quyết định một trong hai minimal implementations: bỏ dependency vào `VITE_API_URL` cho Authentication, hoặc định nghĩa empty value là same-origin base. Không được đặt backend Vercel project URL vào browser bundle.
+- Browser tiếp tục quản lý cookie; frontend không đọc, copy hoặc persist raw token.
+- Frontend không tự tạo `Authorization` token từ cookie.
+
+### CORS decision
+
+- Credentialed application CORS không cần cho selected browser path vì browser-facing request là same-origin.
+- Backend không thêm wildcard hoặc credentialed CORS chỉ để hỗ trợ một topology không được chọn.
+- Direct access tới backend project origin không phải supported frontend Authentication flow.
+- Internal Vercel rewrite/proxy không biến frontend fetch thành browser cross-origin request.
+
+### Cookie decision
+
+- Cookie name giữ nguyên `session_id`.
+- `HttpOnly` giữ nguyên bắt buộc.
+- `Secure` bắt buộc trong Vercel production HTTPS.
+- `Path=/` giữ nguyên để `/api/auth/**` nhận credential.
+- Không set `Domain`; cookie giữ host-only đối với browser-facing frontend project origin.
+- `SameSite=Lax` được chọn explicit cho selected same-origin topology.
+- Login set-cookie và logout clear-cookie phải dùng compatible cookie scope/attributes; không được tạo cookie khác scope khiến logout không clear được session cookie.
+- Preview deployment phải verify rằng `Set-Cookie` từ upstream Express project qua rewrite được browser lưu cho browser-facing frontend project origin và được gửi lại tới `/api/**`.
+
+### CSRF decision
+
+- Selected browser topology không dùng cross-site credentialed requests.
+- `SameSite=Lax`, same-origin relative API calls và JSON request contract là baseline CSRF controls cho TASK-011 topology.
+- Không thêm CSRF token/library trong TASK-011.
+- Same-origin topology không cho phép xem `HttpOnly` là CSRF protection duy nhất; Origin/Host behavior và state-changing request behavior phải được kiểm tra trong deployment/integration verification.
+- Nếu routing sau này đổi sang cross-site credentialed requests, phải quay lại PLAN và approve CSRF protection trước implementation của topology mới.
+
+### Vercel backend compatibility boundary
+
+Current backend local startup dùng `backend/src/main.js` với `app.listen()`, còn reusable Express factory nằm trong `backend/src/app.js`. Production deployment preparation phải:
+
+- cung cấp Vercel-compatible entry point/export cho Express application;
+- giữ local startup behavior tách khỏi serverless entry;
+- reuse `createApp({ prisma })`, không duplicate dependency composition;
+- cung cấp server-side `DATABASE_URL` cho Supabase PostgreSQL;
+- không expose database credentials hoặc backend project origin vào frontend Authentication state;
+- kiểm tra Prisma client lifecycle phù hợp với Vercel Function runtime;
+- không thay đổi Authentication API/business contract.
+
+Các thay đổi deployment/backend compatibility này không nằm trong TASK-011 hiện tại. Chúng cần approved deployment/backend follow-up task trước production verification.
+
+### Required verification
+
+Development verification:
+
+- Relative `/api/**` requests đi qua Vite proxy.
+- Browser không gửi request trực tiếp tới backend origin.
+- Login `Set-Cookie`, `/me` và logout hoạt động qua proxy.
+- Không cần application CORS cho browser flow.
+
+Vercel preview/production-like verification:
+
+- Frontend project rewrite giữ nguyên `/api/**` routes tới backend project.
+- Browser URL/origin không đổi khi gọi Authentication API.
+- `Set-Cookie` được nhận dưới browser-facing origin.
+- Cookie được gửi lại cho `/api/auth/me` và `/api/auth/logout`.
+- Logout clear đúng cookie scope.
+- `Secure`, `HttpOnly`, `SameSite=Lax`, host-only và `Path=/` đúng contract.
+- Authentication responses không bị public-cache.
+- Backend project direct origin không được frontend sử dụng.
+
+### Deferred contract resolution
+
+- Credentialed CORS: resolved as not required for selected browser-facing topology.
+- CSRF: resolved for current topology without a new token/library; topology change to cross-site requires new PLAN approval.
+- Cookie `SameSite`: resolved as explicit `Lax`.
+- Cookie `Domain`: resolved as omitted/host-only.
+
+`TASK011-B01`: `RESOLVED` bằng human-approved corrective PLAN. Approval không tự động clarify hoặc approve TASK-011.
 
 ---
 
@@ -1830,9 +1998,9 @@ Không tạo TASK ID ở giai đoạn PLAN.
 
 Thứ tự implementation ở mức technical dependency:
 
-1. Xác minh deployment topology thực tế.
-2. Xác định CORS và cookie policy dựa trên topology.
-3. Xác định CSRF requirement nếu topology là cross-site credentialed.
+1. Áp dụng corrective topology đã được human chọn: Vite development proxy và production same-origin qua Vercel rewrite.
+2. Clarify TASK-011 cho relative `/api/**`, Vite proxy và frontend auth state/service boundary.
+3. Tạo/approve deployment follow-up cho hai Vercel projects, frontend rewrite, Express Vercel entry và cookie compatibility trước production verification.
 4. Thiết lập backend configuration và environment contract.
 5. Thiết lập Prisma/database access theo architecture đã phê duyệt.
 6. Materialize `USER` theo `DATABASE.md`.
@@ -1954,20 +2122,16 @@ Các nội dung sau cần được kiểm chứng trong quá trình chuẩn bị
 
 ### Cookie/deployment policy
 
-Phải xác minh:
+Topology cho TASK-011 đã được corrective decision xác định. Implementation phải verify các contract đã chốt thay vì chọn lại architecture:
 
-- Frontend origin.
-- Backend origin.
-- Same-origin/cross-origin.
-- Same-site/cross-site.
-- Credentialed CORS.
-- Cookie Domain.
-- Cookie Path.
-- SameSite.
-- Secure.
-- HttpOnly.
+- Browser gọi relative `/api/**` trên cùng origin trong development và production.
+- Development dùng Vite proxy tới local Express backend.
+- Production dùng frontend Vercel project rewrite tới backend Vercel project.
+- Không có direct browser cross-origin Authentication flow.
+- Credentialed CORS không thuộc selected browser path.
+- Cookie host-only, `Path=/`, `SameSite=Lax`, `Secure` trong production và `HttpOnly`.
 
-Không hard-code policy trước khi topology được kiểm chứng.
+Không được đổi các policy này hoặc chuyển sang cross-origin/cross-site architecture mà không quay lại PLAN approval.
 
 ### CSRF
 
@@ -2086,9 +2250,9 @@ Là technical implementation details và có thể được xác định trong T
 - Xóa session hiện tại khi Logout thay vì thêm `revoked_at`.
 - Session lifetime là 7 ngày.
 - Không remember-device, refresh-token hoặc idle timeout trong v1.
-- Cookie attributes được xác định theo deployment topology và CORS configuration thực tế.
-- Không chốt cứng SameSite, Domain hoặc Path trước khi topology được kiểm chứng.
-- CSRF phải được xem xét; nếu cần cross-site credentialed requests thì phải có protection phù hợp trước IMPLEMENT.
+- Cookie attributes theo corrective topology: `HttpOnly`, production `Secure`, `SameSite=Lax`, host-only/no `Domain`, `Path=/`.
+- Development dùng Vite proxy; production dùng browser-facing same-origin trên Vercel qua frontend-project rewrite tới backend Vercel project.
+- Credentialed CORS và CSRF token/library không được thêm cho selected same-origin browser path; nếu chuyển sang cross-site credentialed requests thì phải quay lại PLAN và approve protection phù hợp trước IMPLEMENT.
 - Validation errors dùng `400 Bad Request`.
 - `USER` và `AUTH_SESSION` được materialize từ database design đã được định nghĩa trong `DATABASE.md`.
 - PLAN không thay đổi database design.
@@ -2098,6 +2262,12 @@ Là technical implementation details và có thể được xác định trong T
 # Workflow Status
 
 **PLAN đã được developer approve.**
+
+**Corrective update `TASK011-B01`: APPROVED.**
+
+**TASK011-B01: RESOLVED.**
+
+TASK-011 vẫn chưa được approve. Bước tiếp theo là TASK-011 clarification; IMPLEMENT vẫn chưa được authorize.
 
 Đã hoàn thành:
 

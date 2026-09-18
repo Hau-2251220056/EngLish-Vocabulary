@@ -1428,69 +1428,195 @@ Human approval is required before IMPLEMENT. TASK-010 authoring does not approve
 
 ## TASK-011 — Implement frontend Auth API service and authentication state
 
+### Status
+
+- TASK definition: `CLARIFIED`.
+- Corrective PLAN `TASK011-B01`: `APPROVED` on `2026-09-18`.
+- TASK-011 human approval: `APPROVED` on `2026-09-18`.
+- IMPLEMENT: `AUTHORIZED AS NEXT STAGE`, not started by this approval action.
+
 ### Objective
 
-Kết nối frontend với Authentication API và khởi tạo authenticated state từ backend.
+Kết nối frontend với Authentication API bằng relative `/api/**`, cung cấp shared Authentication state và khởi tạo authoritative identity từ backend mà không mở rộng sang UI, navigation hoặc production deployment.
 
 ### Dependencies
 
 - TASK-009.
+- Human-approved corrective Authentication PLAN resolving `TASK011-B01`.
 
 ### Files / Modules
 
-- Frontend service/state/context modules theo existing frontend structure.
-- Không tự đoán path mới nếu source structure chưa có module tương ứng.
+- `frontend/vite.config.js` — minimum development proxy configuration for `/api/**`.
+- Existing frontend application bootstrap entry (`frontend/src/main.jsx` and/or the narrow bootstrap integration point required by the selected shared-state structure).
+- Frontend Auth API service module according to the implementation structure established under `frontend/src/`.
+- Frontend shared Authentication state/context module according to the implementation structure established under `frontend/src/`.
+- TASK-011 frontend test files and minimal test configuration.
+- `frontend/package.json` and `frontend/package-lock.json` only when required to add the minimum approved test tooling.
+- Do not invent page/component paths or create UI structure for TASK-012/TASK-013.
 
 ### In Scope
 
-- `authService.register`.
-- `authService.login`.
-- `authService.logout`.
-- `authService.getCurrentUser`.
-- App initialization bằng `GET /api/auth/me`.
+- `authService.register` using `POST /api/auth/register`.
+- `authService.login` using `POST /api/auth/login`.
+- `authService.logout` using `POST /api/auth/logout`.
+- `authService.getCurrentUser` using `GET /api/auth/me`.
+- All browser-facing Authentication calls use relative `/api/**` paths.
+- App initialization using authoritative `GET /api/auth/me`.
 - Authentication state:
   - `user`;
   - `isAuthenticated`;
   - `isLoading`;
-  - authentication error state.
-
+  - authentication/operational error state.
+- Explicit initialization and service-driven state transitions.
 - Browser-managed cookie credentials.
 - UX email normalization only.
+- Minimum Vite development proxy for `/api/**` to the local Express backend.
+- Minimum frontend test infrastructure needed to verify TASK-011.
 
 ### Out of Scope
 
-- Raw session token storage.
+- Reading, extracting, synthesizing or persisting the raw session token.
+- `localStorage`, `sessionStorage` or bearer-token Authentication.
 - Client-side security enforcement.
 - XP/level/streak/progress calculation.
 - New API endpoints.
+- Backend Authentication business/API changes.
+- CORS middleware or credentialed browser CORS.
+- CSRF token/library.
+- JWT or refresh-token architecture.
+- Login/Register pages, forms, layout, styling or visual state presentation; these belong to TASK-012.
+- Protected navigation, authenticated navigation and logout UI; these belong to TASK-013.
+- Vercel project creation/configuration, production rewrite configuration, backend Vercel entry point, deployment secrets, production Supabase setup and production deployment verification.
+- `docs/ARCHITECTURE.md` synchronization; the known deployment-baseline conflict follows a separate approved documentation/architecture workflow.
 
 ### Implementation Requirements
 
-- Frontend không nhận hoặc lưu raw session token.
-- Backend remains authoritative.
-- Frontend validation không thay thế backend validation.
-- Credential transport phù hợp với cookie topology đã verify.
+#### API base and credential transport
+
+- Authentication does not consume `VITE_API_URL` as a browser backend origin.
+- Authentication endpoint paths remain relative `/api/auth/**` in development and production.
+- The backend Vercel project origin must not be embedded in the browser Authentication client.
+- Browser manages `session_id`; frontend code does not read the HttpOnly cookie.
+- No `Authorization` bearer token is created from cookie/session state.
+- Same-origin requests may use the browser's same-origin credential behavior; implementation must not introduce cross-origin credential configuration as an architectural dependency.
+
+#### Development proxy
+
+- Configure Vite to proxy `/api/**` to the local Express backend.
+- Default local proxy target aligns with the existing backend default: `http://localhost:5000`.
+- Any optional proxy-target override must remain Vite server-side development configuration and must not become a browser-facing Auth API base URL.
+- Browser continues to request relative `/api/**`; it must not call the local backend origin directly.
+- No application CORS implementation is required for this development flow.
+
+#### Register
+
+- Send only approved backend registration fields: `display_name`, `email`, `password`.
+- Frontend may lowercase email for UX; backend remains authoritative for normalization and validation.
+- Successful registration does not create a session and must not set authenticated state, fabricate a user session or persist a token.
+- `confirm_password` handling and Register presentation belong to TASK-012.
+
+#### Login
+
+- Backend owns credential validation and session creation.
+- Frontend consumes only approved public identity from the response.
+- Successful login may populate shared `user` and set `isAuthenticated = true` from the backend response.
+- Frontend must never extract, read, persist or synthesize `session_id`.
+
+#### Logout
+
+- Call the approved idempotent logout endpoint without a raw token.
+- After successful logout, clear shared identity: `user = null`, `isAuthenticated = false`.
+- Logout UI and post-logout navigation belong to TASK-013.
+
+#### Current user and bootstrap
+
+- Initial state starts unresolved with `isLoading = true`.
+- Valid `/api/auth/me` response sets `user` to backend public identity, `isAuthenticated = true`, `isLoading = false` and clears stale auth error state.
+- Missing, invalid or expired Authentication sets `user = null`, `isAuthenticated = false`, `isLoading = false` and represents Guest rather than an operational failure.
+- Unexpected network/server/operational failure sets `user = null`, `isAuthenticated = false`, `isLoading = false` and preserves an operational error state; it must not fabricate authenticated identity or silently classify every failure as a valid session.
+- A later authentication failure/session expiration transitions shared state to Guest.
+
+#### Authority and security
+
+- Backend remains authoritative for authentication, identity, role, account state and session validity.
+- Frontend role/state is presentation input only and is not an authorization boundary.
+- Frontend validation and lowercase normalization do not replace backend validation.
+- Selected topology uses `HttpOnly`, production `Secure`, `SameSite=Lax`, `Path=/` and no explicit `Domain`; TASK-011 does not modify backend cookie behavior.
+- Do not add credentialed CORS or a CSRF token/library for the approved same-origin topology.
+- If implementation discovers a required backend correction, stop and route it through the appropriate workflow instead of expanding TASK-011.
+
+#### Test tooling
+
+- Repository currently has no frontend test runner/script.
+- Implementation may choose the minimum Node/React-compatible frontend test tooling allowed by the approved PLAN.
+- Only required package metadata, lockfile, minimal test configuration and TASK-011 tests may be added.
+- Do not create a broad frontend testing platform or select tooling during TASK clarification.
 
 ### Acceptance Criteria
 
-- App initializes auth state from `/api/auth/me`.
-- Valid session produces authenticated state.
-- Missing/expired session produces Guest state.
-- Login/register/logout service methods call approved endpoints.
-- Frontend does not persist raw session token.
+- **AC-011-01:** Auth service exposes register, login, logout and getCurrentUser using exactly the approved relative `/api/auth/**` endpoints.
+- **AC-011-02:** Authentication service does not use an absolute backend origin or `VITE_API_URL` as its browser API base.
+- **AC-011-03:** Vite development configuration proxies `/api/**` to the local Express backend while browser requests remain same-origin and relative.
+- **AC-011-04:** App bootstrap starts loading and resolves valid `/api/auth/me` identity to `user`, `isAuthenticated = true`, `isLoading = false`.
+- **AC-011-05:** Missing, invalid or expired session resolves to Guest with `user = null`, `isAuthenticated = false`, `isLoading = false`.
+- **AC-011-06:** Unexpected bootstrap operational failure resolves loading, keeps unauthenticated state and exposes operational error state without fabricating identity.
+- **AC-011-07:** Registration success does not authenticate, create frontend session state or persist a credential.
+- **AC-011-08:** Login success derives shared authenticated state only from approved backend public identity while the browser manages the cookie.
+- **AC-011-09:** Logout calls the idempotent endpoint and successful completion clears shared identity without implementing logout UI/navigation.
+- **AC-011-10:** Session expiration/authentication failure after initialization transitions shared state to Guest.
+- **AC-011-11:** Frontend lowercase email behavior is UX normalization only and does not replace backend authority.
+- **AC-011-12:** Frontend does not read, return, log, persist or synthesize raw session tokens and does not create bearer-token Authentication.
+- **AC-011-13:** No backend Authentication behavior, CORS/CSRF mechanism, production deployment configuration, Login/Register UI or protected-navigation UI is added.
+- **AC-011-14:** Relevant TASK-011 automated tests pass, frontend build succeeds and frontend lint succeeds when available.
 
 ### Testing Requirements
 
-- Auth initialization success/error.
-- API service success/error mapping.
-- Session expiration state.
-- UX email normalization without relying on it for security.
+- Bootstrap with valid session.
+- Bootstrap with missing, invalid and expired session.
+- Unexpected operational bootstrap failure.
+- Register service success/error behavior and no-auto-login invariant.
+- Login service success/error behavior and public-identity state transition.
+- Logout service behavior and state cleanup.
+- getCurrentUser success/error behavior.
+- Session-expiration transition to Guest.
+- UX email lowercase normalization without treating it as security enforcement.
+- Raw session token is never persisted or exposed by frontend state/service.
+- Relative `/api/**` endpoint construction.
+- Development proxy boundary/config behavior where the selected test approach can verify it deterministically.
+- Frontend build and lint.
 
 ### Traceability
 
 - SPEC: `4. User Flow`, `8. Acceptance Criteria`.
-- PLAN: `12. Thiết kế Frontend`, `6. Credential Lifecycle`.
+- PLAN: `6. Credential Lifecycle`, `12. Thiết kế Frontend`, `Corrective topology decision — TASK011-B01`.
 - API_SPEC: `5. Authentication`, `6. Login`, `7. Current User`.
+
+### Design Gate
+
+- Classification: `B — FRONTEND without material UI/UX decisions`.
+- Design Gate before TASK-011 IMPLEMENT: `NOT REQUIRED`.
+- This classification does not apply automatically to TASK-012 or TASK-013.
+
+### Verification Gate
+
+- Confirm only approved frontend service/state/bootstrap, Vite development proxy and minimum test surfaces changed.
+- Confirm no backend production source or production deployment configuration changed.
+- Run relevant TASK-011 frontend automated tests.
+- Run frontend build.
+- Run frontend lint.
+- Verify no raw credential appears in frontend storage, state or test output.
+- Formal TEST and REVIEW remain separate workflow stages after IMPLEMENT.
+
+### Approval Gate
+
+```text
+TASK-011: APPROVED
+HUMAN APPROVAL RECORDED: 2026-09-18
+IMPLEMENT: AUTHORIZED AS NEXT STAGE
+IMPLEMENTATION: NOT STARTED
+```
+
+Human approval has been recorded for the clarified TASK-011 boundary. Approval authorizes IMPLEMENT as the next workflow stage but does not start implementation.
 
 ---
 
