@@ -5,7 +5,9 @@
   "type": "module",
   "main": "src/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --env-file=.env.test --test --test-concurrency=1 test/auth/auth-http.test.js test/auth/auth-components.test.js test/auth/password-security.test.js test/auth/deferred-contracts.test.js",
+    "test:auth": "node --env-file=.env.test --test --test-concurrency=1 test/auth/auth-http.test.js test/auth/auth-components.test.js test/auth/password-security.test.js test/auth/deferred-contracts.test.js",
+    "test:db:prepare": "node --env-file=.env.test test/scripts/prepare-test-database.js",
     "start": "node src/main.js",
     "dev": "nodemon src/main.js"
   },

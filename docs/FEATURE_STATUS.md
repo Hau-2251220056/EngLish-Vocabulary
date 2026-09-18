@@ -183,13 +183,27 @@ Status: IN_PROGRESS
 
 ### Description
 
-Backend authentication foundation and HTTP route integration have been implemented through TASK-009. The overall Authentication feature remains in progress because frontend authentication flows/state and remaining user-management capabilities are not complete.
+Backend authentication foundation, HTTP route integration and the persistent backend Authentication/security test suite have been implemented through TASK-010. The overall Authentication feature remains in progress because frontend authentication flows/state and remaining user-management capabilities are not complete.
 
 ### Related Documentation
 
 - SPEC: `docs/specs/AUTHENTICATION_SPEC.md`
 - PLAN: `docs/plans/AUTHENTICATION_ROUTES_PLAN.md`
 - TASK: `docs/tasks/AUTHENTICATION_ROUTES_TASK.md`
+- TEST SPEC: `docs/specs/BACKEND_AUTHENTICATION_TESTS_SPEC.md`
+- TEST PLAN: `docs/plans/BACKEND_AUTHENTICATION_TESTS_PLAN.md`
+- TEST TASK: TASK-010 in `docs/tasks/AUTHENTICATION_TASK.md`
+
+### TASK-010 Workflow Status
+
+- TASK-010 status: DONE.
+- SPEC-010: APPROVED.
+- PLAN-010: APPROVED.
+- TASK-010: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-010: PASS.
+- REVIEW-010: APPROVED.
+- Quality gate: PASSED.
 
 ### Backend
 
@@ -201,6 +215,7 @@ Backend authentication foundation and HTTP route integration have been implement
 - `backend/src/repositories/auth-session-repository.js`
 - `backend/src/utils/password-security.js`
 - `backend/src/routes/auth-routes.js`
+- `backend/src/app.js`
 - `backend/src/main.js`
 
 ### API
@@ -222,6 +237,7 @@ Backend authentication foundation and HTTP route integration have been implement
 - TASK-007: inline middleware tests passed, 16/16.
 - TASK-008: inline controller behavior tests passed, 15 behavior groups.
 - TASK-009: route integration tests passed, 16/16, covering route registration, middleware ordering, public/protected flows, unauthorized `/me`, invalid method and health route.
+- TASK-010: formal backend Authentication/security suite passed with 27 runnable tests, 0 failures, 6 approved deferred TODOs and 0 skipped tests in two consecutive Authentication runs and the full backend suite; dedicated test database cleanup left 0 `USER` and 0 `AUTH_SESSION` rows.
 
 ### Review
 
@@ -229,6 +245,7 @@ Backend authentication foundation and HTTP route integration have been implement
 - TASK-006: approved with no findings.
 - TASK-007: approved with no findings.
 - TASK-009: approved with no findings.
+- TASK-010: REVIEW-010 approved; quality gate passed.
 
 4.2 Topics
 

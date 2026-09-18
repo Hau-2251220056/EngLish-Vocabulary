@@ -756,60 +756,673 @@ Map the approved Authentication endpoints to Controller handlers without adding 
 
 ### Objective
 
-Bao phủ backend unit, integration và security behavior của Authentication.
+Triển khai persistent automated test suite cho backend Authentication và minimal application testability infrastructure đã được approved trong SPEC-010/PLAN-010.
 
-### Dependencies
+TASK-010 phải chứng minh observable HTTP contract, persistence effects và security invariants của Authentication hiện có mà không thay đổi Authentication business behavior, API contract, database schema hoặc session architecture.
 
-- TASK-009.
+Primary test boundary là real Express application chạy trên loopback/ephemeral port. Focused component tests chỉ dùng cho security/error paths không thể chứng minh đầy đủ hoặc ổn định qua HTTP boundary.
+
+### Preconditions / Dependencies
+
+- SPEC-010 — Backend Authentication Tests: APPROVED.
+- PLAN-010 — Backend Authentication Tests: APPROVED.
+- TASK-009 — Authentication Routes / Route Integration: completed and closed.
+- Authentication implementation hiện tại qua TASK-001 đến TASK-009.
+- Node.js 22 runtime với built-in `node:test`, `node:assert/strict` và native `fetch`.
+- PostgreSQL test database riêng do developer/CI provision.
+- Existing Prisma schema và migrations cho `USER`/`AUTH_SESSION`.
+- `TEST_DATABASE_URL` chỉ tới dedicated test database.
+- `TEST_DATABASE_ALLOW_RESET=true` được set rõ ràng trước mọi destructive preparation/cleanup.
+
+Không có third-party test framework/library dependency mới.
+
+### Approved Technical Decisions
+
+- Test runner: Node.js built-in `node:test`.
+- Assertions: `node:assert/strict`.
+- HTTP client: native `fetch`.
+- HTTP integration: real Express app trên `127.0.0.1` với OS-assigned ephemeral port.
+- Application boundary: `createApp({ prisma })`; listener startup vẫn nằm trong `main.js`.
+- Database: real Prisma/PostgreSQL dedicated test database, reuse existing migrations.
+- Database test concurrency: sequential qua `--test-concurrency=1`.
+- Isolation: FK-safe cleanup `AUTH_SESSION` trước `USER`, unique fixtures, before/after/finally cleanup.
+- Time: fixed expired fixtures và bounded timestamp tolerance; không sleep.
+- Deferred contracts: visible `test.todo()` entries, không false PASS.
 
 ### Files / Modules
 
-- Existing backend test infrastructure if available.
-- New Authentication test modules only after the test infrastructure decision is approved.
+#### CREATE
+
+```text
+backend/src/app.js
+backend/test/helpers/test-environment.js
+backend/test/helpers/test-database.js
+backend/test/helpers/http-test-server.js
+backend/test/helpers/auth-fixtures.js
+backend/test/scripts/prepare-test-database.js
+backend/test/auth/auth-http.test.js
+backend/test/auth/auth-components.test.js
+backend/test/auth/password-security.test.js
+backend/test/auth/deferred-contracts.test.js
+backend/test/README.md
+backend/.env.test.example
+```
+
+Responsibilities:
+
+- `src/app.js`: export importable `createApp({ prisma })`, compose existing Authentication graph, middleware/routes và health route; không gọi `listen()`.
+- `test-environment.js`: enforce/redact test environment and destructive-reset guards before Prisma-bound imports/actions.
+- `test-database.js`: test Prisma lifecycle, connectivity, direct evidence queries và FK-safe reset.
+- `http-test-server.js`: ephemeral loopback server lifecycle, JSON/raw requests, cookie extraction/forwarding and safe response inspection.
+- `auth-fixtures.js`: minimal unique USER/ADMIN/inactive/session fixtures; không tạo fixture framework tổng quát.
+- `prepare-test-database.js`: validate safety guard và apply existing migrations qua existing Prisma CLI.
+- `auth-http.test.js`: primary HTTP/API and persistence coverage for four Authentication endpoints.
+- `auth-components.test.js`: focused service/controller/middleware/role/error/security-boundary coverage.
+- `password-security.test.js`: focused password primitive/security coverage.
+- `deferred-contracts.test.js`: explicit TODO inventory for contracts chưa approved/implemented.
+- `test/README.md`: environment, commands, safety, lifecycle and deferred coverage documentation.
+- `.env.test.example`: variable names/placeholders only; không chứa credential thật.
+
+#### MODIFY
+
+```text
+backend/src/main.js
+backend/package.json
+```
+
+- `main.js`: tạo Prisma client, gọi `createApp({ prisma })`, rồi giữ startup/listener behavior hiện tại.
+- `package.json`: thay placeholder test script và thêm approved commands; không thêm dependency.
+
+#### EXPECTED UNCHANGED / DO NOT MODIFY
+
+```text
+backend/package-lock.json
+backend/prisma/schema.prisma
+backend/prisma/migrations/*
+backend/src/routes/auth-routes.js
+backend/src/controllers/auth-controller.js
+backend/src/services/authentication-service.js
+backend/src/repositories/user-repository.js
+backend/src/repositories/auth-session-repository.js
+backend/src/middleware/authentication-middleware.js
+backend/src/middleware/role-authorization-middleware.js
+backend/src/utils/password-security.js
+frontend/*
+docs/API_SPEC.md
+docs/ARCHITECTURE.md
+docs/DATABASE.md
+docs/PROJECT_OVERVIEW.md
+docs/UI_UX_SPEC.md
+TASK-001 ... TASK-009
+TASK-011 ... TASK-015
+```
+
+Nếu IMPLEMENT cần thay đổi một expected-unchanged production component, API behavior, schema/migration, dependency hoặc substantive scope của task khác, phải STOP và quay lại PLAN/SPEC approval.
 
 ### In Scope
 
-- Registration success, validation, duplicate email and defaults.
-- Email normalization.
-- Password hashing/verification and metadata.
-- Invalid credentials and inactive account.
-- 32-byte session generation and SHA-256 hash persistence.
-- Multiple sessions.
-- Session expiration.
-- Logout deletion and idempotency.
-- Cookies and raw token exclusion.
-- `/api/auth/me`.
-- USER/ADMIN authorization.
-- Authenticated identity/security boundary.
-- CORS/CSRF behavior based on verified deployment topology.
+- Minimal `createApp({ prisma })` extraction without production behavior change.
+- Node built-in test infrastructure and package scripts.
+- Dedicated test database preparation, safety guards, reset and fixture lifecycle.
+- Registration, login, logout and `/api/auth/me` HTTP integration tests.
+- Password security focused tests.
+- Authentication Service/Controller/Middleware focused error and edge tests.
+- Role Authorization Middleware focused tests.
+- Persistence/security assertions for USER/AUTH_SESSION.
+- Multiple-session, expiration and current-session-only logout behavior.
+- Identity authority and client-forgery resistance.
+- Sensitive data response/persistence/log checks.
+- Repeatability and sequential execution.
+- Explicit TODO reporting for approved deferred contracts.
 
 ### Out of Scope
 
-- New testing framework without approval.
-- Tests for unapproved features.
-- Performance/security scope outside approved Authentication behavior.
-- Resource-specific ownership rules belonging to individual domain features.
+- Authentication business/API behavior changes.
+- New endpoint, role, permission or ownership system.
+- Prisma schema/migration changes or test-only schema.
+- Third-party test runner/assertion/HTTP library.
+- Centralized error handler implementation.
+- CORS/CSRF implementation or deployment-topology decision.
+- `SameSite`/cookie `Domain` decision.
+- JWT, refresh token, OAuth, MFA, password reset or session-management features.
+- Frontend Authentication/tests.
+- Load, performance, penetration or full-platform security testing.
+- Resource-specific ownership rules belonging to other domains.
+- Feature status transition to DONE before TEST/REVIEW/human approval.
 
-### Acceptance Criteria
+### Test Command Contract
 
-- Backend tests cover all Authentication acceptance criteria and security boundaries.
-- Invalid credentials do not reveal account state.
-- Raw session token/password/hash are not returned or logged.
-- Logout tests cover missing, malformed, expired and deleted sessions.
-- Authentication and role authorization tests pass.
-- Authenticated identity cannot be replaced by client-supplied identity/role values.
+`backend/package.json` phải cung cấp:
 
-### Testing Requirements
+```text
+npm run test:db:prepare
+npm run test:auth
+npm test
+```
 
-- Run relevant backend unit/API/integration tests during TEST stage.
-- Run build/lint checks where available.
-- Record unavailable test infrastructure rather than assuming success.
+Required behavior:
+
+- `test:db:prepare`: safety-check environment rồi apply existing migrations vào dedicated test database.
+- `test:auth`: chạy Authentication tests bằng Node test runner, sequentially.
+- `test`: chạy full backend discovered test suite, sequentially.
+- Runnable assertion/setup failure trả non-zero exit code.
+- All runnable tests pass trả zero; TODO count vẫn hiển thị riêng.
+- Database configuration thiếu/unsafe phải fail rõ, không silently skip.
+- Current missing build/lint commands được report `NOT AVAILABLE`, không coi là PASS.
+
+### Test Database Safety Contract
+
+- `TEST_DATABASE_URL` là bắt buộc cho database preparation/integration tests.
+- `TEST_DATABASE_ALLOW_RESET` phải bằng string `true` trước migration/reset/delete action.
+- `NODE_ENV` phải được kiểm soát là `test` trước dynamic import module tạo Prisma-bound app.
+- `TEST_DATABASE_URL` được map process-locally sang `DATABASE_URL`; không sửa `.env` production/development.
+- Error output không in full database URL hoặc credentials.
+- Suite không tự tạo database; chỉ apply existing migrations vào database đã provision.
+- Cleanup theo thứ tự `AUTH_SESSION` rồi `USER`.
+- Cleanup chạy trước stateful scenario và trong after/finally phù hợp.
+- Database tests/subtests không chạy song song.
+- Fixtures dùng unique identifiers và không phụ thuộc dữ liệu từ lần chạy trước.
+- Hai lần chạy liên tiếp phải cho cùng result và không để lại fixture rows.
+
+### Task Breakdown
+
+#### TASK-010-01 — Extract importable Express application boundary
+
+**Dependencies:** TASK-009.
+
+**Files:**
+
+- Create `backend/src/app.js`.
+- Modify `backend/src/main.js`.
+
+**Implementation Requirements:**
+
+- Move current dependency composition, `express.json()`, `cookieParser()`, auth router mount và health route into `createApp({ prisma })`.
+- Factory trả Express app và không listen.
+- `main.js` giữ one Prisma client, `PORT`, startup listener và startup log behavior.
+- Preserve exact dependency graph, singleton instances, middleware order and four routes from TASK-009.
+- Không thêm injection hooks/general abstraction chỉ phục vụ mocking.
+
+**Acceptance Criteria:**
+
+- Import `app.js` không mở network listener.
+- `main.js` startup behavior không đổi.
+- Health route và bốn Authentication endpoints vẫn registered đúng.
+- Controller và Authentication Middleware vẫn share cùng Authentication Service instance.
+- Không thay đổi Authentication module behavior/API.
+
+**Verification:**
+
+- Syntax/import check.
+- Health and route regression through later HTTP suite.
+- Diff review against TASK-009 composition order.
+
+---
+
+#### TASK-010-02 — Add Node test scripts and test environment contract
+
+**Dependencies:** None; integrate with TASK-010-01 before HTTP tests.
+
+**Files:**
+
+- Modify `backend/package.json`.
+- Create `backend/.env.test.example`.
+- Create `backend/test/README.md`.
+- Create `backend/test/helpers/test-environment.js`.
+
+**Implementation Requirements:**
+
+- Use `node:test`, `node:assert/strict` and native APIs only.
+- Add approved `test`, `test:auth`, `test:db:prepare` command names.
+- Use `--test-concurrency=1` for test commands.
+- Validate dedicated DB URL/reset opt-in before destructive action.
+- Redact database URL/credentials in errors.
+- Document exact prerequisites, commands, cleanup and TODO semantics.
+- Do not add package dependency; package lock remains unchanged.
+
+**Acceptance Criteria:**
+
+- Placeholder `npm test` is removed.
+- Commands use Node 22 built-in test stack and sequential execution.
+- Missing/unsafe environment fails before database action.
+- Example environment contains no real secret.
+- README distinguishes PASS, FAIL, TODO and NOT AVAILABLE.
+
+**Verification:**
+
+- Inspect package scripts and dependency diff.
+- Exercise guard failure with no database action during IMPLEMENT verification.
+- Confirm package lock has no diff.
+
+---
+
+#### TASK-010-03 — Add dedicated test database preparation and lifecycle
+
+**Dependencies:** TASK-010-02.
+
+**Files:**
+
+- Create `backend/test/scripts/prepare-test-database.js`.
+- Create `backend/test/helpers/test-database.js`.
+
+**Implementation Requirements:**
+
+- Reuse existing Prisma CLI and migrations; do not generate or modify migration.
+- Map verified `TEST_DATABASE_URL` process-locally for Prisma.
+- Preparation script applies `prisma migrate deploy` only after safety validation.
+- Database helper creates/disconnects test Prisma client and exposes minimal evidence/reset operations.
+- Reset `AUTH_SESSION` before `USER`.
+- Cleanup must run reliably after failures and must not log connection credentials.
+- No transaction strategy that falsely assumes HTTP requests share a test-owned transaction.
+
+**Acceptance Criteria:**
+
+- Missing URL or allow-reset guard prevents migrate/reset/delete action with non-zero exit.
+- Approved dedicated database can receive existing migration and connect through Prisma.
+- Reset is FK-safe and repeatable.
+- Test Prisma client disconnects in teardown/finally.
+- No schema/migration file changes.
+
+**Verification:**
+
+- Guard-path verification without DB mutation.
+- During authorized IMPLEMENT/TEST environment: run `npm run test:db:prepare`, connectivity/reset check and repeat cleanup.
+
+---
+
+#### TASK-010-04 — Add HTTP server and Authentication fixture helpers
+
+**Dependencies:** TASK-010-01, TASK-010-03.
+
+**Files:**
+
+- Create `backend/test/helpers/http-test-server.js`.
+- Create `backend/test/helpers/auth-fixtures.js`.
+
+**Implementation Requirements:**
+
+- Start real Express app on `127.0.0.1` port `0`; obtain actual assigned port.
+- Always close server in teardown/finally.
+- Support JSON and raw requests, response body/status/header inspection and single `session_id` cookie forwarding.
+- Use `Headers.getSetCookie()`/Node 22 behavior to inspect all cookie headers.
+- Do not build a generalized cookie jar.
+- Fixtures create unique email identifiers and only approved USER/ADMIN/inactive/session states.
+- Use public endpoints for normal flows; direct Prisma only for otherwise unreachable states such as ADMIN/inactive/expired/missing-user/corrupt-hash.
+- Helpers must not print request secrets/cookies on failure.
+
+**Acceptance Criteria:**
+
+- HTTP helper opens/closes ephemeral loopback server deterministically.
+- Cookie extraction preserves only required transport value/attributes.
+- Fixture reruns do not collide.
+- No test-only production endpoint/backdoor is introduced.
+
+**Verification:**
+
+- Helper lifecycle check through health endpoint.
+- Teardown confirms listener closed and database fixtures cleaned.
+
+---
+
+#### TASK-010-05 — Implement password-security focused tests
+
+**Dependencies:** TASK-010-02.
+
+**Files:**
+
+- Create `backend/test/auth/password-security.test.js`.
+
+**Coverage:**
+
+- Password length 7 rejected; length 8 accepted.
+- Hash/verify correct password success.
+- Wrong and non-string password failure per current contract.
+- Same plaintext produces independently salted serialized hashes.
+- Required scrypt algorithm/parameter/salt/key metadata.
+- Malformed algorithm, part count, base64url, parameter and size formats return `PASSWORD_HASH_INVALID`.
+- Unsafe/unbounded scrypt parameters rejected before expensive derivation.
+- Constant-time helper equal/mismatch/length/type behavior.
+
+**Acceptance Criteria:**
+
+- All approved password invariants have deterministic tests.
+- Tests do not assert exact random salt/hash.
+- Failure messages/logs do not expose plaintext/hash values.
+- No production utility change is made to accommodate tests.
+
+**Verification:**
+
+- Run password-security test file via Node test runner.
+
+---
+
+#### TASK-010-06 — Implement Registration and Login HTTP/persistence tests
+
+**Dependencies:** TASK-010-01 through TASK-010-04, TASK-010-05.
+
+**Files:**
+
+- Create/extend `backend/test/auth/auth-http.test.js`.
+
+**Registration Coverage:**
+
+- `201` and exact approved success body for valid `display_name`, email, password.
+- Lowercase normalization before lookup/persistence.
+- USER defaults: role, active state, XP and daily goal.
+- No session, no authentication cookie, no auto-login.
+- Missing/wrong-type/empty required values and password under 8 → `400/VALIDATION_ERROR`.
+- Duplicate normalized email → `409/EMAIL_ALREADY_EXISTS`.
+- Concurrent duplicate race/DB uniqueness: one persisted user and approved public conflict behavior.
+- Failed registration creates no partial user/session state.
+- Password persisted as verifiable scrypt hash, never plaintext.
+
+**Login Coverage:**
+
+- Valid active login → `200`, exact public `data.user` identity.
+- Normalized email lookup and correct password.
+- Cookie name `session_id`, `HttpOnly`, `Path=/`, `Max-Age=604800`, conditional `Secure` per current controller contract.
+- Raw token decodes to 32 bytes; DB stores matching SHA-256 hash only.
+- `expires_at` within bounded tolerance of 7-day lifetime.
+- Unknown email, wrong password and inactive account produce identical public `401/AUTHENTICATION_FAILED` behavior.
+- Missing/non-string credentials follow current approved `401` behavior.
+- Failed login creates no session/cookie.
+- Repeated valid login creates two different, simultaneously valid sessions.
+
+**Acceptance Criteria:**
+
+- SPEC-010 AC-02 through AC-08 evidence is produced.
+- HTTP and database assertions are kept in the same logical scenarios without redundant repository-call tests.
+- Response JSON excludes password/hash/session fields and raw token.
+- Time assertions use request window/tolerance; no sleep.
+
+**Verification:**
+
+- Run `npm run test:auth` against authorized dedicated database.
+- Confirm session/user row counts and cleanup after pass/fail.
+
+---
+
+#### TASK-010-07 — Implement `/me`, logout and session lifecycle tests
+
+**Dependencies:** TASK-010-06.
+
+**Files:**
+
+- Extend `backend/test/auth/auth-http.test.js`.
+
+**Current User Coverage:**
+
+- Valid USER and ADMIN session → `200` public identity under `data`.
+- Missing, empty, malformed, unknown, expired and deleted session → same `401/AUTHENTICATION_FAILED`.
+- Existing session pointing to inactive or missing user is rejected.
+- Client body/query/header values for `user_id`, `owner_id`, `role` cannot replace session owner identity.
+- End-to-end register → login → `/me` identity.
+
+**Logout Coverage:**
+
+- Valid logout deletes only current session, clears `session_id` at `Path=/`, returns empty `204`.
+- Other session for same user remains valid through `/me`.
+- Missing, empty, malformed, unknown, expired, deleted and repeated logout are idempotent `204` and clear cookie.
+- Logout response excludes raw/persisted session identifiers.
+- After logout, invalidated cookie fails `/me`.
+
+**Session/Time Coverage:**
+
+- Expired state uses fixed past timestamp fixture.
+- Valid state uses login or sufficiently future timestamp.
+- No sleep or timing race.
+
+**Acceptance Criteria:**
+
+- SPEC-010 AC-09 through AC-13 evidence is produced.
+- Multiple sessions persist independently.
+- Current-session deletion leaves unrelated session rows intact.
+- Middleware prevents success/controller behavior after auth failure.
+
+**Verification:**
+
+- Run Authentication suite twice consecutively.
+- Verify both runs pass and leave no test fixture rows.
+
+---
+
+#### TASK-010-08 — Implement focused Authentication component, role and error tests
+
+**Dependencies:** TASK-010-02, existing Authentication factories.
+
+**Files:**
+
+- Create `backend/test/auth/auth-components.test.js`.
+
+**Service/Controller Coverage:**
+
+- Prisma-style registration `P2002` maps to `EMAIL_ALREADY_EXISTS`.
+- Logout delete race `P2025` remains idempotent.
+- Unexpected repository/password error propagates unchanged.
+- Controller forwards unexpected register/login errors.
+- Logout controller clears cookie before forwarding unexpected persistence error.
+- Do not assert unapproved final HTTP error response.
+
+**Authentication Middleware Coverage:**
+
+- Valid session result assigns only public `id`, `email`, `display_name`, `role` identity and calls downstream once.
+- Known auth failure returns `401` and does not call downstream controller.
+- Unexpected service error reaches `next(error)` unchanged.
+- Client-controlled identity does not establish or override `req.user`.
+
+**Role Authorization Coverage:**
+
+- Allowed USER and ADMIN continue.
+- USER receives `403/FORBIDDEN` for ADMIN-only policy.
+- ADMIN continues for ADMIN-only policy.
+- Unknown/unapproved role receives `403` even when caller-provided allowed list includes it.
+- Role authority is authenticated `req.user`, not body/query/header.
+- Missing `req.user` forwards approved programming/composition error.
+
+**Sensitive Log Coverage:**
+
+- Temporarily capture console log/info/warn/error around representative flows.
+- Assert unique synthetic password/raw token markers absent.
+- Restore all console methods in `finally`; tests remain sequential.
+- Assertion messages do not interpolate secret markers.
+
+**Acceptance Criteria:**
+
+- SPEC-010 AC-11, AC-14, AC-15 and AC-16 focused evidence is produced.
+- Focused tests cover behavior not already adequately proven by HTTP suite.
+- No implementation-detail call-order assertions without security/state justification.
+
+**Verification:**
+
+- Run component tests through `npm run test:auth`.
+- Inject unexpected errors and confirm exact error object reaches `next`/rejection.
+
+---
+
+#### TASK-010-09 — Add deferred contract inventory
+
+**Dependencies:** TASK-010-02.
+
+**Files:**
+
+- Create `backend/test/auth/deferred-contracts.test.js`.
+- Update `backend/test/README.md` created within TASK-010.
+
+**Required TODO Entries:**
+
+- Malformed JSON final JSON response.
+- Unexpected HTTP error final JSON response.
+- Credentialed CORS policy/headers.
+- CSRF mechanism/behavior.
+- Cookie `SameSite`.
+- Cookie `Domain`.
+
+**Implementation Requirements:**
+
+- Use explicit `test.todo()` with missing approval/dependency named.
+- TODO must be reported separately and never represented as passing evidence.
+- Current cookie attributes (`session_id`, `HttpOnly`, `Path`, `Max-Age`, conditional `Secure`) remain normal required tests, not TODO.
+- No centralized handler, CORS, CSRF or topology implementation.
+
+**Acceptance Criteria:**
+
+- Deferred items are visible in runner output and README.
+- Activation condition is documented: approved contract/topology plus corresponding implementation.
+- No invented expected value/body/policy.
+
+**Verification:**
+
+- Run Authentication suite and confirm TODO count/labels are visible separately from pass count.
+
+---
+
+#### TASK-010-10 — Verify complete suite, repeatability, safety and scope
+
+**Dependencies:** TASK-010-01 through TASK-010-09.
+
+**Files:**
+
+- No additional production module expected.
+- Only correct files created/modified earlier in TASK-010 if verification finds an in-scope defect.
+
+**Implementation Requirements:**
+
+- Prepare only explicitly authorized test database.
+- Run Authentication suite twice, then full backend suite.
+- Verify fail-safe guard paths before destructive operations.
+- Verify health route/startup behavior after app extraction.
+- Verify no sensitive output and no residual fixture rows.
+- Inspect Git diff for schema/API/business behavior/package-lock scope.
+- Report build/lint as `NOT AVAILABLE` because scripts do not currently exist.
+
+**Acceptance Criteria:**
+
+- All runnable AC-01 through AC-20 tests pass.
+- TODOs remain clearly deferred, not PASS.
+- Consecutive runs are deterministic and cleanup succeeds.
+- Unsafe/missing DB configuration fails before mutation.
+- Package lock, schema/migrations and expected-unchanged Authentication modules have no diff.
+- Production startup, health route and four Authentication endpoints remain behaviorally unchanged.
+
+**Verification Commands:**
+
+```text
+npm run test:db:prepare
+npm run test:auth
+npm run test:auth
+npm test
+```
+
+Formal execution results belong to TEST-010; TASK stage does not claim these commands passed.
+
+### Dependency Graph
+
+```text
+TASK-010-01 App boundary ───────────────┐
+                                       ├──→ TASK-010-04 HTTP/fixtures
+TASK-010-02 Runner/environment ──┬─────┘             │
+                                ├──→ TASK-010-03 DB lifecycle
+                                ├──→ TASK-010-05 Password tests
+                                └──→ TASK-010-09 Deferred TODOs
+
+TASK-010-03 + TASK-010-04 + TASK-010-05
+                    ↓
+              TASK-010-06 Register/Login
+                    ↓
+              TASK-010-07 Me/Logout/Sessions
+
+TASK-010-02 + existing auth factories
+                    ↓
+              TASK-010-08 Components/Role/Errors
+
+TASK-010-01 ... TASK-010-09
+                    ↓
+              TASK-010-10 Full verification
+```
+
+TASK-010-05, TASK-010-08 and TASK-010-09 may be implemented independently after TASK-010-02 because they do not require the database HTTP flow. Database-mutating work remains sequential.
+
+### SPEC-010 Acceptance Criteria Traceability
+
+| SPEC-010 AC | Executable responsibility |
+|---|---|
+| AC-01 | TASK-010-06/07 real HTTP coverage for register, login, logout and `/me` |
+| AC-02 | TASK-010-06 valid registration, defaults, normalized persistence, no cookie/session |
+| AC-03 | TASK-010-06 invalid matrix, normalized duplicate and DB race/P2002 behavior |
+| AC-04 | TASK-010-05/06 scrypt format/verify and persisted non-plaintext hash |
+| AC-05 | TASK-010-06 valid active login identity and current cookie attributes |
+| AC-06 | TASK-010-06 32-byte raw token, SHA-256-only persistence and 7-day expiry |
+| AC-07 | TASK-010-06 identical unknown/wrong/inactive failure and no session |
+| AC-08 | TASK-010-06 two independent simultaneous sessions |
+| AC-09 | TASK-010-07 `/me` for persisted USER/ADMIN identity |
+| AC-10 | TASK-010-07 invalid/expired/deleted/inactive/missing-user session matrix |
+| AC-11 | TASK-010-07/08 forged identity/role cannot replace session identity |
+| AC-12 | TASK-010-07 current-session-only logout and second-session survival |
+| AC-13 | TASK-010-07/08 idempotent logout matrix and P2025 race |
+| AC-14 | TASK-010-08 USER/ADMIN/disallowed/unknown role matrix |
+| AC-15 | TASK-010-06/07/08 response, persistence and captured-output leak checks |
+| AC-16 | TASK-010-06/08 known mappings and unchanged unexpected-error propagation |
+| AC-17 | TASK-010-02/03/04/10 dedicated DB, cleanup, sequential repeat runs |
+| AC-18 | TASK-010-02/09/10 exit codes and explicit PASS/FAIL/TODO/NOT AVAILABLE reporting |
+| AC-19 | TASK-010-06/07 primary HTTP ownership; TASK-010-05/08 only focused added-value coverage |
+| AC-20 | TASK-010-01/10 minimal app extraction and schema/API/business/package-lock diff checks |
+
+All SPEC-010 AC-01 through AC-20 map to at least one executable subtask. No new business acceptance criterion is introduced.
+
+### Overall Acceptance Criteria
+
+- Importable Express app boundary exists without listener side effect or production behavior change.
+- Node built-in test suite and approved commands are available without new dependency.
+- Dedicated test DB guards fail safely and redact credentials.
+- Backend tests cover four endpoints, persistence, password/session security, middleware, authorization and identity boundary.
+- Invalid credential variants do not reveal account state.
+- Plaintext password, password hash, session hash and raw token do not leak outside approved boundaries.
+- Logout covers valid, missing, malformed, unknown, expired, deleted and repeated sessions.
+- Database cleanup is FK-safe, repeatable and leaves no fixture data.
+- All runnable SPEC-010 ACs have passing evidence after IMPLEMENT/TEST.
+- Centralized-error and topology-dependent items remain explicit TODOs until separately approved.
+- No API/schema/migration/Auth behavior/frontend/unrelated change is introduced.
+
+### Verification Handoff
+
+TEST-010 must record:
+
+- Node/npm/runtime versions.
+- Dedicated database preparation result without revealing URL.
+- First and second `npm run test:auth` results.
+- Full `npm test` result.
+- Passed/failed/TODO counts.
+- Database guard and cleanup evidence.
+- Sensitive-data checks.
+- Health/startup/API regression result.
+- `git diff --check` and scope review.
+- Build: `NOT AVAILABLE` unless a script exists under separately approved work.
+- Lint: `NOT AVAILABLE` unless a script exists under separately approved work.
 
 ### Traceability
 
-- SPEC: `8. Acceptance Criteria`, `9. Edge Cases`.
-- PLAN: `13. Chiến lược Testing`.
-- AGENTS: Testing Rules and Verification.
+- Feature SPEC: `docs/specs/AUTHENTICATION_SPEC.md`.
+- Feature PLAN: `docs/plans/AUTHENTICATION_PLAN.md`.
+- Feature TASK: TASK-001 through TASK-009 implementation dependencies in this document.
+- SPEC-010: `docs/specs/BACKEND_AUTHENTICATION_TESTS_SPEC.md`, AC-01 through AC-20.
+- PLAN-010: `docs/plans/BACKEND_AUTHENTICATION_TESTS_PLAN.md`, technical decisions, layer allocation, file plan, commands and verification strategy.
+- TASK-009: `docs/tasks/AUTHENTICATION_ROUTES_TASK.md`, final route/composition contract.
+- Architecture: `docs/ARCHITECTURE.md`, backend layering/testing/error boundary.
+- Database: `docs/DATABASE.md`, `USER`/`AUTH_SESSION` relationship and constraints.
+- API: `docs/API_SPEC.md`, Authentication endpoint/status/security contract and known discrepancies recorded by SPEC-010.
+- Feature status: `docs/FEATURE_STATUS.md`, Authentication remains `IN_PROGRESS`.
+- AGENTS: Testing, Verification, Security, Minimal Change and approval rules.
+
+### Approval Gate
+
+```text
+TASK-010 STATUS: READY FOR HUMAN REVIEW
+IMPLEMENTATION: NOT STARTED
+TEST-010: NOT STARTED
+REVIEW-010: NOT STARTED
+```
+
+Human approval is required before IMPLEMENT. TASK-010 authoring does not approve or execute any subtask.
 
 ---
 
