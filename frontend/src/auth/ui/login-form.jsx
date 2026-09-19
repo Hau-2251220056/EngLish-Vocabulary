@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { ArrowRight, CircleAlert, LoaderCircle, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useAuthentication } from "../use-authentication.js";
@@ -12,7 +12,7 @@ import { PasswordField } from "./password-field.jsx";
 
 export function LoginForm({ initialEmail = "", onSwitchMode }) {
   const navigate = useNavigate();
-  const { login } = useAuthentication();
+  const { dismissSessionExpired, login, sessionExpired } = useAuthentication();
   const [formError, setFormError] = useState(null);
   const {
     register,
@@ -45,6 +45,10 @@ export function LoginForm({ initialEmail = "", onSwitchMode }) {
       description="Đăng nhập để tiếp nối hành trình từ vựng của bạn."
     >
       <form className="space-y-4" onSubmit={handleSubmit(submit)} noValidate>
+        <SessionExpiredAlert
+          isVisible={sessionExpired}
+          onDismiss={dismissSessionExpired}
+        />
         <FormAlert error={formError} />
         <FormField
           id="login-email"
@@ -78,6 +82,30 @@ export function LoginForm({ initialEmail = "", onSwitchMode }) {
         onClick={onSwitchMode}
       />
     </AuthFormFrame>
+  );
+}
+
+function SessionExpiredAlert({ isVisible, onDismiss }) {
+  if (!isVisible) return null;
+
+  return (
+    <div
+      className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950"
+      role="alert"
+    >
+      <CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-sm leading-5">
+        Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.
+      </p>
+      <button
+        type="button"
+        className="-m-1 rounded-lg p-1 text-amber-800 outline-none hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-600"
+        onClick={onDismiss}
+        aria-label="Đóng thông báo phiên đăng nhập"
+      >
+        <X className="size-4" aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

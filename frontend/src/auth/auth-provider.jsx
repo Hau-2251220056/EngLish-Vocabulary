@@ -26,6 +26,7 @@ export function AuthenticationProvider({ children }) {
       login: store.login,
       logout: store.logout,
       refreshCurrentUser: store.refreshCurrentUser,
+      dismissSessionExpired: store.dismissSessionExpired,
     }),
     [state, store],
   );

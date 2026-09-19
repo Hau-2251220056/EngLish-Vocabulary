@@ -56,6 +56,7 @@ test("registration does not authenticate the shared state", async () => {
     isAuthenticated: false,
     isLoading: true,
     authError: null,
+    sessionExpired: false,
   });
 });
 
@@ -115,7 +116,10 @@ test("refresh transitions an expired session to Guest", async () => {
 
   expired = true;
   await store.refreshCurrentUser();
-  assert.deepEqual(store.getSnapshot(), guestState);
+  assert.deepEqual(store.getSnapshot(), {
+    ...guestState,
+    sessionExpired: true,
+  });
 });
 
 test("initialization is idempotent for React StrictMode", async () => {
@@ -175,6 +179,7 @@ const authenticatedState = Object.freeze({
   isAuthenticated: true,
   isLoading: false,
   authError: null,
+  sessionExpired: false,
 });
 
 const guestState = Object.freeze({
@@ -182,6 +187,7 @@ const guestState = Object.freeze({
   isAuthenticated: false,
   isLoading: false,
   authError: null,
+  sessionExpired: false,
 });
 
 const operationalStateError = Object.freeze({

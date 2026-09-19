@@ -8,6 +8,7 @@ const INITIAL_STATE = Object.freeze({
   isAuthenticated: false,
   isLoading: true,
   authError: null,
+  sessionExpired: false,
 });
 
 export function createAuthenticationStore(authService = defaultAuthService) {
@@ -30,12 +31,13 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     listeners.forEach((listener) => listener());
   }
 
-  function setGuest(authError = null) {
+  function setGuest(authError = null, sessionExpired = false) {
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       authError,
+      sessionExpired,
     });
   }
 
@@ -60,6 +62,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         isAuthenticated: true,
         isLoading: false,
         authError: null,
+        sessionExpired: false,
       });
       return user;
     } catch (error) {
@@ -69,7 +72,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
   }
 
   async function logout() {
-    setState({ ...state, authError: null });
+    setState({ ...state, authError: null, sessionExpired: false });
 
     try {
       await authService.logout();
@@ -81,6 +84,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
   }
 
   async function refreshCurrentUser() {
+    const hadAuthenticatedSession = state.isAuthenticated;
     setState({ ...state, isLoading: true, authError: null });
 
     try {
@@ -90,11 +94,12 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         isAuthenticated: true,
         isLoading: false,
         authError: null,
+        sessionExpired: false,
       });
       return user;
     } catch (error) {
       if (isAuthenticationFailure(error)) {
-        setGuest();
+        setGuest(null, hadAuthenticatedSession);
         return null;
       }
 
@@ -112,6 +117,12 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     return initializationPromise;
   }
 
+  function dismissSessionExpired() {
+    if (state.sessionExpired) {
+      setState({ ...state, sessionExpired: false });
+    }
+  }
+
   return Object.freeze({
     getSnapshot,
     subscribe,
@@ -120,6 +131,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     register,
     login,
     logout,
+    dismissSessionExpired,
   });
 }
 

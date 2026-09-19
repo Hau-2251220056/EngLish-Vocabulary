@@ -1900,65 +1900,216 @@ TASK-012 completed its approved implementation, formal testing, corrective cycle
 
 ## TASK-013 — Implement protected navigation, Admin visibility and Logout UI
 
+### Status
+
+- TASK definition: `APPROVED`.
+- Human clarification decisions: `APPROVED`.
+- Human textual UI contract: `APPROVED`.
+- Admin visibility interpretation: `APPROVED`.
+- TASK-013: `APPROVED`.
+- Human TASK approval: `APPROVED` on `2026-09-19`.
+- IMPLEMENT: `COMPLETE`.
+- TEST: `PASS`.
+- REVIEW: `APPROVED`.
+- `TEST013-RESP-01`: `RESOLVED`.
+- TASK-013 status: `DONE`.
+
 ### Objective
 
-Enforce frontend navigation behavior and present authenticated/Admin UI states without treating frontend as security boundary.
+Implement the approved ELVocab authenticated navigation shell, protect the existing Dashboard route, provide deterministic Guest/authenticated redirects, present backend-derived Admin context and complete Logout/session-expiration UX without treating frontend visibility as an authorization boundary.
 
 ### Dependencies
 
-- TASK-011.
-- TASK-012.
+- TASK-011 — `DONE`.
+- TASK-012 — `DONE`.
+- Approved Authentication SPEC and corrected PLAN.
+- Existing TASK-011 Auth service, shared Auth state/provider/hook and bootstrap.
+- Existing TASK-012 React Router foundation, Login/Register experience and `/dashboard` placeholder.
+- Human-approved TASK-013 clarification and textual UI contract.
 
 ### Files / Modules
 
-- Existing app navigation/routes/layout modules.
-- Existing shared UI components where available.
+- `frontend/src/app-router.jsx` — compose Guest-only and protected route behavior with the existing React Router foundation.
+- `frontend/src/auth/auth-store.js` — preserve the approved distinction between initial Guest bootstrap and expiration of a previously authenticated session.
+- Existing Authentication context/provider/hook modules — expose only shared state/actions required by the approved route and shell behavior; do not create a second Auth state.
+- Existing `frontend/src/auth/ui/` modules plus focused authenticated-shell/route-guard UI modules created there when needed.
+- `frontend/src/pages/dashboard-placeholder.jsx` — remain the minimum Dashboard content rendered inside the authenticated shell; do not turn it into the real Dashboard feature.
+- `frontend/src/index.css` — only responsive/accessibility styling required by the approved shell and states.
 
 ### In Scope
 
-- Protected navigation loading state.
-- Guest redirect from protected screens to Login.
-- Admin navigation visibility based on backend-provided identity.
-- USER does not see Admin navigation.
-- Logout action through `authService.logout`.
-- Reset auth state after Logout.
-- Session-expired UI state.
+- Protect `/dashboard` as the only protected route in TASK-013.
+- Redirect Guest access to `/dashboard` to `/login` with `replace`.
+- Treat `/login` and `/register` as Guest routes; redirect authenticated `USER`/`ADMIN` access to either route to `/dashboard` with `replace`.
+- Preserve `/` → `/login` and the existing fallback behavior.
+- Show a neutral accessible Auth-initialization state and never flash protected content before Auth state is known.
+- Add the approved minimal responsive authenticated shell containing only:
+  - `ELVocab` branding;
+  - Dashboard navigation;
+  - backend-provided `display_name` account identity;
+  - approved Admin-specific navigation-context visibility;
+  - Logout in the account area.
+- Show non-interactive `Quản trị viên` text only when backend-provided `user.role === "ADMIN"`; omit it for `USER`.
+- Perform Logout only through the existing shared `logout()` operation.
+- Provide Logout normal, pending, success and safe inline-error states.
+- On successful/idempotent Logout, transition shared Auth state to Guest and navigate to `/login` with `replace`, without a success toast.
+- Distinguish normal initial unauthenticated bootstrap from expiration of a previously authenticated session.
+- For a previously authenticated session that becomes invalid, clear shared identity, navigate to `/login` with `replace` and show the approved one-time expiration message.
+- Provide responsive desktop, tablet and mobile behavior plus the approved accessibility and reduced-motion behavior.
 
 ### Out of Scope
 
-- Backend authorization replacement.
-- Admin user management.
+- Any backend, API, database, schema, migration, cookie or Authentication architecture change.
+- Replacing backend authentication/authorization with frontend route or role checks.
+- New protected feature routes or future-feature pages.
+- Landing Page implementation or changing `/` to a new destination.
+- Real Dashboard content beyond the existing semantic placeholder.
+- Search, Profile, Settings, Learn, Progress, Vocabulary, Community or other future navigation links.
+- `/admin`, Admin Dashboard placeholder, Admin management UI or any actual Admin navigation destination.
+- A clickable or disabled fake Admin control.
 - Logout-all-devices.
 - Session management UI.
 - Device history.
+- Global Axios `401` interceptor or automatic session polling.
+- JWT, Bearer token, raw-cookie access or frontend Authentication storage.
+- New UI, toast, animation, state, routing or Authentication dependency.
+- TASK-014 formal frontend Authentication test-suite implementation.
+- TASK-015 integration, security or deployment verification.
+- Deployment or Vercel configuration.
 
-### Implementation Requirements
+### Route Behavior
 
-- Hidden navigation is UX only; backend enforces access.
-- Logout must work with the idempotent `204 No Content` behavior.
-- No raw token access or storage in frontend.
+```text
+/             → /login
+/login        → Guest Login experience; authenticated USER/ADMIN → /dashboard (replace)
+/register     → Guest Register experience; authenticated USER/ADMIN → /dashboard (replace)
+/dashboard    → protected USER/ADMIN destination; Guest → /login (replace)
+*             → existing /login fallback
+```
+
+- `/dashboard` is the only protected route owned by TASK-013.
+- Route decisions must use the existing shared Auth state and React Router; do not create component-local application routing state or a second Authentication provider.
+- The protected guard must wait until Auth initialization completes before rendering either Dashboard or a redirect.
+- Redirects after Guest rejection, authenticated Guest-route access, Logout and session expiration use `replace`.
+
+### Authenticated Navigation and UI Contract
+
+#### Desktop
+
+- Use a minimal persistent sidebar.
+- Place `ELVocab` branding at the top.
+- Render Dashboard as the only real navigation link and clearly indicate its active state.
+- Place account identity, the conditional Admin indicator and Logout in the account area.
+- Render the existing Dashboard placeholder in the main content region.
+
+#### Mobile and tablet
+
+- Use a compact header/account composition plus a Dashboard navigation row.
+- Do not add a hamburger menu while Dashboard is the only destination.
+- Preserve touch-friendly controls and prevent clipping or horizontal overflow.
+
+#### Account identity and Admin visibility
+
+- Display backend-provided `display_name` for both approved roles.
+- `ADMIN` sees non-interactive text `Quản trị viên` in the navigation/account context.
+- `USER` does not see the Admin indicator; a general `USER` role badge is not required.
+- The Admin indicator must not use anchor/button semantics, hover/cursor treatment or styling that implies it is clickable.
+- Actual Admin navigation remains deferred until a separate task/feature has an approved Admin destination.
+- Role-dependent presentation is UX only; backend authorization remains authoritative.
+
+#### Loading
+
+- During Auth initialization, show a neutral full-page state with `ELVocab` and concise status text such as `Đang kiểm tra phiên đăng nhập…`.
+- Use accessible status semantics and reduced-motion-friendly presentation.
+- Do not render authenticated navigation or Dashboard content until state is known.
+
+#### Logout
+
+- Normal: render an accessible `Đăng xuất` button in the account area.
+- Pending: disable duplicate action and present `Đang đăng xuất…`.
+- Success, including idempotent `204 No Content`: shared state becomes Guest and navigation replaces the current entry with `/login`; do not show a success toast.
+- Failure: preserve authenticated state, re-enable Logout and show `Không thể đăng xuất lúc này. Vui lòng thử lại.` inline without raw backend/network details.
+
+#### Session expiration
+
+- Initial bootstrap without a valid session represents an ordinary Guest and must not show an expiration warning.
+- When a previously authenticated session becomes invalid, clear shared identity and redirect to `/login` with `replace`.
+- Show one accessible inline Login alert: `Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.`
+- Do not show that alert after voluntary Logout.
+- Clear the alert after dismissal or successful Login so it does not persist incorrectly.
+
+### Architecture and Security Constraints
+
+- Reuse TASK-011 `useAuthentication()` state/actions, Auth service and relative `/api/**` client; do not duplicate Authentication infrastructure.
+- Reuse the existing React Router architecture; do not introduce Router loader/action Authentication or a custom router.
+- Backend-provided identity, role, account state and session validity remain authoritative.
+- Frontend route guards and Admin visibility are presentation/UX controls only and do not replace backend enforcement.
+- Support only `USER` and `ADMIN`; Guest remains an unauthenticated state.
+- Do not read, expose or persist the raw `session_id` cookie/token.
+- Do not introduce JWT, Bearer credentials or browser Authentication storage.
+- Do not expose raw API errors or sensitive Authentication details in UI.
+- Keep branding `ELVocab` and reuse existing approved dependencies and visual language.
 
 ### Acceptance Criteria
 
-- Auth initialization does not render protected content before state is known.
-- Guest is redirected to Login.
-- Admin navigation visibility follows authenticated identity.
-- Logout clears local auth state and returns user to Guest/Landing or Login according to approved flow.
-- Expired session returns user to Guest flow.
+- **AC-013-01:** Auth initialization renders a neutral accessible loading state and does not render authenticated navigation or Dashboard content before state is known.
+- **AC-013-02:** Guest access to `/dashboard` redirects to `/login` with `replace`.
+- **AC-013-03:** Authenticated `USER` and `ADMIN` can render `/dashboard` inside the authenticated shell.
+- **AC-013-04:** Authenticated access to `/login` or `/register` redirects to `/dashboard` with `replace`; Guest can access both routes.
+- **AC-013-05:** `/dashboard` is the only protected route added by TASK-013; `/` continues to redirect to `/login` and no future-feature route/page is created.
+- **AC-013-06:** The responsive authenticated shell contains only `ELVocab`, Dashboard navigation, backend-provided `display_name`, conditional Admin context and Logout.
+- **AC-013-07:** Dashboard is a real React Router link with a clear accessible active state; no inactive or fake future navigation control is rendered.
+- **AC-013-08:** Backend-provided `ADMIN` identity shows non-interactive `Quản trị viên`; `USER` does not; no `/admin` route, link or page is introduced.
+- **AC-013-09:** Logout uses the existing shared `logout()` operation, exposes pending state and prevents duplicate activation while pending.
+- **AC-013-10:** Successful/idempotent Logout clears shared identity, transitions to Guest and navigates to `/login` with `replace` without a success toast.
+- **AC-013-11:** Logout operational failure preserves authenticated state, restores the Logout control and shows only the approved safe inline error.
+- **AC-013-12:** Initial `/api/auth/me` authentication failure is handled as an ordinary Guest state without an expiration warning.
+- **AC-013-13:** Authentication failure after a previously authenticated state clears identity, redirects protected navigation to `/login` with `replace` and shows the approved one-time expiration message.
+- **AC-013-14:** Voluntary Logout does not show the expiration message, and the message does not survive dismissal or successful Login.
+- **AC-013-15:** Frontend presentation uses only backend-established identity/role and is not treated as authorization enforcement.
+- **AC-013-16:** No raw token/cookie handling, browser Authentication storage, JWT, Bearer mechanism or new Authentication/routing/state dependency is introduced.
+- **AC-013-17:** Desktop uses the approved minimal sidebar; tablet/mobile use the approved compact header/account and Dashboard-row composition without clipping or overflow.
+- **AC-013-18:** Navigation, identity, Admin indicator, Logout, loading, inline errors and expiration alert satisfy approved semantic, keyboard, focus, touch-target, contrast and reduced-motion expectations.
+- **AC-013-19:** Existing Login/Register flows and TASK-011 Auth contracts remain functional; no backend, API, database, deployment, TASK-014 or TASK-015 scope is absorbed.
 
-### Testing Requirements
+### Implementation-Stage Verification
 
-- Protected navigation.
-- Guest redirect.
-- USER/Admin navigation visibility.
-- Logout success and repeated logout.
-- Session expiration handling.
+- Inspect route behavior for Guest, authenticated `USER`, authenticated `ADMIN` and unresolved initialization state.
+- Verify `/dashboard`, `/login`, `/register`, `/` and fallback behavior against the approved route table.
+- Verify USER/Admin shell differences using backend-shaped public identity fixtures only.
+- Verify Logout normal, pending, success/idempotent and operational-error behavior without exposing raw errors.
+- Verify initial Guest bootstrap separately from expiration after a previously authenticated state.
+- Verify expiration-alert dismissal and successful-Login cleanup.
+- Perform responsive runtime checks for representative desktop, tablet and mobile viewports, including overflow/clipping checks.
+- Perform keyboard/focus and reduced-motion checks for the new shell and states.
+- Run existing frontend Authentication regression tests; do not absorb TASK-014 formal test implementation.
+- Run `npm run lint`, `npm run build` and `git diff --check`.
+- Confirm no backend, API, schema, deployment or dependency change entered the TASK-013 diff.
 
 ### Traceability
 
 - SPEC: `2. Actors`, `4. User Flow`, `8. Acceptance Criteria`.
 - PLAN: `9. Thiết kế Authorization`, `12. Thiết kế Frontend`.
-- UI/UX: authenticated navigation, Login/Register and global states.
+- UI/UX: authenticated navigation, responsive global layout, accessibility and global states.
+- TASK-011: shared Authentication service/state/provider/hook and initialization behavior.
+- TASK-012: React Router foundation, Guest Auth experience and minimum Dashboard destination.
+
+### Closure Gate
+
+```text
+TASK-013 CLARIFICATION: APPROVED
+TASK-013 TEXTUAL UI CONTRACT: APPROVED
+TASK-013 ADMIN VISIBILITY INTERPRETATION: APPROVED
+TASK-013: APPROVED
+HUMAN TASK APPROVAL RECORDED: 2026-09-19
+IMPLEMENT: COMPLETE
+TEST: PASS
+REVIEW: APPROVED
+TEST013-RESP-01: RESOLVED
+TASK-013 STATUS: DONE
+```
+
+TASK-013 completed its approved implementation, responsive corrective cycle, formal test re-run and final review. TASK-014, TASK-015 and deployment remain separate follow-up scope.
 
 ---
 

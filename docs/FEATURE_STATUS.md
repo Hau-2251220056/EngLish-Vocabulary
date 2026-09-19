@@ -253,7 +253,7 @@ Status: IN_PROGRESS
 
 ### Description
 
-TASK-011 frontend Authentication API service, shared Authentication state, application bootstrap and Vite development proxy, together with the TASK-012 ELVocab Login/Register experience, have completed implementation, formal testing and formal review. The overall Authentication feature remains in progress because protected navigation, logout UI and production deployment/integration are not complete.
+TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience and TASK-013 protected navigation, authenticated shell and Logout/session-expiration UX have completed implementation, formal testing and formal review. The overall Authentication feature remains in progress because the TASK-014 frontend Authentication test suite and TASK-015 integration/security/deployment verification remain outstanding.
 
 ### TASK-011 Workflow Status
 
@@ -275,6 +275,16 @@ TASK-011 frontend Authentication API service, shared Authentication state, appli
 - Human Visual Check: PASSED.
 - Quality gate: PASSED.
 
+### TASK-013 Workflow Status
+
+- TASK-013 status: DONE.
+- TASK-013: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-013: PASS — responsive runtime matrix and Authentication-state regressions verified.
+- REVIEW-013: APPROVED.
+- `TEST013-RESP-01`: RESOLVED.
+- Quality gate: PASSED.
+
 ### Frontend
 
 - Reusable Axios client and Authentication service use relative `/api/auth/**` endpoints.
@@ -283,6 +293,8 @@ TASK-011 frontend Authentication API service, shared Authentication state, appli
 - Vite proxies development `/api/**` requests to the local Express backend.
 - ELVocab Login/Register routes use one persistent responsive Auth experience with accessible validation, loading, safe error and registration-success states.
 - Registration does not auto-login; successful registration hands off to Login, while successful Login navigates to the minimum `/dashboard` destination.
+- `/dashboard` is protected by the shared Authentication state; Guest and authenticated Guest-route redirects follow the approved route contract.
+- The responsive authenticated shell provides ELVocab branding, Dashboard navigation, backend-provided account identity, conditional non-interactive Admin context and Logout/session-expiration UX.
 
 ### Tests
 
@@ -290,6 +302,8 @@ TASK-011 frontend Authentication API service, shared Authentication state, appli
 - Frontend production build and lint passed during formal TEST-011.
 - TASK-012 targeted verification passed after pronunciation semantics, tablet responsiveness and diff-hygiene corrections; the existing Auth suite remained at 12 passing tests with 0 failures.
 - TASK-012 frontend production build, lint and responsive runtime checks passed; breakpoint boundaries at 899/900/901 pixels were verified.
+- TASK-013 formal test re-run passed after closing `TEST013-RESP-01`; the required 375/768/900/1024/1366/1536 viewport matrix, routing/Auth states, USER/ADMIN presentation, Logout states and accessibility interactions were verified.
+- TASK-013 retained the existing Authentication regression suite at 12 passing tests with 0 failures; frontend lint, production build and diff checks passed.
 
 ### Pending Follow-ups
 
@@ -297,7 +311,7 @@ TASK-011 frontend Authentication API service, shared Authentication state, appli
 - `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
 - Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
 - Production Vercel deployment, rewrite and integration verification remain pending.
-- TASK-013 has not started.
+- TASK-014 frontend Authentication tests and TASK-015 integration/security/deployment verification remain pending.
 
 4.2 Topics
 
