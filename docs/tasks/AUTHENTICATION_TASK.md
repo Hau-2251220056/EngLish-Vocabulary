@@ -1622,37 +1622,86 @@ Human approval has been recorded for the clarified TASK-011 boundary. Approval a
 
 ## TASK-012 — Implement Login and Register pages/forms
 
+### Status
+
+- TASK definition: `APPROVED`.
+- Human UI Gate: `PASSED`.
+- Human library decision: `APPROVED`.
+- Human visual design and interaction model: `APPROVED`.
+- Human product name decision: `APPROVED — ELVocab`.
+- Routing decision: `APPROVED — React Router`.
+- TASK-012: `APPROVED`.
+- Human TASK approval: `APPROVED` on `2026-09-18`.
+- IMPLEMENT: `COMPLETE`.
+- TEST: `PASS`.
+- REVIEW: `APPROVED`.
+- TASK-012 status: `DONE`.
+
 ### Objective
 
-Tạo UI cho approved Login/Register flows và form validation.
+Implement the approved ELVocab Login/Register experience on top of the completed TASK-011 Authentication service and shared state. Provide accessible form validation, loading, API-error and registration-success states without duplicating Authentication infrastructure or expanding into protected navigation.
 
 ### Dependencies
 
-- TASK-011.
+- TASK-011 — `DONE`.
+- Approved Authentication SPEC and corrected PLAN.
+- Human-approved ELVocab Auth visual design and interaction model.
+- Human-approved UI/form dependencies listed below.
+- Human-approved React Router foundation and route boundary defined in this task.
 
 ### Files / Modules
 
-- Existing frontend pages/components structure.
+Modify:
+
+- `frontend/package.json` — add only the approved TASK-012 UI/form dependencies.
+- `frontend/package-lock.json` — lock the approved dependency versions installed during IMPLEMENT.
+- `frontend/src/App.jsx` — remain the application composition root and compose the dedicated router without containing detailed form or Dashboard markup.
+- `frontend/src/index.css` — retain Tailwind CSS 4 setup and add only minimal global/base styling if the approved design cannot be expressed locally.
+- `frontend/src/app-router.jsx` — define the minimum application routes for `/`, `/login`, `/register` and `/dashboard` using React Router.
+
+Create under the existing `frontend/src/auth/` feature boundary:
+
+- `frontend/src/auth/ui/auth-page.jsx` — coordinate Login/Register UI mode, registration-success handoff and feature composition.
+- `frontend/src/auth/ui/auth-shell.jsx` — persistent bounded Auth shell and responsive two-region layout.
+- `frontend/src/auth/ui/vocabulary-experience.jsx` — approved `resilient`/`curious` learning preview and pronunciation affordance.
+- `frontend/src/auth/ui/login-form.jsx` — Login form lifecycle and TASK-011 `login` integration.
+- `frontend/src/auth/ui/register-form.jsx` — Register form lifecycle and TASK-011 `register` integration.
+- `frontend/src/auth/ui/form-field.jsx` — shared labelled input, hint and inline-error presentation where repetition justifies it.
+- `frontend/src/auth/ui/password-field.jsx` — accessible password input and visibility toggle.
+- `frontend/src/auth/ui/form-alert.jsx` — form-level authentication/API/operational error presentation.
+- `frontend/src/auth/ui/success-toast.jsx` — minimum custom registration-success toast; no toast library.
+- `frontend/src/auth/validation/auth-schemas.js` — shared Login/Register Zod schemas and Vietnamese field-validation messages.
+- `frontend/src/auth/ui/auth-error-messages.js` — stable backend error-code/kind to Vietnamese UI presentation mapping.
+- `frontend/src/pages/dashboard-placeholder.jsx` — minimum semantic `/dashboard` destination required for the successful Login handoff; not a Dashboard feature implementation.
+
+Existing TASK-011 modules remain in place and authoritative:
+
+- `frontend/src/auth/auth-provider.jsx`.
+- `frontend/src/auth/auth-store.js`.
+- `frontend/src/auth/authentication-context.js`.
+- `frontend/src/auth/use-authentication.js`.
+- `frontend/src/services/auth-service.js`.
+- `frontend/src/services/http-client.js`.
+
+Exact file consolidation is allowed during IMPLEMENT only when it preserves these responsibilities and avoids trivial one-line components. TASK-011 modules must not be relocated merely for directory aesthetics.
 
 ### In Scope
 
-- Login page:
-  - email;
-  - password;
-  - show/hide password;
-  - validation/error/loading states.
-
-- Register page:
-  - `display_name`;
-  - email;
-  - password;
-  - `confirm_password`;
-  - client-side mismatch validation;
-  - success/error/loading states.
-
-- Redirects:
-  - Register success → Login;
-  - Login success → Dashboard.
+- One persistent responsive Auth shell with Login and Register as internal UI states.
+- Approved vocabulary learning experience using `resilient` for Login and `curious` for Register.
+- Login fields: email and password.
+- Register fields: `display_name`, email, password and frontend-only `confirm_password`.
+- React Hook Form lifecycle and Zod validation through `zodResolver`.
+- Accessible password visibility controls using Lucide `Eye`/`EyeOff`.
+- Inline Vietnamese field-validation messages.
+- Form-level Vietnamese Authentication/API/operational error presentation.
+- Loading, disabled and duplicate-submit prevention states.
+- Registration success toast followed by the approved Register → Login transition after approximately 1–1.5 seconds.
+- Prefill the successfully registered email in Login and clear password values.
+- React Router application foundation for `/login`, `/register` and the minimum `/dashboard` destination.
+- Login-success navigation to `/dashboard`.
+- Desktop coordinated panel exchange, mobile simplified transition and reduced-motion behavior.
+- Minimum reusable Auth/form primitives required by actual repetition.
 
 ### Out of Scope
 
@@ -1661,36 +1710,191 @@ Tạo UI cho approved Login/Register flows và form validation.
 - Email verification.
 - Social login/MFA.
 - Profile or settings screens.
+- Google OAuth or a fake Google sign-in control.
+- A fake or inactive “Forgot password” link.
+- Protected route enforcement, Guest redirect, authenticated application navigation, Admin visibility, logout UI and expired-session navigation; these remain TASK-013.
+- Formal frontend Authentication test coverage owned by TASK-014.
+- Another Axios client, Auth service, global Auth store or token architecture.
+- Raw `session_id` access, `document.cookie`, Authentication storage, JWT or Bearer tokens.
+- Backend/API/database changes.
+- SameSite/CORS/CSRF/deployment work.
+- A general-purpose design system, UI component library, toast library or animation library.
+- Real Dashboard feature content, authenticated application shell or navigation.
 
 ### Implementation Requirements
 
-- `confirm_password` is client-side only and is not persisted.
-- Form errors must not expose sensitive account information.
-- Use approved API service and shared UI patterns where available.
+#### Integration boundary
+
+- Forms consume `register` and `login` through the existing `useAuthentication()` public interface.
+- Forms do not import Axios or create a second service/state layer.
+- Backend identity returned through TASK-011 remains authoritative.
+- Email lowercase normalization remains owned by the existing Auth service; forms must not create conflicting normalization.
+
+#### Libraries
+
+- Use React custom components, Tailwind CSS 4 and Lucide React.
+- Use `react-hook-form`, `zod`, `@hookform/resolvers` and `zodResolver`.
+- Do not add any dependency other than `lucide-react`, `react-hook-form`, `zod`, `@hookform/resolvers` and `react-router-dom` without new human approval.
+- Do not add MUI, Ant Design, Chakra UI, shadcn/ui, Bootstrap, a toast library or an animation library under the current authorization.
+
+#### Validation
+
+- Login email: required and valid email.
+- Login password: required and at least 8 characters.
+- Register `display_name`: required/non-empty only; do not invent length or character restrictions.
+- Register email: required and valid email.
+- Register password: required and at least 8 characters; do not invent complexity rules.
+- `confirm_password`: required, must match password, and must never be sent to the API.
+- Frontend validation improves UX and does not replace backend validation.
+
+#### Approved Vietnamese validation presentation
+
+- Required email: `Vui lòng nhập email.`
+- Invalid email: `Email không hợp lệ.`
+- Required password: `Vui lòng nhập mật khẩu.`
+- Short password: `Mật khẩu phải có ít nhất 8 ký tự.`
+- Required display name: `Vui lòng nhập tên hiển thị.`
+- Required confirmation: `Vui lòng xác nhận mật khẩu.`
+- Password mismatch: `Mật khẩu xác nhận không khớp.`
+
+#### Error presentation
+
+- Do not render raw backend English messages directly.
+- `AUTHENTICATION_FAILED` is a form-level Login error with title `Không thể đăng nhập` and message `Email hoặc mật khẩu không chính xác.`
+- `EMAIL_ALREADY_EXISTS` is presented during Register as `Email này đã được đăng ký.`
+- Operational/network failure uses title `Đã xảy ra lỗi` and message `Không thể kết nối đến máy chủ. Vui lòng thử lại.`
+- Unknown API errors use a safe Vietnamese fallback.
+- Invalid credentials must not be represented as an email field validation error.
+- Error mapping has one coherent module rather than duplicated switches in both forms.
+
+#### Visual and motion contract
+
+- The bounded outer Auth shell remains mounted and visually stationary.
+- Desktop Login composition: `[Vocabulary / resilient] [Login Form]`.
+- Desktop Register composition: `[Register Form] [Vocabulary / curious]`.
+- Internal regions exchange positions using transform/translate and opacity over approximately 450–600ms with `cubic-bezier(0.4, 0, 0.2, 1)`.
+- No spring, bounce, rotation, 3D flip, dramatic zoom or dramatic blur.
+- Mobile uses compact Vocabulary Experience above the form and a small local transition rather than the full desktop panel movement.
+- `prefers-reduced-motion` removes large panel movement while preserving functionality.
+
+#### Vocabulary experience
+
+- Present the approved word, IPA, part of speech, Vietnamese meaning, English example, subtle linguistic fragments and ELVocab Learning Grid treatment.
+- Use Lucide `Volume2` for the pronunciation affordance.
+- Do not use emoji, stock illustrations, cartoons or random decorative blobs.
+- TASK-012 does not add pronunciation playback infrastructure that is not already approved.
+
+#### Registration success
+
+- Successful registration does not authenticate the user.
+- Show a lightweight custom toast containing `Tạo tài khoản thành công!`.
+- After approximately 1–1.5 seconds, use the same Register → Login panel transition.
+- Prefill Login email from the successful submission and clear all password values.
+- The user must log in manually.
+
+#### Accessibility
+
+- Use visible labels with correct label/input association; placeholders are not labels.
+- Preserve keyboard operation, visible focus, touch-friendly targets and appropriate autocomplete.
+- Password toggles use `type="button"`, meaningful `aria-label` text and visible focus.
+- Errors are not communicated by color alone; form alerts use appropriate semantics.
+- Loading/disabled semantics prevent duplicate submission.
+- Decorative motion yields to reduced-motion preference.
+
+#### Routing contract
+
+- Use the human-approved `react-router-dom` foundation for application-level navigation.
+- `/login` and `/register` resolve through the same persistent `AuthPage` parent/layout and Auth shell.
+- Login/Register mode is synchronized from the matched child route; changing between these URLs uses React Router navigation plus the approved local panel transition and must not remount the outer Auth shell.
+- `/` redirects to `/login` as the minimum application entry behavior.
+- Successful Login navigates to `/dashboard` only after the existing shared `login` operation succeeds.
+- `/dashboard` renders only a minimum semantic destination/placeholder needed to make the handoff executable. It does not include real Dashboard content, sidebar, app shell, Admin UI, logout or protected-route behavior.
+- React Router owns application navigation; `AuthPage` owns local Login/Register experience state and animation.
+- Do not implement temporary `useState("login" | "register" | "dashboard")` application routing.
+- Do not create routing-specific Auth state, a second AuthenticationProvider, or React Router loader/action Authentication architecture.
+- TASK-013 remains responsible for protecting `/dashboard`, Guest redirects, authenticated navigation, Admin visibility, logout navigation and expired-session navigation.
 
 ### Acceptance Criteria
 
-- Valid Register submission reaches `POST /api/auth/register`.
-- Password mismatch is rejected client-side.
-- Valid Login reaches `POST /api/auth/login`.
-- Successful Register redirects to Login without auto-login.
-- Successful Login redirects to Dashboard.
-- Loading and API error states are visible and do not duplicate submissions.
+- **AC-012-01:** `/login` and `/register` use the approved React Router foundation and render the approved custom ELVocab design through one persistent Auth shell.
+- **AC-012-02:** Navigating between `/login` and `/register` synchronizes Auth mode and exchanges the desktop internal regions without remounting or visibly moving the outer shell.
+- **AC-012-03:** Mobile uses the approved compact single-column composition and avoids the desktop-scale panel swap.
+- **AC-012-04:** Reduced-motion preference removes large decorative movement without changing functionality.
+- **AC-012-05:** Login uses React Hook Form with Zod validation for required valid email and required minimum-eight-character password.
+- **AC-012-06:** Register uses React Hook Form with Zod validation for non-empty `display_name`, valid email, minimum-eight-character password and matching confirmation.
+- **AC-012-07:** `confirm_password` is frontend-only and the existing Auth interface receives only `display_name`, email and password.
+- **AC-012-08:** No unapproved display-name constraint or password-complexity rule is introduced.
+- **AC-012-09:** Forms reuse TASK-011 `useAuthentication()` operations; no duplicate Axios client, Auth service or shared state is created.
+- **AC-012-10:** Login and Register expose visible pending states, disable duplicate submission and restore usable controls after failure.
+- **AC-012-11:** Password visibility toggles are keyboard reachable, do not submit forms, expose meaningful labels and show focus.
+- **AC-012-12:** Field validation is inline, Vietnamese, associated with its field and not represented only by color.
+- **AC-012-13:** Invalid credentials are mapped to the approved form-level Vietnamese Authentication message without account-state disclosure.
+- **AC-012-14:** Duplicate email and operational/server failures use the approved safe Vietnamese presentations without exposing raw backend messages.
+- **AC-012-15:** Successful registration shows the custom success toast, does not auto-login and transitions to Login after approximately 1–1.5 seconds.
+- **AC-012-16:** The registered email is prefilled in Login while Login/Register password values are cleared.
+- **AC-012-17:** Valid Login uses the existing shared Auth state and then navigates to `/dashboard`; the destination is only a semantic placeholder and implements no TASK-013 protection/navigation behavior.
+- **AC-012-18:** Desktop, tablet and mobile layouts remain usable with a bounded large-screen shell and touch-friendly controls.
+- **AC-012-19:** Vocabulary Experience uses approved `resilient`/`curious` content and Lucide icons without emoji or unauthorized decorative assets.
+- **AC-012-20:** Google sign-in and Forgot Password controls are omitted; no unauthorized functionality or misleading inactive control is shipped.
+- **AC-012-21:** No component UI library, toast library, animation library or unauthorized dependency is added.
+- **AC-012-22:** No raw session token/cookie handling, browser Authentication storage, JWT or Bearer mechanism is introduced.
+- **AC-012-23:** No protected navigation, Guest redirect, Admin visibility, logout UI or expired-session navigation from TASK-013 is implemented.
+- **AC-012-24:** `App.jsx` remains composition-level, routing is isolated in the minimum router module, no application-view `useState` router is introduced, and validation/error mapping is not unnecessarily duplicated.
+- **AC-012-25:** Frontend build and lint pass, basic Login/Register interactions are verified, and no unrelated regression or backend change is introduced.
 
 ### Testing Requirements
 
-- Required-field validation.
-- Password length UX validation.
-- `confirm_password` mismatch.
-- Password visibility toggle.
-- Register/Login success and error states.
-- Redirect behavior.
+- During IMPLEMENT, run frontend build and lint and perform focused verification of both UI modes, validation, submission locking, password toggles, errors, registration-success handoff, responsiveness and reduced motion.
+- Verify Login/Register submissions reach the existing TASK-011 interface with only approved payload fields.
+- Verify no direct Axios call, duplicate Auth service/state or raw credential storage is introduced.
+- Do not absorb TASK-014 formal frontend Authentication test ownership into TASK-012.
+- Formal TEST-012 and REVIEW-012 remain separate workflow stages after implementation.
 
 ### Traceability
 
 - SPEC: `2. Actors`, `4. User Flow`, `7. API Requirements`, `8. Acceptance Criteria`.
-- PLAN: `12. Thiết kế Frontend`.
-- UI/UX: Login and Register screen requirements.
+- PLAN: `12. Thiết kế Frontend`, Login/Register flow, navigation foundation and frontend testing boundary.
+- UI/UX: Login/Register requirements plus the human-approved ELVocab Auth design and interaction handoff.
+- TASK-011: existing Auth service, state, provider, hook, bootstrap and relative API convention.
+
+### Approved Implementation Dependencies
+
+- `lucide-react`.
+- `react-hook-form`.
+- `zod`.
+- `@hookform/resolvers`.
+- `react-router-dom`.
+
+No dependency is installed during TASK authoring.
+
+### Design Gate
+
+```text
+HUMAN LIBRARY DECISION: APPROVED
+HUMAN VISUAL DESIGN: APPROVED
+HUMAN INTERACTION MODEL: APPROVED
+DESIGN GATE: PASSED
+```
+
+Approved characteristics include the persistent Auth shell, vocabulary learning panel, coordinated Login/Register exchange, responsive adaptation, validation/error/loading states, custom success toast and reduced-motion behavior.
+
+### Closure Gate
+
+```text
+ROUTING DECISION: APPROVED — REACT ROUTER
+TASK-012: APPROVED
+HUMAN TASK APPROVAL RECORDED: 2026-09-18
+IMPLEMENT: COMPLETE
+TEST: PASS
+REVIEW: APPROVED
+REVIEW012-01: RESOLVED
+TEST012-RESP-01: RESOLVED
+REVIEW012-02: RESOLVED
+REVIEW012-03: RESOLVED
+TASK-012 STATUS: DONE
+```
+
+TASK-012 completed its approved implementation, formal testing, corrective cycles and final review. Feature-status closure was recorded after REVIEW approval.
 
 ---
 

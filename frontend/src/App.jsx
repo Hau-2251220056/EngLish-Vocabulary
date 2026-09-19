@@ -1,5 +1,7 @@
+import { AppRouter } from "./app-router.jsx";
+
 function App() {
-  return <div className="text-3xl">EngLish Vocabulary</div>;
+  return <AppRouter />;
 }
 
 export default App;
