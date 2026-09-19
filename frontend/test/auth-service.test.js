@@ -95,6 +95,27 @@ test("auth service maps authentication and operational failures", async () => {
   });
 });
 
+test("auth service returns only public identity from a credential-like login response", async () => {
+  const service = createAuthService({
+    async post() {
+      return {
+        data: {
+          data: {
+            user: publicUser,
+            session_id: "raw-session-must-not-be-returned",
+            password: "raw-password-must-not-be-returned",
+          },
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(await service.login({
+    email: "learner@example.com",
+    password: "password",
+  }), publicUser);
+});
+
 const publicUser = Object.freeze({
   id: "user-1",
   email: "learner@example.com",

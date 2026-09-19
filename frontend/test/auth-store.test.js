@@ -122,6 +122,67 @@ test("refresh transitions an expired session to Guest", async () => {
   });
 });
 
+test("expiration can be dismissed", async () => {
+  let expired = false;
+  const store = createAuthenticationStore(
+    createService({
+      getCurrentUser: async () => {
+        if (expired) throw authenticationFailure();
+        return publicUser;
+      },
+    }),
+  );
+
+  await store.initialize();
+  expired = true;
+  await store.refreshCurrentUser();
+  assert.equal(store.getSnapshot().sessionExpired, true);
+
+  store.dismissSessionExpired();
+  assert.equal(store.getSnapshot().sessionExpired, false);
+});
+
+test("successful login clears an active expiration state", async () => {
+  let expired = false;
+  const store = createAuthenticationStore(
+    createService({
+      getCurrentUser: async () => {
+        if (expired) throw authenticationFailure();
+        return publicUser;
+      },
+    }),
+  );
+
+  await store.initialize();
+  expired = true;
+  await store.refreshCurrentUser();
+  assert.equal(store.getSnapshot().sessionExpired, true);
+
+  await store.login({});
+  assert.deepEqual(store.getSnapshot(), authenticatedState);
+});
+
+test("voluntary logout clears expiration state", async () => {
+  const store = createAuthenticationStore(createService());
+  await store.login({});
+  await store.logout();
+  assert.deepEqual(store.getSnapshot(), guestState);
+});
+
+test("logout failure preserves authenticated identity with a sanitized error", async () => {
+  const failure = operationalFailure();
+  const store = createAuthenticationStore(
+    createService({ logout: async () => { throw failure; } }),
+  );
+
+  await store.login({});
+  await assert.rejects(store.logout(), failure);
+  assert.deepEqual(store.getSnapshot(), {
+    ...authenticatedState,
+    authError: operationalStateError,
+  });
+});
+
 test("initialization is idempotent for React StrictMode", async () => {
   let calls = 0;
   const store = createAuthenticationStore(

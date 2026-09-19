@@ -253,7 +253,7 @@ Status: IN_PROGRESS
 
 ### Description
 
-TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience and TASK-013 protected navigation, authenticated shell and Logout/session-expiration UX have completed implementation, formal testing and formal review. The overall Authentication feature remains in progress because the TASK-014 frontend Authentication test suite and TASK-015 integration/security/deployment verification remain outstanding.
+TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell and TASK-014 frontend Authentication test suite have completed implementation, formal testing and formal review. The overall Authentication feature remains in progress because TASK-015 integration/security/deployment verification remains outstanding.
 
 ### TASK-011 Workflow Status
 
@@ -285,6 +285,17 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - `TEST013-RESP-01`: RESOLVED.
 - Quality gate: PASSED.
 
+### TASK-014 Workflow Status
+
+- TASK-014 status: DONE.
+- TASK-014: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-014: PASS — 20 `node:test` tests and 18 Playwright Chromium tests; aggregate 38/38.
+- REVIEW-014: APPROVED after corrective re-review.
+- `REVIEW014-01` and `REVIEW014-02`: RESOLVED.
+- Responsive Chromium matrix: PASSED at 375×812, 768×1024 and 1366×768.
+- Quality gate: PASSED.
+
 ### Frontend
 
 - Reusable Axios client and Authentication service use relative `/api/auth/**` endpoints.
@@ -304,6 +315,8 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - TASK-012 frontend production build, lint and responsive runtime checks passed; breakpoint boundaries at 899/900/901 pixels were verified.
 - TASK-013 formal test re-run passed after closing `TEST013-RESP-01`; the required 375/768/900/1024/1366/1536 viewport matrix, routing/Auth states, USER/ADMIN presentation, Logout states and accessibility interactions were verified.
 - TASK-013 retained the existing Authentication regression suite at 12 passing tests with 0 failures; frontend lint, production build and diff checks passed.
+- TASK-014 added the approved two-layer frontend Authentication suite: 20 focused `node:test` tests and 18 isolated Playwright Chromium tests, all passing.
+- TASK-014 aggregate Authentication tests, responsive viewport matrix, frontend lint, production build and diff checks passed.
 
 ### Pending Follow-ups
 
@@ -311,7 +324,7 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
 - Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
 - Production Vercel deployment, rewrite and integration verification remain pending.
-- TASK-014 frontend Authentication tests and TASK-015 integration/security/deployment verification remain pending.
+- TASK-015 integration/security/deployment verification remains pending.
 
 4.2 Topics
 

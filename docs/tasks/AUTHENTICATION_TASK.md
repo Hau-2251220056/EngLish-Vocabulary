@@ -2115,56 +2115,230 @@ TASK-013 completed its approved implementation, responsive corrective cycle, for
 
 ## TASK-014 — Frontend Authentication tests
 
+### Status
+
+- TASK definition: `APPROVED`.
+- Human test-architecture decision: `APPROVED`.
+- Human tooling/dependency decision: `APPROVED`.
+- Human TASK approval: `APPROVED` on `2026-09-19`.
+- IMPLEMENT: `COMPLETE`.
+- TEST: `PASS` — 20 `node:test` tests and 18 Playwright Chromium tests passed; aggregate 38/38.
+- REVIEW: `APPROVED` after `REVIEW014-01` and `REVIEW014-02` were resolved and verified.
+- TASK-014 status: `DONE`.
+
 ### Objective
 
-Kiểm thử frontend Authentication behavior sau khi service, state và UI được triển khai.
+Implement a persistent, deterministic frontend Authentication test suite that combines the existing `node:test` layer with Chromium-only Playwright browser coverage for the approved TASK-011 through TASK-013 behavior, without absorbing real frontend/backend integration from TASK-015.
 
 ### Dependencies
 
-- TASK-012.
-- TASK-013.
+- TASK-011 — `DONE`.
+- TASK-012 — `DONE`.
+- TASK-013 — `DONE`.
+- Approved Authentication SPEC and PLAN.
+- Human-approved TASK-014 clarification, test architecture, Playwright boundary and acceptance criteria.
+
+### Approved Test Architecture
+
+#### Existing `node:test` layer
+
+Continue using `node:test` for deterministic logic that does not require browser rendering:
+
+- Authentication service endpoints, payloads, public identity extraction and safe error mapping.
+- Login/Register Zod schemas and `confirm_password` mismatch.
+- Shared Auth-store initialization, Login, Logout, refresh, failure and cleanup transitions.
+- Initial Guest versus previously authenticated session expiration.
+- Expiration dismissal, successful-Login cleanup and voluntary-Logout distinction.
+- Vite proxy configuration.
+- Raw credential/token exclusion from returned or stored frontend state.
+
+#### Playwright layer
+
+Use `@playwright/test` with one Playwright-managed Chromium browser for observable browser behavior:
+
+- Login/Register validation presentation, loading, submission locking, success and safe error states.
+- Auth initialization UI and protected-content flash prevention.
+- Protected/Guest route behavior and redirects.
+- USER/ADMIN presentation.
+- Logout pending, success and operational failure behavior.
+- Keyboard, semantic, accessible-state and browser-storage guardrails relevant to Authentication.
+- Critical Auth UI responsive regression at `375x812`, `768x1024` and `1366x768` without duplicating the complete browser suite at every viewport.
+
+Browser tests must mock only relative `/api/auth/**` requests through Playwright routing. They must not contact a real backend, Supabase, production service or database. Real frontend/backend integration remains TASK-015.
+
+Use a limited test-only Playwright gallery/component setup only for approved UI states that cannot be reached deterministically through the public application flow without adding a production test hook, particularly the session-expiration Login alert. Do not build a general component catalog.
 
 ### Files / Modules
 
-- Existing frontend test infrastructure.
-- Authentication component/service/state test modules.
+- `frontend/package.json` — add approved unit/browser/aggregate Authentication test commands.
+- `frontend/package-lock.json` — lock the approved test dependency.
+- `.gitignore` — exclude Playwright reports, test results, screenshots and traces.
+- `frontend/playwright.config.js` — configure Chromium, Vite `webServer`, dedicated strict port, relative `baseURL` and failure artifacts.
+- Existing `frontend/test/auth-service.test.js`, `frontend/test/auth-store.test.js` and `frontend/test/vite-config.test.js` — retain and extend focused `node:test` coverage.
+- `frontend/test/auth-validation.test.js` — focused schema validation tests.
+- `frontend/e2e/auth/auth-forms.spec.js` — Login/Register browser flows.
+- `frontend/e2e/auth/auth-routing.spec.js` — initialization, routes and USER/ADMIN presentation.
+- `frontend/e2e/auth/auth-session.spec.js` — Logout, expiration presentation and security-state behavior.
+- `frontend/e2e/auth/fixtures/auth-api.js` — backend-shaped public identities and deterministic Playwright network mocks.
+- Minimal test-only gallery/story modules when required for unreachable expiration UI state.
 
 ### In Scope
 
-- Register form validation.
-- Login form validation.
-- `confirm_password` mismatch.
-- Auth initialization.
-- Protected navigation and Guest redirect.
-- Login/Register redirects.
-- Logout state cleanup.
-- Admin navigation visibility.
-- API error/loading states.
-- No raw session token in frontend storage or response handling.
+- Install `@playwright/test` as a frontend dev dependency and install its managed Chromium browser.
+- Preserve `node:test` for service, schema, store and configuration behavior.
+- Add Chromium-only browser tests using the real Vite-rendered application.
+- Add deterministic Login/Register required-field, email, password-length and confirmation-mismatch tests.
+- Verify Register payload exclusion of `confirm_password`, no auto-login and Login handoff.
+- Verify Login success, failure, loading and duplicate-submission prevention.
+- Verify Auth initialization, initial Guest, authenticated state and operational error behavior.
+- Verify `/`, `/login`, `/register`, `/dashboard` and fallback routing for Guest and authenticated identities.
+- Verify USER/ADMIN visibility, the non-interactive Admin indicator and absence of `/admin`.
+- Verify Logout pending, duplicate prevention, success/idempotent success and safe operational failure.
+- Verify expired-session state, alert, dismissal, Login cleanup and voluntary-Logout distinction.
+- Verify frontend Authentication does not persist raw credentials/tokens or treat role visibility as authorization.
+- Verify Login/Register controls and authenticated Dashboard shell remain usable without horizontal overflow or clipping at the approved mobile, tablet and desktop viewports, including a long backend-provided `display_name` and visible Logout control.
+- Provide separately identifiable unit and browser results plus one aggregate Authentication test command.
+- Keep reports, traces, screenshots and test results untracked.
 
 ### Out of Scope
 
-- New frontend test framework without approval.
-- Tests for unapproved UI features.
-- Backend security implementation tests.
+- Firefox or WebKit coverage.
+- Jest, Vitest, Testing Library, jsdom or experimental Playwright component packages.
+- Real frontend/backend, database, Supabase, cookie or deployment integration; these remain TASK-015.
+- Backend Authentication/security implementation tests already owned by TASK-010.
+- Production routes, production test hooks or changes made only to expose internal state.
+- Production Authentication, routing, UI, API, backend, schema or deployment behavior changes.
+- Visual snapshot baselines or broad responsive-design regression suites.
+- Tests for unapproved UI or future features.
+- TASK-015 implementation or deployment.
+
+### Deterministic Scenarios
+
+#### Login and Register
+
+- Empty and invalid fields show the approved messages and send no request.
+- Password shorter than eight characters and mismatched confirmation are rejected.
+- Valid Register sends only `display_name`, normalized `email` and `password`, remains Guest and hands off to Login.
+- Valid Login locks submission while pending and navigates to `/dashboard` on success.
+- Duplicate email, invalid credentials, backend validation, API failure and network failure render only approved safe messages.
+
+#### Auth initialization and routing
+
+- A delayed `/api/auth/me` response keeps the neutral loading status visible and does not flash protected content.
+- Valid current-user response renders the authenticated shell.
+- Initial authentication failure produces ordinary Guest state without expiration warning.
+- Guest `/dashboard` redirects to `/login`.
+- Authenticated `/login` and `/register` redirect to `/dashboard`.
+- `/` and unknown routes redirect to `/login`.
+- Dashboard remains the only authenticated navigation destination.
+
+#### Role presentation
+
+- USER sees backend-provided `display_name` without the Admin indicator.
+- ADMIN sees non-interactive `Quản trị viên`.
+- No `/admin` route, link or page exists.
+- Tests do not treat frontend visibility as backend authorization evidence.
+
+#### Logout and expiration
+
+- Pending Logout is disabled, exposes busy state and sends only one request.
+- Successful/idempotent Logout becomes Guest, navigates to `/login` with replacement behavior and shows no success/expiration message.
+- Operational failure preserves authenticated state, restores the control and hides raw failure details behind the approved safe alert.
+- An expired authenticated session clears identity and sets the approved expiration state.
+- The Login alert has approved text/semantics and can be dismissed.
+- Successful Login and voluntary Logout clear expiration state correctly.
+
+#### Security and isolation
+
+- Service/state expose only public identity even if mocked responses contain unrelated credential-like data.
+- Password, `confirm_password` and raw session values never enter shared state, browser storage or UI output.
+- Every browser test uses an isolated context and registers API mocks before navigation.
+- Tests do not depend on order, shared mutable server state, a database, production or external network access.
+
+#### Responsive regression
+
+- Run one focused critical Auth flow at `375x812`, `768x1024` and `1366x768` rather than duplicating the full browser suite for every viewport.
+- At each viewport, Login/Register critical controls remain visible and usable without horizontal overflow.
+- After Login with a long backend-provided `display_name`, the authenticated shell, Dashboard card and text fit the viewport; the name is safely constrained and Logout remains visible and usable.
+- The focused flow exercises Login/Register navigation, successful Login to Dashboard and successful Logout back to Login.
+
+### Fixture and Mocking Strategy
+
+- Use backend-shaped public USER and ADMIN identity fixtures.
+- Use per-test `page.route()` handlers for relative `/api/auth/**` requests.
+- Provide explicit success, `400`, `401`, `409`, `500`, delayed and network-abort responses.
+- Count intercepted requests for duplicate-submission/Logout assertions.
+- Use delayed route fulfillment for deterministic pending/loading states.
+- Start Vite through Playwright `webServer` on a dedicated strict port and use a relative `baseURL`.
+- Use a fresh browser context per test; do not persist Authentication storage state.
+- Do not use HAR files, a real backend, shared database fixtures or production credentials.
+
+### Command and Artifact Contract
+
+- Preserve a dedicated `node:test` Authentication command.
+- Add a dedicated Playwright Authentication command.
+- Provide one documented aggregate command that runs both layers and exits non-zero if either fails.
+- Test output must keep unit and browser results separately identifiable.
+- Playwright reports, traces, screenshots and test results are local/CI artifacts and must remain untracked.
 
 ### Acceptance Criteria
 
-- Frontend tests cover approved Login/Register/auth state flows.
-- Protected navigation and role visibility behavior are verified.
-- Logout and expired-session behavior are verified.
-- Frontend does not rely on UI checks as backend authorization.
+- **AC-014-01:** Existing service/store/config tests remain under `node:test`; browser behavior is tested with Playwright without duplicating pure state assertions.
+- **AC-014-02:** Login and Register required-field, invalid-email, password-length and confirmation-mismatch behavior are tested.
+- **AC-014-03:** Valid Register sends only `display_name`, normalized email and password, does not authenticate and hands off to Login.
+- **AC-014-04:** Valid Login authenticates and navigates to `/dashboard`; invalid credentials and operational failures show approved safe messages.
+- **AC-014-05:** Form submissions expose pending/disabled states and prevent duplicate requests.
+- **AC-014-06:** Auth initialization prevents protected-content flash and distinguishes valid session, initial Guest and operational failure.
+- **AC-014-07:** Guest/protected/Login/Register/root/fallback routing matches the approved TASK-013 route table.
+- **AC-014-08:** USER and ADMIN receive correct backend-derived identity presentation; Admin context remains non-interactive and no `/admin` destination exists.
+- **AC-014-09:** Logout pending, success, idempotent success and operational failure are verified, including request deduplication and safe error presentation.
+- **AC-014-10:** Expired-session transition, alert, dismissal, Login cleanup and voluntary-Logout distinction are verified.
+- **AC-014-11:** Tests prove no password, confirmation value or raw session credential enters shared state, browser storage or UI output.
+- **AC-014-12:** Browser tests mock only relative `/api/auth/**` and do not contact production, Supabase or a real backend.
+- **AC-014-13:** Tests are isolated, repeatable and independent of execution order.
+- **AC-014-14:** A documented aggregate command exits zero on success and non-zero on failure; unit and browser results remain separately identifiable.
+- **AC-014-15:** Authentication tests, frontend lint, production build and `git diff --check` pass.
+- **AC-014-16:** No production behavior, backend/API/schema, deployment configuration, TASK-015 integration scope or unapproved feature is changed.
+- **AC-014-17:** Chromium regression coverage at `375x812`, `768x1024` and `1366x768` proves critical Login/Register controls, Auth navigation, the Dashboard shell/card/text, a long backend-provided `display_name` and Logout remain usable without horizontal overflow or clipping.
 
-### Testing Requirements
+### Implementation and Verification Requirements
 
-- Run relevant frontend tests during TEST stage.
-- Run frontend lint/build where available.
-- Record missing test infrastructure honestly.
+- Install only the approved Playwright dependency/browser and keep package changes frontend-scoped.
+- Reuse existing tests and production contracts; do not rewrite completed TASK-011 through TASK-013 behavior.
+- During IMPLEMENT, run the focused unit and Playwright commands sufficiently to validate setup and test determinism.
+- During formal TEST, run the aggregate Authentication suite, frontend lint, frontend build and `git diff --check`.
+- Verify a repeated aggregate run produces the same result without leftover server/browser state.
+- Verify generated Playwright artifacts are ignored and no secret/environment file is added.
+- Report any unavailable Chromium/runtime infrastructure honestly; do not claim browser coverage that was not executed.
 
 ### Traceability
 
 - SPEC: `8. Acceptance Criteria`, `9. Edge Cases`.
 - PLAN: `12. Thiết kế Frontend`, `13. Chiến lược Testing`.
+- TASK-011: Auth service, shared state/provider/bootstrap and relative API contract.
+- TASK-012: Login/Register validation, submission and error UX.
+- TASK-013: protected routing, role presentation, Logout and expiration UX.
+
+### Approval Gate
+
+```text
+TASK-014 CLARIFICATION: APPROVED
+TASK-014 TEST ARCHITECTURE: APPROVED
+PLAYWRIGHT + MANAGED CHROMIUM: APPROVED
+CHROMIUM-ONLY TASK-014 COVERAGE: APPROVED
+RESPONSIVE VIEWPORT MATRIX: APPROVED (`375x812`, `768x1024`, `1366x768`)
+MOCKED RELATIVE /api/auth/** BOUNDARY: APPROVED
+TASK-014: APPROVED
+HUMAN TASK APPROVAL RECORDED: 2026-09-19
+IMPLEMENT: COMPLETE
+TEST: PASS
+REVIEW: APPROVED
+REVIEW014-01: RESOLVED
+REVIEW014-02: RESOLVED
+TASK-014 STATUS: DONE
+```
+
+TASK-014 completed its approved implementation, formal testing, corrective review cycle and final review. TASK-015 integration/security/deployment verification remains separate follow-up scope.
 
 ---
 
