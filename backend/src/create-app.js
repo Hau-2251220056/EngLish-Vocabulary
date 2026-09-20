@@ -1,4 +1,5 @@
 // @ts-nocheck
+// Importable application factory shared by local, test, and Vercel entry points.
 import cookieParser from "cookie-parser";
 import express from "express";
 import { createAuthenticationController } from "./controllers/auth-controller.js";

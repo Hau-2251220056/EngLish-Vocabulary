@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { PrismaClient } from "./generated/prisma/client.ts";
-import { createApp } from "./app.js";
+import { createApp } from "./create-app.js";
 
 const PORT = process.env.PORT || 5000;
 const prisma = new PrismaClient();
