@@ -59,6 +59,23 @@ test("health route remains available through the importable application", async 
   assert.deepEqual(response.json, { True: "OK" });
 });
 
+test("all Authentication endpoints explicitly disable response caching", async () => {
+  const responses = await Promise.all([
+    register({}),
+    login({}),
+    http.request("/api/auth/me"),
+    http.request("/api/auth/logout", { method: "POST" }),
+  ]);
+
+  assert.deepEqual(
+    responses.map(({ status }) => status),
+    [400, 401, 401, 204],
+  );
+  for (const response of responses) {
+    assert.equal(response.headers.get("cache-control"), "no-store, private");
+  }
+});
+
 test("registration persists normalized USER defaults without login state", async () => {
   const email = uniqueEmail("register");
   const uppercaseEmail = email.toUpperCase();
