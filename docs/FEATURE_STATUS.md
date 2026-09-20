@@ -160,10 +160,10 @@ All features are initially marked TODO.
 
 4.1 Authentication & User Management
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-User Registration	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
-User Login	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
-User Authentication	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
-User Authorization	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	—	—
+User Registration	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Login	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Authentication	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Authorization	DONE	✓	✓	✓	IN_PROGRESS	—	—
 User Profile Management	TODO	—	—	—	—	—	—
 Daily Goal Settings	TODO	—	—	—	—	—	—
 Admin Access	TODO	—	—	—	—	—	—
