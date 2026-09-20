@@ -2354,7 +2354,9 @@ TASK-014 completed its approved implementation, formal testing, corrective revie
 - Phase A TEST: `PASS` — local real-stack integration, backend Authentication regression, TASK-014 regression, lint, build and security/isolation checks passed.
 - Phase A REVIEW: `APPROVED` after the AC-015-11 synchronization finding was fixed and verified.
 - Phase A open findings: `0`.
-- Phase B IMPLEMENT/DEPLOY/VERIFY: `NOT AUTHORIZED — HUMAN GATE`.
+- Phase B Preview database adjustment: `APPROVED` on `2026-09-20` — the existing dedicated non-production TEST database may be reused temporarily for TASK-015 Preview verification only.
+- Phase B final Human Gate: `APPROVED` on `2026-09-20`.
+- Phase B IMPLEMENT/DEPLOY/VERIFY: `AUTHORIZED — NOT STARTED`.
 - TASK-015 status: `IN_PROGRESS` — Phase B remains outstanding; TASK-015 is not `DONE`.
 
 ### Objective
@@ -2381,16 +2383,27 @@ Phase A must be independently implementable and verifiable before any Phase B ex
 
 Phase A may implement only the approved prerequisites and local real-stack integration harness/tests. It must not create or configure Vercel projects, deploy a Preview, configure real Preview secrets, choose a Preview backend destination or select/reset a Preview database.
 
-#### Phase B — Human Gate
+#### Phase B — Human Gate Approved
 
-Before Phase B begins, Human approval must separately provide or authorize:
+The final Human Gate authorizes the minimum Preview implementation, deployment and verification work below:
 
-- creation/configuration or use of the frontend and backend Vercel projects;
-- the backend Preview destination mechanism used by the frontend rewrite;
-- a dedicated non-production Supabase database/branch for Preview;
-- Preview environment variables/secrets;
-- Deployment Protection access/configuration;
-- the actual Vercel Preview deployment and external verification run.
+- deploy both Vercel projects from branch `feature/Auth`, with project Root Directories `backend` and `frontend` respectively;
+- deploy the backend Preview first and use its branch-specific Preview URL, which follows the latest `feature/Auth` deployment, as the frontend rewrite destination;
+- keep both projects in the same Vercel team and enable Standard Protection with Vercel Authentication for Preview access;
+- perform cross-project rewrite verification in a browser session authenticated as a Vercel team/project member with access to both projects;
+- do not use a Shareable Link or Protection Bypass for Automation as evidence for the protected cross-project rewrite, and never embed a bypass secret in repository configuration or browser code;
+- create the frontend Preview rewrite `/api/:path*` → `https://<approved-backend-feature-auth-branch-url>/api/:path*` before the SPA fallback;
+- deploy and verify Preview only; Production deployment or promotion remains unauthorized.
+
+The Preview database sub-gate is approved with these constraints:
+
+- Vercel Preview for branch `feature/Auth` may set runtime `DATABASE_URL` to the existing dedicated non-production TEST database.
+- This temporary reuse is limited to TASK-015 Phase B Preview verification and never applies to Production.
+- Destructive/reset automated database tests must not run concurrently with Preview verification.
+- Existing TEST DB ownership, isolation, cleanup and secret-safety rules remain mandatory.
+- No database URL or credential may be recorded in repository documentation, logs, screenshots or reports.
+
+The database selection and final Human Gate together authorize Phase B implementation, Preview deployment and verification under the constraints above.
 
 No Phase A success result may be presented as Phase B evidence.
 
@@ -2459,7 +2472,9 @@ Phase B may run only after its Human Gate. It must verify:
 - Preview HTTPS cookie is `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` and host-only/no explicit `Domain`;
 - Logout removes the current session and subsequent `/me` returns `401`.
 
-The backend Preview destination mechanism remains intentionally undecided until the Phase B Human Gate; Phase A must not hard-code one.
+The approved upstream is the backend project's `feature/Auth` branch-specific Preview URL. The frontend must preserve the complete `/api/**` path in the external rewrite, must not introduce `VITE_API_URL`, and must not enable rewrite caching for Authentication responses.
+
+Deploy the backend Preview before the frontend Preview so the branch-specific upstream can be verified and recorded without exposing credentials. If both projects are not in the same Vercel team, protected rewrite access fails, or the browser is redirected to the backend origin, stop and report the blocker; do not disable protection or switch to cross-origin Authentication silently.
 
 ### Cookie Contract
 
@@ -2493,8 +2508,9 @@ The backend Preview destination mechanism remains intentionally undecided until 
 ### Test Database, Fixture and Cleanup Contract
 
 - Local integration uses the existing dedicated Supabase TEST DB safety gate.
-- Preview requires a separately Human-approved non-production database/branch.
+- Preview uses the Human-approved existing dedicated non-production TEST database temporarily for TASK-015 Phase B only; it must never use the production/main database.
 - No broad reset may run against production or a shared Preview database not explicitly approved for reset.
+- Destructive/reset automated TEST DB suites must not run concurrently with Preview verification.
 - Fixtures use a unique run prefix and cleanup only their owned records in foreign-key-safe order.
 - Setup/teardown must be repeatable after both successful and failed runs.
 - Database URLs, credentials, passwords, raw tokens and hashes must never be printed or persisted in reports.
@@ -2535,6 +2551,21 @@ The backend Preview destination mechanism remains intentionally undecided until 
 - backend destination mechanism;
 - Preview deployment authorization and URL/access;
 - Deployment Protection configuration/access.
+
+For the approved protected cross-project rewrite, acceptance evidence is collected through an interactive browser session authenticated to Vercel with access to both same-team projects. Automation-bypass evidence is not required because Vercel does not propagate that bypass mechanism through protected rewrites.
+
+The Phase B verification flow is:
+
+1. Confirm backend and frontend Preview deployments are sourced from `feature/Auth` and record their commit identifiers without recording secrets.
+2. Confirm the backend uses only the Preview-scoped non-production `DATABASE_URL`; pause destructive/reset TEST DB automation for the verification window.
+3. From the protected frontend Preview origin, Register a unique USER and verify registration does not auto-login.
+4. Login through relative `/api/auth/login`, reach Dashboard, and confirm browser-visible Authentication requests retain the frontend origin.
+5. Verify the HTTPS session cookie is `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, with no explicit `Domain`; verify no Authentication response is cached.
+6. Reload and verify bootstrap through relative `/api/auth/me` restores the persisted USER identity.
+7. Login with a controlled, uniquely owned ADMIN fixture, verify `/me` identity and the non-interactive Admin indicator, then clean up only owned records.
+8. Logout and verify the current session is deleted and a subsequent relative `/api/auth/me` returns `401`.
+9. Where the protected Preview setup permits a controlled cross-site attempt without exposing credentials, verify the approved Lax-cookie CSRF baseline; otherwise retain the deterministic Phase A evidence and report this Preview-specific check as not run rather than passing it.
+10. Verify no direct browser call targets the backend origin, no credentialed CORS is required, suite-owned fixtures are removed, and no secret/token/hash appears in logs, storage, screenshots or reports.
 
 Manual Postman/Thunder Client smoke is optional diagnostic work and is not required acceptance evidence.
 
@@ -2587,12 +2618,13 @@ PHASE A IMPLEMENT: COMPLETE
 PHASE A TEST: PASS
 PHASE A REVIEW: APPROVED
 TASK-015 STATUS: IN_PROGRESS — NOT DONE
-PHASE B: NOT AUTHORIZED
-PHASE B BLOCKER: HUMAN GATE
+PHASE B PREVIEW DATABASE ADJUSTMENT: APPROVED
+PHASE B FINAL HUMAN GATE: APPROVED
+PHASE B: AUTHORIZED — NOT STARTED
 PRODUCTION DEPLOYMENT: NOT AUTHORIZED
 ```
 
-Phase A completion does not close TASK-015. Phase B remains blocked until the Human Gate is explicitly satisfied.
+Phase A completion does not close TASK-015. Phase B is authorized but TASK-015 remains open until Preview implementation, verification, TEST and REVIEW complete successfully.
 
 ---
 

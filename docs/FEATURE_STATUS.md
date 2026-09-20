@@ -305,7 +305,9 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - Phase A TEST: PASS — real Browser → Vite → Express → Prisma → dedicated Supabase TEST DB flow and regressions passed.
 - Phase A REVIEW: APPROVED after the AC-015-11 finding was resolved and verified.
 - Phase A open findings: 0.
-- Phase B status: BLOCKED — HUMAN GATE; no Preview deployment/configuration has been authorized.
+- Phase B Preview database adjustment: APPROVED — the existing dedicated non-production TEST database may be reused temporarily through Preview-scoped `DATABASE_URL`; production/main data is prohibited and destructive/reset tests may not run concurrently.
+- Phase B final Human Gate: APPROVED — same-team protected Vercel Previews, backend branch-specific upstream rewrite and interactive real-stack verification are authorized.
+- Phase B status: AUTHORIZED — NOT STARTED; TASK-015 and Authentication remain IN_PROGRESS until Preview implementation, TEST and REVIEW complete.
 
 ### Frontend
 
@@ -333,7 +335,7 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 
 - `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
 - Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
-- TASK-015 Phase B Vercel Preview routing, HTTPS cookie and real integration verification remain blocked by the explicit Human Gate.
+- TASK-015 Phase B Vercel Preview routing, HTTPS cookie and real integration verification are authorized but not started.
 - Production deployment remains outside the authorized TASK-015 Phase A scope.
 
 4.2 Topics
