@@ -193,7 +193,7 @@ test("controllers forward unexpected errors and logout clears its cookie first",
   );
   assert.equal(forwarded, expected);
   assert.deepEqual(logoutResponse.clearedCookies, [
-    { name: "session_id", options: { path: "/" } },
+    { name: "session_id", options: { path: "/", sameSite: "lax" } },
   ]);
 });
 
@@ -217,6 +217,7 @@ test("secure requests set the approved Secure session cookie", async () => {
   assert.equal(res.cookies[0].options.secure, true);
   assert.equal(res.cookies[0].options.httpOnly, true);
   assert.equal(res.cookies[0].options.maxAge, 604_800_000);
+  assert.equal(res.cookies[0].options.sameSite, "lax");
 });
 
 test("production context sets the approved Secure session cookie", async () => {

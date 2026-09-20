@@ -36,6 +36,7 @@ export function createAuthenticationController({ authenticationService }) {
           httpOnly: true,
           maxAge: SESSION_LIFETIME_MS,
           path: "/",
+          sameSite: "lax",
           secure: isSecureRequest(req),
         });
 
@@ -86,6 +87,7 @@ export function createAuthenticationController({ authenticationService }) {
 function clearSessionCookie(res) {
   res.clearCookie(SESSION_COOKIE_NAME, {
     path: "/",
+    sameSite: "lax",
   });
 }
 

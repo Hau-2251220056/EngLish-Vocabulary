@@ -253,7 +253,7 @@ Status: IN_PROGRESS
 
 ### Description
 
-TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell and TASK-014 frontend Authentication test suite have completed implementation, formal testing and formal review. The overall Authentication feature remains in progress because TASK-015 integration/security/deployment verification remains outstanding.
+TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell, TASK-014 frontend Authentication test suite and TASK-015 Phase A local real-stack integration/security verification have completed their required quality gates. The overall Authentication feature remains in progress because TASK-015 Phase B Vercel Preview verification remains blocked by its Human Gate.
 
 ### TASK-011 Workflow Status
 
@@ -296,6 +296,17 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - Responsive Chromium matrix: PASSED at 375×812, 768×1024 and 1366×768.
 - Quality gate: PASSED.
 
+### TASK-015 Phase A Workflow Status
+
+- TASK-015 deterministic contract: APPROVED.
+- TASK-015 overall status: IN_PROGRESS; not DONE.
+- Phase A status: COMPLETE.
+- Phase A IMPLEMENT: COMPLETE.
+- Phase A TEST: PASS — real Browser → Vite → Express → Prisma → dedicated Supabase TEST DB flow and regressions passed.
+- Phase A REVIEW: APPROVED after the AC-015-11 finding was resolved and verified.
+- Phase A open findings: 0.
+- Phase B status: BLOCKED — HUMAN GATE; no Preview deployment/configuration has been authorized.
+
 ### Frontend
 
 - Reusable Axios client and Authentication service use relative `/api/auth/**` endpoints.
@@ -320,11 +331,10 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 
 ### Pending Follow-ups
 
-- Explicit backend production cookie `SameSite=Lax` implementation/verification remains pending.
 - `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
 - Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
-- Production Vercel deployment, rewrite and integration verification remain pending.
-- TASK-015 integration/security/deployment verification remains pending.
+- TASK-015 Phase B Vercel Preview routing, HTTPS cookie and real integration verification remain blocked by the explicit Human Gate.
+- Production deployment remains outside the authorized TASK-015 Phase A scope.
 
 4.2 Topics
 

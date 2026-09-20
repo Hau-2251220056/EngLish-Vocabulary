@@ -188,6 +188,7 @@ test("valid login creates a secure hash-only seven-day session contract", async 
   assert.ok(setCookie);
   assert.match(setCookie, /; HttpOnly/i);
   assert.match(setCookie, /; Path=\//i);
+  assert.match(setCookie, /; SameSite=Lax/i);
   assert.match(setCookie, /; Max-Age=604800/i);
   assert.doesNotMatch(setCookie, /; Secure/i);
 
@@ -412,6 +413,7 @@ function assertLogoutResponse(response) {
   );
   assert.ok(clearCookie);
   assert.match(clearCookie, /; Path=\//i);
+  assert.match(clearCookie, /; SameSite=Lax/i);
   assert.doesNotMatch(response.text, /session/i);
 }
 

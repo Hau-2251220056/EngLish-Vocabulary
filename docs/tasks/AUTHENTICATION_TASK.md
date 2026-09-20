@@ -2344,64 +2344,230 @@ TASK-014 completed its approved implementation, formal testing, corrective revie
 
 ## TASK-015 — Authentication integration and security verification
 
+### Status
+
+- TASK definition: `APPROVED`.
+- Human deterministic-contract decision: `APPROVED` on `2026-09-19`.
+- Two-phase execution model: `APPROVED`.
+- Phase A status: `COMPLETE`.
+- Phase A IMPLEMENT: `COMPLETE`.
+- Phase A TEST: `PASS` — local real-stack integration, backend Authentication regression, TASK-014 regression, lint, build and security/isolation checks passed.
+- Phase A REVIEW: `APPROVED` after the AC-015-11 synchronization finding was fixed and verified.
+- Phase A open findings: `0`.
+- Phase B IMPLEMENT/DEPLOY/VERIFY: `NOT AUTHORIZED — HUMAN GATE`.
+- TASK-015 status: `IN_PROGRESS` — Phase B remains outstanding; TASK-015 is not `DONE`.
+
 ### Objective
 
-Verify the complete Authentication flow across backend, frontend, database session persistence and deployment-dependent security configuration.
+Verify the complete real Authentication flow in two controlled phases without deploying to production:
+
+- **Phase A — prerequisite implementation and local real-stack integration:** Browser → Vite → relative `/api/auth/**` → real Express → Prisma → dedicated Supabase TEST DB.
+- **Phase B — Vercel Preview verification:** Browser → frontend Vercel origin → relative `/api/auth/**` → approved Vercel rewrite/proxy → backend Vercel project → approved non-production Supabase database.
+
+Phase A must be independently implementable and verifiable before any Phase B external-state action is authorized.
 
 ### Dependencies
 
-- TASK-010.
-- TASK-014.
-- Database/schema implementation from TASK-001.
+- TASK-001 database/schema implementation — `DONE`.
+- TASK-010 backend Authentication/security test suite — `DONE`.
+- TASK-014 frontend Authentication test suite — `DONE`.
+- Approved Authentication SPEC and corrected Authentication PLAN.
+- Dedicated Supabase TEST DB with the existing reset-safety contract.
+- Phase B additionally depends on the separate Human Gate defined below.
+
+### Phase Model and Gates
+
+#### Phase A — Authorized
+
+Phase A may implement only the approved prerequisites and local real-stack integration harness/tests. It must not create or configure Vercel projects, deploy a Preview, configure real Preview secrets, choose a Preview backend destination or select/reset a Preview database.
+
+#### Phase B — Human Gate
+
+Before Phase B begins, Human approval must separately provide or authorize:
+
+- creation/configuration or use of the frontend and backend Vercel projects;
+- the backend Preview destination mechanism used by the frontend rewrite;
+- a dedicated non-production Supabase database/branch for Preview;
+- Preview environment variables/secrets;
+- Deployment Protection access/configuration;
+- the actual Vercel Preview deployment and external verification run.
+
+No Phase A success result may be presented as Phase B evidence.
 
 ### Files / Modules
 
-- No new feature module required; verification spans approved implementation areas.
+- `backend/src/controllers/auth-controller.js` — add the approved explicit `SameSite=Lax` cookie behavior and keep set/clear options compatible.
+- `backend/src/index.js` — Vercel-compatible default-export entry that reuses `createApp({ prisma })`, creates no listener and keeps Prisma at module scope.
+- `backend/src/main.js` — modify only if narrowly required to share existing composition without changing local startup behavior.
+- `backend/vercel.json` — only if required by verified Vercel runtime configuration; creation does not authorize deployment.
+- `frontend/vercel.json` — Phase B prerequisite only after the backend destination mechanism is Human-approved; API rewrite must precede SPA fallback and must not cache Authentication responses.
+- `backend/package.json`, `frontend/package.json` and their lockfiles — only scripts needed for approved integration orchestration; no new dependency unless separately approved.
+- `backend/.env.example`, `frontend/.env.example` — variable names/documentation only; never values.
+- `backend/test/**` — cookie/entry/integration helpers and safe database lifecycle support.
+- `frontend/e2e/integration/**` — real-stack browser scenarios with no Authentication API mocks.
+- `frontend/playwright.integration.config.js` — isolated real-stack Playwright orchestration/configuration.
+- TASK-015 documentation/status artifacts when required by workflow.
+
+Files outside this allowlist require a new Human decision before modification.
 
 ### In Scope
 
-- Register → Login → Dashboard flow.
-- Login → `/api/auth/me` flow.
-- Logout current session.
-- Multiple sessions for one User.
-- Expired/deleted/malformed session behavior.
-- USER/ADMIN protected access.
-- Authenticated identity/security boundary.
-- Cookie `session_id` and raw token exclusion.
-- Deployment topology verification:
-  - origins;
-  - same-origin/cross-origin;
-  - same-site/cross-site;
-  - credentialed CORS;
-  - cookie attributes;
-  - CSRF requirement.
-
-- API status recommendations and validation status.
+- Implement explicit `SameSite=Lax` for `session_id` while preserving `HttpOnly`, `Path=/`, seven-day lifetime, conditional `Secure` and no explicit `Domain`.
+- Add the approved default-export backend entry without changing the local `main.js` listener contract.
+- Add deterministic local process/database/browser setup and teardown.
+- Verify real Register → Login → Dashboard → reload/bootstrap through `/me` → Logout → rejected `/me`.
+- Verify initial registration remains Guest and does not create a session.
+- Verify real persisted USER and controlled ADMIN identities through Login and `/me` without creating an Admin route/API/page.
+- Verify browser-managed cookie attributes and raw-token exclusion.
+- Verify relative same-origin `/api/auth/**` usage and absence of credentialed-CORS dependency.
+- Verify the approved SameSite/same-origin/JSON CSRF baseline without adding a CSRF token or library.
+- Re-run existing backend and frontend Authentication suites as regression evidence.
+- After the Phase B gate only, verify the same flow and cookie/rewrite contract against Vercel Preview.
 
 ### Out of Scope
 
-- Production deployment changes.
-- New infrastructure.
-- Performance platform work.
-- Features outside Authentication.
-- Resource-specific ownership rules implemented by individual domain features.
+- Production deployment or promotion.
+- Any Phase B external-state action before its Human Gate is satisfied.
+- New schema, migration, API endpoint, role, `/admin`, Admin page or Admin management behavior.
+- Credentialed CORS, CSRF token/library or a cross-site Authentication topology.
+- JWT, Bearer credentials or frontend session-token storage.
+- Centralized error-handler implementation and exact malformed-JSON/unexpected-error HTTP bodies.
+- Postman/Thunder Client as required acceptance evidence.
+- Performance/load testing and features outside Authentication.
+- Resource-specific ownership rules owned by domain features.
+
+### Local Integration Contract
+
+- Run only with `NODE_ENV=test`, a dedicated `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_RESET=true`.
+- Prepare the database with existing migrations before browser integration.
+- Start real Express on strict `127.0.0.1:5000` and Vite on a dedicated strict `127.0.0.1:4174` port so the existing `/api` proxy remains the browser boundary.
+- Playwright opens only the Vite origin and must not register a route/mock for `/api/auth/**`.
+- Use unique run-scoped email/identifier fixtures; create ordinary USER through Register and controlled ADMIN through Prisma test fixtures.
+- Cleanup only suite-owned `AUTH_SESSION` records before suite-owned `USER` records.
+- Browser, Vite, Express and Prisma resources must close on pass or failure; no process may remain running.
+- Local HTTP cookie expectation: `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`, `Secure=false`.
+
+### Vercel Preview Contract
+
+Phase B may run only after its Human Gate. It must verify:
+
+- the browser opens only the frontend Preview origin and calls relative `/api/auth/**`;
+- browser-visible Authentication request URLs retain the frontend origin;
+- the approved rewrite forwards all four endpoints to the backend Preview project without exposing that origin to application code;
+- Authentication responses are not cached;
+- Register/Login/reload/bootstrap/Logout operate against the approved non-production Supabase database;
+- Preview HTTPS cookie is `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` and host-only/no explicit `Domain`;
+- Logout removes the current session and subsequent `/me` returns `401`.
+
+The backend Preview destination mechanism remains intentionally undecided until the Phase B Human Gate; Phase A must not hard-code one.
+
+### Cookie Contract
+
+| Environment | HttpOnly | Secure | SameSite | Path | Domain |
+|---|---:|---:|---|---|---|
+| Local HTTP | Yes | No | Lax | `/` | absent |
+| Vercel Preview HTTPS | Yes | Yes | Lax | `/` | absent |
+
+- The raw session token may exist only in the browser-managed cookie jar.
+- JSON, DOM, local/session storage and captured output must not contain the raw token, password, password hash or persisted session hash.
+- PostgreSQL/Supabase continues to persist only the SHA-256 session hash.
+
+### Same-Origin, CORS and CSRF Contract
+
+- Frontend Authentication remains relative `/api/auth/**` and browser-facing same-origin.
+- Credentialed application CORS is not required and must not be introduced.
+- `HttpOnly` is not treated as CSRF protection.
+- Approved baseline: `SameSite=Lax`, same-origin requests, JSON request contract and backend-validated server-side session.
+- Integration verification must demonstrate that a cross-site POST does not carry the Lax session cookie and cannot revoke the current authenticated session; the subsequent same-origin `/me` must remain valid.
+- If observed Preview routing becomes cross-site or needs credentialed CORS, stop and return to PLAN; do not adapt TASK-015 silently.
+
+### USER / ADMIN Boundary
+
+- USER and ADMIN must each authenticate through the real Login endpoint and obtain identity through real `/me`.
+- USER registration uses the public Register flow.
+- ADMIN setup uses a controlled Prisma test fixture because no public role-elevation endpoint exists.
+- Frontend role display remains UX only; backend remains the authorization boundary.
+- Existing role-authorization component tests remain the evidence for Admin-only policy behavior because no approved real Admin endpoint exists.
+- TASK-015 must not claim real Admin-endpoint authorization coverage or create an endpoint to obtain it.
+
+### Test Database, Fixture and Cleanup Contract
+
+- Local integration uses the existing dedicated Supabase TEST DB safety gate.
+- Preview requires a separately Human-approved non-production database/branch.
+- No broad reset may run against production or a shared Preview database not explicitly approved for reset.
+- Fixtures use a unique run prefix and cleanup only their owned records in foreign-key-safe order.
+- Setup/teardown must be repeatable after both successful and failed runs.
+- Database URLs, credentials, passwords, raw tokens and hashes must never be printed or persisted in reports.
+
+### Error Contract Decision
+
+- Approved known Authentication `400`, `401` and `409` contracts remain in regression scope.
+- Malformed JSON final response and unexpected-error final HTTP response remain explicitly deferred under the existing approved documents because a centralized error-handler contract is not approved/implemented.
+- Existing component evidence must continue to prove unexpected errors are forwarded with `next(error)`.
+- TASK-015 must not add a centralized error handler or count deferred behavior as passing evidence.
+
+### Secret and Environment Safety
+
+- Repository examples document variable names only.
+- Local secrets remain in ignored environment files; Preview secrets remain in Vercel environment configuration.
+- Preview backend requires a non-production `DATABASE_URL` and production-mode HTTPS cookie context.
+- A Preview URL/access credential may be supplied to the verifier only after Human authorization and must not be committed, echoed or included in screenshots/reports.
+- No frontend bundle may contain the backend database URL, Supabase credential, Vercel credential or raw backend project secret.
+
+### Automated and Human Verification Boundary
+
+#### Automated Phase A
+
+- prerequisite unit/component regression;
+- real local browser flow and database effects;
+- local cookie/session/security invariants;
+- process/database isolation and repeated execution;
+- backend suite, TASK-014 suite, lint/build and diff checks.
+
+#### Automated Phase B, after Human Gate
+
+- real Preview browser flow, rewrite/origin behavior, HTTPS cookie attributes and safe CSRF baseline where infrastructure access permits automation.
+
+#### Human-gated Phase B evidence
+
+- correct Vercel project selection/linking;
+- approved non-production database and environment-variable scope;
+- backend destination mechanism;
+- Preview deployment authorization and URL/access;
+- Deployment Protection configuration/access.
+
+Manual Postman/Thunder Client smoke is optional diagnostic work and is not required acceptance evidence.
 
 ### Acceptance Criteria
 
-- End-to-end approved Authentication flow works.
-- Raw session token and password data are never returned or persisted incorrectly.
-- Logout invalidates only current session and remains idempotent.
-- Protected endpoints enforce authentication and role authorization.
-- Authenticated identity is established only from validated server-side session state.
-- Cookie/CORS/CSRF configuration matches verified topology.
-- No scope expansion or unapproved mechanism is introduced.
+- **AC-015-01:** Local browser flow runs through Vite → real Express → Prisma → dedicated Supabase TEST DB without mocking Authentication API requests.
+- **AC-015-02:** Real Register creates the expected USER/defaults, creates no session and does not auto-login.
+- **AC-015-03:** Real Login creates a persisted hashed session, renders Dashboard and exposes no raw credential/session value through JSON, DOM, storage or logs.
+- **AC-015-04:** Browser reload/bootstrap calls real `/me` and restores the correct persisted identity.
+- **AC-015-05:** Real Logout removes only the current session and a subsequent `/me` returns `401` while idempotent behavior remains intact.
+- **AC-015-06:** Persisted USER and controlled ADMIN fixtures each receive the correct server-derived Login/`/me` identity; no Admin route/API/page is created.
+- **AC-015-07:** Local cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has no explicit `Domain` and is not `Secure` over local HTTP.
+- **AC-015-08:** After the Phase B gate, Preview cookie is `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` and host-only/no explicit `Domain`.
+- **AC-015-09:** Frontend uses only relative `/api/auth/**`; browser-visible Authentication requests retain the frontend origin.
+- **AC-015-10:** Selected topology operates without credentialed application CORS.
+- **AC-015-11:** Approved CSRF baseline is verified; a cross-site POST cannot carry/revoke the authenticated Lax-cookie session.
+- **AC-015-12:** After the Phase B gate, the approved Preview rewrite forwards all four endpoints without caching Authentication responses.
+- **AC-015-13:** Supabase fixtures are isolated, safely cleaned and never use or reset production data.
+- **AC-015-14:** Existing backend suite, TASK-014 suite, local integration suite, applicable lint/build commands and `git diff --check` pass.
+- **AC-015-15:** Phase B is reported separately as `PASS`, `FAIL`, `BLOCKED` or `NOT RUN`; unavailable Preview infrastructure is never presented as passing evidence.
+- **AC-015-16:** Known Authentication errors retain their approved contract; deferred centralized-error cases remain explicit and are not counted as pass.
+- **AC-015-17:** No schema/migration, API/Auth architecture, Admin feature, new role, production deployment or unapproved mechanism is introduced.
+- **AC-015-18:** No secret, raw password, raw session token, password hash, session hash or database credential is committed or exposed in test output/reports.
 
-### Testing Requirements
+### Phase A Implementation and Verification Requirements
 
-- Run backend and frontend test suites.
-- Run API/integration tests.
-- Run build/lint checks where available.
-- Record unresolved environment limitations.
+- Implement only the approved Phase A prerequisites and local integration harness.
+- Add or update focused cookie and Vercel-entry component tests.
+- Run targeted local real-stack integration, then repeat it to establish deterministic cleanup/process lifecycle.
+- Run the existing backend Authentication suite and TASK-014 aggregate frontend Authentication suite.
+- Run frontend lint/build and any repository-provided applicable backend checks; report unavailable commands honestly.
+- Run `git diff --check` and audit tracked/untracked secrets and generated artifacts.
+- Report Phase B as `NOT RUN — HUMAN GATE`; do not mark TASK-015 DONE after Phase A alone.
 
 ### Traceability
 
@@ -2409,6 +2575,24 @@ Verify the complete Authentication flow across backend, frontend, database sessi
 - PLAN: `4. Tác động kiến trúc`, `6. Credential Lifecycle`, `9. Thiết kế Authorization`, `13. Chiến lược Testing`, `16. Risks và Edge Cases`.
 - DATABASE: `USER`, `AUTH_SESSION`, relationship, constraints and approved initial database scope.
 - API_SPEC: Authentication endpoint inventory and authorization/security rules.
+
+### Approval Gate
+
+```text
+TASK-015 DETERMINISTIC CONTRACT: APPROVED
+TASK-015 TWO-PHASE MODEL: APPROVED
+TASK-015 AC-015-01 THROUGH AC-015-18: APPROVED
+PHASE A STATUS: COMPLETE
+PHASE A IMPLEMENT: COMPLETE
+PHASE A TEST: PASS
+PHASE A REVIEW: APPROVED
+TASK-015 STATUS: IN_PROGRESS — NOT DONE
+PHASE B: NOT AUTHORIZED
+PHASE B BLOCKER: HUMAN GATE
+PRODUCTION DEPLOYMENT: NOT AUTHORIZED
+```
+
+Phase A completion does not close TASK-015. Phase B remains blocked until the Human Gate is explicitly satisfied.
 
 ---
 
