@@ -154,8 +154,44 @@ The application should use a modern dashboard layout.
 
 For authenticated users:
 
+The approved shared authenticated layout contains:
+
+- Header.
+- Primary Sidebar navigation.
+- Main Content rendered by the matched nested route through React Router `<Outlet />`.
+- Shared authenticated Footer.
+
+Header responsibilities:
+
+- Display ELVocab branding/logo.
+- Display authenticated account identity on the right using an avatar, or a default avatar when no avatar is available, plus the backend-provided `display_name`.
+- ADMIN context may be displayed as non-interactive context; it does not add an Admin feature or replace backend authorization.
+- Logout is not a primary Header action.
+
+Sidebar responsibilities:
+
+- Remain the primary authenticated navigation on desktop.
+- Contain Logout using the existing Authentication behavior.
+- Show only routes/features that are implemented and approved.
+- Do not render placeholder routes or menu items for future features.
+
+Main Content responsibilities:
+
+- Render route-owned content through the shared route outlet.
+- Remain separate from User Dashboard or other feature-specific business content.
+
+Footer responsibilities:
+
+- Display only `© 2026 ELVocab` in V1.
+- Remain visually secondary and contain no unapproved links.
+- Remain visible in compact form on mobile.
+
+The existing Authentication `AuthenticatedShell` must be reused and extended. The application must not create a second authenticated shell.
+
+The following diagram is an information-architecture illustration. Search, Profile and future navigation items are not part of the App Layout foundation until their routes/features are separately implemented and approved.
+
 ┌─────────────────────────────────────────────────────┐
-│ Logo                         Search      Profile     │
+│ ELVocab                  Account Identity           │
 ├──────────────┬──────────────────────────────────────┤
 │              │                                      │
 │ Sidebar      │           Main Content               │
@@ -172,19 +208,21 @@ For authenticated users:
 │              │                                      │
 └──────────────┴──────────────────────────────────────┘
 
-The sidebar should remain visually simple.
+The sidebar should remain visually simple. Only implemented and approved destinations may be shown.
 
 The active navigation item must be clearly highlighted.
 
-5.2 Mobile Layout
+5.2 Tablet and Mobile Layout
 
-On mobile devices:
+On tablet and mobile devices:
 
-Sidebar becomes a mobile navigation.
+The persistent desktop Sidebar becomes collapsible/drawer navigation.
 
-Use bottom navigation or collapsible navigation.
+Do not use bottom navigation.
 
 Main content uses full available width.
+
+The authenticated Footer remains visible in compact form.
 
 Cards should stack vertically.
 
@@ -345,6 +383,8 @@ Progress / achievement preview
 Community preview
 Call-to-action
 Footer
+
+This Footer belongs to the public Landing Page. It is separate from the shared authenticated Footer defined in Global Layout.
 
 Primary actions:
 

@@ -658,6 +658,17 @@ AI features must not become mandatory project dependencies without explicit appr
 
 If AI is not required by the final approved scope, these features may remain TODO.
 
+4.14 Frontend Application Foundation
+
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Authenticated App Layout Foundation	PLANNED	✓	—	—	—	—	—
+
+The approved App Layout foundation extends the existing Authentication `AuthenticatedShell` with a shared authenticated Header, primary Sidebar/navigation, route-rendered Main Content and minimal Footer.
+
+This foundation is separate from User Dashboard business content, Topic and the public Landing Page. Implementation has not started.
+
+Related SPEC: `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`
+
 5. Feature Detail Records
 
 When a feature reaches IN_PROGRESS, IMPLEMENTED, TESTED, or DONE, additional information may be recorded below.
