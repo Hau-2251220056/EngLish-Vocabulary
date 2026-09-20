@@ -2356,8 +2356,12 @@ TASK-014 completed its approved implementation, formal testing, corrective revie
 - Phase A open findings: `0`.
 - Phase B Preview database adjustment: `APPROVED` on `2026-09-20` — the existing dedicated non-production TEST database may be reused temporarily for TASK-015 Preview verification only.
 - Phase B final Human Gate: `APPROVED` on `2026-09-20`.
-- Phase B IMPLEMENT/DEPLOY/VERIFY: `AUTHORIZED — NOT STARTED`.
-- TASK-015 status: `IN_PROGRESS` — Phase B remains outstanding; TASK-015 is not `DONE`.
+- Phase B prerequisite IMPLEMENT: `COMPLETE`.
+- Phase B TEST: `PASS` — AC-015-01 through AC-015-18 passed; `TEST015-PB-01` through `TEST015-PB-05` are closed.
+- Phase B REVIEW: `APPROVED` — REVIEW-015 found no open findings or blockers.
+- Phase B TEST DB fixtures: `CLEANED UP` — exact Preview USER, ADMIN and owned-session targets are zero; unrelated TEST data was preserved.
+- Approved deferred TODOs: `3` — preserved as deferred and not counted as TASK-015 failures.
+- TASK-015 status: `DONE`.
 
 ### Objective
 
@@ -2617,14 +2621,20 @@ PHASE A STATUS: COMPLETE
 PHASE A IMPLEMENT: COMPLETE
 PHASE A TEST: PASS
 PHASE A REVIEW: APPROVED
-TASK-015 STATUS: IN_PROGRESS — NOT DONE
 PHASE B PREVIEW DATABASE ADJUSTMENT: APPROVED
 PHASE B FINAL HUMAN GATE: APPROVED
-PHASE B: AUTHORIZED — NOT STARTED
+PHASE B PREREQUISITE IMPLEMENT: COMPLETE
+PHASE B TEST: PASS — AC-015-01 THROUGH AC-015-18
+PHASE B REVIEW: APPROVED — REVIEW-015
+PHASE B OPEN FINDINGS: 0
+PHASE B TEST FIXTURES: CLEANED UP
+APPROVED DEFERRED TODOS: 3 — PRESERVED
+TASK-015 STATUS: DONE
+TASK-001 THROUGH TASK-015: COMPLETE
 PRODUCTION DEPLOYMENT: NOT AUTHORIZED
 ```
 
-Phase A completion does not close TASK-015. Phase B is authorized but TASK-015 remains open until Preview implementation, verification, TEST and REVIEW complete successfully.
+TASK-015 is closed after both phases completed their approved verification and REVIEW-015 approved the result. Production deployment remains outside TASK-015 and was not performed.
 
 ---
 

@@ -179,11 +179,11 @@ Guest users are unauthenticated visitors and are not treated as an authenticated
 
 ## Authentication Backend Foundation and Routes
 
-Status: IN_PROGRESS
+Status: DONE
 
 ### Description
 
-Backend authentication foundation, HTTP route integration and the persistent backend Authentication/security test suite have been implemented through TASK-010. The overall Authentication feature remains in progress because frontend Authentication UI/navigation and remaining user-management capabilities are not complete.
+Backend authentication foundation, HTTP route integration and the persistent backend Authentication/security test suite are complete through TASK-010. Together with completed frontend and integration work through TASK-015, the approved Authentication workflow is complete.
 
 ### Related Documentation
 
@@ -249,11 +249,11 @@ Backend authentication foundation, HTTP route integration and the persistent bac
 
 ## Frontend Authentication Service, State, and Login/Register UI
 
-Status: IN_PROGRESS
+Status: DONE
 
 ### Description
 
-TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell, TASK-014 frontend Authentication test suite and TASK-015 Phase A local real-stack integration/security verification have completed their required quality gates. The overall Authentication feature remains in progress because TASK-015 Phase B Vercel Preview verification remains blocked by its Human Gate.
+TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell, TASK-014 frontend Authentication test suite and both phases of TASK-015 integration/security verification have completed IMPLEMENT, TEST and REVIEW quality gates. TASK-001 through TASK-015 are complete and the approved Authentication feature is DONE.
 
 ### TASK-011 Workflow Status
 
@@ -296,10 +296,10 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - Responsive Chromium matrix: PASSED at 375×812, 768×1024 and 1366×768.
 - Quality gate: PASSED.
 
-### TASK-015 Phase A Workflow Status
+### TASK-015 Workflow Status
 
 - TASK-015 deterministic contract: APPROVED.
-- TASK-015 overall status: IN_PROGRESS; not DONE.
+- TASK-015 overall status: DONE.
 - Phase A status: COMPLETE.
 - Phase A IMPLEMENT: COMPLETE.
 - Phase A TEST: PASS — real Browser → Vite → Express → Prisma → dedicated Supabase TEST DB flow and regressions passed.
@@ -307,7 +307,13 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - Phase A open findings: 0.
 - Phase B Preview database adjustment: APPROVED — the existing dedicated non-production TEST database may be reused temporarily through Preview-scoped `DATABASE_URL`; production/main data is prohibited and destructive/reset tests may not run concurrently.
 - Phase B final Human Gate: APPROVED — same-team protected Vercel Previews, backend branch-specific upstream rewrite and interactive real-stack verification are authorized.
-- Phase B status: AUTHORIZED — NOT STARTED; TASK-015 and Authentication remain IN_PROGRESS until Preview implementation, TEST and REVIEW complete.
+- Phase B prerequisite IMPLEMENT: COMPLETE.
+- Phase B TEST: PASS — AC-015-01 through AC-015-18 passed; `TEST015-PB-01` through `TEST015-PB-05` are closed.
+- Phase B REVIEW: APPROVED — REVIEW-015 reported no findings or blockers.
+- Phase B Preview USER, ADMIN and owned-session fixtures: CLEANED UP from the dedicated TEST DB; unrelated TEST data was preserved.
+- Approved deferred TODOs: 3, preserved as deferred and not counted as TASK-015 failures.
+- TASK-001 through TASK-015: COMPLETE.
+- Authentication quality gate: PASSED.
 
 ### Frontend
 
@@ -330,13 +336,14 @@ TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register
 - TASK-013 retained the existing Authentication regression suite at 12 passing tests with 0 failures; frontend lint, production build and diff checks passed.
 - TASK-014 added the approved two-layer frontend Authentication suite: 20 focused `node:test` tests and 18 isolated Playwright Chromium tests, all passing.
 - TASK-014 aggregate Authentication tests, responsive viewport matrix, frontend lint, production build and diff checks passed.
+- TASK-015 Phase A local real-stack integration passed 2/2; backend Authentication regression passed 29 runnable tests with 0 failures and 3 approved deferred TODOs.
+- TASK-015 Phase B Vercel Preview verified the real USER and ADMIN flows, host-only secure cookie contract, same-origin rewrite, no-store Auth responses, leakage controls and exact TEST DB fixture cleanup.
 
 ### Pending Follow-ups
 
 - `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
 - Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
-- TASK-015 Phase B Vercel Preview routing, HTTPS cookie and real integration verification are authorized but not started.
-- Production deployment remains outside the authorized TASK-015 Phase A scope.
+- Production deployment remains outside TASK-015 and was not performed.
 
 4.2 Topics
 
