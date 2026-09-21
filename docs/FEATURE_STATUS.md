@@ -670,7 +670,7 @@ Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic Management	PLANNED	✓	✓	⏳	⏳	⏳	⏳
+Topic Management	DONE	✓	✓	⏳	⏳	⏳	⏳
 Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
