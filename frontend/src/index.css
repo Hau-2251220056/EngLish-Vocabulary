@@ -79,6 +79,31 @@ body {
   border-radius: 0.8rem;
 }
 
+.public-topic-account-link {
+  min-width: 0;
+}
+
+.public-topic-avatar {
+  display: inline-flex;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.public-topic-account-name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .public-topic-main {
   width: min(100% - 2rem, 70rem);
   flex: 1;
@@ -313,6 +338,10 @@ body {
 
   .public-topic-header-link {
     font-size: 0.82rem;
+  }
+
+  .public-topic-account-name {
+    display: none;
   }
 }
 

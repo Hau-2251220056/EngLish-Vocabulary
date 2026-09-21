@@ -73,6 +73,7 @@ test("@topic Guest reads real Topic metadata and searches client-side", async ({
   });
 
   await page.goto("/topics");
+  await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveAttribute("href", "/login");
   await expect(page.locator("#topic-list-title")).toBeVisible();
   await expect(page.getByText(describedTopic.name)).toBeVisible();
   await expect(page.getByText(nullableTopic.name)).toBeVisible();
@@ -137,6 +138,12 @@ test("@topic USER reaches public Topics but not ADMIN management", async ({ page
   await page.goto("/topics");
   await expect(page.getByText(describedTopic.name)).toBeVisible();
   await expect(page).toHaveURL(/\/topics$/);
+  await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveCount(0);
+  const dashboardLink = page.getByRole("link", { name: `Đến Dashboard của ${user.displayName}` });
+  await expect(dashboardLink).toHaveAttribute("href", "/dashboard");
+  await expect(page.locator(".public-topic-avatar")).toHaveText("T");
+  await dashboardLink.click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 
   await page.goto("/admin/topics");
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -160,6 +167,9 @@ test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semant
 
   await login(page, admin);
   await page.goto(`/topics/${nullableTopic.id}`);
+  await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: `Đến Dashboard của ${admin.displayName}` })).toHaveAttribute("href", "/dashboard");
+  await expect(page.locator(".public-topic-avatar")).toHaveText("T");
   await expect(page.getByRole("heading", { name: nullableTopic.name })).toBeVisible();
   await expect(page.getByText("Chưa có mô tả cho chủ đề này.")).toBeVisible();
   await page.goto("/dashboard");
