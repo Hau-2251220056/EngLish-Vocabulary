@@ -50,7 +50,7 @@ test("USER receives only Dashboard navigation and no Admin indicator", async ({ 
   });
   await page.goto("/dashboard");
 
-  await expect(page.getByText(publicUser.display_name)).toBeVisible();
+  await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.getByRole("navigation").getByRole("link");
   await expect(links).toHaveCount(1);

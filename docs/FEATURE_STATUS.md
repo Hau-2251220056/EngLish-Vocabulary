@@ -661,13 +661,40 @@ If AI is not required by the final approved scope, these features may remain TOD
 4.14 Frontend Application Foundation
 
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Authenticated App Layout Foundation	PLANNED	✓	—	—	—	—	—
+Authenticated App Layout Foundation	DONE	✓	✓	✓	✓	✓	✓
 
 The approved App Layout foundation extends the existing Authentication `AuthenticatedShell` with a shared authenticated Header, primary Sidebar/navigation, route-rendered Main Content and minimal Footer.
 
-This foundation is separate from User Dashboard business content, Topic and the public Landing Page. Implementation has not started.
+This foundation is separate from User Dashboard business content, Topic and the public Landing Page. It is complete through TASK-018 closure.
 
 Related SPEC: `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`
+
+## Authenticated App Layout Foundation
+
+Status: DONE
+
+### Related Documentation
+
+- SPEC: `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`
+- PLAN: `docs/plans/AUTHENTICATED_APP_LAYOUT_FOUNDATION_PLAN.md`
+- TASK: `docs/tasks/AUTHENTICATED_APP_LAYOUT_FOUNDATION_TASK.md`
+
+### Workflow Status
+
+- TASK-016: COMPLETE — shared responsive authenticated shell implemented.
+- TASK-017: PASS — focused App Layout browser coverage, full frontend Authentication regression, lint and production build passed.
+- TASK-018: COMPLETE — final review approved; AC-01 through AC-17 passed with no findings or blockers.
+
+### Frontend
+
+- `frontend/src/auth/ui/authenticated-shell.jsx`
+- `frontend/src/index.css`
+- `frontend/e2e/auth/app-layout.spec.js`
+
+### Scope
+
+- No backend, API, database, route, dependency or Authentication architecture change.
+- User Dashboard remains a separate unfinished feature.
 
 5. Feature Detail Records
 

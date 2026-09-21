@@ -39,18 +39,20 @@ for (const viewport of viewports) {
 
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText(longNameUser.display_name)).toBeVisible();
-    await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(1);
+    await expect(page.locator(".authenticated-header-name")).toHaveText(longNameUser.display_name);
+    await expect(page.locator(".authenticated-navigation a")).toHaveCount(1);
     await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     await expectWithinViewport(page, ".authenticated-layout");
     await expectWithinViewport(page, ".authenticated-main");
-    await expectWithinViewport(page, ".authenticated-display-name");
+    if (viewport.width > 900) await expectWithinViewport(page, ".authenticated-header-name");
     await expectWithinViewport(page, '[aria-labelledby="dashboard-title"] > section');
 
     const logout = page.getByRole("button", { name: "Đăng xuất", exact: true });
+    if (viewport.width <= 900) await page.locator(".authenticated-drawer-toggle").click();
     await expect(logout).toBeVisible();
     await expect(logout).toBeEnabled();
+    if (viewport.width <= 900) await page.waitForTimeout(250);
     await expectWithinViewport(page, ".authenticated-logout-button");
     await logout.click();
     await expect(page).toHaveURL(/\/login$/);

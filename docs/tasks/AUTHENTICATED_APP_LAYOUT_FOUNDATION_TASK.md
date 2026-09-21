@@ -1,13 +1,26 @@
 # TASKS: Authenticated App Layout Foundation
 
+## Closure Record
+
+**Closure status:** `COMPLETE`
+
+- TASK-016: `COMPLETE`
+- TASK-017: `PASS`
+- TASK-018: `COMPLETE`
+- Final review: `APPROVE`
+- Acceptance criteria: `AC-01` through `AC-17` `PASS`
+- Blockers/findings: `NONE`
+
+The Authenticated App Layout Foundation is `DONE`. Authentication history and User Dashboard status remain unchanged.
+
 ## 1. Document Status
 
 - SPEC: `APPROVED` — `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`.
 - PLAN: `APPROVED` — `docs/plans/AUTHENTICATED_APP_LAYOUT_FOUNDATION_PLAN.md`.
-- Feature status: `PLANNED`.
-- TASK status: `APPROVED`.
+- Feature status: `DONE`.
+- TASK status: `COMPLETE`.
 - Human approval: `APPROVED` on `2026-09-20`.
-- Implementation authorized: `YES` for TASK-016 according to the approved dependency order.
+- Implementation closure: `COMPLETE` through TASK-018 according to the approved dependency order.
 
 ## 2. Objective
 
