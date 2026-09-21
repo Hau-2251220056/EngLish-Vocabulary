@@ -5,7 +5,7 @@ import { configureTestEnvironment } from "../helpers/test-environment.js";
 configureTestEnvironment({ requireReset: true });
 
 const host = "127.0.0.1";
-const port = 5000;
+const port = Number(process.env.INTEGRATION_PORT ?? 5000);
 const prisma = new PrismaClient();
 const app = createApp({ prisma });
 const server = app.listen(port, host, () => {

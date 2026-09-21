@@ -20,6 +20,14 @@ export function GuestRoute() {
   return <Outlet />;
 }
 
+export function AdminRoute() {
+  const { user } = useAuthentication();
+
+  if (user?.role !== "ADMIN") return <Navigate to="/dashboard" replace />;
+
+  return <Outlet />;
+}
+
 function AuthenticationLoadingState() {
   return (
     <main className="auth-check-stage" aria-labelledby="auth-check-title">

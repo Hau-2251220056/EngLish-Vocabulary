@@ -360,14 +360,16 @@ Travel
 Food
 Work
 Technology
-6.2. Dữ liệu dự kiến
+6.2. Topic V1 approved data contract
 TOPIC
 
-- id
-- name
-- description
+- id: UUID
+- name: NOT NULL, maximum 100 characters
+- description: nullable, maximum 500 characters
 - created_at
 - updated_at
+
+`name` is trimmed/validated by the backend and has a PostgreSQL functional unique index on `LOWER(name)` for case-insensitive uniqueness. No additional normalized-name column or database extension is required.
 6.3. Relationship
 
 Topic được tổ chức theo:
@@ -378,15 +380,13 @@ VOCABULARY_SET
    ↓
 VOCABULARY
 
-Một Topic có thể có nhiều Vocabulary Set.
-
-Một Vocabulary Set thuộc về một Topic trong phạm vi hệ thống.
+Topic V1 does not materialize a Vocabulary Set relationship or foreign key. The conceptual Topic → Vocabulary Set relationship remains documented for a future approved Vocabulary Set feature.
 
 6.4. Quy tắc
 Topic hệ thống do Admin quản lý.
 User không tự ý tạo hoặc chỉnh sửa Topic hệ thống.
-Không lưu trực tiếp topic_id trong VOCABULARY ở phiên bản đầu.
-Một Vocabulary có thể xuất hiện trong nhiều Set thuộc các Topic khác nhau.
+Không lưu trực tiếp `topic_id` trong VOCABULARY ở Topic V1.
+Khi một Vocabulary Set relation được phê duyệt, Topic deletion phải RESTRICT/no-cascade. Nullability của future `VOCABULARY_SET.topic_id` remains deferred; Topic V1 must not create the relation, mock data or a relation-state test.
 7. VOCABULARY
 7.1. Mục đích
 
@@ -508,7 +508,7 @@ Do User tạo.
 VOCABULARY_SET
 
 - id
-- topic_id
+- topic_id (future/deferred; nullability not decided)
 - owner_id
 - name
 - description
@@ -516,7 +516,7 @@ VOCABULARY_SET
 - created_at
 - updated_at
 
-topic_id tham chiếu tới TOPIC.
+Khi được phê duyệt trong future Vocabulary Set feature, `topic_id` sẽ tham chiếu tới TOPIC; Topic V1 không materialize field/FK này.
 
 owner_id tham chiếu tới USER.
 

@@ -292,17 +292,21 @@ XP đã có vẫn được giữ nguyên.
 Chỉ thay đổi target.
 11. Topic
 
-Topic dùng để phân loại Vocabulary Set.
+Topic V1 classifies Vocabulary Sets conceptually, but returns and manages Topic metadata only.
 
-Quan hệ:
+Shared Topic representation:
 
-Topic
-   ↓
-Vocabulary Set
-   ↓
-Vocabulary
+```json
+{
+  "id": "UUID string",
+  "name": "Daily Life",
+  "description": "Common vocabulary used in daily life",
+  "created_at": "ISO-8601 timestamp",
+  "updated_at": "ISO-8601 timestamp"
+}
+```
 
-Một Topic có thể có nhiều Vocabulary Set.
+`description` may be `null`.
 
 11.1 Get Topics
 GET /api/topics
@@ -310,26 +314,19 @@ Access
 
 Guest/User.
 
-Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "name": "Daily Life",
-      "description": "Common vocabulary used in daily life"
-    }
-  ]
-}
+Response: `200` with `{ "success": true, "data": Topic[] }`.
+
+Topic V1 returns an unpaginated metadata list. Search/filter is client-side; no server search/filter is added.
+
 11.2 Get Topic Detail
 GET /api/topics/:topicId
 Access
 
 Guest/User.
 
-Response
+`topicId` is a UUID string. Response: `200` with `{ "success": true, "data": Topic }`.
 
-Topic information và các Vocabulary Set thuộc Topic mà requester được phép xem.
+Topic-based Vocabulary Set discovery, Vocabulary Set count and visibility filtering are deferred and are not returned by Topic V1 detail.
 
 11.3 Admin Create Topic
 POST /api/admin/topics
@@ -337,11 +334,21 @@ Access
 
 Admin.
 
+Request: `{ "name": "Daily Life", "description": "Common vocabulary used in daily life" }`.
+
+`name` is required, trimmed, non-empty after trim, maximum 100 characters and unique case-insensitively. `description` is optional and maximum 500 characters.
+
+Success: `201` with `{ "success": true, "data": Topic }`.
+
 11.4 Admin Update Topic
 PATCH /api/admin/topics/:topicId
 Access
 
 Admin.
+
+`topicId` is a UUID string. Omitted editable field remains unchanged. A supplied `name` must be a string and is trimmed, validated and updated; `name: null` is `400 VALIDATION_ERROR`. A supplied string `description` is validated and updated; `description: null` clears it. Empty body or no supported editable field is `400 VALIDATION_ERROR`. No field other than `name` and `description` is editable in V1.
+
+Success: `200` with `{ "success": true, "data": Topic }`.
 
 11.5 Admin Delete Topic
 DELETE /api/admin/topics/:topicId
@@ -349,9 +356,11 @@ Access
 
 Admin.
 
-Deletion behavior đối với Vocabulary Set liên quan phải tuân theo Database/PLAN.
+`topicId` is a UUID string. Success: `204` with no response body.
 
-Không tự ý cascade delete nếu chưa được quyết định.
+Topic V1 has no Vocabulary Set relation and therefore no relation-state deletion check. When an approved future Vocabulary Set relation exists, deletion must be RESTRICT/no-cascade; its response contract and integration test are deferred with that feature.
+
+Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
 
 12. Vocabulary
 

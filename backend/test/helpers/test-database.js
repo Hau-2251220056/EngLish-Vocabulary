@@ -12,12 +12,18 @@ export async function createTestDatabase() {
   return {
     prisma,
     async reset() {
+      await resetTopicData(prisma);
       await resetAuthenticationData(prisma);
     },
     async disconnect() {
       await prisma.$disconnect();
     },
   };
+}
+
+export async function resetTopicData(prisma) {
+  configureTestEnvironment({ requireReset: true });
+  await prisma.tOPIC.deleteMany();
 }
 
 export async function resetAuthenticationData(prisma) {

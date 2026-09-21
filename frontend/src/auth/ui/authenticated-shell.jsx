@@ -1,4 +1,4 @@
-import { BookOpenCheck, LoaderCircle, LogOut, Menu, ShieldCheck, X } from "lucide-react";
+import { BookOpenCheck, LoaderCircle, LogOut, Menu, ShieldCheck, Tags, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuthentication } from "../use-authentication.js";
@@ -60,7 +60,7 @@ export function AuthenticatedShell() {
       {isMobileNavigation && isDrawerOpen ? <button type="button" className="authenticated-drawer-backdrop" aria-label="Đóng điều hướng" onClick={() => closeDrawer()} /> : null}
       <div className="authenticated-layout">
         <aside id="authenticated-sidebar" className={`authenticated-sidebar${drawerIsVisible ? " is-open" : ""}`} aria-label="Điều hướng chính" aria-hidden={isMobileNavigation && !isDrawerOpen} inert={isMobileNavigation && !isDrawerOpen || undefined}>
-          <nav className="authenticated-navigation" aria-label="Khu vực học tập"><NavLink to="/dashboard" end onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookOpenCheck className="size-5" aria-hidden="true" /><span>Dashboard</span></NavLink></nav>
+          <nav className="authenticated-navigation" aria-label="Khu vực học tập"><NavLink to="/dashboard" end onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookOpenCheck className="size-5" aria-hidden="true" /><span>Dashboard</span></NavLink>{user.role === "ADMIN" ? <NavLink to="/admin/topics" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><Tags className="size-5" aria-hidden="true" /><span>Quản lý chủ đề</span></NavLink> : null}</nav>
           <div className="authenticated-account"><div className="min-w-0"><p className="authenticated-account-label">Tài khoản</p><p className="authenticated-display-name" title={displayName}>{displayName}</p></div><button type="button" className="authenticated-logout-button" onClick={handleLogout} disabled={isLoggingOut} aria-busy={isLoggingOut}>{isLoggingOut ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}<span>{isLoggingOut ? "Đang đăng xuất…" : "Đăng xuất"}</span></button>{logoutError ? <p className="authenticated-logout-error" role="alert">{logoutError}</p> : null}</div>
         </aside>
         <main className="authenticated-main"><Outlet /></main>

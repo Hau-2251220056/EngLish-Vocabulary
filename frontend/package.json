@@ -10,6 +10,7 @@
     "test:auth:unit": "node --test test/auth-service.test.js test/auth-store.test.js test/auth-validation.test.js test/vite-config.test.js",
     "test:auth:browser": "playwright test",
     "test:auth:integration": "node --env-file=../backend/.env.test ./node_modules/@playwright/test/cli.js test --config=playwright.integration.config.js",
+    "test:topic:browser": "node --env-file=../backend/.env.test ./node_modules/@playwright/test/cli.js test --config=playwright.topic.config.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -42,3 +42,11 @@ model AUTH_SESSION {
   expires_at               DateTime
   user                     USER     @relation(fields: [user_id], references: [id])
 }
+
+model TOPIC {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}

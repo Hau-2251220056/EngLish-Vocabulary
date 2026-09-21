@@ -357,11 +357,43 @@ Vocabulary Set
   ↓
 Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic Listing	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Management	DONE	✓	✓	✓	✓	✓	✓
+Topic Listing	DONE	✓	✓	✓	✓	✓	✓
 Topic-based Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
 Topic behavior and data rules are defined in the project documentation.
+
+## Topic V1 Metadata, Public Reads and ADMIN Management
+
+Status: DONE
+
+### Description
+
+Topic V1 is complete for the approved isolated Topic metadata model, public Topic list/detail and backend-authorized ADMIN CRUD. Topic-based Vocabulary Set Discovery and the future RESTRICT relation-state requirement remain deferred and are not included in this DONE status.
+
+### Workflow Status
+
+- TASK-019 through TASK-020 and TASK-022 through TASK-023: COMPLETE.
+- TASK-021 backend/database/API/security verification: PASS — 16 Topic tests; Authentication regression 29 passed, 0 failed, 3 approved existing TODOs.
+- TASK-024 frontend/browser verification: PASS — 9 Topic browser tests, 25 Auth browser tests, 7 App Layout tests and 20 frontend unit tests; responsive/accessibility/lint/build gates passed.
+- TASK-025 formal TEST: PASS — 15 applicable acceptance criteria passed; AC-13 remains explicitly deferred; 0 failed.
+- TASK-025 formal REVIEW: APPROVE — no findings or blockers.
+- Dedicated TEST DB fixture cleanup: PASS — 0 Topic fixtures and 0 Topic E2E account fixtures remained.
+- Topic V1 quality gate: PASSED.
+
+### Implemented Boundary
+
+- Isolated five-field `TOPIC` model with UUID identifier, timestamps, nullable description and PostgreSQL functional uniqueness on `LOWER(name)`.
+- Public `GET /api/topics` and `GET /api/topics/:topicId` metadata APIs and explicit public frontend routes.
+- Backend-authorized ADMIN create/update/delete APIs and ADMIN management UI in the existing authenticated App Layout.
+- Client-side Topic search, required safe UI states, responsive behavior and accessible forms/delete confirmation.
+
+### Deferred / Unchanged
+
+- AC-13 remains future Vocabulary Set integration work: no relation/FK, RESTRICT state or relation-state test exists in Topic V1.
+- Topic-based Vocabulary Set Discovery remains `TODO`.
+- No Vocabulary Set model/data/count/mock, Vocabulary direct-topic field, pagination, server-side search, XP, streak, progress or learning behavior was added.
+- Authentication and Authenticated App Layout `DONE` statuses remain unchanged.
 
 4.3 Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
@@ -638,7 +670,7 @@ Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Management	PLANNED	✓	✓	⏳	⏳	⏳	⏳
 Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 

@@ -454,6 +454,22 @@ Copy Set is available only when the vocabulary set is accessible for copying acc
 
 Copied vocabulary sets become private sets owned by the copying user.
 
+9.6 Public Topic Listing and Detail (Topic V1)
+
+Guest and authenticated users can view Topic metadata through public Topic list and detail routes.
+
+Listing elements:
+
+Page title
+Client-side search
+Topic name
+Optional description
+Loading state
+Empty state
+Error state
+
+Detail displays Topic metadata only. An empty Topic remains visible. Topic V1 does not display Vocabulary Set cards, Vocabulary Set counts, visibility/access information, learning progress, XP or streak effects.
+
 10. User Screens
 10.1 Dashboard
 
@@ -910,7 +926,8 @@ Display:
 Topic list
 Search
 Topic details
-Vocabulary set count
+
+Topic V1 displays metadata only; real Vocabulary Set count is deferred.
 
 Actions:
 
@@ -920,6 +937,8 @@ Delete
 View
 
 Use confirmation dialogs for destructive operations.
+
+Topic V1 management additionally requires create/edit form validation, loading/empty/error/success states, accessible labelled controls and a delete confirmation with action, consequence, cancel and confirm choices. An ADMIN-only navigation entry is shown only with the implemented management route in the existing authenticated App Layout; frontend route guarding is UX, while backend ADMIN authorization remains authoritative.
 
 11.4 Vocabulary Management
 
