@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://eng-lish-vocabulary-git-feature-auth-hau-2251220056s-projects.vercel.app/api/:path*"
+      "destination": "https://eng-lish-vocabulary-git-dev-hau-2251220056s-projects.vercel.app/api/:path*"
     },
     {
       "source": "/:path*",
