@@ -209,11 +209,11 @@ Route MUST NOT chứa business logic phức tạp.
 
 Ví dụ:
 
-GET    /api/vocabulary
-GET    /api/vocabulary/:id
-POST   /api/vocabulary
-PUT    /api/vocabulary/:id
-DELETE /api/vocabulary/:id
+GET    /api/admin/vocabulary
+GET    /api/admin/vocabulary/:vocabularyId
+POST   /api/admin/vocabulary
+PATCH  /api/admin/vocabulary/:vocabularyId
+DELETE /api/admin/vocabulary/:vocabularyId
 3.2. Middleware Layer
 
 Middleware xử lý các concern dùng chung.
@@ -474,7 +474,7 @@ Ví dụ:
 
 /api/auth
 /api/users
-/api/vocabulary
+/api/admin/vocabulary
 /api/vocabulary-sets
 /api/learning
 /api/quiz

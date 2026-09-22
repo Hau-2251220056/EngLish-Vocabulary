@@ -11,6 +11,7 @@ import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
 import { PublicTopicLayout } from "./topics/public-topic-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
 import { TopicListPage } from "./topics/topic-list-page.jsx";
+import { AdminVocabularyRoute } from "./vocabulary/admin-vocabulary-route.jsx";
 
 export function AppRouter() {
   return (
@@ -32,6 +33,7 @@ export function AppRouter() {
             <Route path="/dashboard" element={<DashboardPlaceholder />} />
             <Route element={<AdminRoute />}>
               <Route path="/admin/topics" element={<AdminTopicPage />} />
+              <Route path="/admin/vocabulary" element={<AdminVocabularyRoute />} />
             </Route>
           </Route>
         </Route>

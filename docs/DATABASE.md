@@ -387,111 +387,52 @@ Topic hệ thống do Admin quản lý.
 User không tự ý tạo hoặc chỉnh sửa Topic hệ thống.
 Không lưu trực tiếp `topic_id` trong VOCABULARY ở Topic V1.
 Khi một Vocabulary Set relation được phê duyệt, Topic deletion phải RESTRICT/no-cascade. Nullability của future `VOCABULARY_SET.topic_id` remains deferred; Topic V1 must not create the relation, mock data or a relation-state test.
-7. VOCABULARY
-7.1. Mục đích
+7. Vocabulary V1 Approved Data Contract
 
-Lưu thông tin cơ bản của một từ tiếng Anh.
+Vocabulary V1 is an ADMIN-managed aggregate only. It materializes:
 
-Ví dụ:
-
-work
-dessert
-book
-7.2. Dữ liệu dự kiến
+```text
 VOCABULARY
+  -> VOCABULARY_MEANING
+      -> VOCABULARY_EXAMPLE
+```
 
-- id
-- word
-- phonetic
-- pronunciation_url
-- difficulty_level
-- created_at
-- updated_at
-7.3. Giải thích
-word
+`VOCABULARY.id`, `VOCABULARY_MEANING.id` and `VOCABULARY_EXAMPLE.id` are UUID primary keys. There is no direct Topic relationship and no Vocabulary Set/Set Item relation in V1.
 
-Từ tiếng Anh.
+### 7.1 VOCABULARY
 
-Ví dụ:
+- `word`: required, trimmed, non-empty `VARCHAR(100)`; display casing is preserved.
+- `phonetic`: optional `VARCHAR(100)`.
+- `pronunciation_url`: optional `VARCHAR(2048)` stored as model-pronunciation metadata only.
+- `created_at`, `updated_at`.
 
-work
-phonetic
+The migration must create a PostgreSQL functional unique index on `LOWER(word)`. No normalized-word column, `difficulty_level`, CEFR field, part of speech or direct Topic foreign key belongs on `VOCABULARY`.
 
-Phiên âm của từ.
+### 7.2 VOCABULARY_MEANING
 
-Ví dụ:
+- `vocabulary_id`: required UUID foreign key to `VOCABULARY.id`.
+- `part_of_speech`: required trimmed non-empty `VARCHAR(50)` free-form string.
+- `meaning_vi`: required trimmed non-empty `VARCHAR(500)`.
+- `context`: optional `VARCHAR(500)`.
+- `cefr_level`: nullable string/text, restricted by an explicit PostgreSQL `CHECK` to `A1`, `A2`, `B1`, `B2`, `C1`, `C2` or `NULL`.
+- `created_at`, `updated_at`.
 
-/wɜːrk/
-pronunciation_url
+V1 must not introduce a PostgreSQL or Prisma CEFR enum. CEFR belongs only to Meaning.
 
-Đường dẫn tới audio phát âm mẫu nếu hệ thống sử dụng file audio bên ngoài.
+### 7.3 VOCABULARY_EXAMPLE
 
-difficulty_level
+- `meaning_id`: required UUID foreign key to `VOCABULARY_MEANING.id`.
+- `example_en`: required trimmed non-empty `VARCHAR(1000)`.
+- `example_vi`: optional `VARCHAR(1000)`.
+- `created_at`.
 
-Mức độ khó của từ.
+`VOCABULARY 1:N VOCABULARY_MEANING` and `VOCABULARY_MEANING 1:N VOCABULARY_EXAMPLE`. Every Vocabulary has one or more Meanings; each Meaning has zero or more Examples. An Example belongs to Meaning, never directly to Vocabulary.
 
-Có thể sử dụng:
+### 7.4 Aggregate Integrity and Deletion
 
-BEGINNER
-INTERMEDIATE
-ADVANCED
+Vocabulary is the V1 aggregate root. Create and nested update writes are atomic. A supplied Meaning collection is complete replacement data; stable child IDs must belong to the addressed aggregate, and omission from a supplied replacement collection intentionally deletes the omitted owned Meaning/Example.
 
-part_of_speech không được lưu trực tiếp trong VOCABULARY vì một từ có thể có nhiều Meaning và mỗi Meaning có thể có Part of Speech khác nhau.
-
-8. VOCABULARY_MEANING
-8.1. Mục đích
-
-Một từ tiếng Anh có thể có nhiều nghĩa.
-
-Ví dụ:
-
-book
-
-có thể là:
-
-quyển sách
-đặt trước
-
-Do đó không nên lưu duy nhất một trường meaning trong VOCABULARY.
-
-8.2. Dữ liệu dự kiến
-VOCABULARY_MEANING
-
-- id
-- vocabulary_id
-- part_of_speech
-- meaning_vi
-- context
-- created_at
-- updated_at
-8.3. Relationship
-VOCABULARY 1 ─── N VOCABULARY_MEANING
-
-Một Vocabulary có thể có nhiều Meaning.
-
-Một Meaning chỉ thuộc về một Vocabulary.
-
-9. VOCABULARY_EXAMPLE
-9.1. Mục đích
-
-Lưu các câu ví dụ giúp người học hiểu cách sử dụng từ trong ngữ cảnh.
-
-9.2. Dữ liệu dự kiến
-VOCABULARY_EXAMPLE
-
-- id
-- meaning_id
-- example_en
-- example_vi
-- created_at
-9.3. Relationship
-VOCABULARY
-    │
-    └── VOCABULARY_MEANING
-            │
-            └── VOCABULARY_EXAMPLE
-
-Một Meaning có thể có nhiều Example.
+Database cascade deletion is permitted only for owned Meaning/Example children when their Vocabulary aggregate is deleted. No external Vocabulary reference exists in V1. Any future Vocabulary Set, progress, quiz or other external reference must define its own approved foreign-key and delete policy.
 
 10. VOCABULARY_SET
 10.1. Mục đích
@@ -1261,12 +1202,7 @@ Nếu Topic được tìm kiếm thường xuyên.
 
 VOCABULARY
 
-Có thể index:
-
-word
-difficulty_level
-
-Nếu word được tìm kiếm thường xuyên, word nên có unique/index phù hợp theo business rule.
+`UNIQUE INDEX` on `LOWER(word)` is required by Vocabulary V1 for case-insensitive uniqueness. No `difficulty_level` index exists in V1.
 
 VOCABULARY_MEANING
 vocabulary_id

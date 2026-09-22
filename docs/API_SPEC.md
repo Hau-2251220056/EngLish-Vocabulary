@@ -66,7 +66,7 @@ API base path:
 Ví dụ:
 
 /api/auth/login
-/api/vocabulary
+/api/admin/vocabulary
 /api/vocabulary-sets
 
 API sử dụng JSON cho request/response nếu endpoint không quy định khác.
@@ -362,49 +362,27 @@ Topic V1 has no Vocabulary Set relation and therefore no relation-state deletion
 
 Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
 
-12. Vocabulary
+12. Vocabulary V1
 
-Vocabulary bao gồm thông tin từ vựng và các dữ liệu liên quan.
+Vocabulary V1 is ADMIN-only. It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. Every Vocabulary, Meaning and Example identifier is a UUID string.
 
-Một vocabulary có thể có:
+12.1 Aggregate Representation
 
-Word.
-Meaning.
-Part of Speech.
-Example.
-Context.
-Pronunciation information nếu hệ thống lưu trữ.
+A Vocabulary detail returns `{ success: true, data: Vocabulary }`, where `Vocabulary` contains `id`, `word`, nullable `phonetic`, nullable `pronunciation_url`, timestamps and a non-empty `meanings` array. Each Meaning contains its UUID, `part_of_speech`, `meaning_vi`, nullable `context`, nullable Meaning-only `cefr_level`, timestamps and an `examples` array. Each Example is nested under its owning Meaning and contains its UUID, `example_en`, nullable `example_vi` and `created_at`.
 
-Một từ có thể có nhiều meanings.
+12.2 ADMIN Vocabulary Routes
 
-12.1 Get Vocabulary
-GET /api/vocabulary/:vocabularyId
-Access
+| Method / path | Success | Requirement |
+|---|---:|---|
+| `GET /api/admin/vocabulary` | `200` | Unpaginated ADMIN Vocabulary summaries; no server search/filter. |
+| `GET /api/admin/vocabulary/:vocabularyId` | `200` | Complete nested aggregate. |
+| `POST /api/admin/vocabulary` | `201` | Create one complete aggregate atomically with one or more Meanings. |
+| `PATCH /api/admin/vocabulary/:vocabularyId` | `200` | Update approved top-level fields and optional complete-replacement `meanings` collection atomically. |
+| `DELETE /api/admin/vocabulary/:vocabularyId` | `204` | Delete the aggregate and its owned Meanings/Examples; no body. |
 
-Guest/User nếu vocabulary thuộc resource mà requester được phép xem.
+All routes require existing backend authentication and `ADMIN` authorization. `PATCH` permits only `word`, `phonetic`, `pronunciation_url` and `meanings`; omitted top-level fields are unchanged. When `meanings` is supplied, it is the complete desired collection; each retained Meaning supplies its complete desired Examples. Stable IDs must be owned by the addressed aggregate, and omission from supplied replacement data intentionally deletes owned children. No granular Meaning or Example route exists.
 
-Response
-{
-  "success": true,
-  "data": {
-    "id": 1,
-    "word": "work",
-    "meanings": [
-      {
-        "id": 1,
-        "meaning_vi": "công việc",
-        "part_of_speech": "noun",
-        "context": "daily life"
-      }
-    ],
-    "examples": [
-      {
-        "id": 1,
-        "sentence": "I go to work every day."
-      }
-    ]
-  }
-}
+Known errors use `{ success: false, error: { code, message } }`: `400 VALIDATION_ERROR`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_WORD_ALREADY_EXISTS`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
 13. Vocabulary Set
 
 Vocabulary Set là đơn vị nội dung chính để User học.
@@ -1416,32 +1394,8 @@ Hoặc disable mechanism tương đương nếu được quyết định trong a
 Behavior phải tuân Database/PLAN.
 
 54. Admin - Vocabulary
-54.1 Create Vocabulary
-POST /api/admin/vocabulary
-Access
 
-Admin.
-
-Có thể bao gồm:
-
-Word.
-Meaning.
-Part of Speech.
-Example.
-Context.
-54.2 Update Vocabulary
-PATCH /api/admin/vocabulary/:vocabularyId
-Access
-
-Admin.
-
-54.3 Delete Vocabulary
-DELETE /api/admin/vocabulary/:vocabularyId
-Access
-
-Admin.
-
-Deletion behavior với các Set/Progress liên quan phải tuân Database/PLAN.
+Vocabulary V1 ADMIN routes and aggregate semantics are defined in section 12. There is no public Vocabulary read, granular child endpoint, Vocabulary Set relation or external-reference delete policy in V1.
 
 55. Admin - Vocabulary Sets
 55.1 Create System Set
@@ -1798,8 +1752,8 @@ POST   /api/admin/topics
 PATCH  /api/admin/topics/:topicId
 DELETE /api/admin/topics/:topicId
 Vocabulary
-GET    /api/vocabulary/:vocabularyId
-
+GET    /api/admin/vocabulary
+GET    /api/admin/vocabulary/:vocabularyId
 POST   /api/admin/vocabulary
 PATCH  /api/admin/vocabulary/:vocabularyId
 DELETE /api/admin/vocabulary/:vocabularyId

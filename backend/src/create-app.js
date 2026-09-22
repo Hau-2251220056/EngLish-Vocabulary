@@ -4,18 +4,22 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import { createAuthenticationController } from "./controllers/auth-controller.js";
 import { createTopicController } from "./controllers/topic-controller.js";
+import { createVocabularyController } from "./controllers/vocabulary-controller.js";
 import { createAuthenticationMiddleware } from "./middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "./middleware/role-authorization-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
 import { createTopicRepository } from "./repositories/topic-repository.js";
 import { createUserRepository } from "./repositories/user-repository.js";
+import { createVocabularyRepository } from "./repositories/vocabulary-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import {
   createAdminTopicRouter,
   createPublicTopicRouter,
 } from "./routes/topic-routes.js";
+import { createAdminVocabularyRouter } from "./routes/vocabulary-routes.js";
 import { createAuthenticationService } from "./services/authentication-service.js";
 import { createTopicService } from "./services/topic-service.js";
+import { createVocabularyService } from "./services/vocabulary-service.js";
 import * as passwordSecurity from "./utils/password-security.js";
 
 export function createApp({ prisma }) {
@@ -52,6 +56,14 @@ export function createApp({ prisma }) {
     authenticationMiddleware,
     adminAuthorizationMiddleware,
   });
+  const vocabularyRepository = createVocabularyRepository(prisma);
+  const vocabularyService = createVocabularyService({ vocabularyRepository });
+  const vocabularyController = createVocabularyController({ vocabularyService });
+  const adminVocabularyRouter = createAdminVocabularyRouter({
+    vocabularyController,
+    authenticationMiddleware,
+    adminAuthorizationMiddleware,
+  });
   const app = express();
 
   app.use(express.json({ strict: false }));
@@ -59,6 +71,7 @@ export function createApp({ prisma }) {
   app.use("/api/auth", authRouter);
   app.use("/api/topics", publicTopicRouter);
   app.use("/api/admin/topics", adminTopicRouter);
+  app.use("/api/admin/vocabulary", adminVocabularyRouter);
 
   app.get("/", (req, res) => {
     res.status(200).json({

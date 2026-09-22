@@ -50,3 +50,35 @@ model TOPIC {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 }
+
+model VOCABULARY {
+  id                String               @id @default(uuid()) @db.Uuid
+  word              String               @db.VarChar(100)
+  phonetic          String?              @db.VarChar(100)
+  pronunciation_url String?              @db.VarChar(2048)
+  created_at        DateTime             @default(now())
+  updated_at        DateTime             @updatedAt
+  meanings          VOCABULARY_MEANING[]
+}
+
+model VOCABULARY_MEANING {
+  id              String                 @id @default(uuid()) @db.Uuid
+  vocabulary_id   String                 @db.Uuid
+  part_of_speech  String                 @db.VarChar(50)
+  meaning_vi      String                 @db.VarChar(500)
+  context         String?                @db.VarChar(500)
+  cefr_level      String?                @db.Text
+  created_at      DateTime               @default(now())
+  updated_at      DateTime               @updatedAt
+  vocabulary      VOCABULARY             @relation(fields: [vocabulary_id], references: [id], onDelete: Cascade)
+  examples        VOCABULARY_EXAMPLE[]
+}
+
+model VOCABULARY_EXAMPLE {
+  id          String              @id @default(uuid()) @db.Uuid
+  meaning_id  String              @db.Uuid
+  example_en  String              @db.VarChar(1000)
+  example_vi  String?             @db.VarChar(1000)
+  created_at  DateTime            @default(now())
+  meaning     VOCABULARY_MEANING  @relation(fields: [meaning_id], references: [id], onDelete: Cascade)
+}

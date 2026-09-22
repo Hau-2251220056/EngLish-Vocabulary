@@ -79,7 +79,7 @@ test("real USER flow traverses Vite, Express, Prisma and the test database", asy
   await page.locator('form button[type="submit"]').click();
   const loginResponse = await loginResponsePromise;
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByText(userDisplayName)).toBeVisible();
+  await expect(page.getByRole("banner").getByText(userDisplayName)).toBeVisible();
 
   const setCookie = (await loginResponse.headersArray()).find(
     ({ name }) => name.toLowerCase() === "set-cookie",
@@ -126,7 +126,7 @@ test("real USER flow traverses Vite, Express, Prisma and the test database", asy
   await page.reload();
   const meResponse = await meResponsePromise;
   expect(meResponse.status()).toBe(200);
-  await expect(page.getByText(userDisplayName)).toBeVisible();
+  await expect(page.getByRole("banner").getByText(userDisplayName)).toBeVisible();
 
   await verifyCrossSitePostDoesNotRevoke(page, registeredUser.id);
 
@@ -168,7 +168,7 @@ test("real ADMIN Login and me identity remain server-derived", async ({ page }) 
   await page.locator("#login-password").fill(password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByText(adminDisplayName)).toBeVisible();
+  await expect(page.getByRole("banner").getByText(adminDisplayName)).toBeVisible();
   await expect(page.locator(".authenticated-admin-indicator")).toBeVisible();
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 

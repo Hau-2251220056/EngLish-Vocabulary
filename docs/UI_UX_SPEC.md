@@ -942,24 +942,18 @@ Topic V1 management additionally requires create/edit form validation, loading/e
 
 11.4 Vocabulary Management
 
-Display:
+Vocabulary V1 is an ADMIN-only `/admin/vocabulary` route inside the existing authenticated App Layout. It has no Guest/USER Vocabulary catalog, public route or USER sidebar entry.
 
-Vocabulary list
-Search
-Filter
-Vocabulary details
-Create vocabulary
-Edit vocabulary
-Delete vocabulary
+Display and actions:
 
-Vocabulary information may include:
+- Unpaginated Vocabulary summary list with client-side word search; no server-side filter or pagination.
+- Complete Vocabulary detail with nested Meanings and each Meaning's Examples.
+- Create, edit, view and delete a Vocabulary aggregate.
+- Optional phonetic/pronunciation URL metadata, one-or-more Meaning editors and zero-or-more Example editors per Meaning.
 
-Word
-Meaning
-Part of speech
-Example
-Context
-Pronunciation
+Before edit, the UI loads the complete aggregate rather than editing a list summary. A save containing `meanings` sends the complete desired Meaning collection and the complete desired Example collection for every retained Meaning; visible remove controls intentionally omit owned children from replacement data. The UI prevents removing the final Meaning.
+
+Provide accessible loading, empty, validation, duplicate-word, not-found, authorization and safe server-error states. Delete confirmation identifies the Vocabulary and owned Meanings/Examples, provides cancel/confirm controls, prevents duplicate submission and restores focus appropriately. Existing dashboard, logout, mobile drawer, Topic routes and Topic management remain unchanged.
 11.5 Vocabulary Set Management
 
 Admin can manage system vocabulary sets.

@@ -397,15 +397,37 @@ Topic V1 is complete for the approved isolated Topic metadata model, public Topi
 
 4.3 Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Multiple Meanings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Context / Example	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Search	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Pronunciation Information	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Multiple Meanings	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Context / Example	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Search	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Pronunciation Information	DONE	✓	✓	✓	✓	✓	✓
 
 Vocabulary may have multiple meanings depending on context.
 
 Vocabulary pronunciation information may include model pronunciation information such as phonetic information and pronunciation audio.
+
+## Vocabulary V1 ADMIN Catalog
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-026 through TASK-032: COMPLETE.
+- TASK-033 formal TEST: PASS.
+- TASK-033 formal REVIEW: APPROVE.
+- TASK-033 closure: HUMAN AUTHORIZED; no blocker remains.
+- Dedicated TEST DB fixture cleanup, diff, secret and scope checks: PASS.
+
+### Implemented Boundary
+
+- ADMIN-only `VOCABULARY → VOCABULARY_MEANING → VOCABULARY_EXAMPLE` aggregate with UUID identifiers, Meaning-only nullable CEFR metadata, owned-child deletion and case-insensitive word uniqueness.
+- ADMIN aggregate list/detail/create/PATCH/delete API and management UI with client-side search, complete-aggregate editing, nested Meaning/Example replacement, accessible states and delete confirmation.
+
+### Deferred / Unchanged
+
+- No public or USER Vocabulary catalog, direct Topic relation, Vocabulary Set/Set Item, learning, SRS, Quiz, XP/Streak, pronunciation practice or AI functionality was introduced.
+- Future external Vocabulary-reference deletion policy remains deferred to the feature that materializes such a relation.
 
 4.4 Vocabulary Sets
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
@@ -668,7 +690,7 @@ They require explicit scope approval before implementation.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Management	DONE	✓	✓	⏳	⏳	⏳	⏳
 Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳

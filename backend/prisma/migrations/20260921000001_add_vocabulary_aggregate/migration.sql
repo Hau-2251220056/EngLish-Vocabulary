@@ -1,0 +1,46 @@
+-- CreateTable
+CREATE TABLE "VOCABULARY" (
+    "id" UUID NOT NULL,
+    "word" VARCHAR(100) NOT NULL,
+    "phonetic" VARCHAR(100),
+    "pronunciation_url" VARCHAR(2048),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VOCABULARY_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VOCABULARY_MEANING" (
+    "id" UUID NOT NULL,
+    "vocabulary_id" UUID NOT NULL,
+    "part_of_speech" VARCHAR(50) NOT NULL,
+    "meaning_vi" VARCHAR(500) NOT NULL,
+    "context" VARCHAR(500),
+    "cefr_level" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VOCABULARY_MEANING_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "VOCABULARY_MEANING_cefr_level_check" CHECK ("cefr_level" IS NULL OR "cefr_level" IN ('A1', 'A2', 'B1', 'B2', 'C1', 'C2'))
+);
+
+-- CreateTable
+CREATE TABLE "VOCABULARY_EXAMPLE" (
+    "id" UUID NOT NULL,
+    "meaning_id" UUID NOT NULL,
+    "example_en" VARCHAR(1000) NOT NULL,
+    "example_vi" VARCHAR(1000),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "VOCABULARY_EXAMPLE_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VOCABULARY_word_lower_key" ON "VOCABULARY" (LOWER("word"));
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_MEANING" ADD CONSTRAINT "VOCABULARY_MEANING_vocabulary_id_fkey" FOREIGN KEY ("vocabulary_id") REFERENCES "VOCABULARY"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_EXAMPLE" ADD CONSTRAINT "VOCABULARY_EXAMPLE_meaning_id_fkey" FOREIGN KEY ("meaning_id") REFERENCES "VOCABULARY_MEANING"("id") ON DELETE CASCADE ON UPDATE CASCADE;
