@@ -380,13 +380,13 @@ VOCABULARY_SET
    ↓
 VOCABULARY
 
-Topic V1 does not materialize a Vocabulary Set relationship or foreign key. The conceptual Topic → Vocabulary Set relationship remains documented for a future approved Vocabulary Set feature.
+Topic V1 itself did not materialize a Vocabulary Set relationship or foreign key. Vocabulary Set V1 is the approved feature that materializes the required `TOPIC 1:N VOCABULARY_SET` relationship.
 
 6.4. Quy tắc
 Topic hệ thống do Admin quản lý.
 User không tự ý tạo hoặc chỉnh sửa Topic hệ thống.
 Không lưu trực tiếp `topic_id` trong VOCABULARY ở Topic V1.
-Khi một Vocabulary Set relation được phê duyệt, Topic deletion phải RESTRICT/no-cascade. Nullability của future `VOCABULARY_SET.topic_id` remains deferred; Topic V1 must not create the relation, mock data or a relation-state test.
+Vocabulary Set V1 requires non-null `VOCABULARY_SET.topic_id` and `ON DELETE RESTRICT` / no cascade. Topic V1 must not be retroactively described as having created that relation, mock data or a relation-state test.
 7. Vocabulary V1 Approved Data Contract
 
 Vocabulary V1 is an ADMIN-managed aggregate only. It materializes:
@@ -432,9 +432,9 @@ V1 must not introduce a PostgreSQL or Prisma CEFR enum. CEFR belongs only to Mea
 
 Vocabulary is the V1 aggregate root. Create and nested update writes are atomic. A supplied Meaning collection is complete replacement data; stable child IDs must belong to the addressed aggregate, and omission from a supplied replacement collection intentionally deletes the omitted owned Meaning/Example.
 
-Database cascade deletion is permitted only for owned Meaning/Example children when their Vocabulary aggregate is deleted. No external Vocabulary reference exists in V1. Any future Vocabulary Set, progress, quiz or other external reference must define its own approved foreign-key and delete policy.
+Database cascade deletion is permitted only for owned Meaning/Example children when their Vocabulary aggregate is deleted. Vocabulary Set V1 materializes the first external Vocabulary reference: `VOCABULARY_SET_ITEM.vocabulary_id` uses `ON DELETE RESTRICT` / no cascade. Any later progress, quiz or other external reference must define its own approved foreign-key and delete policy.
 
-10. VOCABULARY_SET
+10. VOCABULARY_SET — Legacy Draft (superseded for V1)
 10.1. Mục đích
 
 Vocabulary Set là một tập hợp các từ vựng được sử dụng để tổ chức nội dung học tập.
@@ -545,7 +545,7 @@ Không có quyền xóa Set gốc.
 
 Việc chỉnh sửa bản sao không ảnh hưởng tới Set gốc.
 
-11. VOCABULARY_SET_ITEM
+11. VOCABULARY_SET_ITEM — Legacy Draft (superseded for V1)
 11.1. Mục đích
 
 Bảng trung gian kết nối Vocabulary và Vocabulary Set.
@@ -562,6 +562,42 @@ VOCABULARY_SET_ITEM
 Không cho phép một Vocabulary xuất hiện nhiều lần trong cùng một Set.
 
 UNIQUE(vocabulary_set_id, vocabulary_id)
+### 11.4 Vocabulary Set V1 Approved Data Contract
+
+Vocabulary Set V1 materializes only this Set aggregate:
+
+```text
+TOPIC --RESTRICT--> VOCABULARY_SET --CASCADE--> VOCABULARY_SET_ITEM --RESTRICT--> VOCABULARY
+```
+
+#### VOCABULARY_SET
+
+- `id`: UUID primary key.
+- `topic_id`: required UUID foreign key to `TOPIC.id`.
+- `owner_id`: required UUID foreign key to `USER.id`; derived by Backend, never trusted from client input.
+- `name`: required trimmed non-empty `VARCHAR(100)`.
+- `description`: nullable `VARCHAR(500)`.
+- `is_public`: required boolean. ADMIN-created System Sets are `true`; USER-created and copied User Sets are `false`.
+- `created_at`, `updated_at`.
+
+There is no Set-type enum. The service enforces that System Sets are ADMIN-created/public and User Sets are USER-owned/private. Every Set belongs to exactly one Topic. `TOPIC -> VOCABULARY_SET` must use `ON DELETE RESTRICT` / no cascade.
+
+#### VOCABULARY_SET_ITEM
+
+- `id`: UUID primary key.
+- `vocabulary_set_id`: required UUID foreign key to `VOCABULARY_SET.id`.
+- `vocabulary_id`: required UUID foreign key to `VOCABULARY.id`.
+- `position`: required positive integer, persisted as contiguous one-based order within a Set.
+- `created_at`.
+
+The migration must enforce `UNIQUE(vocabulary_set_id, vocabulary_id)`, `UNIQUE(vocabulary_set_id, position)` and `CHECK (position > 0)`. Set deletion cascades only to its owned Items. Vocabulary deletion is `RESTRICT` while any Item references it. An Item references Vocabulary only, never a Meaning or Example; CEFR remains only on `VOCABULARY_MEANING`.
+
+#### V1 Aggregate, Copy and Deferred Boundaries
+
+System Sets require one-or-more Items. Private User Sets may be empty drafts. A supplied aggregate `items` collection is the complete desired ordered collection; Backend validates each Vocabulary ID and atomically replaces/reorders owned Items. There is no granular Set Item API.
+
+Copying a System Set creates an independent private User Set with fresh Set/Item IDs, copied Topic/name/description and preserved Vocabulary order. No source-link, synchronization, Community sharing, public User Set, Flashcard, Learning, Progress, SRS, Quiz, XP, Streak, Pronunciation Practice or AI behavior is materialized in V1.
+
 12. LEARNING_PROGRESS
 12.1. Mục đích
 

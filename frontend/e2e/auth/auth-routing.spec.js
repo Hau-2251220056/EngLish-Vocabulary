@@ -44,7 +44,7 @@ test("authenticated Guest routes redirect to Dashboard", async ({ page }) => {
   }
 });
 
-test("USER receives only Dashboard navigation and no Admin indicator", async ({ page }) => {
+test("USER receives USER navigation and no Admin indicator", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
   });
@@ -53,9 +53,10 @@ test("USER receives only Dashboard navigation and no Admin indicator", async ({ 
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.getByRole("navigation").getByRole("link");
-  await expect(links).toHaveCount(1);
-  await expect(links).toHaveAttribute("href", "/dashboard");
-  await expect(links).toHaveAttribute("aria-current", "page");
+  await expect(links).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 });
 

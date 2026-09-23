@@ -326,7 +326,7 @@ Guest/User.
 
 `topicId` is a UUID string. Response: `200` with `{ "success": true, "data": Topic }`.
 
-Topic-based Vocabulary Set discovery, Vocabulary Set count and visibility filtering are deferred and are not returned by Topic V1 detail.
+Topic V1 detail remains metadata-only. Vocabulary Set V1 adds discovery through dedicated Set routes; Topic responses do not embed Set counts, visibility data or Set collections.
 
 11.3 Admin Create Topic
 POST /api/admin/topics
@@ -358,13 +358,13 @@ Admin.
 
 `topicId` is a UUID string. Success: `204` with no response body.
 
-Topic V1 has no Vocabulary Set relation and therefore no relation-state deletion check. When an approved future Vocabulary Set relation exists, deletion must be RESTRICT/no-cascade; its response contract and integration test are deferred with that feature.
+Topic V1 itself created no Vocabulary Set relation. Vocabulary Set V1 materializes `ON DELETE RESTRICT` / no cascade; an ADMIN Topic delete blocked by a Set must use the finalized relation error contract when that feature is implemented.
 
 Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
 
 12. Vocabulary V1
 
-Vocabulary V1 is ADMIN-only. It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. Every Vocabulary, Meaning and Example identifier is a UUID string.
+Vocabulary V1 is ADMIN-only. It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. Vocabulary Set V1 adds only an authenticated, bounded Set-editor picker with minimum selection metadata; it is not a catalog/detail exception. Every Vocabulary, Meaning and Example identifier is a UUID string.
 
 12.1 Aggregate Representation
 
@@ -383,7 +383,7 @@ A Vocabulary detail returns `{ success: true, data: Vocabulary }`, where `Vocabu
 All routes require existing backend authentication and `ADMIN` authorization. `PATCH` permits only `word`, `phonetic`, `pronunciation_url` and `meanings`; omitted top-level fields are unchanged. When `meanings` is supplied, it is the complete desired collection; each retained Meaning supplies its complete desired Examples. Stable IDs must be owned by the addressed aggregate, and omission from supplied replacement data intentionally deletes owned children. No granular Meaning or Example route exists.
 
 Known errors use `{ success: false, error: { code, message } }`: `400 VALIDATION_ERROR`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_WORD_ALREADY_EXISTS`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
-13. Vocabulary Set
+13. Vocabulary Set — Legacy Draft (superseded for V1)
 
 Vocabulary Set là đơn vị nội dung chính để User học.
 
@@ -489,7 +489,7 @@ User là owner.
 Vocabulary tồn tại.
 Vocabulary chưa nằm trong Set.
 16.2 Remove Vocabulary from Set
-DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
+DELETE /api/vocabulary-sets/:setId/items/:vocabularyId — legacy, not a Vocabulary Set V1 endpoint
 Access
 
 Set owner.
@@ -523,6 +523,50 @@ Set mới không phụ thuộc ownership của Set cũ.
 Thay đổi Set mới không làm thay đổi Set gốc.
 Không được mutate Set gốc.
 Operation phải đảm bảo transaction integrity.
+### 17.1 Vocabulary Set V1 API Contract
+
+All Vocabulary Set identifiers are UUID strings. Success responses use `{ "success": true, "data": ... }`, except `204`; errors use `{ "success": false, "error": { "code": "...", "message": "safe message" } }`. Sections 13–17 above are legacy generic drafts and do not define V1 endpoints.
+
+#### Public System Set Routes
+
+| Method / path | Access | Success | Contract |
+|---|---|---:|---|
+| `GET /api/topics/:topicId/vocabulary-sets` | Guest/User/ADMIN | `200` | Unpaginated public System Set summaries for one Topic. |
+| `GET /api/vocabulary-sets/:setId` | Guest/User/ADMIN | `200` | Complete public System Set with ordered minimum Item metadata. |
+
+Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `word`, nullable `phonetic`, `position` and `created_at`. It returns no private User Set data, Vocabulary Meaning/Example/CEFR aggregate, learning state or access to a Vocabulary catalog.
+
+#### Scoped Authenticated Vocabulary Picker
+
+`GET /api/vocabulary-set-picker?query=<word>` requires an authenticated USER or ADMIN and a non-empty trimmed query of at most 100 characters. It returns a bounded array of `{ id, word, phonetic }` selection records only. It is used only inside a Vocabulary Set editor; there is no standalone USER Vocabulary route, unfiltered list, full Vocabulary detail, Meaning or Example response. Saving Set Items still validates every submitted Vocabulary ID at the database boundary.
+
+#### USER Private Set Routes
+
+| Method / path | Access | Success |
+|---|---|---:|
+| `GET /api/my/vocabulary-sets` | USER | `200` |
+| `POST /api/my/vocabulary-sets` | USER | `201` |
+| `GET /api/my/vocabulary-sets/:setId` | owner USER | `200` |
+| `PATCH /api/my/vocabulary-sets/:setId` | owner USER | `200` |
+| `DELETE /api/my/vocabulary-sets/:setId` | owner USER | `204` |
+| `POST /api/vocabulary-sets/:systemSetId/copy` | USER | `201` |
+
+USER create/update accepts only `topic_id`, `name`, optional `description` and optional complete `items` collection. `owner_id` and `is_public` are server-controlled. A User Set remains private; inaccessible/non-owned private Sets return not found. User drafts may be empty. Copy accepts an accessible System Set only and creates an independent private aggregate with fresh IDs and preserved Item order.
+
+#### ADMIN System Set Routes
+
+| Method / path | Access | Success |
+|---|---|---:|
+| `GET /api/admin/vocabulary-sets` | ADMIN | `200` |
+| `POST /api/admin/vocabulary-sets` | ADMIN | `201` |
+| `GET /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
+| `PATCH /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
+| `DELETE /api/admin/vocabulary-sets/:setId` | ADMIN | `204` |
+
+ADMIN routes manage System Sets only. Create/PATCH accepts `topic_id`, `name`, optional `description` and optional complete `items`; a System Set must contain one-or-more valid Items. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
+
+Known errors are `400 VALIDATION_ERROR`, `404 VOCABULARY_SET_NOT_FOUND`, `404 TOPIC_NOT_FOUND`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_ALREADY_IN_SET`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+
 18. Community
 
 Community V1 chỉ bao gồm:
@@ -1758,19 +1802,21 @@ POST   /api/admin/vocabulary
 PATCH  /api/admin/vocabulary/:vocabularyId
 DELETE /api/admin/vocabulary/:vocabularyId
 Vocabulary Set
-GET    /api/vocabulary-sets
+GET    /api/topics/:topicId/vocabulary-sets
 GET    /api/vocabulary-sets/:setId
+GET    /api/vocabulary-set-picker?query=<word>
 
-POST   /api/vocabulary-sets
-PATCH  /api/vocabulary-sets/:setId
-DELETE /api/vocabulary-sets/:setId
+GET    /api/my/vocabulary-sets
+POST   /api/my/vocabulary-sets
+GET    /api/my/vocabulary-sets/:setId
+PATCH  /api/my/vocabulary-sets/:setId
+DELETE /api/my/vocabulary-sets/:setId
 
-POST   /api/vocabulary-sets/:setId/items
-DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
+POST   /api/vocabulary-sets/:systemSetId/copy
 
-POST   /api/vocabulary-sets/:setId/copy
-
+GET    /api/admin/vocabulary-sets
 POST   /api/admin/vocabulary-sets
+GET    /api/admin/vocabulary-sets/:setId
 PATCH  /api/admin/vocabulary-sets/:setId
 DELETE /api/admin/vocabulary-sets/:setId
 Learning

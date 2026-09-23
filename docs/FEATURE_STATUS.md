@@ -359,7 +359,7 @@ Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Topic Management	DONE	✓	✓	✓	✓	✓	✓
 Topic Listing	DONE	✓	✓	✓	✓	✓	✓
-Topic-based Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic-based Vocabulary Set Discovery	TESTED	✓	✓	✓	✓	✓	✓
 
 Topic behavior and data rules are defined in the project documentation.
 
@@ -369,7 +369,7 @@ Status: DONE
 
 ### Description
 
-Topic V1 is complete for the approved isolated Topic metadata model, public Topic list/detail and backend-authorized ADMIN CRUD. Topic-based Vocabulary Set Discovery and the future RESTRICT relation-state requirement remain deferred and are not included in this DONE status.
+Topic V1 is complete for the approved isolated Topic metadata model, public Topic list/detail and backend-authorized ADMIN CRUD. Vocabulary Set V1 separately materializes Topic-based Set discovery and the Topic `RESTRICT` relation; neither is retroactively included in Topic V1's DONE evidence.
 
 ### Workflow Status
 
@@ -390,8 +390,8 @@ Topic V1 is complete for the approved isolated Topic metadata model, public Topi
 
 ### Deferred / Unchanged
 
-- AC-13 remains future Vocabulary Set integration work: no relation/FK, RESTRICT state or relation-state test exists in Topic V1.
-- Topic-based Vocabulary Set Discovery remains `TODO`.
+- AC-13 was completed separately by Vocabulary Set V1: Topic V1 itself created no relation/FK, RESTRICT state or relation-state test.
+- Topic-based Vocabulary Set Discovery is `TESTED` through the Vocabulary Set V1 workflow.
 - No Vocabulary Set model/data/count/mock, Vocabulary direct-topic field, pagination, server-side search, XP, streak, progress or learning behavior was added.
 - Authentication and Authenticated App Layout `DONE` statuses remain unchanged.
 
@@ -426,19 +426,19 @@ Status: DONE
 
 ### Deferred / Unchanged
 
-- No public or USER Vocabulary catalog, direct Topic relation, Vocabulary Set/Set Item, learning, SRS, Quiz, XP/Streak, pronunciation practice or AI functionality was introduced.
-- Future external Vocabulary-reference deletion policy remains deferred to the feature that materializes such a relation.
+- No public or USER Vocabulary catalog, direct Topic relation, Vocabulary Set/Set Item, learning, SRS, Quiz, XP/Streak, pronunciation practice or AI functionality was introduced by Vocabulary V1.
+- Vocabulary Set V1 separately materializes the first external Vocabulary reference and its `RESTRICT` policy; its scoped picker is editor-only and not a Vocabulary catalog.
 
 4.4 Vocabulary Sets
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-System Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User-Created Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Ownership	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Visibility	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Edit Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Delete Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Copy Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+System Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+User-Created Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Ownership	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Visibility	DONE	✓	✓	✓	✓	✓	✓
+Edit Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Delete Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Copy Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Discovery	DONE	✓	✓	✓	✓	✓	✓
 
 System vocabulary sets are created and managed by Admin.
 
@@ -449,6 +449,36 @@ Users cannot directly change their own vocabulary set to public.
 Users can share their own vocabulary sets through Community.
 
 A copied vocabulary set becomes a new private set owned by the user who copied it.
+
+## Vocabulary Set V1 Closure Preparation
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-034 through TASK-044: COMPLETE.
+- TASK-044 formal TEST: PASS — AC-01 through AC-14 passed.
+- TASK-044 formal REVIEW: APPROVE — no findings or blockers.
+- TASK-044 closure: HUMAN AUTHORIZED; no blocker remains.
+- Dedicated TEST DB fixture cleanup, lint, production build, diff, secret and scope checks: PASS.
+
+### Verified Evidence
+
+- Vocabulary Set database/backend/API/security: 8/8 PASS; Authentication, Topic and Vocabulary backend regressions: 58 PASS with 3 existing approved TODOs.
+- Frontend unit: 24/24 PASS; Auth/App Layout browser: 25/25 PASS.
+- Vocabulary Set browser: public 3/3, USER 2/2 and ADMIN 3/3 PASS.
+- Cross-feature real-stack: Authentication 2/2, Topic 9/9 and Vocabulary 5/5 PASS.
+
+### Implemented Boundary
+
+- Public ADMIN-managed System Sets, private owner-scoped USER Sets, independent System-to-private copy, ordered aggregate Items and Topic-based public discovery.
+- Set Items reference Vocabulary only; complete Item replacement/reordering, reference validation and transactions remain backend-authoritative.
+- The authenticated bounded Vocabulary picker is available only inside Set editors and returns minimal selection metadata.
+
+### Deferred / Unchanged
+
+- No standalone USER Vocabulary catalog, public User Sets, Community sharing, Flashcard, Learning Progress, SRS, Quiz, XP/Streak, pronunciation practice or AI behavior was introduced.
+- Vocabulary Set V1 closure is complete; deferred features remain outside this DONE boundary.
 
 4.5 Learning
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
@@ -691,7 +721,7 @@ Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
-Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Set Management	DONE	✓	✓	✓	✓	✓	✓
 Topic Management	DONE	✓	✓	⏳	⏳	⏳	⏳
 Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳

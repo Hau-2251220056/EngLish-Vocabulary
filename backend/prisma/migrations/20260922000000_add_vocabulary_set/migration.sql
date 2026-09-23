@@ -1,0 +1,53 @@
+-- CreateTable
+CREATE TABLE "VOCABULARY_SET" (
+    "id" UUID NOT NULL,
+    "topic_id" UUID NOT NULL,
+    "owner_id" UUID NOT NULL,
+    "name" VARCHAR(100) NOT NULL,
+    "description" VARCHAR(500),
+    "is_public" BOOLEAN NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VOCABULARY_SET_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VOCABULARY_SET_ITEM" (
+    "id" UUID NOT NULL,
+    "vocabulary_set_id" UUID NOT NULL,
+    "vocabulary_id" UUID NOT NULL,
+    "position" INTEGER NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "VOCABULARY_SET_ITEM_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "VOCABULARY_SET_ITEM_position_positive" CHECK ("position" > 0)
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VOCABULARY_SET_ITEM_vocabulary_set_id_vocabulary_id_key"
+ON "VOCABULARY_SET_ITEM"("vocabulary_set_id", "vocabulary_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VOCABULARY_SET_ITEM_vocabulary_set_id_position_key"
+ON "VOCABULARY_SET_ITEM"("vocabulary_set_id", "position");
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_SET"
+ADD CONSTRAINT "VOCABULARY_SET_topic_id_fkey"
+FOREIGN KEY ("topic_id") REFERENCES "TOPIC"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_SET"
+ADD CONSTRAINT "VOCABULARY_SET_owner_id_fkey"
+FOREIGN KEY ("owner_id") REFERENCES "USER"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_SET_ITEM"
+ADD CONSTRAINT "VOCABULARY_SET_ITEM_vocabulary_set_id_fkey"
+FOREIGN KEY ("vocabulary_set_id") REFERENCES "VOCABULARY_SET"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VOCABULARY_SET_ITEM"
+ADD CONSTRAINT "VOCABULARY_SET_ITEM_vocabulary_id_fkey"
+FOREIGN KEY ("vocabulary_id") REFERENCES "VOCABULARY"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

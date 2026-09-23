@@ -236,6 +236,25 @@ body {
   overflow-wrap: anywhere;
 }
 
+.public-vocabulary-set-card-label,
+.public-vocabulary-set-count {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.public-vocabulary-set-card-label {
+  margin: 0 0 0.75rem;
+  color: #4f46e5;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.public-vocabulary-set-card .public-vocabulary-set-count {
+  display: block;
+  margin: -0.55rem 0 1.1rem;
+}
+
 .public-topic-state {
   display: flex;
   min-height: 12rem;
@@ -299,6 +318,90 @@ body {
   font-weight: 700;
 }
 
+.public-topic-metadata dd a,
+.public-topic-detail-link,
+.public-vocabulary-set-auth-prompt a {
+  color: #4338ca;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.public-topic-detail-link {
+  display: inline-flex;
+  margin-top: 1.5rem;
+}
+
+.public-vocabulary-set-items {
+  margin-top: 2rem;
+}
+
+.public-vocabulary-set-items-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.public-vocabulary-set-items-heading h2,
+.public-vocabulary-set-auth-prompt h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.2rem;
+}
+
+.public-vocabulary-set-items-heading p,
+.public-vocabulary-set-items-empty,
+.public-vocabulary-set-auth-prompt p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.public-vocabulary-set-items ol {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+  padding-left: 1.8rem;
+}
+
+.public-vocabulary-set-items li {
+  padding: 0.8rem 1rem;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.public-vocabulary-set-item-word {
+  font-weight: 800;
+}
+
+.public-vocabulary-set-item-phonetic {
+  margin-left: 0.7rem;
+  color: #64748b;
+}
+
+.public-vocabulary-set-items-empty {
+  margin-top: 1rem;
+}
+
+.public-vocabulary-set-auth-prompt {
+  margin-top: 2rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.85rem;
+  background: #eef2ff;
+  padding: 1rem;
+}
+
+.public-vocabulary-set-auth-prompt p {
+  margin-top: 0.45rem;
+}
+
+.public-vocabulary-set-auth-prompt a {
+  display: inline-flex;
+  margin-top: 0.8rem;
+}
+
 .public-topic-footer {
   border-top: 1px solid #e2e8f0;
   background: #fff;
@@ -319,6 +422,14 @@ body {
   outline-offset: 3px;
 }
 
+.public-topic-metadata dd a:focus-visible,
+.public-topic-detail-link:focus-visible,
+.public-vocabulary-set-auth-prompt a:focus-visible {
+  border-radius: 0.35rem;
+  outline: 3px solid #a5b4fc;
+  outline-offset: 3px;
+}
+
 @media (max-width: 800px) {
   .public-topic-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -334,6 +445,12 @@ body {
   .public-topic-grid,
   .public-topic-metadata {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .public-vocabulary-set-items-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.3rem;
   }
 
   .public-topic-header-link {
@@ -1137,6 +1254,31 @@ input {
 .authenticated-app .authenticated-layout { min-width: 0; min-height: 0; flex: 1; background: transparent; }
 .authenticated-app .authenticated-main { min-height: 0; }
 .authenticated-footer { border-top: 1px solid #e2e8f0; background: #fff; padding: 0.85rem 1.5rem; color: #64748b; font-size: 0.75rem; text-align: center; }
+
+.my-vocabulary-sets-page { width: min(100%, 76rem); margin: 0 auto; padding: 2rem; color: #0f172a; }
+.my-vocabulary-sets-header, .my-vocabulary-sets-toolbar, .my-vocabulary-set-editor-heading, .my-vocabulary-set-detail-heading, .my-vocabulary-set-actions, .my-vocabulary-set-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.my-vocabulary-sets-header { align-items: flex-start; margin-bottom: 1.5rem; }
+.my-vocabulary-sets-header h1, .my-vocabulary-sets-header p, .my-vocabulary-sets-list h2, .my-vocabulary-set-editor h2, .my-vocabulary-set-detail h2 { margin: 0; }
+.my-vocabulary-sets-header > div > p:last-child { margin-top: .5rem; color: #64748b; }
+.my-vocabulary-sets-eyebrow, .my-vocabulary-set-card > p, .my-vocabulary-set-detail-heading p { color: #4f46e5; font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.my-vocabulary-sets-primary { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; border: 0; border-radius: .7rem; background: #4f46e5; padding: .72rem 1rem; color: #fff; font-weight: 800; }
+.my-vocabulary-sets-primary:disabled, .my-vocabulary-set-editor button:disabled, .my-vocabulary-set-detail button:disabled { cursor: not-allowed; opacity: .58; }
+.my-vocabulary-sets-feedback, .my-vocabulary-set-field-error { margin: 0 0 1rem; border-radius: .7rem; padding: .75rem 1rem; }
+.my-vocabulary-sets-feedback.is-error, .my-vocabulary-set-field-error { background: #fef2f2; color: #b91c1c; }
+.my-vocabulary-sets-feedback.is-success { background: #ecfdf5; color: #047857; }
+.my-vocabulary-sets-list, .my-vocabulary-set-editor, .my-vocabulary-set-detail { margin-top: 1.5rem; border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; padding: 1.25rem; box-shadow: 0 8px 20px rgb(15 23 42 / 5%); }
+.my-vocabulary-sets-search { display: flex; min-width: min(100%, 22rem); align-items: center; gap: .5rem; border: 1px solid #cbd5e1; border-radius: .7rem; padding: .55rem .7rem; color: #64748b; }
+.my-vocabulary-sets-search input { width: 100%; border: 0; outline: 0; }
+.my-vocabulary-sets-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; margin: 1.25rem 0 0; padding: 0; list-style: none; }
+.my-vocabulary-set-card { height: 100%; border: 1px solid #e2e8f0; border-radius: .85rem; padding: 1rem; }
+.my-vocabulary-set-card h3 { margin: .35rem 0; font-size: 1.1rem; }.my-vocabulary-set-card > span, .my-vocabulary-set-card small { display: block; color: #64748b; }.my-vocabulary-set-card small { margin-top: .8rem; }.my-vocabulary-set-card a { display: inline-block; margin-top: .9rem; color: #4338ca; font-weight: 800; }
+.my-vocabulary-set-state { display: grid; justify-items: start; gap: .7rem; margin-top: 1.25rem; border: 1px dashed #cbd5e1; border-radius: .8rem; padding: 1.25rem; color: #475569; }.my-vocabulary-set-state h2, .my-vocabulary-set-state p { margin: 0; }
+.my-vocabulary-set-editor form { margin-top: 1rem; }.my-vocabulary-set-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }.my-vocabulary-set-form-grid label, .my-vocabulary-picker label { display: grid; gap: .35rem; color: #334155; font-weight: 700; }.my-vocabulary-set-form-grid input, .my-vocabulary-set-form-grid select, .my-vocabulary-set-form-grid textarea, .my-vocabulary-picker input { width: 100%; border: 1px solid #cbd5e1; border-radius: .55rem; padding: .65rem; color: #0f172a; font: inherit; }.my-vocabulary-set-form-wide { grid-column: 1 / -1; }.my-vocabulary-set-form-grid label span { color: #64748b; font-weight: 400; }
+.my-vocabulary-set-items-editor, .my-vocabulary-picker { margin: 1.25rem 0 0; border: 1px solid #cbd5e1; border-radius: .75rem; padding: 1rem; }.my-vocabulary-set-items-editor legend, .my-vocabulary-picker legend { padding: 0 .35rem; color: #312e81; font-weight: 800; }.my-vocabulary-set-items-editor > p, .my-vocabulary-picker > p { margin-top: 0; color: #64748b; }.my-vocabulary-set-items-editor ol, .my-vocabulary-picker ul { display: grid; gap: .65rem; margin: 1rem 0 0; padding: 0; list-style: none; }.my-vocabulary-set-items-editor li, .my-vocabulary-picker li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-radius: .6rem; background: #f8fafc; padding: .65rem .75rem; }.my-vocabulary-set-items-editor li span { margin-left: .5rem; color: #64748b; }.my-vocabulary-set-item-controls { display: flex; gap: .35rem; }.my-vocabulary-set-item-controls button, .my-vocabulary-picker button, .my-vocabulary-set-actions button, .my-vocabulary-set-form-actions > button:first-child, .my-vocabulary-set-state button, .public-vocabulary-set-auth-prompt button { border: 1px solid #cbd5e1; border-radius: .55rem; background: #fff; padding: .5rem .7rem; color: #334155; font-weight: 700; }.my-vocabulary-set-item-controls button { display: inline-flex; padding: .4rem; }.my-vocabulary-set-item-controls button:last-child, .my-vocabulary-set-actions .is-danger, .my-vocabulary-set-dialog .is-danger { border-color: #fecaca; color: #b91c1c; }.my-vocabulary-picker > div { display: flex; align-items: end; gap: .65rem; }.my-vocabulary-picker > div label { flex: 1; }
+.my-vocabulary-set-form-actions { margin-top: 1.25rem; justify-content: flex-end; }.my-vocabulary-set-detail > p { color: #475569; }.my-vocabulary-set-detail-count { display: flex; align-items: center; gap: .45rem; }.my-vocabulary-set-detail ol { display: grid; gap: .5rem; margin: 1rem 0; padding-left: 1.5rem; }.my-vocabulary-set-detail li span { margin-left: .55rem; color: #64748b; }
+.my-vocabulary-set-dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgb(15 23 42 / 45%); }.my-vocabulary-set-dialog { width: min(100%, 29rem); border-radius: .9rem; background: #fff; padding: 1.25rem; box-shadow: 0 20px 45px rgb(15 23 42 / 30%); }.my-vocabulary-set-dialog h2, .my-vocabulary-set-dialog p { margin-top: 0; }.my-vocabulary-set-dialog > div { display: flex; justify-content: flex-end; gap: .65rem; }
+
+@media (max-width: 700px) { .my-vocabulary-sets-page { padding: 1rem; }.my-vocabulary-sets-header, .my-vocabulary-sets-toolbar, .my-vocabulary-set-editor-heading, .my-vocabulary-set-detail-heading { align-items: stretch; flex-direction: column; }.my-vocabulary-sets-primary { width: 100%; }.my-vocabulary-sets-search { min-width: 0; }.my-vocabulary-set-form-grid { grid-template-columns: 1fr; }.my-vocabulary-set-form-wide { grid-column: auto; }.my-vocabulary-picker > div, .my-vocabulary-set-items-editor li, .my-vocabulary-picker li { align-items: stretch; flex-direction: column; }.my-vocabulary-set-item-controls { justify-content: flex-end; }.my-vocabulary-set-form-actions { flex-direction: column-reverse; }.my-vocabulary-set-form-actions > button { width: 100%; } }
 
 @media (max-width: 900px) {
   .authenticated-app .authenticated-header { padding-inline: 1rem; }

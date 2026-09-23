@@ -84,6 +84,9 @@ function TopicDetailContent({ topicId }) {
               <dd>{formatDate(topic.updated_at)}</dd>
             </div>
           </dl>
+          <Link className="public-topic-detail-link" to={`/topics/${topic.id}/vocabulary-sets`}>
+            Xem bộ từ theo chủ đề
+          </Link>
         </article>
       ) : null}
     </section>

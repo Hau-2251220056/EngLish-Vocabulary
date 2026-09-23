@@ -413,7 +413,9 @@ Confirm Password
 Register button
 Link to Login
 Validation messages
-9.4 Public Vocabulary Sets
+9.4 Public Vocabulary Sets — Legacy Draft (superseded for V1)
+
+The remaining legacy content in sections 9.4–9.5 is retained as future-product context only. The active Vocabulary Set V1 public behavior is defined in section 11.5 and excludes public User Sets, Community sharing, pagination and learning actions.
 
 Purpose:
 
@@ -731,7 +733,9 @@ Example categories:
 Learning milestones
 Streak milestones
 Practice milestones
-10.10 Vocabulary Sets
+10.10 Vocabulary Sets — Legacy Draft (superseded for V1)
+
+The remaining legacy content in sections 10.10–10.12 is retained for future Community/Learning work only. Vocabulary Set V1 USER behavior is defined in section 11.5 and is limited to private My Sets plus copying a System Set.
 
 Tabs:
 
@@ -954,26 +958,32 @@ Display and actions:
 Before edit, the UI loads the complete aggregate rather than editing a list summary. A save containing `meanings` sends the complete desired Meaning collection and the complete desired Example collection for every retained Meaning; visible remove controls intentionally omit owned children from replacement data. The UI prevents removing the final Meaning.
 
 Provide accessible loading, empty, validation, duplicate-word, not-found, authorization and safe server-error states. Delete confirmation identifies the Vocabulary and owned Meanings/Examples, provides cancel/confirm controls, prevents duplicate submission and restores focus appropriately. Existing dashboard, logout, mobile drawer, Topic routes and Topic management remain unchanged.
-11.5 Vocabulary Set Management
+11.5 Vocabulary Set V1
 
-Admin can manage system vocabulary sets.
+Vocabulary Set V1 provides separate public System Set, USER private Set and ADMIN System management flows. It does not add a standalone USER Vocabulary catalog, full Vocabulary detail page, public User Set/community sharing screen or learning action.
 
-Display:
+#### Public Topic-based System Sets
 
-Set list
-Search
-Topic
-Word count
-Visibility
-Creator
-Created date
+Guest and authenticated visitors can open dedicated Topic-scoped System Set discovery and public System Set detail routes. Topic V1 list/detail remain metadata-only and do not embed Set counts or collections.
 
-Actions:
+- Discovery shows public System Set summaries for one Topic, client-side Set-name search, loading, empty, safe error and not-found states.
+- Detail shows Set/Topic metadata and ordered Item selection metadata only: Vocabulary word and optional phonetic, never Meaning, Example or CEFR data.
+- An authenticated USER sees Copy. A Guest receives a route to authenticate; neither can start learning in V1.
 
-Create
-Edit
-Delete
-View
+#### USER My Sets and Editor
+
+Inside the existing authenticated App Layout, USER navigation exposes My Sets only with implemented routes. A USER can list/search/view/create/edit/delete only owned private Sets and may retain an empty draft.
+
+- The Set editor has labelled Set metadata and Topic controls plus a semantic ordered Item collection.
+- Its authenticated Vocabulary picker exists only while editing, requires a word query, displays bounded `{ word, phonetic }` selection metadata, prevents duplicate additions and never links to a Vocabulary catalog/detail screen.
+- Item add/remove and keyboard-accessible move-up/move-down controls make complete replacement order explicit.
+- Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
+
+#### ADMIN System Set Management
+
+`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. A System Set editor uses the same approved picker/editor boundary but must prevent save with zero Items.
+
+All Set screens preserve current dashboard, logout, mobile drawer, Topic routes/management and Vocabulary management. Forms use associated labels/errors; dialogs restore focus and block duplicate pending actions; ordered Item controls remain keyboard-accessible and responsive at existing breakpoints.
 11.6 Achievement Management
 
 Admin can manage system achievement definitions.

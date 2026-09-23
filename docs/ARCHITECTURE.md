@@ -791,7 +791,7 @@ V1 không yêu cầu XP transaction/history table.
 
 Không nên đặt toàn bộ logic XP, Level, Streak và Achievement vào một service duy nhất nếu làm tăng coupling.
 
-14. Vocabulary Set Architecture
+14. Vocabulary Set Architecture — Generic Future Draft (superseded for V1)
 
 Vocabulary Set là một domain riêng và có quan hệ với Vocabulary.
 
@@ -884,6 +884,22 @@ User B owns the new set
 Set gốc của User A không bị thay đổi.
 
 V1 không yêu cầu download/copy history table.
+
+### 14.1 Vocabulary Set V1 Active Architecture
+
+Vocabulary Set V1 uses the existing REST composition without a new framework or role model:
+
+```text
+public/User/ADMIN Set route
+  -> existing authentication and ADMIN middleware where required
+  -> Set controller -> Set service -> Set repository -> Prisma -> PostgreSQL
+```
+
+The materialized data path is `TOPIC -> VOCABULARY_SET -> VOCABULARY_SET_ITEM -> VOCABULARY`. The Set service owns owner/private/System visibility checks, aggregate Item replacement/reordering, System copy and save-time Vocabulary validation. Set Items reference Vocabulary only; Meaning/Example/CEFR data is not selected for Set editor picker results.
+
+Public System discovery/detail routes are separate from completed Topic metadata responses. USER My Sets and ADMIN System management reuse the existing `ProtectedRoute`, `AdminRoute`, `AuthenticatedShell`, session state and role middleware. The only USER-facing Vocabulary access is the authenticated, bounded Set-editor picker; it is not a standalone catalog or detail module.
+
+Transactions are required for aggregate Item replacement/reorder and System copy. Database cascade is limited to Set-owned Items; Topic-to-Set and Vocabulary-to-Item use `RESTRICT`. Community sharing, Flashcard, Learning, SRS, Progress, Quiz, XP, Streak, Pronunciation Practice and AI remain outside this V1 architecture.
 
 15. Community Architecture
 

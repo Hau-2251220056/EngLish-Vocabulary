@@ -40,7 +40,8 @@ for (const viewport of viewports) {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.locator(".authenticated-header-name")).toHaveText(longNameUser.display_name);
-    await expect(page.locator(".authenticated-navigation a")).toHaveCount(1);
+    await expect(page.locator(".authenticated-navigation a")).toHaveCount(2);
+    await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
     await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     await expectWithinViewport(page, ".authenticated-layout");

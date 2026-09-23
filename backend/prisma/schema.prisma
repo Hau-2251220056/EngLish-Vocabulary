@@ -32,6 +32,7 @@ model USER {
   created_at        DateTime       @default(now())
   updated_at        DateTime       @updatedAt
   auth_sessions     AUTH_SESSION[]
+  vocabulary_sets   VOCABULARY_SET[]
 }
 
 model AUTH_SESSION {
@@ -44,21 +45,23 @@ model AUTH_SESSION {
 }
 
 model TOPIC {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @db.VarChar(100)
-  description String?  @db.VarChar(500)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @db.VarChar(100)
+  description     String?          @db.VarChar(500)
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  vocabulary_sets VOCABULARY_SET[]
 }
 
 model VOCABULARY {
-  id                String               @id @default(uuid()) @db.Uuid
-  word              String               @db.VarChar(100)
-  phonetic          String?              @db.VarChar(100)
-  pronunciation_url String?              @db.VarChar(2048)
-  created_at        DateTime             @default(now())
-  updated_at        DateTime             @updatedAt
+  id                String                 @id @default(uuid()) @db.Uuid
+  word              String                 @db.VarChar(100)
+  phonetic          String?                @db.VarChar(100)
+  pronunciation_url String?                @db.VarChar(2048)
+  created_at        DateTime               @default(now())
+  updated_at        DateTime               @updatedAt
   meanings          VOCABULARY_MEANING[]
+  vocabulary_items  VOCABULARY_SET_ITEM[]
 }
 
 model VOCABULARY_MEANING {
@@ -81,4 +84,31 @@ model VOCABULARY_EXAMPLE {
   example_vi  String?             @db.VarChar(1000)
   created_at  DateTime            @default(now())
   meaning     VOCABULARY_MEANING  @relation(fields: [meaning_id], references: [id], onDelete: Cascade)
+}
+
+model VOCABULARY_SET {
+  id          String                @id @default(uuid()) @db.Uuid
+  topic_id    String                @db.Uuid
+  owner_id    String                @db.Uuid
+  name        String                @db.VarChar(100)
+  description String?               @db.VarChar(500)
+  is_public   Boolean
+  created_at  DateTime              @default(now())
+  updated_at  DateTime              @updatedAt
+  topic       TOPIC                 @relation(fields: [topic_id], references: [id], onDelete: Restrict)
+  owner       USER                  @relation(fields: [owner_id], references: [id], onDelete: Restrict)
+  items       VOCABULARY_SET_ITEM[]
+}
+
+model VOCABULARY_SET_ITEM {
+  id                String         @id @default(uuid()) @db.Uuid
+  vocabulary_set_id String         @db.Uuid
+  vocabulary_id     String         @db.Uuid
+  position          Int
+  created_at        DateTime       @default(now())
+  vocabulary_set    VOCABULARY_SET @relation(fields: [vocabulary_set_id], references: [id], onDelete: Cascade)
+  vocabulary        VOCABULARY     @relation(fields: [vocabulary_id], references: [id], onDelete: Restrict)
+
+  @@unique([vocabulary_set_id, vocabulary_id])
+  @@unique([vocabulary_set_id, position])
 }

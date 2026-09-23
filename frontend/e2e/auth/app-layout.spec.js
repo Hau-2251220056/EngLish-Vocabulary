@@ -12,7 +12,7 @@ const viewports = [
   { name: "desktop", width: 1366, height: 768 },
 ];
 
-test("desktop USER renders the shared layout with only Dashboard navigation", async ({ page }) => {
+test("desktop USER renders the shared layout without ADMIN navigation", async ({ page }) => {
   await page.setViewportSize(viewports[2]);
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
@@ -26,10 +26,11 @@ test("desktop USER renders the shared layout with only Dashboard navigation", as
   await expect(page.locator("footer a, footer button")).toHaveCount(0);
   await expect(page.locator(".authenticated-avatar")).toHaveText("L");
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
-  await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(1);
+  await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator('a:not([href="/dashboard"])')).toHaveCount(0);
+  await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
+  await expect(page.locator('a[href^="/admin/"]')).toHaveCount(0);
   await expect(page.locator(".authenticated-drawer-toggle")).toBeHidden();
   await expectNoHorizontalOverflow(page);
 });
