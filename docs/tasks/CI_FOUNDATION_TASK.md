@@ -316,7 +316,7 @@ Secret-free test   CI-exclusive DB + secret configuration
 
 **Mapped AC:** AC-01–AC-05, AC-11, AC-13–AC-17.
 
-**Completion gate/status:** `NOT STARTED` — must PASS and receive HUMAN review before TASK-062.
+**Completion gate/status:** `COMPLETE` — authoritative GitHub Actions evidence passed for Frontend Quality, Backend Unit and Frontend Browser Smoke after the responsive Auth test synchronization defect was corrected. Missing CI database configuration remained fail-safe with no database fallback or DB command. HUMAN review approved TASK-060.
 
 ## TASK-061 — HUMAN Checkpoint: Provision CI-Exclusive TEST DB and Configure Secret
 
@@ -348,7 +348,7 @@ Secret-free test   CI-exclusive DB + secret configuration
 
 **Mapped AC:** AC-07–AC-11, AC-15–AC-17.
 
-**Completion gate/status:** `NOT STARTED — HUMAN CONTROLLED`. TASK-062 is BLOCKED until this checkpoint is explicitly approved. Lack of this infrastructure does not permit another database to be substituted.
+**Completion gate/status:** `COMPLETE — HUMAN CONTROLLED`. The HUMAN database/repository owner confirmed that the dedicated disposable PostgreSQL project `EngLish Vocabulary CI` is reserved exclusively for this repository's GitHub Actions, destructive CI reset/migration verification is authorized there, and repository secret `CI_TEST_DATABASE_URL` is configured without exposing its value. No database command was run during this checkpoint. HUMAN review is required before TASK-062.
 
 ## TASK-062 — Verify Guarded Integration and Trust Behavior
 
