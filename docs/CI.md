@@ -2,20 +2,22 @@
 
 ## Status
 
-- CI Foundation: `IN_PROGRESS`
+- CI Foundation: `DONE`
 - Approved SPEC: `docs/specs/CI_FOUNDATION_SPEC.md`
 - Approved PLAN: `docs/plans/CI_FOUNDATION_PLAN.md`
 - Approved TASK: `docs/tasks/CI_FOUNDATION_TASK.md`
-- Current implementation boundary: TASK-055 documentation and Node.js baseline only.
-- GitHub Actions workflows and CI-safe package scripts do not exist yet.
+- TASK-055 through TASK-063: `COMPLETE`.
+- Formal TEST: `PASS`.
+- Formal REVIEW: `APPROVE`.
+- HUMAN final closure approval: `APPROVED`.
 
 ## Runtime Baseline
 
-CI and local verification use Node.js 22. The repository root `.nvmrc` is the version declaration for compatible local version managers. Future workflows must also select Node.js 22 explicitly and must use committed npm lockfiles with `npm ci`.
+CI and local verification use Node.js 22. The repository root `.nvmrc` is the version declaration for compatible local version managers. Both workflows select Node.js 22 explicitly and use committed npm lockfiles with `npm ci`.
 
 ## Approved CI V1 Triggers
 
-CI V1 will run for:
+CI V1 runs for:
 
 - pull requests targeting `dev`;
 - pushes to `dev`; and
@@ -25,7 +27,7 @@ No CI V1 trigger deploys the application.
 
 ## Approved Workflow Boundary
 
-CI V1 is planned as two workflows.
+CI V1 uses two workflows.
 
 ### Secret-Free CI
 
@@ -62,7 +64,7 @@ It must never be:
 - a normal development database; or
 - the developer-shared/manual TEST database.
 
-The planned GitHub secret name is `CI_TEST_DATABASE_URL`. This document intentionally defines no value. A HUMAN database owner must confirm the database identity and destructive-test authorization before guarded execution is enabled.
+The GitHub secret name is `CI_TEST_DATABASE_URL`. This document intentionally defines no value. The HUMAN database owner confirmed the configured target is a disposable PostgreSQL database reserved exclusively for this repository's GitHub Actions and authorized destructive CI verification there.
 
 Existing safety requirements remain authoritative:
 
@@ -71,7 +73,7 @@ Existing safety requirements remain authoritative:
 - `TEST_DATABASE_ALLOW_RESET=true` for destructive work; and
 - `configureTestEnvironment()` before migration, reset, fixture or database-backed test access.
 
-Missing or ambiguous configuration must fail before any database command or write. CI must never fall back to `DATABASE_URL` from another environment.
+Missing configuration reports `SKIPPED_NOT_CONFIGURED` without running a database command and is not PASS evidence. Invalid or ambiguous configuration fails through the existing guards before destructive access. CI never falls back to `DATABASE_URL` from another environment.
 
 ## Prisma Migration Boundary
 
@@ -98,7 +100,7 @@ Backend DB Integration and Real Stack Browser must never overlap when sharing th
 - Executed lint, test, build, migration, guard and cleanup failures remain non-zero.
 - PASS, FAIL, TODO, SKIPPED and NOT RUN must remain distinct.
 - Playwright uploads failure screenshots and retained traces only from approved result paths.
-- Planned artifact retention is seven days.
+- Artifact retention is seven days.
 - Environment files, database dumps, database URLs, credentials, cookies and session values must never be uploaded or printed.
 - Artifact upload must not mask the original failure.
 
@@ -114,3 +116,20 @@ CI Foundation V1 does not include:
 - unrelated dependency/security automation.
 
 The current deployment-provider documentation/configuration discrepancy remains outside CI Foundation and must be resolved through a separate approved workflow before CD is designed.
+
+## Formal Verification Evidence
+
+- Secret-free PR run for commit `a48a908f09ecc3b5109e42cd417aa073af7b32c3`: Frontend Quality, Backend Unit and Frontend Browser Smoke all PASS; browser smoke completed 25/25 tests.
+- Guarded same-repository PR run `35997986127`: Trust Gate, guarded committed-migration preparation, complete sequential Backend DB Integration, both controlled cleanup steps, dependent single-worker Real Stack Browser and Integration Summary all PASS.
+- Backend DB Integration completed before Real Stack Browser started; workflow concurrency remains `cancel-in-progress: false`.
+- Fork isolation is verified from the workflow trust condition: fork pull requests receive `SKIPPED_FORK`, do not receive the database secret and cannot start guarded DB/browser jobs. No live fork PR was created, so this remains static policy evidence rather than claimed live execution.
+- Initial CI failures demonstrated non-zero failure propagation and seven-day Playwright failure-artifact publication. No artifact or repository file contained an environment file, database URL, credential or session value.
+- Main, Preview, Production and developer-shared TEST databases were not accessed. No deployment occurred.
+
+### Acceptance-Criteria Traceability
+
+- **AC-01–AC-05:** Workflow trigger inspection, Node.js 22 plus `npm ci`, and the authoritative three-job secret-free run verify frontend quality, DB-independent backend coverage and 25/25 Auth/App Layout browser smoke without a database secret.
+- **AC-06–AC-09:** Script inspection verifies the complete Authentication, Topic, Vocabulary, Vocabulary Set and Learning backend sequence. HUMAN-controlled CI database confirmation and guarded run `35997986127` verify fail-closed environment setup and committed migrations through the approved preparation entry point only.
+- **AC-10–AC-12:** Workflow dependencies, single-worker configuration and non-cancelling concurrency serialize destructive work; the guarded run verifies both cleanup boundaries and the real-stack browser gate. Failure-path evidence verifies safe Playwright artifact publication.
+- **AC-13–AC-15:** CI scripts consume injected variables while retaining local `.env.test` compatibility and all guards. Check-result handling distinguishes skipped, failed and passed states; least-privilege permissions, workflow inspection and repository secret checks found no exposed sensitive value.
+- **AC-16–AC-17:** Branch scope inspection confirms no CD, Docker, deployment-provider restructuring, coverage threshold, unrelated automation, application API, schema, authorization, business-rule or production-UI change.

@@ -816,11 +816,11 @@ Status: DONE
 
 | Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
 |---|---|---|---|---|---|---|---|
-| CI Foundation | IN_PROGRESS | ✓ | ✓ | ✓ | ⏳ | ⏳ | ⏳ |
+| CI Foundation | DONE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## CI Foundation
 
-Status: IN_PROGRESS
+Status: DONE
 
 ### Related Documentation
 
@@ -831,9 +831,10 @@ Status: IN_PROGRESS
 
 ### Current Boundary
 
-- TASK-055 establishes the Node.js 22 baseline and approved CI documentation only.
-- GitHub Actions workflows, CI-safe package scripts and external CI infrastructure are not implemented at this checkpoint.
-- A CI-exclusive PostgreSQL TEST database and `CI_TEST_DATABASE_URL` remain a later HUMAN-controlled prerequisite.
+- TASK-055 through TASK-063 are complete with formal TEST `PASS` and formal REVIEW `APPROVE`.
+- Secret-free and guarded GitHub Actions checks have authoritative same-repository PR evidence.
+- The HUMAN-confirmed CI-exclusive PostgreSQL database and repository secret are configured without recording their values.
+- HUMAN final closure approval is recorded and CI Foundation is `DONE`.
 - CD, deployment, Main/Preview/Production migrations, Docker, coverage thresholds and unrelated automation remain deferred.
 
 5. Feature Detail Records
