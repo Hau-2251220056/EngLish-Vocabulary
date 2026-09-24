@@ -1,0 +1,219 @@
+name: CI Guarded Integration
+
+on:
+  pull_request:
+    branches:
+      - dev
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elvocab-ci-test-db
+  cancel-in-progress: false
+
+jobs:
+  trust-gate:
+    name: Trust Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      trusted: ${{ steps.classify.outputs.trusted }}
+      classification: ${{ steps.classify.outputs.classification }}
+
+    steps:
+      - name: Classify workflow event
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" || "$HEAD_REPOSITORY" == "$CURRENT_REPOSITORY" ]]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+            echo "classification=TRUSTED" >> "$GITHUB_OUTPUT"
+            echo "Trusted repository event: guarded jobs are eligible to run."
+          else
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            echo "classification=SKIPPED_FORK" >> "$GITHUB_OUTPUT"
+            echo "Fork pull request: guarded jobs will not receive secrets or run."
+          fi
+
+  backend-db-integration:
+    name: Backend DB Integration
+    needs: trust-gate
+    if: needs.trust-gate.outputs.trusted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Require configured CI TEST database
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing guarded execution."
+            exit 1
+          fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        id: install
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Apply committed migrations through guarded preparation
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:db:prepare:ci
+
+      - name: Run complete sequential backend integration
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:integration:ci
+
+      - name: Clean controlled TEST database fixtures
+        if: always() && steps.install.outcome == 'success'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: >-
+          node --input-type=module -e "const { createTestDatabase } = await import('./test/helpers/test-database.js');
+          const database = await createTestDatabase();
+          try { await database.reset(); } finally { await database.disconnect(); }"
+
+  real-stack-browser:
+    name: Real Stack Browser
+    needs:
+      - trust-gate
+      - backend-db-integration
+    if: needs.trust-gate.outputs.trusted == 'true' && needs.backend-db-integration.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Require configured CI TEST database
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing guarded execution."
+            exit 1
+          fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        id: backend-install
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Install frontend dependencies
+        id: frontend-install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run combined guarded real-stack browser suite
+        working-directory: frontend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:integration:ci
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-stack-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Clean controlled TEST database fixtures
+        if: always() && steps.backend-install.outcome == 'success'
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: >-
+          node --input-type=module -e "const { createTestDatabase } = await import('./test/helpers/test-database.js');
+          const database = await createTestDatabase();
+          try { await database.reset(); } finally { await database.disconnect(); }"
+
+  integration-summary:
+    name: Summary
+    if: always()
+    needs:
+      - trust-gate
+      - backend-db-integration
+      - real-stack-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Report guarded integration result
+        env:
+          CLASSIFICATION: ${{ needs.trust-gate.outputs.classification }}
+          BACKEND_RESULT: ${{ needs.backend-db-integration.result }}
+          BROWSER_RESULT: ${{ needs.real-stack-browser.result }}
+        run: |
+          if [[ "$CLASSIFICATION" == "SKIPPED_FORK" ]]; then
+            echo "## CI Guarded Integration: SKIPPED_FORK" >> "$GITHUB_STEP_SUMMARY"
+            echo "Database-backed and real-stack checks did not run and are not PASS evidence." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$BACKEND_RESULT" != "success" || "$BROWSER_RESULT" != "success" ]]; then
+            echo "## CI Guarded Integration: FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "Backend result: $BACKEND_RESULT" >> "$GITHUB_STEP_SUMMARY"
+            echo "Browser result: $BROWSER_RESULT" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "## CI Guarded Integration: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backend DB Integration and Real Stack Browser completed sequentially." >> "$GITHUB_STEP_SUMMARY"

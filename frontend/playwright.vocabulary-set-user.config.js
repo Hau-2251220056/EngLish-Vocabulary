@@ -19,7 +19,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${frontendPort}`, screenshot: "only-on-failure", trace: "retain-on-failure" },
   projects: [{ name: "chromium-vocabulary-set-user", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
-    { command: "node --env-file=../backend/.env.test ../backend/test/scripts/start-integration-server.js", env: { INTEGRATION_PORT: String(backendPort) }, url: `http://127.0.0.1:${backendPort}/`, reuseExistingServer: false, timeout: 60_000 },
+    { command: "node ../backend/test/scripts/start-integration-server.js", env: { INTEGRATION_PORT: String(backendPort) }, url: `http://127.0.0.1:${backendPort}/`, reuseExistingServer: false, timeout: 60_000 },
     { command: `npm run dev -- --host 127.0.0.1 --port ${frontendPort} --strictPort`, env: { API_PROXY_TARGET: `http://127.0.0.1:${backendPort}` }, url: `http://127.0.0.1:${frontendPort}/login`, reuseExistingServer: false, timeout: 60_000 },
   ],
 });

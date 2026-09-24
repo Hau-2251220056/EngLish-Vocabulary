@@ -812,6 +812,30 @@ Status: DONE
 - No backend, API, database, route, dependency or Authentication architecture change.
 - User Dashboard remains a separate unfinished feature.
 
+4.15 Engineering Foundation
+
+| Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
+|---|---|---|---|---|---|---|---|
+| CI Foundation | IN_PROGRESS | ✓ | ✓ | ✓ | ⏳ | ⏳ | ⏳ |
+
+## CI Foundation
+
+Status: IN_PROGRESS
+
+### Related Documentation
+
+- SPEC: `docs/specs/CI_FOUNDATION_SPEC.md`
+- PLAN: `docs/plans/CI_FOUNDATION_PLAN.md`
+- TASK: `docs/tasks/CI_FOUNDATION_TASK.md`
+- Operations: `docs/CI.md`
+
+### Current Boundary
+
+- TASK-055 establishes the Node.js 22 baseline and approved CI documentation only.
+- GitHub Actions workflows, CI-safe package scripts and external CI infrastructure are not implemented at this checkpoint.
+- A CI-exclusive PostgreSQL TEST database and `CI_TEST_DATABASE_URL` remain a later HUMAN-controlled prerequisite.
+- CD, deployment, Main/Preview/Production migrations, Docker, coverage thresholds and unrelated automation remain deferred.
+
 5. Feature Detail Records
 
 When a feature reaches IN_PROGRESS, IMPLEMENTED, TESTED, or DONE, additional information may be recorded below.

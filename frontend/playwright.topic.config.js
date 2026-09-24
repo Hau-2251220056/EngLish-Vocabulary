@@ -29,7 +29,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "node --env-file=../backend/.env.test ../backend/test/scripts/start-integration-server.js",
+      command: "node ../backend/test/scripts/start-integration-server.js",
       env: { INTEGRATION_PORT: String(backendPort) },
       url: `http://127.0.0.1:${backendPort}/`,
       reuseExistingServer: false,
