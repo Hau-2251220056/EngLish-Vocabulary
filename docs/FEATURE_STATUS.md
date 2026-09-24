@@ -812,6 +812,31 @@ Status: DONE
 - No backend, API, database, route, dependency or Authentication architecture change.
 - User Dashboard remains a separate unfinished feature.
 
+4.15 Engineering Foundation
+
+| Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
+|---|---|---|---|---|---|---|---|
+| CI Foundation | DONE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+## CI Foundation
+
+Status: DONE
+
+### Related Documentation
+
+- SPEC: `docs/specs/CI_FOUNDATION_SPEC.md`
+- PLAN: `docs/plans/CI_FOUNDATION_PLAN.md`
+- TASK: `docs/tasks/CI_FOUNDATION_TASK.md`
+- Operations: `docs/CI.md`
+
+### Current Boundary
+
+- TASK-055 through TASK-063 are complete with formal TEST `PASS` and formal REVIEW `APPROVE`.
+- Secret-free and guarded GitHub Actions checks have authoritative same-repository PR evidence.
+- The HUMAN-confirmed CI-exclusive PostgreSQL database and repository secret are configured without recording their values.
+- HUMAN final closure approval is recorded and CI Foundation is `DONE`.
+- CD, deployment, Main/Preview/Production migrations, Docker, coverage thresholds and unrelated automation remain deferred.
+
 5. Feature Detail Records
 
 When a feature reaches IN_PROGRESS, IMPLEMENTED, TESTED, or DONE, additional information may be recorded below.

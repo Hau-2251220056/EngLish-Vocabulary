@@ -7,11 +7,14 @@
   "scripts": {
     "postinstall": "prisma generate",
     "test": "node --env-file=.env.test --test --test-concurrency=1 test/vocabulary/vocabulary.test.js test/topic/topic.test.js test/auth/auth-http.test.js test/auth/auth-components.test.js test/auth/password-security.test.js test/auth/deferred-contracts.test.js test/auth/vercel-entry.test.js",
+    "test:unit:ci": "node --test --test-concurrency=1 test/auth/auth-components.test.js test/auth/password-security.test.js test/auth/deferred-contracts.test.js test/auth/vercel-entry.test.js",
+    "test:integration:ci": "node --test --test-concurrency=1 test/auth/auth-http.test.js test/topic/topic.test.js test/vocabulary/vocabulary.test.js test/vocabulary-set/vocabulary-set.test.js test/learning/learning.test.js",
     "test:vocabulary": "node --env-file=.env.test --test --test-concurrency=1 test/vocabulary/vocabulary.test.js",
     "test:learning": "node --env-file=.env.test --test --test-concurrency=1 test/learning/learning.test.js",
     "test:topic": "node --env-file=.env.test --test --test-concurrency=1 test/topic/topic.test.js",
     "test:auth": "node --env-file=.env.test --test --test-concurrency=1 test/auth/auth-http.test.js test/auth/auth-components.test.js test/auth/password-security.test.js test/auth/deferred-contracts.test.js test/auth/vercel-entry.test.js",
     "test:db:prepare": "node --env-file=.env.test test/scripts/prepare-test-database.js",
+    "test:db:prepare:ci": "node test/scripts/prepare-test-database.js",
     "start": "node --env-file=.env src/main.js",
     "dev": "nodemon --exec \"node --env-file=.env\" src/main.js"
   },

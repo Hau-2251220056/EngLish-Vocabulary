@@ -1164,6 +1164,18 @@ Production secrets MUST NOT được lưu trong source code.
 
 Deployment architecture được xem là baseline và không được tự ý thay đổi.
 
+### 21.1 CI Foundation Boundary
+
+CI Foundation V1 uses GitHub Actions only for repository verification. It targets pull requests to `dev`, pushes to `dev` and optional maintainer dispatch. Node.js 22 is the approved CI runtime baseline.
+
+Secret-free frontend quality, backend unit and mocked browser-smoke checks are separated from guarded database and real-stack integration checks. Database-dependent CI requires a human-confirmed PostgreSQL TEST database used exclusively by this repository's CI. It MUST NOT use Main, Preview, Production, development or developer-shared/manual TEST databases.
+
+All database-dependent automation MUST preserve `configureTestEnvironment()` as the fail-closed identity boundary. Committed migrations may be applied only through the guarded test preparation path. Destructive backend and browser verification sharing one database MUST run serially as one workflow lifecycle with cancellation disabled.
+
+Fork pull requests MUST NOT receive repository database secrets. Workflow failures, skipped secret-dependent checks and approved TODO evidence MUST remain distinguishable. Playwright failure artifacts MUST exclude environment files, credentials, database URLs, cookies and session values.
+
+CI Foundation V1 does not include CD, automatic deployment, production migrations, Docker/service containers or deployment-provider restructuring. The detailed operational contract is recorded in `docs/CI.md`.
+
 22. Development Environment
 
 Local development SHOULD có kiến trúc tương tự production:
