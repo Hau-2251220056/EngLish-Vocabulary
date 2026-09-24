@@ -33,6 +33,8 @@ for (const viewport of viewports) {
     await expectAuthFormToFit(page, "register");
 
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expectAuthFormToFit(page, "login");
     await page.getByLabel("Email").fill("learner@example.com");
     await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
