@@ -960,7 +960,7 @@ Before edit, the UI loads the complete aggregate rather than editing a list summ
 Provide accessible loading, empty, validation, duplicate-word, not-found, authorization and safe server-error states. Delete confirmation identifies the Vocabulary and owned Meanings/Examples, provides cancel/confirm controls, prevents duplicate submission and restores focus appropriately. Existing dashboard, logout, mobile drawer, Topic routes and Topic management remain unchanged.
 11.5 Vocabulary Set V1
 
-Vocabulary Set V1 provides separate public System Set, USER private Set and ADMIN System management flows. It does not add a standalone USER Vocabulary catalog, full Vocabulary detail page, public User Set/community sharing screen or learning action.
+Vocabulary Set V1 provides separate public System Set, USER private Set and ADMIN System management flows. It did not itself add a standalone USER Vocabulary catalog, full Vocabulary detail page, public User Set/community sharing screen or learning action. Flashcard / Learning V1 may add only its approved authenticated USER learning entry while preserving these Set-management boundaries.
 
 #### Public Topic-based System Sets
 
@@ -968,7 +968,7 @@ Guest and authenticated visitors can open dedicated Topic-scoped System Set disc
 
 - Discovery shows public System Set summaries for one Topic, client-side Set-name search, loading, empty, safe error and not-found states.
 - Detail shows Set/Topic metadata and ordered Item selection metadata only: Vocabulary word and optional phonetic, never Meaning, Example or CEFR data.
-- An authenticated USER sees Copy. A Guest receives a route to authenticate; neither can start learning in V1.
+- An authenticated USER sees Copy and, after Flashcard / Learning V1 is implemented, its approved learning entry. A Guest receives a route to authenticate and cannot start learning while unauthenticated.
 
 #### USER My Sets and Editor
 
@@ -1042,7 +1042,7 @@ Keep controls simple.
 Show progress through the session.
 Provide immediate feedback.
 Clearly distinguish correct and incorrect answers.
-Reward progress with XP and achievements.
+Show only progress and outcomes approved for the current learning feature; XP and achievements remain deferred unless separately approved.
 Avoid unnecessary navigation.
 12.1 Learning Session Header
 
@@ -1074,6 +1074,26 @@ Clear error indication
 Character-level feedback when applicable
 Correct answer after submission when appropriate
 Continue / Retry action
+
+### 12.4 Flashcard / Learning V1 Active UX Contract
+
+The V1 route is `/learn/vocabulary-sets/:setId` under the existing `ProtectedRoute`, `AuthenticatedShell` and `UserRoute`. On this route only, the shell provides a dedicated full-viewport Focus Mode without the normal authenticated Header, Sidebar or Footer; all other authenticated routes retain the normal App Layout. Only an authenticated USER can enter from a public System Set or an owned private Set. Guest follows the existing login path; ADMIN and non-owners receive the existing safe route/API behavior.
+
+The USER traverses current Set Items in explicit `position` order. One two-faced card is shown at a time. Its front emphasizes the Vocabulary word, optional phonetic, an icon-only pronunciation control and a safe clickable/Space-enabled reveal surface; there is no separate visible reveal button. Reveal focuses on one deterministic primary Meaning: lowest CEFR in `A1 → A2 → B1 → B2 → C1 → C2` order, with ties and null CEFR resolved by the payload's existing deterministic `created_at`, then `id`, order. The back shows word, phonetic, part of speech, CEFR, primary Vietnamese meaning, optional context and only the first Example in deterministic payload order. The backend still returns the complete Vocabulary aggregate; the one-Example rule is presentation-only and V1 adds no persisted primary field.
+
+Reveal, Previous/Next inspection and audio playback do not update progress. The shared action slot shows Previous/Next only on Front and **Học lại** (`STUDY_AGAIN`) plus **Nhớ rồi** (`REMEMBERED`) only on Back. Only a successful backend event response marks the current card assessed for the current run. A pending event disables duplicate assessment and displays pending feedback only on the submitted outcome; retry reuses the inconclusive current event ID/revision, and a progress conflict refreshes/reconciles safely.
+
+The server stores no Learning Session. The frontend owns same-tab transient run state in a Flashcard/Learning-specific `sessionStorage` namespace containing only USER ID, Set ID, current Vocabulary ID and assessed Vocabulary IDs/outcomes. It reconciles against a fresh payload, clears invalid/stale state, and owns clearing its namespace on logout/session invalidation without adding Flashcard-specific cleanup keys to Auth internals.
+
+Reload resumes a valid same-tab run. Restart requires confirmation, clears only transient run state and never resets durable progress. Completion is a client-run summary reached only when every current card has one successful assessment; starting a new run does not erase progress.
+
+Pronunciation prefers stored `pronunciation_url`; when absent, supported browsers may use native English `speechSynthesis`. Front-to-back reveal begins playback concurrently, playback failure never blocks reveal or progress, Back-to-front flip does not replay audio, and the speaker remains independently keyboard-operable without flipping the card.
+
+Required states include accessible loading, empty, not-found, stale-item, event/audio failure, progress-conflict and pending feedback. The final UI must provide semantic headings/groups, keyboard-operable flip/outcome/navigation/restart controls, managed focus, `status`/`alert` announcements as appropriate, a 500ms two-way flip with reduced-motion override, responsive no-overflow Focus Mode and safe overflow fallback for abnormal content/short viewports.
+
+The HUMAN-approved repo-native checkpoint is recorded in `docs/FLASHCARD_LEARNING_V1_UI_UX_CHECKPOINT.md`. It defines card front/back, primary-Meaning hierarchy, run header, external assessment controls, all state transitions, focus/keyboard map, reduced motion and mobile/desktop behavior. Final UI implementation must remain within that checkpoint.
+
+Flashcard / Learning V1 does not add Quiz, Pronunciation Practice, XP/Level/Streak/Achievements, Dashboard, Words to Review, a full SRS algorithm, Community or AI behavior. Model audio playback is optional presentation only and never a progress event.
 13. Gamification UI
 
 Gamification features:

@@ -701,6 +701,8 @@ AI là optional, không phải dependency bắt buộc của hệ thống.
 
 11. Spaced Repetition Architecture
 
+This section describes a future architecture direction. Flashcard / Learning V1 does not create `SpacedRepetitionService`, calculate a schedule, populate due-review fields or expose Words to Review. Any future SRS algorithm requires its own approved workflow.
+
 Spaced Repetition là một business feature quan trọng của hệ thống.
 
 Logic Spaced Repetition SHOULD được tách thành service riêng:
@@ -721,6 +723,27 @@ AI Agent MUST NOT tự ý thay đổi thuật toán hoặc thêm thuật toán m
 Không tạo thêm database table chỉ để lưu các thông số trung gian của thuật toán nếu DATABASE.md chưa yêu cầu.
 
 12. Learning Progress Architecture
+
+### 12.1 Flashcard / Learning V1 Active Architecture
+
+Flashcard / Learning V1 uses the existing layered REST composition:
+
+```text
+USER learning route
+  -> existing authentication and USER role authorization
+  -> learning controller
+  -> learning service
+  -> learning repository
+  -> Prisma -> PostgreSQL
+```
+
+The backend authorizes a public System Set or current-USER-owned private Set, returns Items in explicit position order with complete Vocabulary → Meaning → Example card content, and projects only that USER's progress. Every meaningful event revalidates current Set membership inside the transaction. The backend alone maps outcomes, owns timestamps/counters/revisions and enforces optimistic concurrency.
+
+`LEARNING_PROGRESS` remains identified by `(user_id, vocabulary_id)`, independent of Set, Set Item, Topic or Meaning. There is no persistent server Learning Session, session table or event ledger. `last_event_id` supports only idempotent immediate retry of the current event; delayed/reordered older events are rejected by revision protection.
+
+The frontend route reuses `ProtectedRoute`, `UserRoute` and `AuthenticatedShell`. It owns a namespaced same-tab run state in `sessionStorage`, reconciles it with fresh server payloads and clears only that namespace on logout/session invalidation. Auth internals do not know Flashcard storage keys, and the frontend never becomes authoritative for durable progress.
+
+A mandatory HUMAN UI/UX checkpoint separates frontend service/route/run-state foundation from final Flashcard UI implementation. No SRS service/algorithm, Words to Review, Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community or AI is part of this V1 architecture.
 
 Learning progress được quản lý theo từng user và vocabulary.
 

@@ -64,6 +64,13 @@ export function createVocabularyService({ vocabularyRepository }) {
           });
         });
       } catch (error) {
+        if (error?.code === "P2028" || error?.code === "P2034") {
+          const competingVocabulary =
+            await vocabularyRepository.findByWordInsensitive(vocabulary.word);
+          if (competingVocabulary) {
+            throw duplicateWordError();
+          }
+        }
         throwKnownPersistenceError(error);
       }
     },

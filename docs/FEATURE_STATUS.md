@@ -482,9 +482,9 @@ Status: DONE
 
 4.5 Learning
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vocabulary Learning Session	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Flashcard Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
+Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
+Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Spaced Repetition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -502,7 +502,39 @@ LEARNED
 ↓
 NEEDS_REVIEW
 
-The exact Spaced Repetition algorithm will be determined during PLAN and must not be invented during implementation.
+Flashcard / Learning V1 is approved and planned as a USER-only ordered Set learning flow with transient client run state and backend-authoritative per-`(user_id, vocabulary_id)` progress. It has no persistent Learning Session/history or event ledger. Both approved meaningful outcomes increment `review_count`; only immediate retry of the current event ID is idempotent, while stale older events are rejected by revision protection.
+
+## Flashcard / Learning V1 Closure
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-045 through TASK-054: COMPLETE and HUMAN APPROVED.
+- TASK-054 formal TEST: PASS — AC-01 through AC-15 passed.
+- TASK-054 formal REVIEW: APPROVE — no findings or blockers.
+- Flashcard / Learning V1 closure: HUMAN AUTHORIZED.
+- Guarded TEST fixtures and dedicated processes/listeners were cleaned; lint, production build, diff, secret and scope checks passed.
+
+### Verified Evidence
+
+- Learning database/backend/API/security: 9/9 PASS; required Authentication, Vocabulary and Vocabulary Set backend regressions passed.
+- Frontend unit: 39/39 PASS; Auth/App Layout browser: 25/25 PASS.
+- Dedicated Learning browser: 4/4 PASS.
+- Combined real-stack: 28/28 PASS — Authentication 2, Learning 4, Topic 9, Vocabulary 5 and Vocabulary Set 8.
+
+### Implemented Boundary
+
+- Authenticated USER learning from a public System Set or owned private Set in explicit Item order.
+- Durable backend-authoritative progress remains unique per `(user_id, vocabulary_id)`, with transactional meaningful events, revision protection and immediate-current-event retry behavior.
+- Same-tab run state remains Learning-owned and transient; no persistent Learning Session/history or event ledger was introduced.
+- The HUMAN-approved Focus Mode Flashcard experience includes deterministic primary-Meaning presentation, accessible interaction, optional stored-audio/native-TTS pronunciation and responsive/reduced-motion behavior.
+
+### Deferred / Non-blocking
+
+- Spaced Repetition, Words to Review, Topic Learning Progress and Continue Learning remain `TODO`. V1 preserves nullable future-compatible scheduling fields but defines no SRS algorithm, service, queue or due-date behavior.
+- Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community and AI remain outside this DONE boundary.
+- Guarded remote TEST DB latency was separately diagnosed as database/network round-trip dominated. It is a non-blocking performance observation and no optimization was included in this closure.
 
 4.6 Dashboard
 

@@ -6,6 +6,7 @@ import { createAuthenticationController } from "./controllers/auth-controller.js
 import { createTopicController } from "./controllers/topic-controller.js";
 import { createVocabularyController } from "./controllers/vocabulary-controller.js";
 import { createVocabularySetController } from "./controllers/vocabulary-set-controller.js";
+import { createLearningController } from "./controllers/learning-controller.js";
 import { createAuthenticationMiddleware } from "./middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "./middleware/role-authorization-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
@@ -13,7 +14,9 @@ import { createTopicRepository } from "./repositories/topic-repository.js";
 import { createUserRepository } from "./repositories/user-repository.js";
 import { createVocabularyRepository } from "./repositories/vocabulary-repository.js";
 import { createVocabularySetRepository } from "./repositories/vocabulary-set-repository.js";
+import { createLearningRepository } from "./repositories/learning-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
+import { createLearningRouter } from "./routes/learning-routes.js";
 import {
   createAdminTopicRouter,
   createPublicTopicRouter,
@@ -29,6 +32,7 @@ import { createAuthenticationService } from "./services/authentication-service.j
 import { createTopicService } from "./services/topic-service.js";
 import { createVocabularyService } from "./services/vocabulary-service.js";
 import { createVocabularySetService } from "./services/vocabulary-set-service.js";
+import { createLearningService } from "./services/learning-service.js";
 import * as passwordSecurity from "./utils/password-security.js";
 
 export function createApp({ prisma }) {
@@ -92,6 +96,14 @@ export function createApp({ prisma }) {
     vocabularySetController,
     authenticationMiddleware,
   });
+  const learningRepository = createLearningRepository(prisma);
+  const learningService = createLearningService({ learningRepository });
+  const learningController = createLearningController({ learningService });
+  const learningRouter = createLearningRouter({
+    learningController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
   const app = express();
 
   app.use(express.json({ strict: false }));
@@ -101,6 +113,7 @@ export function createApp({ prisma }) {
   app.use("/api", publicVocabularySetRouter);
   app.use("/api", vocabularySetPickerRouter);
   app.use("/api", userVocabularySetRouter);
+  app.use("/api/learning", learningRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/vocabulary", adminVocabularyRouter);
   app.use("/api/admin/vocabulary-sets", adminVocabularySetRouter);

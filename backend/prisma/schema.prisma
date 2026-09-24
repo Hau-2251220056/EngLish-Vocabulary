@@ -33,6 +33,7 @@ model USER {
   updated_at        DateTime       @updatedAt
   auth_sessions     AUTH_SESSION[]
   vocabulary_sets   VOCABULARY_SET[]
+  learning_progress LEARNING_PROGRESS[]
 }
 
 model AUTH_SESSION {
@@ -62,6 +63,7 @@ model VOCABULARY {
   updated_at        DateTime               @updatedAt
   meanings          VOCABULARY_MEANING[]
   vocabulary_items  VOCABULARY_SET_ITEM[]
+  learning_progress LEARNING_PROGRESS[]
 }
 
 model VOCABULARY_MEANING {
@@ -111,4 +113,24 @@ model VOCABULARY_SET_ITEM {
 
   @@unique([vocabulary_set_id, vocabulary_id])
   @@unique([vocabulary_set_id, position])
+}
+
+model LEARNING_PROGRESS {
+  id               String     @id @default(uuid()) @db.Uuid
+  user_id          String     @db.Uuid
+  vocabulary_id    String     @db.Uuid
+  status           String     @db.Text
+  review_count     Int        @default(0)
+  revision         Int        @default(0)
+  last_reviewed_at DateTime?
+  last_event_id    String?    @db.Uuid
+  next_review_at   DateTime?
+  interval_days    Int?
+  ease_factor      Decimal?
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+  user             USER       @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  vocabulary       VOCABULARY @relation(fields: [vocabulary_id], references: [id], onDelete: Restrict)
+
+  @@unique([user_id, vocabulary_id])
 }

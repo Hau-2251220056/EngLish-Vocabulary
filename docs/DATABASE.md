@@ -613,10 +613,10 @@ LEARNING_PROGRESS
 - user_id
 - vocabulary_id
 - status
-- correct_count
-- incorrect_count
 - review_count
+- revision
 - last_reviewed_at
+- last_event_id
 - next_review_at
 - interval_days
 - ease_factor
@@ -630,6 +630,10 @@ NEW
 LEARNING
 LEARNED
 NEEDS_REVIEW
+
+Flashcard / Learning V1 persists only `LEARNING`, `LEARNED` and the future-compatible `NEEDS_REVIEW` value. `NEW` is conceptual and is represented by the absence of a `LEARNING_PROGRESS` row. V1 writes `LEARNING` for `STUDY_AGAIN` and `LEARNED` for `REMEMBERED`; it does not write `NEEDS_REVIEW` or calculate an SRS schedule.
+
+`review_count` is the count of successful meaningful learning/review assessments for the Vocabulary, not an SRS-only counter. Both approved V1 outcomes increment it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. V1 adds no event history or ledger table.
 NEW
 
 User chưa có hoạt động học đối với Vocabulary.
@@ -656,7 +660,21 @@ UNIQUE(user_id, vocabulary_id)
 
 Tiến độ học của User không phụ thuộc vào việc Vocabulary nằm trong Set nào.
 
+Flashcard / Learning V1 uses UUID identifiers and requires:
+
+- Foreign Key `user_id -> USER.id` with an explicit non-cascade/restrict policy.
+- Foreign Key `vocabulary_id -> VOCABULARY.id` with `ON DELETE RESTRICT`.
+- `status` CHECK allowing `LEARNING`, `LEARNED` or `NEEDS_REVIEW`.
+- `review_count >= 0` and `revision >= 0`, both defaulting to `0`.
+- nullable `last_event_id`, `last_reviewed_at`, `next_review_at`, `interval_days` and `ease_factor`.
+- nullable `interval_days` must be positive when present.
+- `created_at` and `updated_at` timestamps.
+
+There is no Topic, Vocabulary Set, Set Item or Meaning foreign key on `LEARNING_PROGRESS`. Deleting a Set or Set Item therefore does not delete progress.
+
 13. Spaced Repetition
+
+For Flashcard / Learning V1, Spaced Repetition, Words to Review and due-date calculation are explicitly deferred. `next_review_at`, `interval_days` and `ease_factor` remain nullable and unchanged by V1 learning events. No SRS service, algorithm, queue, index or additional table is introduced by this feature. The conceptual future direction below does not define V1 behavior.
 
 Spaced Repetition không cần tạo một bảng riêng.
 

@@ -652,11 +652,56 @@ Comment owner hoặc Admin.
 
 21. Learning / Flashcard
 
+### 21.0 Flashcard / Learning V1 Active Contract
+
+The active V1 contract supersedes the generic numeric-ID and review/gamification drafts later in sections 21–25. All identifiers are UUID strings. Both endpoints require an authenticated `USER`; Guest receives the existing `401 AUTHENTICATION_FAILED`, and authenticated `ADMIN` receives the existing `403 FORBIDDEN`.
+
+#### `GET /api/learning/sets/:setId`
+
+The requested Set must be either a public System Set or a private Set owned by the current USER. Inaccessible private Sets use the not-found boundary. An accessible empty Set returns `409 LEARNING_SET_EMPTY`.
+
+The response uses `{ "success": true, "data": ... }` and contains Set ID/name/Topic metadata plus cards in exact Set Item `position` order. Each card contains the approved Vocabulary metadata, all Meanings and their Examples in deterministic order, plus only the current USER's public progress projection:
+
+```json
+{
+  "status": "NEW",
+  "review_count": 0,
+  "revision": 0,
+  "last_reviewed_at": null
+}
+```
+
+`NEW` means no persisted progress row; this read must not create one. It returns no private owner internals, event identifier, SRS scheduling fields, XP or reward data.
+
+#### `POST /api/learning/events`
+
+The exact request body is:
+
+```json
+{
+  "event_id": "uuid",
+  "set_id": "uuid",
+  "vocabulary_id": "uuid",
+  "expected_revision": 0,
+  "outcome": "REMEMBERED"
+}
+```
+
+Only `REMEMBERED` and `STUDY_AGAIN` are allowed. The backend derives the USER, revalidates Set access and current Set membership, and atomically maps `REMEMBERED -> LEARNED` or `STUDY_AGAIN -> LEARNING`. Each accepted meaningful assessment increments `review_count` and `revision` once and sets backend-owned `last_reviewed_at`/`last_event_id`; it does not calculate SRS fields or rewards.
+
+An immediate retry using the current `last_event_id` is idempotent and returns unchanged progress. A delayed/reordered different event with a stale revision returns `409 LEARNING_PROGRESS_CHANGED`. V1 has no event-history/ledger table and does not promise arbitrary historical replay idempotency.
+
+Known safe errors are `400 VALIDATION_ERROR`, `404 LEARNING_SET_NOT_FOUND`, `409 LEARNING_SET_EMPTY`, `409 LEARNING_SET_ITEM_CHANGED`, `409 LEARNING_PROGRESS_CHANGED`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+
+Reveal, navigation, audio playback, reload, restart and client-run completion are not meaningful backend events and must not create/update progress.
+
 Flashcard là learning activity.
 
 Không phải Quiz.
 
 21.1 Start Learning Set
+
+This subsection is a legacy generic illustration. The active UUID response and authorization contract is defined in section 21.0 above.
 GET /api/learning/sets/:setId
 Access
 
@@ -680,6 +725,8 @@ Có thể bao gồm:
 Backend phải chỉ trả Vocabulary mà User được phép học.
 
 22. Learning Progress
+
+Sections 22–25 are retained as future conceptual background only. They do not define Flashcard / Learning V1 endpoints, gamification, SRS scheduling or a `POST /api/learning/review` route; section 21.0 is authoritative for V1.
 
 Learning Progress được lưu theo:
 

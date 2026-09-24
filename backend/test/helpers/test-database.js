@@ -12,6 +12,7 @@ export async function createTestDatabase() {
   return {
     prisma,
     async reset() {
+      await resetLearningProgressData(prisma);
       await resetVocabularySetData(prisma);
       await resetVocabularyData(prisma);
       await resetTopicData(prisma);
@@ -21,6 +22,11 @@ export async function createTestDatabase() {
       await prisma.$disconnect();
     },
   };
+}
+
+export async function resetLearningProgressData(prisma) {
+  configureTestEnvironment({ requireReset: true });
+  await prisma.lEARNING_PROGRESS.deleteMany();
 }
 
 export async function resetVocabularySetData(prisma) {

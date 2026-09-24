@@ -1,12 +1,13 @@
 import { BookOpenCheck, BookText, LoaderCircle, LogOut, Menu, ShieldCheck, Tags, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuthentication } from "../use-authentication.js";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
 
 export function AuthenticatedShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout, user } = useAuthentication();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
@@ -42,6 +43,11 @@ export function AuthenticatedShell() {
   const displayName = user.display_name;
   const defaultAvatar = displayName.trim().charAt(0).toUpperCase() || "E";
   const drawerIsVisible = !isMobileNavigation || isDrawerOpen;
+  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/");
+
+  if (isFocusLearning) {
+    return <div className="learning-focus-shell"><Outlet /></div>;
+  }
 
   return (
     <div className="authenticated-app">

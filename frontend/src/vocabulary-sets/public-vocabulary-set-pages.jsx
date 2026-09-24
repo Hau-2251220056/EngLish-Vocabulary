@@ -156,7 +156,7 @@ function PublicVocabularySetDetailContent({ setId }) {
             {items.length > 0 ? <ol aria-labelledby="vocabulary-set-items-title">{items.map((item) => <li key={item.id} value={item.position}><span className="public-vocabulary-set-item-word">{item.word}</span>{item.phonetic ? <span className="public-vocabulary-set-item-phonetic">{item.phonetic}</span> : null}</li>)}</ol> : <p className="public-vocabulary-set-items-empty">Bộ từ này hiện chưa có từ vựng.</p>}
           </section>
           {!isAuthenticated ? (
-            <aside className="public-vocabulary-set-auth-prompt" aria-label="Sao chép bộ từ">
+            <aside className="public-vocabulary-set-auth-prompt" aria-label="Học và sao chép bộ từ">
               <h2>Muốn lưu bộ từ này?</h2>
               <p>Đăng nhập để có thể sao chép bộ từ hệ thống vào Bộ từ của tôi.</p>
               <Link to="/login">Đăng nhập</Link>
@@ -164,6 +164,7 @@ function PublicVocabularySetDetailContent({ setId }) {
           ) : null}
           {user?.role === "USER" ? (
             <aside className="public-vocabulary-set-auth-prompt" aria-label="Sao chép bộ từ">
+              {items.length > 0 ? <Link to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}` }}>Học bộ từ</Link> : null}
               <h2>Lưu vào Bộ từ của tôi</h2>
               <p>Bạn sẽ nhận một bản sao riêng tư, có thể tự chỉnh sửa sau đó.</p>
               {copyError ? <p role="alert">{copyError}</p> : null}
