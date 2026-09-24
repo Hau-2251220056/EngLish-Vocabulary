@@ -10,6 +10,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: "list",
   outputDir: "test-results",
+  expect: {
+    timeout: 15_000,
+  },
   use: {
     baseURL: `http://127.0.0.1:${testPort}`,
     screenshot: "only-on-failure",

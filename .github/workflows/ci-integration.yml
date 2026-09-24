@@ -47,6 +47,8 @@ jobs:
     name: Backend DB Integration
     needs: trust-gate
     if: needs.trust-gate.outputs.trusted == 'true'
+    outputs:
+      configured: ${{ steps.configuration.outputs.configured }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -58,19 +60,24 @@ jobs:
       TEST_DATABASE_ALLOW_RESET: "true"
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Require configured CI TEST database
+      - name: Check CI TEST database configuration
+        id: configuration
         env:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: |
           if [[ -z "$TEST_DATABASE_URL" ]]; then
-            echo "CI TEST database configuration is unavailable; refusing guarded execution."
-            exit 1
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "CI TEST database is not provisioned; guarded database commands will be skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check out repository
+        if: steps.configuration.outputs.configured == 'true'
+        uses: actions/checkout@v7
+
       - name: Set up Node.js 22
+        if: steps.configuration.outputs.configured == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -78,6 +85,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install backend dependencies and generate Prisma Client
+        if: steps.configuration.outputs.configured == 'true'
         id: install
         env:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
@@ -85,19 +93,21 @@ jobs:
         run: npm ci
 
       - name: Apply committed migrations through guarded preparation
+        if: steps.configuration.outputs.configured == 'true'
         env:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:db:prepare:ci
 
       - name: Run complete sequential backend integration
+        if: steps.configuration.outputs.configured == 'true'
         env:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:integration:ci
 
       - name: Clean controlled TEST database fixtures
-        if: always() && steps.install.outcome == 'success'
+        if: always() && steps.configuration.outputs.configured == 'true' && steps.install.outcome == 'success'
         env:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
@@ -111,7 +121,10 @@ jobs:
     needs:
       - trust-gate
       - backend-db-integration
-    if: needs.trust-gate.outputs.trusted == 'true' && needs.backend-db-integration.result == 'success'
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      needs.backend-db-integration.result == 'success' &&
+      needs.backend-db-integration.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -199,12 +212,19 @@ jobs:
       - name: Report guarded integration result
         env:
           CLASSIFICATION: ${{ needs.trust-gate.outputs.classification }}
+          DATABASE_CONFIGURED: ${{ needs.backend-db-integration.outputs.configured }}
           BACKEND_RESULT: ${{ needs.backend-db-integration.result }}
           BROWSER_RESULT: ${{ needs.real-stack-browser.result }}
         run: |
           if [[ "$CLASSIFICATION" == "SKIPPED_FORK" ]]; then
             echo "## CI Guarded Integration: SKIPPED_FORK" >> "$GITHUB_STEP_SUMMARY"
             echo "Database-backed and real-stack checks did not run and are not PASS evidence." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$DATABASE_CONFIGURED" != "true" ]]; then
+            echo "## CI Guarded Integration: SKIPPED_NOT_CONFIGURED" >> "$GITHUB_STEP_SUMMARY"
+            echo "CI TEST database is not provisioned; no database or real-stack command ran." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
