@@ -12,6 +12,10 @@ const STATUS_BY_OUTCOME = {
   REMEMBERED: "LEARNED",
   STUDY_AGAIN: "LEARNING",
 };
+const PROGRESS_QUERY_FIELDS = new Set(["page", "page_size", "status"]);
+const PROGRESS_STATUSES = new Set(["LEARNING", "LEARNED", "NEEDS_REVIEW"]);
+const DEFAULT_PROGRESS_PAGE_SIZE = 20;
+const MAX_PROGRESS_PAGE_SIZE = 100;
 
 export class LearningServiceError extends Error {
   constructor(code, message) {
@@ -46,6 +50,40 @@ export function createLearningService({ learningRepository }) {
         name: set.name,
         topic: set.topic,
         cards: set.items.map(toCard),
+      };
+    },
+
+    async getLearningProgress(userId, input) {
+      validateUuid(userId);
+      const query = validateProgressQuery(input);
+      const skip = (query.page - 1) * query.page_size;
+
+      const { summaryRows, totalItems, items } =
+        await learningRepository.withConsistentRead(async (repository) => {
+          const [summaryRows, totalItems, items] = await Promise.all([
+            repository.summarizeProgress(userId),
+            repository.countProgress(userId, query.status),
+            repository.listProgress(userId, {
+              status: query.status,
+              skip,
+              take: query.page_size,
+            }),
+          ]);
+          return { summaryRows, totalItems, items };
+        });
+      const summary = toProgressSummary(summaryRows);
+
+      return {
+        summary,
+        items,
+        pagination: {
+          page: query.page,
+          page_size: query.page_size,
+          total_items: totalItems,
+          total_pages:
+            totalItems === 0 ? 0 : Math.ceil(totalItems / query.page_size),
+        },
+        filter: { status: query.status },
       };
     },
 
@@ -196,6 +234,66 @@ function validateEventInput(input) {
     throw validationError();
   }
   return { ...input };
+}
+
+function validateProgressQuery(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw validationError();
+  }
+  const fields = Object.keys(input);
+  if (fields.some((field) => !PROGRESS_QUERY_FIELDS.has(field))) {
+    throw validationError();
+  }
+
+  const page = Object.hasOwn(input, "page")
+    ? parsePositiveInteger(input.page)
+    : 1;
+  const pageSize = Object.hasOwn(input, "page_size")
+    ? parsePositiveInteger(input.page_size)
+    : DEFAULT_PROGRESS_PAGE_SIZE;
+  if (pageSize > MAX_PROGRESS_PAGE_SIZE) {
+    throw validationError();
+  }
+
+  const status = Object.hasOwn(input, "status") ? input.status : null;
+  if (
+    status !== null &&
+    (typeof status !== "string" || !PROGRESS_STATUSES.has(status))
+  ) {
+    throw validationError();
+  }
+
+  return { page, page_size: pageSize, status };
+}
+
+function parsePositiveInteger(value) {
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {
+    throw validationError();
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw validationError();
+  }
+  return parsed;
+}
+
+function toProgressSummary(rows) {
+  const counts = {
+    LEARNING: 0,
+    LEARNED: 0,
+    NEEDS_REVIEW: 0,
+  };
+  for (const row of rows) {
+    if (Object.hasOwn(counts, row.status)) {
+      counts[row.status] = row._count._all;
+    }
+  }
+  return {
+    total_started: counts.LEARNING + counts.LEARNED + counts.NEEDS_REVIEW,
+    learning: counts.LEARNING,
+    learned: counts.LEARNED,
+    needs_review: counts.NEEDS_REVIEW,
+  };
 }
 
 function toProgress(progress) {

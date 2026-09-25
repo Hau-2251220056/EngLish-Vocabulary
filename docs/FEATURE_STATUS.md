@@ -485,6 +485,7 @@ Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
 Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
+Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
 Spaced Repetition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -535,6 +536,33 @@ Status: DONE
 - Spaced Repetition, Words to Review, Topic Learning Progress and Continue Learning remain `TODO`. V1 preserves nullable future-compatible scheduling fields but defines no SRS algorithm, service, queue or due-date behavior.
 - Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community and AI remain outside this DONE boundary.
 - Guarded remote TEST DB latency was separately diagnosed as database/network round-trip dominated. It is a non-blocking performance observation and no optimization was included in this closure.
+
+## Learning Progress View V1
+
+Status: DONE
+
+### Closure Preparation
+
+- The existing Learning Progress persistence/mutation engine and Flashcard / Learning V1 closure remain `DONE`.
+- The approved extension adds only a USER-facing read API and `/my/learning-progress` view over persisted current state.
+- TASK-064 through TASK-072 are complete and HUMAN approved. TASK-072 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
+- HUMAN final closure is approved; Learning Progress View V1 is `DONE` while the existing Learning Progress engine remains a separate completed capability.
+- Summary covers persisted `LEARNING`, `LEARNED` and compatibility-only `NEEDS_REVIEW`; conceptual `NEW` is excluded.
+- Status filtering and bounded pagination are included; search is deferred.
+- No schema migration, SRS/review queue, Topic/Set progress, Continue Learning, history, accuracy, Quiz/Pronunciation result, XP/gamification, Dashboard or Flashcard redesign is authorized.
+
+### Formal Evidence
+
+- Guarded backend Learning coverage: 12/12 PASS, including USER-only authorization, current-user isolation, query validation, deterministic pagination/filter ordering, minimal projection, compatible `NEEDS_REVIEW`, consistent reads and repeated-read invariance.
+- Focused frontend evidence: Learning service 4/4 PASS; mocked Learning Progress states and accessibility 6/6 PASS; scoped Auth/App Layout responsive regressions 16/16 PASS; ESLint and production build PASS.
+- Guarded Learning Progress real-stack: 5/5 PASS. Complete sequential real-stack regression: 33/33 PASS — Auth 2, Learning Progress 5, Learning 4, Topic 9, Vocabulary 5 and Vocabulary Set 8.
+- Final mocked Auth/App Layout/Progress browser regression: 32/32 PASS. Controlled TEST fixtures and scoped processes/listeners were cleaned; diff, secret and scope checks passed.
+
+### Deferred / Non-blocking
+
+- Word search and client-selectable sorting remain deferred.
+- Conceptual `NEW` global counting, automatic `NEEDS_REVIEW` transitions, SRS scheduling, review queue/Words to Review, review actions, Topic/Set progress and Continue Learning remain deferred.
+- History/activity timeline, accuracy, Quiz/Pronunciation results, XP/gamification, Dashboard implementation, Flashcard redesign and a standalone USER Vocabulary catalog remain outside this extension.
 
 4.6 Dashboard
 

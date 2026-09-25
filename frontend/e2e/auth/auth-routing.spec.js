@@ -53,11 +53,16 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.getByRole("navigation").getByRole("link");
-  await expect(links).toHaveCount(2);
+  await expect(links).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
   await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
+  await expect(page.locator('a[href="/my/learning-progress"]')).toHaveCount(1);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+
+  await page.locator('a[href="/my/learning-progress"]').click();
+  await expect(page).toHaveURL(/\/my\/learning-progress$/);
+  await expect(page.locator("h1#learning-progress-title")).toBeVisible();
 });
 
 test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
@@ -70,5 +75,9 @@ test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
   await expect(indicator).toBeVisible();
   await expect(indicator).toHaveJSProperty("tagName", "SPAN");
   await expect(indicator).not.toHaveAttribute("role", "button");
+  await expect(page.locator('a[href="/my/learning-progress"]')).toHaveCount(0);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+
+  await page.goto("/my/learning-progress");
+  await expect(page).toHaveURL(/\/dashboard$/);
 });

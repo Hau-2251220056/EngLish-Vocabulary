@@ -1,6 +1,18 @@
 // @ts-nocheck
 export function createLearningController({ learningService }) {
   return {
+    async getProgress(req, res, next) {
+      try {
+        const progress = await learningService.getLearningProgress(
+          req.user.id,
+          req.query,
+        );
+        res.status(200).json({ success: true, data: progress });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
     async getSet(req, res, next) {
       try {
         const learningSet = await learningService.getLearningSet(

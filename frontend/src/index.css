@@ -1226,10 +1226,11 @@ input {
 
 .authenticated-app {
   display: flex;
+  height: 100dvh;
   min-height: 100vh;
   min-width: 0;
   flex-direction: column;
-  overflow-x: clip;
+  overflow: hidden;
   background: #f8faff;
 }
 
@@ -1251,8 +1252,10 @@ input {
 .authenticated-header-name { overflow: hidden; margin: 0; color: #0f172a; font-size: 0.875rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .authenticated-drawer-toggle, .authenticated-drawer-backdrop { display: none; }
 
-.authenticated-app .authenticated-layout { min-width: 0; min-height: 0; flex: 1; background: transparent; }
-.authenticated-app .authenticated-main { min-height: 0; }
+.authenticated-app .authenticated-layout { min-width: 0; min-height: 0; flex: 1; overflow: hidden; background: transparent; }
+.authenticated-app .authenticated-sidebar { min-height: 0; overflow-y: auto; }
+.authenticated-content { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow-x: hidden; overflow-y: auto; }
+.authenticated-app .authenticated-main { min-height: 0; flex: 1 0 auto; }
 .authenticated-footer { border-top: 1px solid #e2e8f0; background: #fff; padding: 0.85rem 1.5rem; color: #64748b; font-size: 0.75rem; text-align: center; }
 
 .my-vocabulary-sets-page { width: min(100%, 76rem); margin: 0 auto; padding: 2rem; color: #0f172a; }
@@ -1281,6 +1284,10 @@ input {
 @media (max-width: 700px) { .my-vocabulary-sets-page { padding: 1rem; }.my-vocabulary-sets-header, .my-vocabulary-sets-toolbar, .my-vocabulary-set-editor-heading, .my-vocabulary-set-detail-heading { align-items: stretch; flex-direction: column; }.my-vocabulary-sets-primary { width: 100%; }.my-vocabulary-sets-search { min-width: 0; }.my-vocabulary-set-form-grid { grid-template-columns: 1fr; }.my-vocabulary-set-form-wide { grid-column: auto; }.my-vocabulary-picker > div, .my-vocabulary-set-items-editor li, .my-vocabulary-picker li { align-items: stretch; flex-direction: column; }.my-vocabulary-set-item-controls { justify-content: flex-end; }.my-vocabulary-set-form-actions { flex-direction: column-reverse; }.my-vocabulary-set-form-actions > button { width: 100%; } }
 
 @media (max-width: 900px) {
+  .authenticated-app { height: auto; overflow-x: clip; overflow-y: visible; }
+  .authenticated-app .authenticated-layout { overflow: visible; }
+  .authenticated-content { overflow: visible; }
+  .authenticated-app .authenticated-main { min-height: calc(100vh - 9rem); }
   .authenticated-app .authenticated-header { padding-inline: 1rem; }
   .authenticated-header-actions { margin-left: auto; }
   .authenticated-header-account { order: 1; }

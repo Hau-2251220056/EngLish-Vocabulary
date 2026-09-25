@@ -5,7 +5,7 @@ import {
   createLearningService,
 } from "../src/services/learning-service.js";
 
-test("Learning service uses only the approved payload and event endpoints", async () => {
+test("Learning service uses only the approved Learning endpoints", async () => {
   const calls = [];
   const service = createLearningService(createClient(calls));
   const event = {
@@ -18,9 +18,22 @@ test("Learning service uses only the approved payload and event endpoints", asyn
 
   assert.deepEqual(await service.getLearningSet("set/id"), learningSet);
   assert.deepEqual(await service.recordMeaningfulEvent(event), progress);
+  assert.deepEqual(
+    await service.getLearningProgress({
+      page: 2,
+      page_size: 10,
+      status: "LEARNED",
+    }),
+    learningProgress,
+  );
   assert.deepEqual(calls, [
     ["GET", "/api/learning/sets/set%2Fid"],
     ["POST", "/api/learning/events", event],
+    [
+      "GET",
+      "/api/learning/progress",
+      { params: { page: 2, page_size: 10, status: "LEARNED" } },
+    ],
   ]);
 });
 
@@ -89,13 +102,49 @@ test("Learning service rejects malformed success envelopes", async () => {
   await assert.rejects(invalidProgressService.recordMeaningfulEvent({}), {
     code: "INVALID_LEARNING_RESPONSE",
   });
+
+  await assert.rejects(
+    createLearningService({
+      async get() {
+        return {
+          data: {
+            data: {
+              ...learningProgress,
+              summary: { ...learningProgress.summary, total_started: 99 },
+            },
+          },
+        };
+      },
+    }).getLearningProgress(),
+    { code: "INVALID_LEARNING_RESPONSE" },
+  );
+});
+
+test("Learning service rejects unsupported progress queries before transport", async () => {
+  const calls = [];
+  const service = createLearningService(createClient(calls));
+  for (const query of [
+    { page: 0 },
+    { page_size: 101 },
+    { status: "NEW" },
+    { search: "word" },
+  ]) {
+    await assert.rejects(service.getLearningProgress(query), {
+      code: "INVALID_LEARNING_PROGRESS_QUERY",
+    });
+  }
+  assert.deepEqual(calls, []);
 });
 
 function createClient(calls) {
   return {
-    async get(url) {
-      calls.push(["GET", url]);
-      return { data: { data: learningSet } };
+    async get(url, options) {
+      calls.push(options ? ["GET", url, options] : ["GET", url]);
+      return {
+        data: {
+          data: url.endsWith("/progress") ? learningProgress : learningSet,
+        },
+      };
     },
     async post(url, input) {
       calls.push(["POST", url, input]);
@@ -110,4 +159,27 @@ const progress = Object.freeze({
   review_count: 1,
   revision: 1,
   last_reviewed_at: "2026-09-23T00:00:00.000Z",
+});
+const learningProgress = Object.freeze({
+  summary: {
+    total_started: 2,
+    learning: 1,
+    learned: 1,
+    needs_review: 0,
+  },
+  items: [
+    {
+      vocabulary: { id: "vocabulary-id", word: "word", phonetic: null },
+      status: "LEARNED",
+      review_count: 2,
+      last_reviewed_at: "2026-09-24T00:00:00.000Z",
+    },
+  ],
+  pagination: {
+    page: 2,
+    page_size: 10,
+    total_items: 2,
+    total_pages: 1,
+  },
+  filter: { status: "LEARNED" },
 });

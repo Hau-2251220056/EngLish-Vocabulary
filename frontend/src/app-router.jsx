@@ -10,6 +10,7 @@ import {
 import { DashboardPlaceholder } from "./pages/dashboard-placeholder.jsx";
 import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
+import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
 import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
 import { PublicTopicLayout } from "./topics/public-topic-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
@@ -45,6 +46,7 @@ export function AppRouter() {
             <Route path="/dashboard" element={<DashboardPlaceholder />} />
             <Route element={<UserRoute />}>
               <Route path="/learn/vocabulary-sets/:setId" element={<LearningFoundationPage />} />
+              <Route path="/my/learning-progress" element={<LearningProgressPage />} />
               <Route path="/my/vocabulary-sets" element={<MyVocabularySetsPage />} />
               <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetsPage />} />
             </Route>

@@ -1094,6 +1094,21 @@ Required states include accessible loading, empty, not-found, stale-item, event/
 The HUMAN-approved repo-native checkpoint is recorded in `docs/FLASHCARD_LEARNING_V1_UI_UX_CHECKPOINT.md`. It defines card front/back, primary-Meaning hierarchy, run header, external assessment controls, all state transitions, focus/keyboard map, reduced motion and mobile/desktop behavior. Final UI implementation must remain within that checkpoint.
 
 Flashcard / Learning V1 does not add Quiz, Pronunciation Practice, XP/Level/Streak/Achievements, Dashboard, Words to Review, a full SRS algorithm, Community or AI behavior. Model audio playback is optional presentation only and never a progress event.
+
+### 12.5 Learning Progress View V1 Active UX Contract
+
+Learning Progress View V1 adds `/my/learning-progress` under the existing authenticated App Layout and `UserRoute`, plus a USER-only **Tiến độ học** navigation destination. Guest and ADMIN cannot use the route. This is a read-only view over the completed per-USER/per-Vocabulary progress engine, not Dashboard or a standalone Vocabulary catalog.
+
+The page presents persisted counts for total started, Learning, Learned and compatibility-only Needs Review. Conceptual New is excluded and the UI must not present total started as total available Vocabulary or calculate a global completion percentage.
+
+The server-paginated current-state list displays only word, optional phonetic, textual status, review count and last-reviewed time. A status control supports All, Learning, Learned and Needs Review; changing it returns to page 1. Search, client sorting, charts, review actions, recommendations, Topic/Set progress and gamification are deferred.
+
+Required states are accessible loading without premature empty rendering, first-use empty, filtered-empty, safe error with retry, success and pending pagination/filter feedback. Pagination exposes current-page context, disables unavailable or pending actions and prevents stale responses from replacing the latest selection.
+
+The final page must preserve semantic headings/labels, textual status independent of color, native keyboard controls, visible focus, appropriate live regions, reduced motion, mobile touch targets and no horizontal overflow across existing breakpoints. A dedicated HUMAN UI/UX Design Checkpoint is mandatory before production page implementation; this active contract intentionally does not prescribe pixel-level styling.
+
+Viewing or filtering never creates, updates, resets or recommends Learning Progress. Existing Flashcard Focus Mode, sessionStorage run state, event transitions and completion behavior remain unchanged.
+
 13. Gamification UI
 
 Gamification features:

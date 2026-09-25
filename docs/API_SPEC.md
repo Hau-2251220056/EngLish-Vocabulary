@@ -695,6 +695,20 @@ Known safe errors are `400 VALIDATION_ERROR`, `404 LEARNING_SET_NOT_FOUND`, `409
 
 Reveal, navigation, audio playback, reload, restart and client-run completion are not meaningful backend events and must not create/update progress.
 
+### 21.0.1 Learning Progress View V1 Active Read Contract
+
+`GET /api/learning/progress` is an authenticated `USER`-only, read-only extension over the completed Learning Progress engine. Guest receives the existing `401 AUTHENTICATION_FAILED`; authenticated ADMIN receives the existing `403 FORBIDDEN`. The backend derives `user_id` from the session and accepts no user selector.
+
+Supported query parameters are optional scalar `page` (default `1`), `page_size` (default `20`, maximum `100`) and exact `status` (`LEARNING`, `LEARNED` or `NEEDS_REVIEW`). Unknown, repeated, malformed or unsupported query values return `400 VALIDATION_ERROR`. Search and client-selectable sorting are not part of V1.
+
+The success envelope contains an unfiltered current-USER summary (`total_started`, `learning`, `learned`, `needs_review`), the optionally status-filtered page, truthful filtered pagination (`page`, `page_size`, `total_items`, `total_pages`) and the applied nullable status filter. Each item returns only Vocabulary `id`, `word`, nullable `phonetic`, plus progress `status`, `review_count` and nullable `last_reviewed_at`.
+
+Records are ordered by `last_reviewed_at` descending with nulls last, then progress `created_at` descending and progress `id` ascending. A positive out-of-range page succeeds with an empty item collection and truthful metadata.
+
+Conceptual `NEW` is excluded because it has no persisted row and V1 defines no global eligible Vocabulary universe. Existing `NEEDS_REVIEW` rows may be counted, filtered and displayed, but this endpoint creates no review eligibility, due queue, SRS transition or scheduling behavior. Reads never create or mutate progress and expose no Meaning/Example, Set/Topic membership, revision/event ID, SRS field or other USER's data.
+
+Unexpected failures use the existing safe `500 INTERNAL_SERVER_ERROR` contract. This endpoint does not change `GET /api/learning/sets/:setId` or `POST /api/learning/events`.
+
 Flashcard là learning activity.
 
 Không phải Quiz.

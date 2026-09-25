@@ -745,6 +745,16 @@ The frontend route reuses `ProtectedRoute`, `UserRoute` and `AuthenticatedShell`
 
 A mandatory HUMAN UI/UX checkpoint separates frontend service/route/run-state foundation from final Flashcard UI implementation. No SRS service/algorithm, Words to Review, Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community or AI is part of this V1 architecture.
 
+### 12.2 Learning Progress View V1 Read Extension
+
+Learning Progress View V1 reuses the same authenticated USER Learning pipeline and existing `LEARNING_PROGRESS` → `VOCABULARY` relations. `GET /api/learning/progress` adds a read-only repository/service/controller route that constrains every summary, count and page query by the session-derived `user_id`.
+
+The backend returns an unfiltered persisted-state summary plus an optionally status-filtered, bounded page from one consistent read snapshot. It uses an explicit minimal Vocabulary/progress selection and deterministic ordering; it performs no progress write and creates no conceptual `NEW` row. Existing `NEEDS_REVIEW` is presentation compatibility only and does not introduce SRS or Words-to-Review architecture.
+
+The frontend adds `/my/learning-progress` beneath the existing `ProtectedRoute`, `AuthenticatedShell` and `UserRoute`, with a USER-only navigation entry. A HUMAN UI/UX checkpoint must be approved after service/route foundation and before production page implementation. Dashboard, Flashcard Focus Mode and existing Learning event/run-state architecture remain unchanged.
+
+No Prisma model, migration, cached aggregate, new role, external service or dependency is introduced by this read extension.
+
 Learning progress được quản lý theo từng user và vocabulary.
 
 Conceptual flow:

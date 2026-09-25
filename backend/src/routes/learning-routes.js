@@ -9,6 +9,7 @@ export function createLearningRouter({
   const router = express.Router();
   router.use(authenticationMiddleware);
   router.use(userAuthorizationMiddleware);
+  router.get("/progress", learningController.getProgress);
   router.get("/sets/:setId", learningController.getSet);
   router.post("/events", learningController.recordEvent);
   return router;

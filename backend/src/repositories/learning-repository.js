@@ -98,6 +98,51 @@ export function createLearningRepository(prisma) {
       });
     },
 
+    summarizeProgress(userId) {
+      return prisma.lEARNING_PROGRESS.groupBy({
+        by: ["status"],
+        where: { user_id: userId },
+        _count: { _all: true },
+      });
+    },
+
+    countProgress(userId, status) {
+      return prisma.lEARNING_PROGRESS.count({
+        where: {
+          user_id: userId,
+          ...(status ? { status } : {}),
+        },
+      });
+    },
+
+    listProgress(userId, { status, skip, take }) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: {
+          user_id: userId,
+          ...(status ? { status } : {}),
+        },
+        orderBy: [
+          { last_reviewed_at: { sort: "desc", nulls: "last" } },
+          { created_at: "desc" },
+          { id: "asc" },
+        ],
+        skip,
+        take,
+        select: {
+          status: true,
+          review_count: true,
+          last_reviewed_at: true,
+          vocabulary: {
+            select: {
+              id: true,
+              word: true,
+              phonetic: true,
+            },
+          },
+        },
+      });
+    },
+
     createProgress(data) {
       return prisma.lEARNING_PROGRESS.create({
         data,
@@ -116,6 +161,17 @@ export function createLearningRepository(prisma) {
       return prisma.$transaction(
         async (transaction) => callback(createLearningRepository(transaction)),
         { maxWait: 10_000, timeout: 30_000 },
+      );
+    },
+
+    withConsistentRead(callback) {
+      return prisma.$transaction(
+        async (transaction) => callback(createLearningRepository(transaction)),
+        {
+          isolationLevel: "RepeatableRead",
+          maxWait: 10_000,
+          timeout: 30_000,
+        },
       );
     },
   };

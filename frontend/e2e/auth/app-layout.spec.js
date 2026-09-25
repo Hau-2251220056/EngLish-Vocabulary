@@ -26,12 +26,42 @@ test("desktop USER renders the shared layout without ADMIN navigation", async ({
   await expect(page.locator("footer a, footer button")).toHaveCount(0);
   await expect(page.locator(".authenticated-avatar")).toHaveText("L");
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
-  await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(2);
+  await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
   await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
   await expect(page.locator('a[href^="/admin/"]')).toHaveCount(0);
   await expect(page.locator(".authenticated-drawer-toggle")).toBeHidden();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("desktop keeps the sidebar fixed while only main content scrolls", async ({ page }) => {
+  await page.setViewportSize(viewports[2]);
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  await page.goto("/dashboard");
+  await page.locator("main.authenticated-main").evaluate((main) => {
+    const tallContent = document.createElement("div");
+    tallContent.setAttribute("data-layout-overflow-probe", "");
+    tallContent.style.height = "1800px";
+    main.append(tallContent);
+  });
+
+  const before = await page.locator("aside.authenticated-sidebar").boundingBox();
+  await page.locator(".authenticated-content").evaluate((content) => {
+    content.scrollTop = 500;
+  });
+  const after = await page.locator("aside.authenticated-sidebar").boundingBox();
+  const scrollState = await page.evaluate(() => ({
+    body: document.body.scrollTop,
+    document: document.documentElement.scrollTop,
+    content: document.querySelector(".authenticated-content").scrollTop,
+  }));
+
+  expect(scrollState).toEqual({ body: 0, document: 0, content: 500 });
+  expect(after.y).toBe(before.y);
+  await expect(page.locator(".authenticated-logout-button")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

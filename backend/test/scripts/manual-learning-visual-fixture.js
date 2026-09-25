@@ -67,6 +67,14 @@ async function verifyFixture(prisma) {
   const words = set?.items.map(({ vocabulary }) => vocabulary.word) ?? [];
   const journey = set?.items.find(({ vocabulary }) => vocabulary.word === `${fixture.prefix} journey`);
   const journeyLevels = journey?.vocabulary.meanings.map(({ cefr_level }) => cefr_level) ?? [];
+  const progress = user
+    ? await prisma.lEARNING_PROGRESS.findMany({
+        where: { user_id: user.id },
+        include: { vocabulary: { select: { word: true } } },
+        orderBy: { status: "asc" },
+      })
+    : [];
+  const progressStatuses = progress.map(({ status }) => status).sort();
   const valid = Boolean(
     user
       && set
@@ -77,7 +85,12 @@ async function verifyFixture(prisma) {
         && vocabulary.meanings.some(({ examples }) => examples.length > 0)
       ))
       && journeyLevels.includes("A1")
-      && journeyLevels.includes("B2"),
+      && journeyLevels.includes("B2")
+      && progress.length === 3
+      && progressStatuses.join(",") === "LEARNED,LEARNING,NEEDS_REVIEW"
+      && progress.every(({ review_count: reviewCount, vocabulary }) => (
+        reviewCount > 0 && vocabulary.word.startsWith(fixture.prefix)
+      )),
   );
 
   if (!valid) {
@@ -86,8 +99,10 @@ async function verifyFixture(prisma) {
 
   console.log("Manual Learning visual fixture verified in the guarded TEST database.");
   console.log(`Controlled records: 1 user, 1 private set, ${words.length} ordered vocabulary cards.`);
+  console.log("Learning Progress View exercise: LEARNING, LEARNED and NEEDS_REVIEW are all present.");
   console.log("Primary-Meaning exercise: multi-Meaning card contains A1 and B2 meanings in deterministic storage order.");
   console.log(`Learning path: /learn/vocabulary-sets/${set.id}`);
+  console.log("Progress path: /my/learning-progress");
 }
 
 async function createFixture(prisma) {
@@ -229,6 +244,39 @@ async function createFixture(prisma) {
       },
     });
 
+    await Promise.all([
+      transaction.lEARNING_PROGRESS.create({
+        data: {
+          user_id: user.id,
+          vocabulary_id: book.id,
+          status: "LEARNING",
+          review_count: 2,
+          revision: 2,
+          last_reviewed_at: new Date("2026-09-22T08:00:00.000Z"),
+        },
+      }),
+      transaction.lEARNING_PROGRESS.create({
+        data: {
+          user_id: user.id,
+          vocabulary_id: journey.id,
+          status: "LEARNED",
+          review_count: 5,
+          revision: 5,
+          last_reviewed_at: new Date("2026-09-23T08:00:00.000Z"),
+        },
+      }),
+      transaction.lEARNING_PROGRESS.create({
+        data: {
+          user_id: user.id,
+          vocabulary_id: resilient.id,
+          status: "NEEDS_REVIEW",
+          review_count: 3,
+          revision: 3,
+          last_reviewed_at: new Date("2026-09-21T08:00:00.000Z"),
+        },
+      }),
+    ]);
+
     return { setId: set.id };
   }, { maxWait: 30_000, timeout: 120_000 });
 
@@ -236,6 +284,7 @@ async function createFixture(prisma) {
   console.log(`Email: ${fixture.email}`);
   console.log(`Password: ${PASSWORD}`);
   console.log(`Learning path: /learn/vocabulary-sets/${result.setId}`);
+  console.log("Progress path: /my/learning-progress");
   console.log(`Cleanup run ID: ${runId}`);
 }
 
