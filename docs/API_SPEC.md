@@ -1243,15 +1243,33 @@ Exact achievement list không được tự ý mở rộng trong IMPLEMENT nếu
 
 43. Dashboard
 
-Dashboard cần tổng hợp dữ liệu từ nhiều domain.
+### 43.0 Dashboard V1 Active Composition Contract
 
-Không nhất thiết phải tạo database table riêng cho Dashboard.
+Dashboard V1 is a read-only frontend composition for authenticated users at `/dashboard`. It does not add a Dashboard backend endpoint.
 
-43.1 Dashboard Summary
-GET /api/users/me/dashboard
+For `USER`, the frontend composes only these completed sources:
+
+- the existing Authentication context for `display_name` and role;
+- `GET /api/learning/progress?page=1&page_size=1` for persisted `total_started`, `learning` and `learned` summary values;
+- `GET /api/my/vocabulary-sets` for the exact owned private Set count and a UI preview of at most the first three records in existing deterministic server order.
+
+The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. The two USER data sources load and retry independently; a failure in one source must not discard successful data from the other.
+
+Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call either USER-only endpoint. Guest access remains protected by the existing Authentication route behavior.
+
+Dashboard reads create or update no Learning Progress, Vocabulary Set or Dashboard persistence. V1 adds no global/Topic/Set percentage, conceptual `NEW`, review queue, SRS, recency, Continue Learning, XP, Level, Streak, Daily Goal, achievement, activity/history, Quiz/Pronunciation metric or Admin Dashboard behavior.
+
+### 43.1 Future Dashboard Aggregation — Deferred
+
+The following aggregate endpoint and fields are retained as future conceptual background only. They are not an active V1 API contract and must not be implemented without a separately approved SPEC/PLAN/TASK.
+
+Dashboard may eventually aggregate data from multiple domains. A separate Dashboard table is not necessarily required.
+
+Conceptual endpoint: `GET /api/users/me/dashboard`
+
 Access
 
-Authenticated User.
+Authenticated User (future scope).
 
 Response
 
@@ -1274,7 +1292,7 @@ Conceptual:
   }
 }
 
-Dashboard API có thể aggregate:
+Future Dashboard API may aggregate:
 
 Level.
 Total XP.
@@ -1285,7 +1303,7 @@ Topic progress.
 Continue Learning.
 Words to Review.
 
-Implementation cụ thể được quyết định trong PLAN.
+Implementation remains deferred to a future approved workflow.
 
 44. Topic Progress
 

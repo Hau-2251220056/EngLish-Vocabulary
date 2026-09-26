@@ -26,10 +26,12 @@ test("desktop USER renders the shared layout without ADMIN navigation", async ({
   await expect(page.locator("footer a, footer button")).toHaveCount(0);
   await expect(page.locator(".authenticated-avatar")).toHaveText("L");
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
-  await expect(page.getByRole("navigation").getByRole("link")).toHaveCount(3);
+  await expect(page.locator(".authenticated-navigation").getByRole("link")).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
+    ).toHaveCount(1);
   await expect(page.locator('a[href^="/admin/"]')).toHaveCount(0);
   await expect(page.locator(".authenticated-drawer-toggle")).toBeHidden();
   await expectNoHorizontalOverflow(page);

@@ -7,7 +7,7 @@ import {
   ProtectedRoute,
   UserRoute,
 } from "./auth/ui/route-guards.jsx";
-import { DashboardPlaceholder } from "./pages/dashboard-placeholder.jsx";
+import { DashboardPage } from "./dashboard/dashboard-page.jsx";
 import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
 import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
@@ -43,7 +43,7 @@ export function AppRouter() {
         </Route>
         <Route element={<ProtectedRoute />}>
           <Route element={<AuthenticatedShell />}>
-            <Route path="/dashboard" element={<DashboardPlaceholder />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route element={<UserRoute />}>
               <Route path="/learn/vocabulary-sets/:setId" element={<LearningFoundationPage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />

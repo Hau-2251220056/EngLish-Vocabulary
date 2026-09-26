@@ -569,7 +569,7 @@ Status: DONE
 The Dashboard provides a summary of the user's current learning state and activity.
 
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-User Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Dashboard	DONE	✓	✓	✓	✓	✓	✓
 XP Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Level Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Streak Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -578,9 +578,28 @@ Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Continue Learning Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
-Dashboard data should be derived from the user's actual learning and gamification state.
+Dashboard V1 composes actual current-session data from the completed Authentication context, read-only Learning Progress summary and owner-scoped My Vocabulary Sets list. It adds no Dashboard endpoint, schema or migration.
 
 The Dashboard must not become a separate source of truth for business data.
+
+### Dashboard V1 Closure
+
+- Related SPEC: `docs/specs/DASHBOARD_V1_SPEC.md` — HUMAN APPROVED.
+- Related PLAN: `docs/plans/DASHBOARD_V1_PLAN.md` — HUMAN APPROVED.
+- Related TASK: `docs/tasks/DASHBOARD_V1_TASK.md` — HUMAN APPROVED.
+- TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
+- USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
+- Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
+- XP, Level, Streak, Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics and charts remain `TODO` or deferred.
+- HUMAN final closure is approved; User Dashboard V1 is `DONE`.
+
+### Dashboard V1 Formal Evidence
+
+- Greeting boundary: 1/1 PASS; mocked Dashboard states/accessibility/responsive coverage: 9/9 PASS; scoped Auth routing: 5/5 PASS.
+- Guarded Dashboard real-stack: 2/2 PASS, including current-USER isolation, exact persisted summary, bounded owned-Set preview, valid Learn navigation, ADMIN zero-call and read-only snapshot invariance.
+- Scoped regressions: Auth real-stack 2/2, Learning Progress 5/5, USER Vocabulary Set 2/2, Learning route 4/4 and App Layout 8/8 PASS.
+- ESLint, production build, targeted TEST fixture cleanup, listener cleanup, diff, secret and scope checks PASS.
+- No Dashboard endpoint, backend source change, schema, migration, dependency, fake data or deferred Dashboard/gamification capability was added.
 
 4.7 Quiz
 
@@ -838,7 +857,7 @@ Status: DONE
 ### Scope
 
 - No backend, API, database, route, dependency or Authentication architecture change.
-- User Dashboard remains a separate unfinished feature.
+- User Dashboard remains a separate completed feature; the App Layout contract itself is unchanged.
 
 4.15 Engineering Foundation
 

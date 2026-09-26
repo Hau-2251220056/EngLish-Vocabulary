@@ -45,7 +45,7 @@ test.afterAll(async () => {
 
 test("USER creates, edits ordered private items with the editor picker, and confirms deletion", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "Bộ từ của tôi" }).click();
+  await page.getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Chưa có bộ từ riêng" })).toBeVisible();
   await page.getByRole("button", { name: "Tạo bộ từ" }).click();
   await page.locator("#my-set-name").fill(`${prefix} Private`);

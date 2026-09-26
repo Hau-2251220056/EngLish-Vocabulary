@@ -17,7 +17,9 @@ test("initialization shows a neutral status without protected-content flash", as
   await expect(page.getByRole("navigation")).toHaveCount(0);
 
   pending.resolve(responses.currentUser(publicUser));
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", {
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối), ${publicUser.display_name}\\.$`),
+  })).toBeVisible();
 });
 
 test("Guest route table redirects without an expiration warning", async ({ page }) => {
@@ -52,15 +54,22 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
 
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
-  const links = page.getByRole("navigation").getByRole("link");
+  const links = page.locator(".authenticated-navigation").getByRole("link");
   await expect(links).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
-  await expect(page.locator('a[href="/my/learning-progress"]')).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/learning-progress"]'),
+    ).toHaveCount(1);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 
-  await page.locator('a[href="/my/learning-progress"]').click();
+  await page
+    .locator(".authenticated-navigation")
+    .locator('a[href="/my/learning-progress"]')
+    .click();
   await expect(page).toHaveURL(/\/my\/learning-progress$/);
   await expect(page.locator("h1#learning-progress-title")).toBeVisible();
 });

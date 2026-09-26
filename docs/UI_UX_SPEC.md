@@ -475,37 +475,26 @@ Detail displays Topic metadata only. An empty Topic remains visible. Topic V1 do
 10. User Screens
 10.1 Dashboard
 
-The dashboard is the main home screen after login.
+Dashboard V1 is the authenticated landing at `/dashboard`. It reuses the existing `AuthenticatedShell`; it does not redesign the Header, Sidebar, Main Content, Footer, scrolling or mobile drawer.
 
-Display:
+For `USER`, the production Dashboard is a concise read-only overview composed from the existing Authentication identity, persisted Learning Progress summary and owned private Vocabulary Set list. Its functional hierarchy is:
 
-Welcome message
-Current level
-XP
-Current streak
-Daily XP Goal progress
-Topic learning progress
-Words to review
-Continue Learning
-Current learning progress
-Recent learning activity
-Achievement preview
+1. one page heading and a personalized greeting from authenticated `display_name`;
+2. a compact learning snapshot containing exactly total started, `LEARNING` and `LEARNED`;
+3. the exact private Set count and at most three Set summaries in existing server order;
+4. quick navigation to Topics, My Sets and detailed Learning Progress.
 
-Topic progress should provide a concise overview of the user's learning progress by topic.
+Each Set preview may show its real name, optional description and Item count. Set management/detail navigation remains available, while Learn is shown only when `item_count > 0`. Preview order must not be described as recent, recommended or in progress.
 
-Each topic progress item may display:
+Progress and My Sets load independently. Each section provides an accessible initial loading state, its own first-use empty state and a safe scoped error/retry state with duplicate-pending and stale-response protection. Failure of one section leaves successful content from the other usable.
 
-Topic name
-Progress percentage
-Learned words / total words
-Words to review
-Continue Learning action
+Authenticated `ADMIN` keeps `/dashboard` as a neutral safe landing and must not trigger USER-only Progress or My Sets requests. V1 does not create an Admin Dashboard. Guest access continues to use the existing protected-route redirect behavior.
 
-The dashboard should focus on encouraging the user to continue learning.
+The page must use semantic headings, native controls, visible focus, textual meaning independent of color, appropriate live/status/alert semantics, predictable retry focus, existing touch-target conventions and reduced-motion support. Desktop, tablet and mobile layouts must have no horizontal overflow and must preserve the current App Layout behavior.
 
-Do not overload the dashboard with too many statistics.
+A dedicated HUMAN UI/UX Design Checkpoint is mandatory after the role-safe functional foundation and before production Dashboard UI implementation. This active contract defines function and states, not final pixel-level composition.
 
-The dashboard is a summary view and is not the source of truth for learning progress.
+Dashboard V1 does not display conceptual `NEW`, `NEEDS_REVIEW` as a queue/action, global/Topic/Set percentages, Continue Learning/recency, XP, Level, Streak, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. Those broader Dashboard concepts remain future/deferred scope. Dashboard is not a source of truth and viewing or retrying it never creates or updates learning data.
 
 10.2 Learn Vocabulary
 
