@@ -147,7 +147,9 @@ test("@topic USER reaches public Topics but not ADMIN management", async ({ page
 
   await page.goto("/admin/topics");
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", {
+    name: /^Chào buổi (sáng|trưa|chiều|tối), Topic Browser User\.$/,
+  })).toBeVisible();
 });
 
 test("@topic unauthenticated ADMIN route follows the existing login redirect", async ({ page }) => {
