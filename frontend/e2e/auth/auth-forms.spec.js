@@ -90,7 +90,9 @@ test("valid Login exposes pending state, deduplicates and enters Dashboard", asy
 
   pending.resolve(responses.login(publicUser));
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", {
+    name: /^Chào buổi (sáng|trưa|chiều|tối), Learner\.$/,
+  })).toBeVisible();
   expect(api.callsFor("/api/auth/login")[0].body).toEqual({
     email: "learner@example.com",
     password: "password",

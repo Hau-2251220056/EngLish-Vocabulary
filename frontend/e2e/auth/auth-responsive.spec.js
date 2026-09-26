@@ -40,16 +40,20 @@ for (const viewport of viewports) {
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", {
+      name: /^Chào buổi (sáng|trưa|chiều|tối), Learner with an intentionally very long display name for responsive coverage\.$/,
+    })).toBeVisible();
     await expect(page.locator(".authenticated-header-name")).toHaveText(longNameUser.display_name);
     await expect(page.locator(".authenticated-navigation a")).toHaveCount(3);
-    await expect(page.locator('a[href="/my/vocabulary-sets"]')).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
+    ).toHaveCount(1);
     await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     await expectWithinViewport(page, ".authenticated-layout");
     await expectWithinViewport(page, ".authenticated-main");
     if (viewport.width > 900) await expectWithinViewport(page, ".authenticated-header-name");
-    await expectWithinViewport(page, '[aria-labelledby="dashboard-title"] > section');
+    await expectWithinViewport(page, ".dashboard-page");
 
     const logout = page.getByRole("button", { name: "Đăng xuất", exact: true });
     if (viewport.width <= 900) await page.locator(".authenticated-drawer-toggle").click();

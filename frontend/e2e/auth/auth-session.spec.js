@@ -53,7 +53,7 @@ test("Logout failure preserves identity and hides raw details", async ({ page })
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
   await expect(page.getByRole("button", { name: "Đăng xuất" })).toBeEnabled();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator(".authenticated-account").getByRole("alert")).toContainText(
     "Không thể đăng xuất lúc này. Vui lòng thử lại.",
   );
   await expect(page.getByText("raw persistence detail")).toHaveCount(0);

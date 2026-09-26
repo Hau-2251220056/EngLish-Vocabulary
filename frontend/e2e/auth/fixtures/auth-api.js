@@ -46,6 +46,24 @@ export const responses = Object.freeze({
 export async function installAuthApiMock(page, handlers = {}) {
   const calls = [];
 
+  await page.route("**/api/learning/progress**", (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        success: true,
+        data: {
+          summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
+          items: [],
+          pagination: { page: 1, page_size: 1, total_items: 0, total_pages: 0 },
+          filter: { status: null },
+        },
+      },
+    }),
+  );
+  await page.route("**/api/my/vocabulary-sets", (route) =>
+    route.fulfill({ status: 200, json: { success: true, data: [] } }),
+  );
+
   await page.route("**/api/auth/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
