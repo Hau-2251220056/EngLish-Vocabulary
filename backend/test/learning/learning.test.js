@@ -231,40 +231,38 @@ test("progress view is USER-only, isolated, minimal, compatible and read-only", 
   const learnedVocabulary = await createVocabulary("progress-learned");
   const reviewVocabulary = await createVocabulary("progress-review");
   const otherVocabulary = await createVocabulary("progress-other");
-  await Promise.all([
-    createProgress({
-      userId: owner.id,
-      vocabularyId: learningVocabulary.id,
-      status: "LEARNING",
-      reviewCount: 2,
-      revision: 2,
-      lastReviewedAt: new Date("2026-09-21T00:00:00.000Z"),
-    }),
-    createProgress({
-      userId: owner.id,
-      vocabularyId: learnedVocabulary.id,
-      status: "LEARNED",
-      reviewCount: 3,
-      revision: 3,
-      lastReviewedAt: new Date("2026-09-22T00:00:00.000Z"),
-    }),
-    createProgress({
-      userId: owner.id,
-      vocabularyId: reviewVocabulary.id,
-      status: "NEEDS_REVIEW",
-      reviewCount: 4,
-      revision: 4,
-      lastReviewedAt: null,
-    }),
-    createProgress({
-      userId: otherUser.id,
-      vocabularyId: otherVocabulary.id,
-      status: "LEARNED",
-      reviewCount: 9,
-      revision: 9,
-      lastReviewedAt: new Date("2026-09-24T00:00:00.000Z"),
-    }),
-  ]);
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: learningVocabulary.id,
+    status: "LEARNING",
+    reviewCount: 2,
+    revision: 2,
+    lastReviewedAt: new Date("2026-09-21T00:00:00.000Z"),
+  });
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: learnedVocabulary.id,
+    status: "LEARNED",
+    reviewCount: 3,
+    revision: 3,
+    lastReviewedAt: new Date("2026-09-22T00:00:00.000Z"),
+  });
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: reviewVocabulary.id,
+    status: "NEEDS_REVIEW",
+    reviewCount: 4,
+    revision: 4,
+    lastReviewedAt: null,
+  });
+  await createProgress({
+    userId: otherUser.id,
+    vocabularyId: otherVocabulary.id,
+    status: "LEARNED",
+    reviewCount: 9,
+    revision: 9,
+    lastReviewedAt: new Date("2026-09-24T00:00:00.000Z"),
+  });
   const before = await prisma.lEARNING_PROGRESS.findMany({
     orderBy: { id: "asc" },
   });

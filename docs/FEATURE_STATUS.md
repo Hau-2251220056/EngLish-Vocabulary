@@ -606,23 +606,34 @@ The Dashboard must not become a separate source of truth for business data.
 The system currently supports exactly two quiz types:
 
 1. Vietnamese → English
-2. Missing Letter
+2. Unscramble Word
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vietnamese → English Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Missing Letter Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Per-Character Feedback	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Quiz Result	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vietnamese → English Quiz	DONE	✅	✅	✅	✅	✅	✅
+Unscramble Word Quiz	DONE	✅	✅	✅	✅	✅	✅
+Per-Character Feedback	DONE	✅	✅	✅	✅	✅	✅
+Transient Quiz Result	DONE	✅	✅	✅	✅	✅	✅
 
-For typing-based quizzes, per-character feedback may indicate:
+For both active Quiz types, accepted per-character feedback uses visible characters above underlines plus non-color semantics:
 
-Correct position → Green
-Incorrect position → Red
+Correct position → Green underline + `correct`
+Incorrect/missing/extra → Error underline + explicit semantic state
 
 Quiz correctness must be determined by the Backend.
 
 Only the approved quiz types should be implemented.
 
 Do not add additional quiz types without explicit scope approval.
+
+Quiz V1 is an authenticated USER-only, Vocabulary-Set-scoped workflow over every ordered Set Item once per run. The active contract is defined by `docs/specs/QUIZ_V1_SPEC.md`, `docs/plans/QUIZ_V1_PLAN.md` and `docs/tasks/QUIZ_V1_TASK.md`.
+
+Current workflow evidence:
+
+- Original Quiz V1 SPEC, PLAN and TASK decomposition are HUMAN APPROVED; TASK-080 through TASK-085 are HUMAN APPROVED and TASK-086 preserves completed historical `MISSING_LETTER` implementation evidence.
+- During TASK-086 visual review, HUMAN requested and approved the active `UNSCRAMBLE_WORD` replacement and shared underline feedback revision.
+- TASK-086A, TASK-086B, TASK-087 and TASK-088 are complete and HUMAN APPROVED. TASK-089 formal TEST is `PASS` for AC-01 through AC-16 and formal REVIEW is `APPROVE`, with no findings or blockers.
+- TASK-089 is `COMPLETE — HUMAN APPROVED`; HUMAN final closure is authorized and Quiz V1 is `DONE — HUMAN APPROVED`.
+- Quiz runs/results remain transient and add no schema/migration or Quiz Session/Attempt/history persistence.
+- SRS/review queue, XP/Level/Streak/Daily Goal/Achievement, Pronunciation Practice, additional Quiz types and analytics remain deferred.
 
 4.8 Pronunciation
 

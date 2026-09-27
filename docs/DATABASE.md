@@ -68,7 +68,7 @@ USER
 ├── Learning
 │   ├── LEARNING_PROGRESS
 │   ├── USER_DAILY_PROGRESS
-│   ├── QUIZ_ATTEMPT
+│   ├── QUIZ_ATTEMPT (future/deferred; not materialized in Quiz V1)
 │   └── STREAK
 │
 ├── Gamification
@@ -101,7 +101,7 @@ VOCABULARY_SET	Bộ từ vựng
 VOCABULARY_SET_ITEM	Liên kết Vocabulary và Vocabulary Set
 LEARNING_PROGRESS	Tiến độ học của user đối với từng từ
 USER_DAILY_PROGRESS	Tiến độ XP và Daily Goal theo từng ngày
-QUIZ_ATTEMPT	Lịch sử làm quiz
+QUIZ_ATTEMPT	Deferred legacy concept; not materialized by Quiz V1
 STREAK	Theo dõi chuỗi ngày học
 ACHIEVEMENT	Danh sách thành tích
 USER_ACHIEVEMENT	Thành tích user đã đạt
@@ -785,81 +785,33 @@ activity_xp >= user's daily_xp_goal
 
 Bonus không được tính vào điều kiện hoàn thành Daily Goal.
 
-15. QUIZ_ATTEMPT
-15.1. Mục đích
+15. Quiz V1 Persistence Boundary
 
-Lưu lịch sử User thực hiện các câu hỏi luyện tập.
+15.1. Active V1 storage
 
-Hệ thống hiện tại chỉ hỗ trợ 2 Quiz Type:
+Quiz V1 supports only `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD`, but introduces no Quiz table, enum, session, attempt, question, shuffle, answer, result, score, accuracy or character-feedback persistence. `UNSCRAMBLE_WORD` replaces the historical `MISSING_LETTER` contract after TASK-086 visual review.
 
-VI_TO_ENGLISH
+Quiz runs are transient. Stable Unscramble tile ordering/identity, separator slot patterns, identity fallback and opaque `question_revision` values are derived at runtime and require no stored server session.
 
-MISSING_LETTER
+15.2. Existing data reused
 
-AI Agent không được tự ý thêm Quiz Type mới nếu chưa được người phát triển phê duyệt.
+An accepted Quiz answer transactionally updates the existing `LEARNING_PROGRESS` row for `(user_id, vocabulary_id)`:
 
-15.2. Dữ liệu dự kiến
-QUIZ_ATTEMPT
+- correct → `LEARNED`;
+- incorrect → `LEARNING`;
+- both increment `review_count` and `revision` exactly once;
+- `last_reviewed_at` and `last_event_id` are updated;
+- nullable future SRS fields remain unchanged/null.
 
-- id
-- user_id
-- vocabulary_id
-- quiz_type
-- user_answer
-- correct_answer
-- is_correct
-- score
-- response_time_ms
-- created_at
-15.3. Quiz Type
-VI_TO_ENGLISH
-MISSING_LETTER
-VI_TO_ENGLISH
+The current `last_event_id`/`revision` fields provide immediate-current-event mutation idempotency and stale-event protection. Quiz V1 adds no event ledger and does not persist an exact historical response for replay.
 
-User nhìn thấy nghĩa tiếng Việt hoặc thông tin ngữ cảnh và nhập từ tiếng Anh.
+15.3. Runtime-only feedback
 
-MISSING_LETTER
+Answer normalization, correctness and per-character Unicode-code-point feedback are computed by the Backend at request time and returned transiently. They are not stored.
 
-User hoàn thành từ tiếng Anh bị thiếu một hoặc nhiều ký tự.
+15.4. Legacy/future references
 
-15.4. Character-level Feedback
-
-Đối với Quiz yêu cầu nhập câu trả lời, hệ thống có thể so sánh từng ký tự giữa:
-
-user_answer
-correct_answer
-
-để tạo feedback theo từng vị trí.
-
-Ví dụ:
-
-User answer:
-
-deserst
-
-Correct answer:
-
-dessert
-
-Backend có thể xác định:
-
-Ký tự đúng.
-Ký tự sai.
-Vị trí tương ứng.
-
-Không tạo bảng riêng để lưu kết quả từng ký tự nếu không thực sự cần thiết.
-
-15.5. XP Rule
-
-Quiz trả lời đúng:
-
-+3 XP
-
-Quiz trả lời sai:
-
-+0 XP
-
-Một Quiz attempt hợp lệ không được làm phát sinh XP lần thứ hai do Frontend gọi lại API hoặc do retry request.
+Any later generic diagram, index, foreign-key list, transaction example or implementation-order list in this document that mentions `QUIZ_ATTEMPT`, Quiz history, XP or SRS describes a legacy/future product direction only. It is not part of the active Quiz V1 database contract and must not be materialized without a separate approved SPEC/PLAN/migration.
 
 16. Pronunciation Data Principle
 

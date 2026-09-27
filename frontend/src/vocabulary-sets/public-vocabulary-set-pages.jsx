@@ -164,7 +164,7 @@ function PublicVocabularySetDetailContent({ setId }) {
           ) : null}
           {user?.role === "USER" ? (
             <aside className="public-vocabulary-set-auth-prompt" aria-label="Sao chép bộ từ">
-              {items.length > 0 ? <Link to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}` }}>Học bộ từ</Link> : null}
+              {items.length > 0 ? <><Link to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}` }}>Học bộ từ</Link><Link to={`/quiz/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}`, setName: set.name }}>Làm Quiz</Link></> : null}
               <h2>Lưu vào Bộ từ của tôi</h2>
               <p>Bạn sẽ nhận một bản sao riêng tư, có thể tự chỉnh sửa sau đó.</p>
               {copyError ? <p role="alert">{copyError}</p> : null}

@@ -336,24 +336,20 @@ Ví dụ:
 
 User phải nhập từ tiếng Anh đầy đủ.
 
-## 9.2. Missing Letters
+## 9.2. Unscramble Word
 
-Hệ thống hiển thị từ bị thiếu một hoặc nhiều ký tự.
+Hệ thống hiển thị nghĩa tiếng Việt và các ký tự chữ/số tiếng Anh đã được Backend xáo trộn ổn định cho run hiện tại.
 
-Ví dụ:
-
-    w_rk → ______
-
-User phải hoàn thành từ.
+User chọn từng tile để sắp xếp thành từ hoặc cụm từ tiếng Anh hoàn chỉnh. Khoảng trắng và dấu câu có ý nghĩa được giữ ở vị trí cố định; trường hợp không thể tạo hoán vị khác vẫn giữ câu hỏi bằng fallback an toàn thay vì bỏ Vocabulary khỏi run.
 
 ## 9.3. Character-level Feedback
 
-Đối với các dạng Quiz nhập chữ, hệ thống hỗ trợ feedback theo từng ký tự/position khi phù hợp.
+Đối với cả hai dạng Quiz, hệ thống hỗ trợ feedback theo từng ký tự/position sau khi Backend chấp nhận đáp án.
 
 Ví dụ:
 
-- Ký tự đúng ở đúng vị trí: feedback màu xanh.
-- Ký tự sai hoặc sai vị trí: feedback màu đỏ.
+- Ký tự đúng ở đúng vị trí: gạch chân xanh kèm ngữ nghĩa `correct`.
+- Ký tự sai, thiếu hoặc thừa: gạch chân lỗi kèm trạng thái chữ/icon tương ứng.
 
 Mục tiêu là tạo feedback trực quan và giúp User nhận biết chính xác vị trí sai.
 

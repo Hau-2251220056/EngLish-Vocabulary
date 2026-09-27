@@ -88,7 +88,7 @@ Admin interface
 Hệ thống hiện tại chỉ có 2 quiz type:
 
 Vietnamese → English
-Missing Letter
+Unscramble Word
 
 Pronunciation là một learning module riêng, không được xem là quiz type thứ ba.
 
@@ -143,7 +143,7 @@ Ví dụ:
 User
 
  ├── Learning Progress
- ├── Quiz Attempts
+ ├── Quiz Attempts (future/deferred; not materialized in Quiz V1)
  ├── Streak
  ├── Achievements
  └── Vocabulary Sets
@@ -520,7 +520,7 @@ Vocabulary Set Items
 
 Learning Progress
 
-Quiz Attempts
+Quiz Attempts (future/deferred; not materialized in Quiz V1)
 
 Streak
 
@@ -571,15 +571,15 @@ Check Answer
 
   ↓
 
-Calculate Result
+Validate question revision and expected Progress revision
 
   ↓
 
-Update Learning Progress
+Calculate transient result and Unicode code-point feedback
 
   ↓
 
-Update XP / Streak / Achievement
+Transactionally update current USER Learning Progress exactly once
 
   ↓
 
@@ -588,11 +588,19 @@ Response
 Hệ thống hiện tại chỉ hỗ trợ:
 
 1. Vietnamese → English
-2. Missing Letter
+2. Unscramble Word
 
 Đối với các quiz dạng nhập đáp án, per-character feedback có thể được tính toán bằng cách so sánh câu trả lời của người dùng với đáp án đúng.
 
 Thông tin feedback này không yêu cầu một database table riêng trong v1.
+
+Quiz V1 is exposed only to authenticated `USER` accounts through `GET /api/quiz/sets/:setId/questions` and `POST /api/quiz/answers`. The service reuses existing public-System/owned-private Set authorization, explicit Set Item ordering, deterministic Vocabulary content and per-USER/per-Vocabulary Learning Progress.
+
+Question loading is read-only and structurally excludes canonical-answer fields. The transient UUID `run_id` and opaque `question_revision` require no persistent Quiz Session. Answer submission is the sole Quiz mutation path; it re-authorizes access/membership and applies correctness plus the existing `event_id`/`expected_revision` concurrency contract in one transaction.
+
+For active Quiz V1, `UNSCRAMBLE_WORD` replaces the historical Missing Letter implementation. The Backend derives the safe Vietnamese prompt, opaque duplicate-safe character tiles, fixed-separator slot pattern, deterministic ordering/fallback and question revision. The Frontend owns only accessible tile interaction and transient run presentation; it does not shuffle or evaluate answers authoritatively. Both types share post-acceptance underline-based character feedback.
+
+No Quiz Session/Attempt/history table, XP/gamification service, SRS algorithm, Pronunciation integration or third Quiz type belongs to Quiz V1 architecture.
 
 Spaced Repetition
 Quiz / Learning Result

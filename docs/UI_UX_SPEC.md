@@ -113,7 +113,7 @@ User
 │   ├── Flashcard
 │   ├── Pronunciation Practice
 │   ├── Vietnamese → English Quiz
-│   ├── Missing Letter Quiz
+│   ├── Unscramble Word Quiz
 │   └── Quiz Result
 │
 ├── Progress
@@ -615,78 +615,29 @@ The exact pronunciation analysis technology and scoring mechanism will be determ
 
 The system should not assume a specific AI or external pronunciation service at the UI/UX stage.
 
-10.5 Vietnamese → English Quiz
+10.5 Quiz V1 Run
 
-Quiz type:
+Quiz V1 is a USER-only, Set-scoped flow at `/quiz/vocabulary-sets/:setId`. The USER selects exactly one type—`VI_TO_ENGLISH` or `UNSCRAMBLE_WORD`—and answers every current ordered Set Item once.
 
-VI_TO_ENGLISH
+Quiz entry actions appear only on currently accessible, non-empty public System Sets or owned private Sets. There is no standalone Quiz catalog, Guest route or ADMIN Quiz page.
 
-Example:
+The page must provide accessible loading, empty, safe error/retry, question-changed, stale Progress conflict, pending, answered and completion states. Submission controls prevent duplicate answers while pending and do not permit immediate re-answer after an accepted result.
 
-Công việc
+Same-tab resume may use a Quiz-owned `sessionStorage` namespace. Stored state is reconciled against a fresh authorized question payload and cleared by Quiz-owned handling when logout/session invalidation is observed.
 
-[ w _ r k ]
+10.6 Quiz Question Types
 
-Check
+`VI_TO_ENGLISH` shows the deterministic primary Vietnamese Meaning and approved prompt metadata, then accepts the complete English word. The pre-answer UI must not receive or render canonical-answer fields, phonetic, pronunciation or English Examples.
 
-The user must type the complete English answer.
+`UNSCRAMBLE_WORD` shows the deterministic primary Vietnamese Meaning/context and a stable backend-provided pool of opaque, duplicate-safe character tiles for the current `run_id`. Letters/digits are selectable; significant spaces and punctuation occupy fixed slots. Selecting a tile appends that exact tile, and activating a selected tile restores it to its original pool position. The interaction is click/tap/keyboard, not drag-and-drop. An unshufflable word remains answerable through the documented identity fallback.
 
-Important UX requirement:
+Both types submit to the Backend for authoritative correctness. Accepted feedback uses one shared wrapping underline presentation over Unicode code points: correct positions use green underlines; incorrect/missing/extra positions use error underlines plus accessible text/icon semantics. Color alone is insufficient, and canonical answers appear only after acceptance.
 
-Provide character-level feedback.
+10.7 Transient Quiz Completion
 
-Example:
+After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. Quiz V1 does not display or imply durable score, accuracy/history, XP, Level, streak, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
 
-Correct character → green
-Incorrect character → red
-
-Feedback should help the user understand which character or position is incorrect.
-
-Do not reveal the full answer before the user submits unless explicitly designed as a hint.
-
-10.6 Missing Letter Quiz
-
-Quiz type:
-
-MISSING_LETTER
-
-Example:
-
-w_rk
-
-[ w o r k ]
-
-Check
-
-The user fills in the missing characters.
-
-Provide immediate visual feedback after submission.
-
-Correct positions:
-
-Green
-
-Incorrect positions:
-
-Red
-
-The interaction should be simple and fast.
-
-10.7 Quiz Result
-
-After completing a learning session, display:
-
-Score
-Correct answers
-Incorrect answers
-Accuracy
-XP earned
-Streak update if applicable
-Achievement earned if applicable
-Review incorrect answers
-Continue Learning button
-
-The result page should feel rewarding but remain professional.
+The production Quiz composition, focus transitions, responsive arrangement and exact visual hierarchy require the mandatory HUMAN UI/UX Design Checkpoint before final frontend implementation. Keyboard operation, visible focus, screen-reader feedback, reduced motion and no horizontal overflow are required across desktop, tablet and mobile.
 
 10.8 Learning Progress
 
@@ -1455,7 +1406,7 @@ Learn Vocabulary
 Flashcard
 Pronunciation Practice
 Vietnamese → English Quiz
-Missing Letter Quiz
+Unscramble Word Quiz
 Quiz Result
 Learning Progress
 Achievements

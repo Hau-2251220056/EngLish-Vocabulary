@@ -807,25 +807,11 @@ Frontend không được tự tính các giá trị này.
 
 23.1 Important Quiz Rule
 
-Nếu activity là Quiz:
+For Quiz V1, `POST /api/quiz/answers` is the only command that evaluates an answer and mutates the current USER's Learning Progress for that answer.
 
-POST /api/quiz/submit
+The Frontend must not also call `POST /api/learning/events` for the same Quiz answer. This prevents duplicate Progress mutation and duplicate `review_count`/`revision` increments.
 
-phải là endpoint chịu trách nhiệm xử lý learning progress/gamification của Quiz attempt.
-
-Frontend không được gọi đồng thời:
-
-POST /api/quiz/submit
-POST /api/learning/review
-
-cho cùng một Quiz attempt.
-
-Mục đích là tránh:
-
-Double XP.
-Double streak update.
-Double progress update.
-Double achievement evaluation.
+Quiz V1 does not update XP, streak, Daily Goal, Achievement or SRS state.
 24. Spaced Repetition
 
 Spaced Repetition dùng để xác định Vocabulary cần review.
@@ -867,137 +853,97 @@ NEEDS_REVIEW
 
 và đã đến thời điểm review.
 
-26. Quiz
+26. Quiz V1
 
-V1 chỉ có 2 loại Quiz.
+Quiz V1 supports exactly two types for an authenticated `USER`:
 
-VI_TO_ENGLISH
-MISSING_LETTER
+- `VI_TO_ENGLISH`
+- `UNSCRAMBLE_WORD`
 
-Không thêm Quiz type thứ ba trong V1 nếu chưa có approval.
+`UNSCRAMBLE_WORD` replaces the historical `MISSING_LETTER` contract after TASK-086 visual review. Earlier completed-task evidence remains historical and must not be interpreted as the active API.
+
+A run is scoped to one accessible, non-empty Vocabulary Set, uses one selected type and traverses every current Set Item once in explicit position order. Guest and ADMIN have no learner Quiz V1 API access. Missing or inaccessible Sets use the approved concealed not-found behavior.
+
+Quiz V1 is transient. It creates no Quiz Session, Quiz Attempt, answer history, durable score or accuracy record.
 
 27. Quiz: Vietnamese → English
-VI_TO_ENGLISH
 
-User nhận Vietnamese meaning/context và nhập English word.
+`VI_TO_ENGLISH` presents the deterministic primary Vietnamese Meaning and approved prompt metadata. Primary Meaning selection matches Flashcard/Learning: choose the lowest recognized CEFR (`A1` through `C2`), preserving deterministic `created_at → id` order for ties or missing CEFR.
 
-Ví dụ:
+The pre-answer payload structurally excludes canonical-answer fields and directly answer-bearing Vocabulary fields such as `word`, `phonetic`, `pronunciation_url` and English Examples. V1 does not scan or rewrite administrator-authored Vietnamese Meaning/context text.
 
-Công việc → ______
-28. Quiz: Missing Letter
-MISSING_LETTER
+28. Quiz: Unscramble Word
 
-User nhận từ có một hoặc nhiều ký tự bị ẩn.
+`UNSCRAMBLE_WORD` presents the deterministic primary Vietnamese Meaning/context plus a safe shuffled projection of the canonical English headword. The projection contains opaque duplicate-safe selectable tile IDs/characters, a separator-only slot pattern and `shuffle_mode`; it contains no canonical word or canonical source indexes.
 
-Ví dụ:
+The Backend iterates NFC Unicode code points. Unicode letters/digits are selectable; collapsed spaces, apostrophes, hyphens and other punctuation remain fixed significant separators. Digest-backed ordering is deterministic for the same `run_id` and question and may change for a new run. When no visibly different permutation exists, `IDENTITY_FALLBACK` preserves the item rather than dropping it. No Quiz state is persisted.
 
-w_rk
+29. Get Ordered Quiz Questions
 
-User nhập:
+`GET /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>`
 
-work
-29. Generate Quiz Question
-GET /api/quiz/questions
+Access: authenticated `USER` only.
 
-Hoặc endpoint tương đương được quyết định trong PLAN.
+The response returns every current Set Item once in explicit position order. Each safe question projection includes UUID identity, selected type, position, display prompt data and an opaque `question_revision`. Unscramble questions include only the approved safe tile/slot projection. It does not expose a canonical answer.
 
-Access
+`question_revision` is derived deterministically from authoritative fields relevant to the question, does not reveal the answer and is recomputed transactionally on answer submission. It is API-only and is not persisted.
 
-Authenticated User.
+30. Submit Quiz Answer
 
-Backend responsibility
+`POST /api/quiz/answers`
 
-Backend quyết định:
+Access: authenticated `USER` only.
 
-Vocabulary được chọn.
-Quiz type.
-Question data.
-Correct answer.
-Context cần thiết.
+Request fields:
 
-Frontend không được lấy correct_answer từ public response nếu điều đó cho phép user gian lận.
-
-30. Submit Quiz
-POST /api/quiz/submit
-Access
-
-Authenticated User.
-
-Request
-
-Conceptual:
-
+```json
 {
+  "event_id": "uuid",
+  "set_id": "uuid",
+  "vocabulary_id": "uuid",
+  "run_id": "uuid",
+  "question_revision": "opaque-value",
   "quiz_type": "VI_TO_ENGLISH",
-  "vocabulary_id": 10,
+  "expected_revision": 0,
   "answer": "work"
 }
-Backend responsibilities
+```
 
-Backend xác định:
+The Backend transactionally re-authorizes Set access and current membership, validates the question revision, normalizes and evaluates the answer, and mutates only the requesting USER's Learning Progress:
 
-Correct answer.
-is_correct.
-Quiz result.
-Learning Progress.
-XP.
-Daily Goal progress.
-Streak.
-Achievement.
-Spaced Repetition state nếu applicable.
+- correct → `LEARNED`;
+- incorrect → `LEARNING`;
+- either accepted outcome increments `review_count` and `revision` exactly once and updates `last_reviewed_at`/`last_event_id`;
+- future SRS fields remain unchanged/null.
 
-Frontend không được tự quyết định:
+Answer normalization trims, applies Unicode NFC, collapses Unicode whitespace and applies locale-independent lowercase. For `VI_TO_ENGLISH` only, one normalized submitted ASCII space is accepted in place of one canonical ASCII hyphen; the equivalence is one-way and does not remove separators or relax apostrophes/other punctuation. `UNSCRAMBLE_WORD` fixed separators remain strict. Post-acceptance feedback uses deterministic minimum-edit alignment over Unicode code points and exposes explicit `correct`, `incorrect`, `missing` and `extra` states. A missing item has `submitted: null`; an accepted space/hyphen pair retains submitted space, expected hyphen and `correct` state for the shared accessible underline presentation.
 
-is_correct
-xp_earned
-level
-streak
-achievement
-learning_status
+`expected_revision` protects concurrency. Immediate retry with the same current `event_id` and identical logical request does not mutate Progress again. The Backend recomputes transient feedback; incompatible retry state and stale/reordered events return safe conflict responses. Exact historical response replay and an event ledger are outside V1.
+
+Quiz V1 safe error contract:
+
+| Condition | HTTP status | Error code |
+|---|---:|---|
+| Invalid UUID/type/body/query or unsupported extra input | `400` | `QUIZ_VALIDATION_ERROR` |
+| Missing authentication | `401` | existing authentication error |
+| Authenticated non-USER role | `403` | existing authorization error |
+| Missing/inaccessible Set | `404` | `QUIZ_SET_NOT_FOUND` |
+| Accessible empty Set | `409` | `QUIZ_SET_EMPTY` |
+| Vocabulary is no longer a current Set Item | `409` | `QUIZ_ITEM_CHANGED` |
+| `question_revision` no longer matches authoritative content | `409` | `QUIZ_QUESTION_CHANGED` |
+| Stale revision, reordered event or incompatible immediate retry | `409` | `QUIZ_PROGRESS_CONFLICT` |
+
+Errors expose no canonical answer, private Set existence, stack trace or database detail.
+
 31. Quiz Character Feedback
 
-Quiz typing cần hỗ trợ feedback theo từng ký tự.
+The accepted answer response may include per-character feedback computed over Unicode code points. Each position is marked correct or incorrect without storing character feedback in the database.
 
-Ví dụ:
+32. Transient Quiz Result
 
-Expected:
-dessert
+An accepted response includes question identity, Quiz type, `is_correct`, canonical answer, normalized submitted answer, accessible character feedback and resulting Progress `status`, `review_count`, `revision` and `last_reviewed_at`.
 
-User:
-deserst
-
-UI có thể hiển thị:
-
-Correct position → green.
-Incorrect position → red.
-
-Character-level comparison là presentation/result logic.
-
-Không cần V1 database table riêng để lưu từng ký tự.
-
-32. Quiz Result
-
-Quiz submit response có thể bao gồm:
-
-{
-  "success": true,
-  "data": {
-    "quiz_type": "VI_TO_ENGLISH",
-    "is_correct": true,
-    "correct_answer": "work",
-    "xp_earned": 3,
-    "total_xp": 323,
-    "level": 3,
-    "streak": 7,
-    "daily_goal": {
-      "today_xp": 33,
-      "goal_xp": 50,
-      "goal_completed": false
-    }
-  }
-}
-
-Frontend sử dụng dữ liệu này để render Result Screen.
+The Frontend derives only the transient current-run total/correct/incorrect completion summary. No XP, streak, achievement, SRS schedule, durable result/history ID or accuracy record is returned or persisted.
 
 33. XP
 
@@ -1903,8 +1849,8 @@ GET    /api/learning/sets/:setId
 POST   /api/learning/review
 GET    /api/learning/review
 Quiz
-GET    /api/quiz/questions
-POST   /api/quiz/submit
+GET    /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>
+POST   /api/quiz/answers
 Pronunciation
 POST   /api/pronunciation/evaluate
 Achievement

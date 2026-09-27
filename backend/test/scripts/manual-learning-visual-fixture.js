@@ -65,7 +65,7 @@ async function verifyFixture(prisma) {
 
   const positions = set?.items.map(({ position }) => position) ?? [];
   const words = set?.items.map(({ vocabulary }) => vocabulary.word) ?? [];
-  const journey = set?.items.find(({ vocabulary }) => vocabulary.word === `${fixture.prefix} journey`);
+  const journey = set?.items.find(({ vocabulary }) => vocabulary.word === "travel");
   const journeyLevels = journey?.vocabulary.meanings.map(({ cefr_level }) => cefr_level) ?? [];
   const progress = user
     ? await prisma.lEARNING_PROGRESS.findMany({
@@ -78,8 +78,8 @@ async function verifyFixture(prisma) {
   const valid = Boolean(
     user
       && set
-      && positions.join(",") === "1,2,3"
-      && words.length === 3
+      && positions.join(",") === "1,2,3,4,5,6,7,8"
+      && words.join(",") === "book,travel,committee,resilient,mother-in-law,a,ooo,extraordinarily long vocabulary phrase"
       && set.items.every(({ vocabulary }) => (
         vocabulary.meanings.length > 0
         && vocabulary.meanings.some(({ examples }) => examples.length > 0)
@@ -88,9 +88,7 @@ async function verifyFixture(prisma) {
       && journeyLevels.includes("B2")
       && progress.length === 3
       && progressStatuses.join(",") === "LEARNED,LEARNING,NEEDS_REVIEW"
-      && progress.every(({ review_count: reviewCount, vocabulary }) => (
-        reviewCount > 0 && vocabulary.word.startsWith(fixture.prefix)
-      )),
+      && progress.every(({ review_count: reviewCount }) => reviewCount > 0),
   );
 
   if (!valid) {
@@ -132,7 +130,7 @@ async function createFixture(prisma) {
 
     const journey = await transaction.vOCABULARY.create({
       data: {
-        word: `${fixture.prefix} journey`,
+        word: "travel",
         phonetic: "/ˈdʒɜːni/",
         meanings: {
           create: [
@@ -173,7 +171,7 @@ async function createFixture(prisma) {
 
     const book = await transaction.vOCABULARY.create({
       data: {
-        word: `${fixture.prefix} book`,
+        word: "book",
         phonetic: "/bʊk/",
         meanings: {
           create: [
@@ -206,25 +204,52 @@ async function createFixture(prisma) {
       },
     });
 
-    const resilient = await transaction.vOCABULARY.create({
+    const committee = await transaction.vOCABULARY.create({
       data: {
-        word: `${fixture.prefix} resilient`,
-        phonetic: "/rɪˈzɪliənt/",
+        word: "committee",
+        phonetic: "/kəˈmɪti/",
         meanings: {
           create: [{
-            part_of_speech: "adjective",
-            meaning_vi: "kiên cường, nhanh chóng phục hồi",
-            context: "Mô tả người hoặc vật có khả năng vượt qua khó khăn.",
+            part_of_speech: "noun",
+            meaning_vi: "ủy ban",
+            context: "Nhóm người được chọn để thực hiện một nhiệm vụ.",
             cefr_level: null,
             examples: {
               create: [{
-                example_en: "She remained resilient after the setback.",
-                example_vi: "Cô ấy vẫn kiên cường sau thất bại.",
+                example_en: "The committee meets every Friday.",
+                example_vi: "Ủy ban họp vào mỗi thứ Sáu.",
               }],
             },
           }],
         },
       },
+    });
+
+    const resilient = await createVisualVocabulary(transaction, {
+      word: "resilient",
+      meaningVi: "kiên cường, nhanh chóng phục hồi",
+      exampleEn: "She remained resilient after the setback.",
+    });
+
+    const fixedSeparator = await createVisualVocabulary(transaction, {
+      word: "mother-in-law",
+      meaningVi: "mẹ chồng hoặc mẹ vợ",
+      exampleEn: "Her mother-in-law enjoys gardening.",
+    });
+    const oneCharacter = await createVisualVocabulary(transaction, {
+      word: "a",
+      meaningVi: "một; một người hoặc vật",
+      exampleEn: "I saw a bird.",
+    });
+    const allIdentical = await createVisualVocabulary(transaction, {
+      word: "ooo",
+      meaningVi: "chuỗi ký tự giống nhau dùng để kiểm tra giao diện",
+      exampleEn: "This controlled item exercises identity fallback.",
+    });
+    const longPhrase = await createVisualVocabulary(transaction, {
+      word: "extraordinarily long vocabulary phrase",
+      meaningVi: "cụm từ dài có chủ đích để kiểm tra xuống dòng",
+      exampleEn: "This intentionally long phrase checks responsive wrapping.",
     });
 
     const set = await transaction.vOCABULARY_SET.create({
@@ -238,7 +263,12 @@ async function createFixture(prisma) {
           create: [
             { vocabulary_id: book.id, position: 1 },
             { vocabulary_id: journey.id, position: 2 },
-            { vocabulary_id: resilient.id, position: 3 },
+            { vocabulary_id: committee.id, position: 3 },
+            { vocabulary_id: resilient.id, position: 4 },
+            { vocabulary_id: fixedSeparator.id, position: 5 },
+            { vocabulary_id: oneCharacter.id, position: 6 },
+            { vocabulary_id: allIdentical.id, position: 7 },
+            { vocabulary_id: longPhrase.id, position: 8 },
           ],
         },
       },
@@ -288,6 +318,23 @@ async function createFixture(prisma) {
   console.log(`Cleanup run ID: ${runId}`);
 }
 
+async function createVisualVocabulary(transaction, { word, meaningVi, exampleEn }) {
+  return transaction.vOCABULARY.create({
+    data: {
+      word,
+      meanings: {
+        create: [{
+          part_of_speech: "noun",
+          meaning_vi: meaningVi,
+          context: "Controlled Quiz visual-review case.",
+          cefr_level: "A2",
+          examples: { create: [{ example_en: exampleEn }] },
+        }],
+      },
+    },
+  });
+}
+
 async function cleanupFixture(prisma) {
   const fixture = fixtureIdentity(runId);
   const counts = await prisma.$transaction(async (transaction) => {
@@ -295,12 +342,21 @@ async function cleanupFixture(prisma) {
       where: { email: fixture.email },
       select: { id: true },
     });
-    const vocabularies = await transaction.vOCABULARY.findMany({
-      where: { word: { startsWith: fixture.prefix } },
+    const userIds = users.map(({ id }) => id);
+    const controlledSets = await transaction.vOCABULARY_SET.findMany({
+      where: {
+        name: { startsWith: fixture.prefix },
+        owner_id: { in: userIds },
+      },
+      include: { items: { select: { vocabulary_id: true } } },
+    });
+    const ownedSets = await transaction.vOCABULARY_SET.findMany({
+      where: { owner_id: { in: userIds } },
       select: { id: true },
     });
-    const userIds = users.map(({ id }) => id);
-    const vocabularyIds = vocabularies.map(({ id }) => id);
+    const ownedSetIds = ownedSets.map(({ id }) => id);
+    const vocabularyIds = [...new Set(controlledSets.flatMap(({ items }) =>
+      items.map(({ vocabulary_id: vocabularyId }) => vocabularyId)))];
 
     const progress = await transaction.lEARNING_PROGRESS.deleteMany({
       where: {
@@ -313,17 +369,27 @@ async function cleanupFixture(prisma) {
     const sessions = await transaction.aUTH_SESSION.deleteMany({
       where: { user_id: { in: userIds } },
     });
-    const sets = await transaction.vOCABULARY_SET.deleteMany({
-      where: {
-        name: { startsWith: fixture.prefix },
-        owner_id: { in: userIds },
-      },
+    const setItems = await transaction.vOCABULARY_SET_ITEM.deleteMany({
+      where: { vocabulary_set_id: { in: ownedSetIds } },
     });
+    const sets = await transaction.vOCABULARY_SET.deleteMany({
+      where: { owner_id: { in: userIds } },
+    });
+    const stillReferenced = await transaction.vOCABULARY_SET_ITEM.findMany({
+      where: { vocabulary_id: { in: vocabularyIds } },
+      select: { vocabulary_id: true },
+      distinct: ["vocabulary_id"],
+    });
+    const referencedIds = new Set(stillReferenced.map(({ vocabulary_id: vocabularyId }) => vocabularyId));
+    const deletableVocabularyIds = vocabularyIds.filter((id) => !referencedIds.has(id));
     const vocabulary = await transaction.vOCABULARY.deleteMany({
-      where: { id: { in: vocabularyIds } },
+      where: { id: { in: deletableVocabularyIds } },
     });
     const topics = await transaction.tOPIC.deleteMany({
-      where: { name: { startsWith: fixture.prefix } },
+      where: {
+        name: { startsWith: fixture.prefix },
+        vocabulary_sets: { none: {} },
+      },
     });
     const removedUsers = await transaction.uSER.deleteMany({
       where: { id: { in: userIds } },
@@ -332,6 +398,7 @@ async function cleanupFixture(prisma) {
     return {
       progress: progress.count,
       sessions: sessions.count,
+      setItems: setItems.count,
       sets: sets.count,
       vocabularies: vocabulary.count,
       topics: topics.count,
@@ -344,13 +411,12 @@ async function cleanupFixture(prisma) {
 }
 
 async function findControlledData(prisma, fixture) {
-  const [users, topics, vocabularies, sets] = await Promise.all([
+  const [users, topics, sets] = await Promise.all([
     prisma.uSER.count({ where: { email: fixture.email } }),
     prisma.tOPIC.count({ where: { name: { startsWith: fixture.prefix } } }),
-    prisma.vOCABULARY.count({ where: { word: { startsWith: fixture.prefix } } }),
     prisma.vOCABULARY_SET.count({ where: { name: { startsWith: fixture.prefix } } }),
   ]);
-  return { total: users + topics + vocabularies + sets };
+  return { total: users + topics + sets };
 }
 
 function fixtureIdentity(id) {

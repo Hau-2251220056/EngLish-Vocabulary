@@ -11,6 +11,8 @@ import { DashboardPage } from "./dashboard/dashboard-page.jsx";
 import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
 import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
+import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
+import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
 import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
 import { PublicTopicLayout } from "./topics/public-topic-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
@@ -27,6 +29,7 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <LearningSessionStorageObserver />
+      <QuizSessionStorageObserver />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route element={<PublicTopicLayout />}>
@@ -46,6 +49,7 @@ export function AppRouter() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route element={<UserRoute />}>
               <Route path="/learn/vocabulary-sets/:setId" element={<LearningFoundationPage />} />
+              <Route path="/quiz/vocabulary-sets/:setId" element={<QuizFoundationPage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />
               <Route path="/my/vocabulary-sets" element={<MyVocabularySetsPage />} />
               <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetsPage />} />
