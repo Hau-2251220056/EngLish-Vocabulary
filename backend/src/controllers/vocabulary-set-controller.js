@@ -108,8 +108,23 @@ export function createVocabularySetController({ vocabularySetService }) {
 
     async searchPicker(req, res, next) {
       try {
-        const vocabulary = await vocabularySetService.searchVocabularyPicker(req.query.query);
+        const vocabulary = await vocabularySetService.searchVocabularyPicker(
+          req.user.id,
+          req.user.role,
+          req.query.query,
+        );
         res.status(200).json({ success: true, data: vocabulary });
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async createPrivateVocabularyAndAdd(req, res, next) {
+      try {
+        const result = await vocabularySetService.createPrivateVocabularyAndAdd(
+          req.user.id,
+          req.params.setId,
+          req.body,
+        );
+        res.status(result.created ? 201 : 200).json({ success: true, data: result.data });
       } catch (error) { handleKnownVocabularySetError(error, res, next); }
     },
   };
@@ -122,6 +137,7 @@ function handleKnownVocabularySetError(error, res, next) {
     TOPIC_NOT_FOUND: 404,
     VOCABULARY_NOT_FOUND: 404,
     VOCABULARY_ALREADY_IN_SET: 409,
+    PRIVATE_VOCABULARY_OPERATION_CONFLICT: 409,
   };
   const status = statusByCode[error?.code];
   if (!status) return next(error);

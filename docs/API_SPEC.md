@@ -364,7 +364,7 @@ Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDE
 
 12. Vocabulary V1
 
-Vocabulary V1 is ADMIN-only. It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. Vocabulary Set V1 adds only an authenticated, bounded Set-editor picker with minimum selection metadata; it is not a catalog/detail exception. Every Vocabulary, Meaning and Example identifier is a UUID string.
+Vocabulary V1 is ADMIN-only and canonical-only (`VOCABULARY.owner_id IS NULL`). It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. ADMIN list/detail/create/update/delete never expose or mutate private Vocabulary; a private ID uses the same `VOCABULARY_NOT_FOUND` response as a nonexistent ID. Vocabulary Set V1 adds only an authenticated, bounded Set-editor picker with minimum selection metadata; it is not a catalog/detail exception. Every Vocabulary, Meaning and Example identifier is a UUID string.
 
 12.1 Aggregate Representation
 
@@ -374,15 +374,62 @@ A Vocabulary detail returns `{ success: true, data: Vocabulary }`, where `Vocabu
 
 | Method / path | Success | Requirement |
 |---|---:|---|
-| `GET /api/admin/vocabulary` | `200` | Unpaginated ADMIN Vocabulary summaries; no server search/filter. |
-| `GET /api/admin/vocabulary/:vocabularyId` | `200` | Complete nested aggregate. |
-| `POST /api/admin/vocabulary` | `201` | Create one complete aggregate atomically with one or more Meanings. |
-| `PATCH /api/admin/vocabulary/:vocabularyId` | `200` | Update approved top-level fields and optional complete-replacement `meanings` collection atomically. |
-| `DELETE /api/admin/vocabulary/:vocabularyId` | `204` | Delete the aggregate and its owned Meanings/Examples; no body. |
+| `GET /api/admin/vocabulary` | `200` | Unpaginated canonical Vocabulary summaries; no server search/filter. |
+| `GET /api/admin/vocabulary/:vocabularyId` | `200` | Complete canonical nested aggregate. |
+| `POST /api/admin/vocabulary` | `201` | Create one canonical aggregate (`owner_id = NULL`) atomically with one or more Meanings. |
+| `PATCH /api/admin/vocabulary/:vocabularyId` | `200` | Update approved canonical fields and optional complete-replacement `meanings` collection atomically. |
+| `DELETE /api/admin/vocabulary/:vocabularyId` | `204` | Delete the canonical aggregate and its owned Meanings/Examples; no body. |
 
 All routes require existing backend authentication and `ADMIN` authorization. `PATCH` permits only `word`, `phonetic`, `pronunciation_url` and `meanings`; omitted top-level fields are unchanged. When `meanings` is supplied, it is the complete desired collection; each retained Meaning supplies its complete desired Examples. Stable IDs must be owned by the addressed aggregate, and omission from supplied replacement data intentionally deletes owned children. No granular Meaning or Example route exists.
 
 Known errors use `{ success: false, error: { code, message } }`: `400 VALIDATION_ERROR`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_WORD_ALREADY_EXISTS`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+### 12.1 Personal Vocabulary V1 — Implemented Contract
+
+#### Status Boundary
+
+PV-02 through PV-08 implement the data foundation, canonical-only ADMIN compatibility, owner-private detail/update, owner-aware picker/Set reuse, atomic private create-plus-add behavior, frontend operation lifecycle, and complete editor UX. PV-09 through PV-11 verify Learning, Progress, Quiz, TTS, privacy and cross-feature compatibility. Personal Vocabulary V1 is complete and HUMAN approved; integration into `dev` has not yet occurred.
+
+#### Owner-Aware Set-Editor Picker — Implemented in PV-05
+
+`GET /api/vocabulary-set-picker?query=<word>` behaves as follows:
+
+- USER results include canonical plus session-owner private Vocabulary, including zero-membership identities.
+- ADMIN results include canonical Vocabulary only for System Set editing.
+- Other USERs' private rows are filtered before limiting and never affect observable results.
+- Bounded results contain `id`, `word`, nullable `phonetic`, source (`CANONICAL` or `PRIVATE`) and deterministic primary-Meaning context with `part_of_speech` and `meaning_vi`.
+- Search is reuse-first discovery only; it never collapses or selects identities by spelling.
+
+#### Atomic Private Create Plus Membership — Implemented in PV-06
+
+USER-only command: `POST /api/my/vocabulary-sets/:setId/vocabulary`.
+
+Request contains required opaque UUID `operation_id` for one intentional action and `vocabulary` with the approved private create fields. It cannot set owner, scope/source/type/visibility, server IDs/timestamps, `pronunciation_url` or the authoritative fingerprint.
+
+The backend derives owner and target authorization from the session/path, computes a SHA-256 fingerprint from a fixed-key JSON projection of owner, target Set and accepted normalized create data, and atomically creates aggregate children, exact Set membership and operation result. The fixed projection is independent of incoming JSON property order. The transaction locks the owned private Set row before deriving the next append position.
+
+First completion returns `201`; an equivalent retry returns `200` with the original exact Vocabulary and membership. The success body is `{ success: true, data: { vocabulary, membership } }`. Materially different operation-ID reuse returns `409 PRIVATE_VOCABULARY_OPERATION_CONFLICT`. A different operation ID permits intentional identical/same-headword creation. Validation returns `400`; missing, public or inaccessible target Sets use concealed `404 VOCABULARY_SET_NOT_FOUND`. Failure leaves no partial aggregate, membership or successful operation record.
+
+#### Owner-Private Detail and Update — Implemented in PV-04
+
+Implemented USER-only endpoints:
+
+- `GET /api/my/vocabulary/:vocabularyId`
+- `PATCH /api/my/vocabulary/:vocabularyId`
+
+Both require authentication plus the `USER` role and predicate by exact ID plus session owner. Missing, canonical and other-owner IDs use the same concealed `404 VOCABULARY_NOT_FOUND`. GET returns `id`, `word`, nullable `phonetic` and nested Meanings/Examples; it omits owner and `pronunciation_url`. PATCH accepts only `word`, `phonetic` and a non-empty complete-replacement `meanings` collection with approved Meaning/Example fields. It permits same-spelling identities, preserves the exact Vocabulary ID, updates atomically, and rejects `pronunciation_url`, ownership, scope and server-managed fields. No private list, create or DELETE endpoint is implemented by PV-04.
+
+#### Existing API Compatibility Requirements
+
+- ADMIN Vocabulary list/detail/create/update/delete are canonical-only; duplicate-word behavior remains canonical-scoped.
+- System Set picker and writes accept canonical IDs only.
+- Private Set create/update accepts exact canonical or same-owner private IDs.
+- Same exact ID cannot repeat in a Set; distinct same-spelling IDs may coexist.
+- System Set copy continues to reuse canonical IDs.
+- Learning/Quiz continue through exact Set Item `vocabulary_id`; Progress remains `(user_id, vocabulary_id)`.
+- Existing envelopes, authentication and concealed-resource conventions remain; no new global error architecture is introduced.
+
+PV-05 also enforces exact-ID Set references: System Set create/update and copy are canonical-only; owned private Set create/update accepts canonical or session-owner private IDs and conceals foreign-private IDs as `VOCABULARY_NOT_FOUND`. Removing Set membership does not delete Vocabulary or Progress.
+
 13. Vocabulary Set — Legacy Draft (superseded for V1)
 
 Vocabulary Set là đơn vị nội dung chính để User học.
@@ -538,7 +585,7 @@ Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `w
 
 #### Scoped Authenticated Vocabulary Picker
 
-`GET /api/vocabulary-set-picker?query=<word>` requires an authenticated USER or ADMIN and a non-empty trimmed query of at most 100 characters. It returns a bounded array of `{ id, word, phonetic }` selection records only. It is used only inside a Vocabulary Set editor; there is no standalone USER Vocabulary route, unfiltered list, full Vocabulary detail, Meaning or Example response. Saving Set Items still validates every submitted Vocabulary ID at the database boundary.
+`GET /api/vocabulary-set-picker?query=<word>` requires an authenticated USER or ADMIN and a non-empty trimmed query of at most 100 characters. USER results contain canonical plus session-owner private identities; ADMIN results are canonical-only. Results are bounded to 20 and contain `{ id, word, phonetic, source, primary_meaning }`, where `source` is `CANONICAL` or `PRIVATE` and `primary_meaning` is nullable `{ part_of_speech, meaning_vi }`. Same-spelling identities remain separate exact IDs, including zero-membership private Vocabulary. The picker is discovery only, not a standalone catalog.
 
 #### USER Private Set Routes
 
@@ -552,6 +599,8 @@ Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `w
 | `POST /api/vocabulary-sets/:systemSetId/copy` | USER | `201` |
 
 USER create/update accepts only `topic_id`, `name`, optional `description` and optional complete `items` collection. `owner_id` and `is_public` are server-controlled. A User Set remains private; inaccessible/non-owned private Sets return not found. User drafts may be empty. Copy accepts an accessible System Set only and creates an independent private aggregate with fresh IDs and preserved Item order.
+
+Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so the Set editor can authorize private editing without inferring identity from spelling. Public System Set detail retains its existing minimum Item projection and does not expose `source`.
 
 #### ADMIN System Set Routes
 

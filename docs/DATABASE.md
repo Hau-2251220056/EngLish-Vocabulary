@@ -434,6 +434,64 @@ Vocabulary is the V1 aggregate root. Create and nested update writes are atomic.
 
 Database cascade deletion is permitted only for owned Meaning/Example children when their Vocabulary aggregate is deleted. Vocabulary Set V1 materializes the first external Vocabulary reference: `VOCABULARY_SET_ITEM.vocabulary_id` uses `ON DELETE RESTRICT` / no cascade. Any later progress, quiz or other external reference must define its own approved foreign-key and delete policy.
 
+### 7.5 Personal Vocabulary V1 — Implemented Data Contract
+
+#### Status Boundary
+
+TASK-PV-02 implemented the approved data/schema foundation, and TASK-PV-03 through TASK-PV-11 completed and verified its repository, service, API, UI and cross-feature use. Personal Vocabulary V1 is `DONE — HUMAN APPROVED`; integration into `dev` has not yet occurred.
+
+The new forward migration `20260928000000_add_personal_vocabulary_foundation` adds ownership and the scoped operation record, and replaces global word uniqueness. Every historical migration remains immutable.
+
+#### Vocabulary Ownership Foundation
+
+- Nullable `VOCABULARY.owner_id -> USER.id` is present in Prisma and PostgreSQL.
+- `owner_id IS NULL` identifies canonical Vocabulary.
+- Non-null `owner_id` identifies private Vocabulary owned by exactly that USER.
+- The owner foreign key uses `ON DELETE RESTRICT`; user removal must not cascade private learning identities, Set Items or Progress.
+- All Vocabulary rows existing when the migration is introduced are interpreted as canonical because the current application has no USER-private Vocabulary creation path.
+
+No separate scope enum is approved. Clients never choose authoritative owner or scope.
+
+#### Word Indexes
+
+- The former global functional uniqueness is replaced by `VOCABULARY_canonical_word_lower_key`, a unique partial functional index on `LOWER(word)` where `owner_id IS NULL`.
+- This retains case-insensitive canonical uniqueness only.
+- `VOCABULARY_private_owner_word_lower_idx` is a non-unique owner/private word-search index for future picker discovery.
+- Do not create `UNIQUE(owner_id, normalized_word)`, an equivalent private uniqueness rule, or canonical/private collision blocking.
+- Canonical and multiple same-owner/different-owner private rows may share spelling as independent IDs.
+
+Word normalization/search supports discovery only. Exact `VOCABULARY.id` remains identity.
+
+#### Create-Operation Persistence Foundation
+
+`PRIVATE_VOCABULARY_CREATE_OPERATION` persists the narrow result of the implemented atomic “create private Vocabulary + add it to the current owned private Set” command. Its fields and relations provide:
+
+- opaque client-generated UUID `operation_id` for one intentional action;
+- server-derived owner and target private Set;
+- resulting exact Vocabulary identity;
+- server-computed request fingerprint over a deterministic canonicalized representation of authoritative target Set plus accepted normalized create payload;
+- creation timestamp and approved owner/Set/Vocabulary relations.
+
+The client cannot supply or control the authoritative fingerprint. Equivalent retry with the same operation ID returns the original result; materially different reuse conflicts; a different operation ID permits intentional identical/same-headword creation. No headword-based idempotency, generic event ledger or audit system is approved.
+
+Prisma models ownership, operation fields, relations and ordinary indexes. Prisma schema syntax does not represent the required partial functional canonical uniqueness or functional private search index; the reviewed PostgreSQL migration SQL is authoritative for both invariants.
+
+#### Preserved Exact-ID Constraints
+
+- `UNIQUE(vocabulary_set_id, vocabulary_id)` continues to prevent only duplicate exact membership. Different same-spelling IDs may coexist in a private Set.
+- `UNIQUE(vocabulary_set_id, position)` and positive contiguous ordering remain.
+- `UNIQUE(user_id, vocabulary_id)` continues to define Learning Progress identity.
+- System Sets may reference canonical Vocabulary only.
+- Private Sets may reference canonical or private Vocabulary owned by that Set's owner.
+- Cross-table Set/scope ownership is enforced by backend service/repository authorization; existing exact-ID FKs remain authoritative for referential integrity.
+
+#### Migration and Rollback Safety
+
+- The new forward migration adds ownership/operation structures and replaces the global word index without editing historical migrations.
+- The existing global unique index guarantees pre-migration canonical rows are non-conflicting for creation of the canonical partial index.
+- Migration verification is permitted only through the guarded dedicated TEST DB workflow. Main, Preview and Production databases are prohibited for tests; raw Prisma CLI bypass is prohibited.
+- Rollback to the former global `LOWER(word)` uniqueness is unsafe after any duplicate-spelling private rows exist. Deployment planning must use backup/restore readiness and forward-fix/data-remediation rather than a blind down migration.
+
 10. VOCABULARY_SET — Legacy Draft (superseded for V1)
 10.1. Mục đích
 

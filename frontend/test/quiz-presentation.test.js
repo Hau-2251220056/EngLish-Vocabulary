@@ -141,6 +141,10 @@ test("production Quiz page contains both prompts, protected flow and approved co
   assert.equal(source.includes("/api/learning/events"), false);
   assert.equal(source.includes("pronunciation"), false);
   assert.equal(source.includes("MISSING_LETTER"), false);
+  assert.match(source, /question\.prompt\.meaning_vi/);
+  assert.match(source, /question\.prompt\.part_of_speech/);
+  assert.match(source, /questions\.find\(\(question\) => question\.vocabulary_id === run\.current_vocabulary_id\)/);
+  assert.match(source, /questions\.find\(\(question\) => question\.vocabulary_id === result\.vocabulary_id\)/);
 });
 
 test("Quiz CSS provides responsive touch targets and reduced motion", async () => {

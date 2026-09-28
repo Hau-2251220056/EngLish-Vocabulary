@@ -8,10 +8,10 @@ configureTestEnvironment({ requireReset: true });
 const prisma = new PrismaClient(); const run = randomUUID(); const domain = `${run}.vocabulary.test`; const password = `Safe-${run}`;
 const admin = { email: `admin@${domain}`, display_name: "Vocabulary Admin", role: "ADMIN", is_active: true };
 const user = { email: `user@${domain}`, display_name: "Vocabulary User", role: "USER", is_active: true };
-let existing;
+let existing; const createdVocabularyIds = [];
 test.describe.configure({ mode: "serial" });
-test.beforeAll(async () => { await prisma.$connect(); const password_hash = await hashPassword(password); await prisma.uSER.createMany({ data: [{ ...admin, password_hash }, { ...user, password_hash }] }); existing = await prisma.vOCABULARY.create({ data: { word: `E2E-${run}`, meanings: { create: [{ part_of_speech: "noun", meaning_vi: "nghĩa", examples: { create: [{ example_en: "Example." }] } }] } }, include: { meanings: { include: { examples: true } } } }); });
-test.afterAll(async () => { const accounts = await prisma.uSER.findMany({ where: { email: { endsWith: `@${domain}` } }, select: { id: true } }); await prisma.vOCABULARY.deleteMany({ where: { word: { startsWith: "E2E-" } } }); await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: accounts.map((x) => x.id) } } }); await prisma.uSER.deleteMany({ where: { id: { in: accounts.map((x) => x.id) } } }); await prisma.$disconnect(); });
+test.beforeAll(async () => { await prisma.$connect(); const password_hash = await hashPassword(password); await prisma.uSER.createMany({ data: [{ ...admin, password_hash }, { ...user, password_hash }] }); existing = await prisma.vOCABULARY.create({ data: { word: `E2E-${run}`, meanings: { create: [{ part_of_speech: "noun", meaning_vi: "nghĩa", examples: { create: [{ example_en: "Example." }] } }] } }, include: { meanings: { include: { examples: true } } } }); createdVocabularyIds.push(existing.id); });
+test.afterAll(async () => { const accounts = await prisma.uSER.findMany({ where: { email: { endsWith: `@${domain}` } }, select: { id: true } }); await prisma.vOCABULARY.deleteMany({ where: { id: { in: createdVocabularyIds } } }); await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: accounts.map((x) => x.id) } } }); await prisma.uSER.deleteMany({ where: { id: { in: accounts.map((x) => x.id) } } }); await prisma.$disconnect(); });
 async function login(page, account) { await page.goto("/login"); await page.getByLabel("Email").fill(account.email); await page.locator("#login-password").fill(password); await page.getByRole("button", { name: "Đăng nhập" }).click(); await expect(page).toHaveURL(/dashboard/); }
 test("ADMIN navigates, searches, loads complete detail, and opens edit", async ({ page }) => { await login(page, admin); await page.getByRole("link", { name: "Quản lý từ vựng" }).click(); await expect(page.getByRole("heading", { name: "Quản lý từ vựng" })).toBeVisible(); await page.getByRole("searchbox").fill(existing.word); await expect(page.getByText(existing.word)).toBeVisible(); await page.getByRole("button", { name: "Xem" }).click(); const detail = page.locator(".admin-topic-panel").filter({ has: page.getByRole("heading", { name: existing.word }) }); await expect(detail.getByText("Example.")).toBeVisible(); await detail.getByRole("button", { name: "Sửa" }).click(); await expect(page.locator("form.admin-topic-form").locator("fieldset").first().getByRole("group", { name: "Ví dụ" })).toBeVisible(); });
 test("USER cannot access ADMIN Vocabulary", async ({ page }) => { await login(page, user); await expect(page.getByRole("link", { name: "Quản lý từ vựng" })).toHaveCount(0); await page.goto("/admin/vocabulary"); await expect(page).toHaveURL(/dashboard/); });
@@ -46,6 +46,7 @@ test("ADMIN creates, replaces owned children, and confirms aggregate deletion", 
   await expect(detail).toBeVisible();
 
   const created = await prisma.vOCABULARY.findFirstOrThrow({ where: { word: createdWord }, include: { meanings: { include: { examples: true } } } });
+  createdVocabularyIds.push(created.id);
   const retainedMeaningId = created.meanings[0].id;
   const removedExampleId = created.meanings[0].examples[0].id;
 

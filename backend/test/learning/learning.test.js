@@ -207,6 +207,49 @@ test("learning payload is ordered, complete, deterministic and read-only with co
   );
 });
 
+test("Personal Vocabulary keeps exact same-spelling identities, shared progress and edited content", async () => {
+  const sharedWord = `book-${randomUUID()}`;
+  const canonical = await prisma.vOCABULARY.create({ data: { word: sharedWord, pronunciation_url: "https://example.test/canonical-book.mp3", meanings: { create: { part_of_speech: "noun", meaning_vi: "canonical meaning", cefr_level: "A1" } } } });
+  const privateOne = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word: sharedWord, pronunciation_url: null, meanings: { create: [
+    { part_of_speech: "verb", meaning_vi: "private booking meaning", cefr_level: "A2" },
+    { part_of_speech: "noun", meaning_vi: "private book meaning", cefr_level: "B2" },
+  ] } } });
+  const privateTwo = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word: sharedWord, pronunciation_url: null, meanings: { create: { part_of_speech: "noun", meaning_vi: "second private meaning", cefr_level: "A1" } } } });
+  const setA = await createSet({ ownerId: owner.id, isPublic: false, vocabularyIds: [privateTwo.id, canonical.id, privateOne.id] });
+  const setB = await createSet({ ownerId: owner.id, isPublic: false, vocabularyIds: [privateOne.id] });
+
+  const response = await http.request(`/api/learning/sets/${setA.id}`, { cookie: ownerCookie });
+  assert.equal(response.status, 200, response.text);
+  assert.deepEqual(response.json.data.cards.map((card) => [card.id, card.position, card.word]), [
+    [privateTwo.id, 1, sharedWord], [canonical.id, 2, sharedWord], [privateOne.id, 3, sharedWord],
+  ]);
+  assert.equal(response.json.data.cards[1].pronunciation_url, "https://example.test/canonical-book.mp3");
+  assert.equal(response.json.data.cards[2].pronunciation_url, null);
+  assert.deepEqual(
+    response.json.data.cards[2].meanings
+      .map(({ part_of_speech, meaning_vi }) => [part_of_speech, meaning_vi])
+      .sort((left, right) => left[0].localeCompare(right[0])),
+    [["noun", "private book meaning"], ["verb", "private booking meaning"]],
+  );
+
+  for (const vocabulary of [canonical, privateOne, privateTwo]) {
+    assertProgress(await postEvent(ownerCookie, eventBody({ setId: setA.id, vocabularyId: vocabulary.id, outcome: "REMEMBERED" })), { status: "LEARNED", reviewCount: 1, revision: 1 });
+  }
+  assert.equal(await prisma.lEARNING_PROGRESS.count({ where: { user_id: owner.id } }), 3);
+  const reused = await http.request(`/api/learning/sets/${setB.id}`, { cookie: ownerCookie });
+  assert.equal(reused.json.data.cards[0].id, privateOne.id);
+  assert.equal(reused.json.data.cards[0].progress.revision, 1);
+
+  await prisma.vOCABULARY_SET_ITEM.delete({ where: { vocabulary_set_id_vocabulary_id: { vocabulary_set_id: setA.id, vocabulary_id: privateOne.id } } });
+  await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: "reserve" } });
+  const afterEdit = await http.request(`/api/learning/sets/${setB.id}`, { cookie: ownerCookie });
+  assert.equal(afterEdit.json.data.cards[0].id, privateOne.id);
+  assert.equal(afterEdit.json.data.cards[0].word, "reserve");
+  assert.equal(afterEdit.json.data.cards[0].progress.revision, 1);
+  assert.equal((await findProgress(owner.id, privateOne.id)).revision, 1);
+  assertError(await http.request(`/api/learning/sets/${setA.id}`, { cookie: otherCookie }), 404, "LEARNING_SET_NOT_FOUND");
+});
+
 test("learning payload validation and empty Set failures use approved safe errors", async () => {
   const emptySet = await createSet({
     ownerId: owner.id,

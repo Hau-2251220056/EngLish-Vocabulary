@@ -13,6 +13,7 @@ export async function createTestDatabase() {
     prisma,
     async reset() {
       await resetLearningProgressData(prisma);
+      await resetPrivateVocabularyCreateOperationData(prisma);
       await resetVocabularySetData(prisma);
       await resetVocabularyData(prisma);
       await resetTopicData(prisma);
@@ -22,6 +23,11 @@ export async function createTestDatabase() {
       await prisma.$disconnect();
     },
   };
+}
+
+export async function resetPrivateVocabularyCreateOperationData(prisma) {
+  configureTestEnvironment({ requireReset: true });
+  await prisma.pRIVATE_VOCABULARY_CREATE_OPERATION.deleteMany();
 }
 
 export async function resetLearningProgressData(prisma) {

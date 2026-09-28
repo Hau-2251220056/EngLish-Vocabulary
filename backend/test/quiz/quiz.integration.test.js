@@ -112,6 +112,54 @@ test("ordered question reads cover both types, disclose no answer and never muta
   assert.deepEqual(await progressSnapshot(), before);
 });
 
+test("Personal Vocabulary stays exact across both Quiz types, answers and later refetch", async () => {
+  const sharedWord = `book-${randomUUID()}`;
+  const canonical = await createPersonalQuizVocabulary({ word: sharedWord, meaningVi: "canonical book", partOfSpeech: "noun" });
+  const privateOne = await createPersonalQuizVocabulary({ ownerId: owner.id, word: sharedWord, meaningVi: "private booking", partOfSpeech: "verb", secondaryMeaning: true });
+  const privateTwo = await createPersonalQuizVocabulary({ ownerId: owner.id, word: sharedWord, meaningVi: "second private book", partOfSpeech: "noun" });
+  const set = await createSet(owner.id, false, [privateTwo.id, canonical.id, privateOne.id]);
+  const runId = randomUUID();
+  const responses = await Promise.all([
+    getQuestions(set.id, "VI_TO_ENGLISH", runId, ownerCookie),
+    getQuestions(set.id, "UNSCRAMBLE_WORD", runId, ownerCookie),
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.status, 200, response.text);
+    assert.deepEqual(response.json.data.questions.map(({ vocabulary_id, position }) => [vocabulary_id, position]), [
+      [privateTwo.id, 1], [canonical.id, 2], [privateOne.id, 3],
+    ]);
+    const privateQuestion = response.json.data.questions[2];
+    assert.equal(privateQuestion.prompt.meaning_vi, "private booking");
+    assert.equal(privateQuestion.prompt.part_of_speech, "verb");
+  }
+
+  const vietnameseQuestion = { ...responses[0].json.data.questions[2], quiz_type: "VI_TO_ENGLISH" };
+  const vietnameseResult = await postAnswer(answerBody(vietnameseQuestion, set.id, runId, randomUUID(), sharedWord), ownerCookie);
+  assert.equal(vietnameseResult.status, 200, vietnameseResult.text);
+  assert.equal(vietnameseResult.json.data.vocabulary_id, privateOne.id);
+  assert.equal(vietnameseResult.json.data.is_correct, true);
+
+  const unscrambleQuestion = { ...responses[1].json.data.questions[0], quiz_type: "UNSCRAMBLE_WORD" };
+  assert.deepEqual(
+    unscrambleQuestion.prompt.tiles.map(({ character }) => character).sort(),
+    [...sharedWord].filter((character) => /[\p{L}\p{Nd}]/u.test(character)).sort(),
+  );
+  const unscrambleResult = await postAnswer(answerBody(unscrambleQuestion, set.id, runId, randomUUID(), sharedWord), ownerCookie);
+  assert.equal(unscrambleResult.status, 200, unscrambleResult.text);
+  assert.equal(unscrambleResult.json.data.vocabulary_id, privateTwo.id);
+  assert.equal(unscrambleResult.json.data.is_correct, true);
+  assert.equal(await prisma.lEARNING_PROGRESS.count({ where: { user_id: owner.id } }), 2);
+
+  await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: "reserve" } });
+  const refreshed = await getQuestions(set.id, "UNSCRAMBLE_WORD", randomUUID(), ownerCookie);
+  const refreshedPrivate = refreshed.json.data.questions.find(({ vocabulary_id }) => vocabulary_id === privateOne.id);
+  assert.deepEqual(refreshedPrivate.prompt.tiles.map(({ character }) => character).sort(), [..."reserve"].sort());
+  assert.equal(refreshedPrivate.prompt.meaning_vi, "private booking");
+  assert.equal(refreshedPrivate.prompt.part_of_speech, "verb");
+  assertError(await getQuestions(set.id, "VI_TO_ENGLISH", randomUUID(), otherCookie), 404, "QUIZ_SET_NOT_FOUND");
+});
+
 test("UNSCRAMBLE_WORD HTTP projection preserves opaque duplicate tiles, fixed separators and identity fallback", async () => {
   const duplicateVocabulary = await createVocabulary("unscramble-duplicate", { word: "book-case" });
   const identityVocabulary = await createVocabulary("unscramble-identity", { word: "z-z'z z.z" });
@@ -324,6 +372,21 @@ async function createVocabulary(prefix, { word = `quiz-${prefix}-${randomUUID()}
   }
   assert.ok(late.id);
   return vocabulary;
+}
+
+function createPersonalQuizVocabulary({ ownerId = null, word, meaningVi, partOfSpeech, secondaryMeaning = false }) {
+  return prisma.vOCABULARY.create({
+    data: {
+      owner_id: ownerId,
+      word,
+      meanings: {
+        create: [
+          { part_of_speech: partOfSpeech, meaning_vi: meaningVi, cefr_level: "A1", created_at: new Date("2026-01-01T00:00:00.000Z") },
+          ...(secondaryMeaning ? [{ part_of_speech: "noun", meaning_vi: "secondary meaning", cefr_level: "B2", created_at: new Date("2026-02-01T00:00:00.000Z") }] : []),
+        ],
+      },
+    },
+  });
 }
 
 function createSet(ownerId, isPublic, vocabularyIds) {

@@ -75,6 +75,7 @@ test("Vocabulary schema materializes only the approved owned aggregate and const
       "VOCABULARY.pronunciation_url",
       "VOCABULARY.created_at",
       "VOCABULARY.updated_at",
+      "VOCABULARY.owner_id",
       "VOCABULARY_EXAMPLE.id",
       "VOCABULARY_EXAMPLE.meaning_id",
       "VOCABULARY_EXAMPLE.example_en",
@@ -110,7 +111,7 @@ test("Vocabulary schema materializes only the approved owned aggregate and const
   }
 });
 
-test("database CEFR CHECK and LOWER(word) uniqueness enforce approved values", { concurrency: false }, async () => {
+test("database CEFR CHECK and canonical LOWER(word) uniqueness enforce approved values", { concurrency: false }, async () => {
   const vocabularyId = randomUUID();
   await prisma.$executeRawUnsafe(
     `INSERT INTO "VOCABULARY" ("id", "word", "created_at", "updated_at")
@@ -227,7 +228,7 @@ test("create validation rejects invalid aggregate data without partial rows", { 
   assert.equal(await prisma.vOCABULARY_EXAMPLE.count(), 0);
 });
 
-test("case-insensitive duplicate create, rename, and concurrent create use the stable 409 contract", { concurrency: false }, async () => {
+test("case-insensitive duplicate create and rename use the stable 409 contract", { concurrency: false }, async () => {
   const cookie = await authenticatedCookie("ADMIN");
   const first = await createVocabulary(cookie, validPayload({ word: "Travel" }));
   assert.equal(first.status, 201);
@@ -246,7 +247,9 @@ test("case-insensitive duplicate create, rename, and concurrent create use the s
     ERROR_CODES.duplicate,
   );
 
-  await database.reset();
+});
+
+test("concurrent canonical duplicate create uses the stable 409 contract", { concurrency: false }, async () => {
   const raceCookie = await authenticatedCookie("ADMIN");
   const responses = await Promise.all([
     createVocabulary(raceCookie, validPayload({ word: "Concurrent Word" })),
@@ -292,6 +295,140 @@ test("all ADMIN Vocabulary endpoints reject unauthenticated and USER callers", {
     );
   }
   assert.equal(await prisma.vOCABULARY.count(), 1);
+});
+
+test("ADMIN canonical list, detail, and create exclude same-word private rows", { concurrency: false }, async () => {
+  const cookie = await authenticatedCookie("ADMIN");
+  const privateOwner = await createUserFixture(prisma, {
+    role: "USER",
+    password_hash: "not-used-by-session-authentication",
+  });
+  const privateVocabulary = await prisma.vOCABULARY.create({
+    data: {
+      owner_id: privateOwner.id,
+      word: "Shared Headword",
+      meanings: {
+        create: {
+          part_of_speech: "noun",
+          meaning_vi: "private meaning",
+          examples: { create: { example_en: "Private example." } },
+        },
+      },
+    },
+    include: { meanings: { include: { examples: true } } },
+  });
+  const created = await createVocabulary(
+    cookie,
+    validPayload({ word: "shared headword" }),
+  );
+  assert.equal(created.status, 201, created.text);
+  const canonicalId = created.json.data.id;
+  assert.equal(
+    (await prisma.vOCABULARY.findUniqueOrThrow({ where: { id: canonicalId } })).owner_id,
+    null,
+  );
+
+  const list = await adminRequest("/api/admin/vocabulary", cookie);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.json.data.map(({ id }) => id), [canonicalId]);
+
+  const privateDetail = await adminRequest(
+    `/api/admin/vocabulary/${privateVocabulary.id}`,
+    cookie,
+  );
+  const missingDetail = await adminRequest(
+    `/api/admin/vocabulary/${randomUUID()}`,
+    cookie,
+  );
+  assertError(privateDetail, 404, ERROR_CODES.missing);
+  assert.deepEqual(privateDetail.json, missingDetail.json);
+});
+
+test("ADMIN updates and deletes canonical rows without mutating private rows", { concurrency: false }, async () => {
+  const cookie = await authenticatedCookie("ADMIN");
+  const privateOwner = await createUserFixture(prisma, {
+    role: "USER",
+    password_hash: "not-used-by-session-authentication",
+  });
+  const privateVocabulary = await prisma.vOCABULARY.create({
+    data: {
+      owner_id: privateOwner.id,
+      word: "Private Update Target",
+      meanings: {
+        create: {
+          part_of_speech: "noun",
+          meaning_vi: "private meaning",
+          examples: { create: { example_en: "Private example." } },
+        },
+      },
+    },
+  });
+  const created = await createVocabulary(
+    cookie,
+    validPayload({ word: "Canonical Update Source" }),
+  );
+  assert.equal(created.status, 201, created.text);
+  const canonicalId = created.json.data.id;
+
+  const update = await adminRequest(`/api/admin/vocabulary/${canonicalId}`, cookie, {
+    method: "PATCH",
+    json: { word: "private update target" },
+  });
+  assert.equal(update.status, 200, update.text);
+  assert.equal(update.json.data.word, "private update target");
+
+  const privateUpdate = await adminRequest(
+    `/api/admin/vocabulary/${privateVocabulary.id}`,
+    cookie,
+    { method: "PATCH", json: { word: "ADMIN must not change this" } },
+  );
+  assertError(privateUpdate, 404, ERROR_CODES.missing);
+
+  const privateDelete = await adminRequest(
+    `/api/admin/vocabulary/${privateVocabulary.id}`,
+    cookie,
+    { method: "DELETE" },
+  );
+  assertError(privateDelete, 404, ERROR_CODES.missing);
+
+  assert.equal(
+    (await adminRequest(`/api/admin/vocabulary/${canonicalId}`, cookie, {
+      method: "DELETE",
+    })).status,
+    204,
+  );
+
+  const storedPrivate = await prisma.vOCABULARY.findUniqueOrThrow({
+    where: { id: privateVocabulary.id },
+    include: { meanings: { include: { examples: true } } },
+  });
+  assert.equal(storedPrivate.word, "Private Update Target");
+  assert.equal(storedPrivate.meanings[0].meaning_vi, "private meaning");
+  assert.equal(storedPrivate.meanings[0].examples[0].example_en, "Private example.");
+});
+
+test("Guest and USER cannot use private IDs through ADMIN Vocabulary routes", { concurrency: false }, async () => {
+  const privateOwner = await createUserFixture(prisma, {
+    role: "USER",
+    password_hash: "not-used-by-session-authentication",
+  });
+  const privateVocabulary = await prisma.vOCABULARY.create({
+    data: { owner_id: privateOwner.id, word: "Private Authorization" },
+  });
+
+  assertError(
+    await http.request(`/api/admin/vocabulary/${privateVocabulary.id}`),
+    401,
+    "AUTHENTICATION_FAILED",
+  );
+  const userCookie = await authenticatedCookie("USER");
+  assertError(
+    await http.request(`/api/admin/vocabulary/${privateVocabulary.id}`, {
+      cookie: userCookie,
+    }),
+    403,
+    "FORBIDDEN",
+  );
 });
 
 test("detail, PATCH, and delete reject invalid or missing Vocabulary identifiers safely", { concurrency: false }, async () => {

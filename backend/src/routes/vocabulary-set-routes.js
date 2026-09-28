@@ -34,6 +34,11 @@ export function createUserVocabularySetRouter({
   router.get("/my/vocabulary-sets", ...middleware, vocabularySetController.listPrivate);
   router.get("/my/vocabulary-sets/:setId", ...middleware, vocabularySetController.getPrivate);
   router.post("/my/vocabulary-sets", ...middleware, vocabularySetController.createPrivate);
+  router.post(
+    "/my/vocabulary-sets/:setId/vocabulary",
+    ...middleware,
+    vocabularySetController.createPrivateVocabularyAndAdd,
+  );
   router.patch("/my/vocabulary-sets/:setId", ...middleware, vocabularySetController.updatePrivate);
   router.delete("/my/vocabulary-sets/:setId", ...middleware, vocabularySetController.deletePrivate);
   router.post("/vocabulary-sets/:setId/copy", ...middleware, vocabularySetController.copySystem);

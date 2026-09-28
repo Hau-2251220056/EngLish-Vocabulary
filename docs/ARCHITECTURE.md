@@ -926,6 +926,23 @@ Set gốc của User A không bị thay đổi.
 
 V1 không yêu cầu download/copy history table.
 
+### 14.0.1 Personal Vocabulary V1 — Implemented Architecture
+
+The completed Personal Vocabulary V1 implementation extends the existing aggregate and layers:
+
+- Nullable Vocabulary owner distinguishes canonical (`NULL`) from USER-private (session USER ID); no parallel Vocabulary aggregate is introduced.
+- ADMIN Vocabulary repository/service paths become canonical-scoped.
+- USER-private detail/update paths reuse aggregate validation/persistence but predicate by exact ID plus session owner.
+- Set service/repository remains authoritative for Set kind, ownership, exact-ID reference validation, ordering and copy.
+- The editor-contained picker returns canonical plus own-private data for USER and canonical-only data for ADMIN.
+- Learning, Quiz and Progress preserve exact-ID traversal and must not add word-based re-resolution.
+
+The implemented create-private-plus-add command follows Route -> Middleware -> Controller -> Service -> Repository -> Prisma. The service owns validation, ownership, server-authoritative fingerprint comparison and one transaction covering aggregate children, membership and scoped operation result. The repository locks the authorized private Set row before calculating the next append position, serializing concurrent appends without imposing headword uniqueness.
+
+An opaque client-generated `operation_id` identifies one intentional command. Backend canonicalizes accepted authoritative request data and computes the fingerprint. Equivalent retry returns the original result; different input under the same key conflicts; a new key permits intentional identical content. This is not an event-driven system, queue, cache or generic idempotency platform.
+
+Critical ownership, canonical-only System Set behavior and concealment remain backend-enforced. Frontend remains Page -> Component/State -> Service -> API. The service layer preserves picker identities/source context, exposes exact-ID private GET/PATCH and sanitizes create/update payloads. A small in-memory action coordinator generates one browser UUID per intentional create, retains it for retry and shares the in-flight Promise for rapid duplicate submission; it does not persist operation IDs or read the HttpOnly session cookie. The existing Set editor owns complete create/reuse/edit/remove orchestration; no standalone private Vocabulary application is introduced. No new role, framework, microservice or external service is introduced. Database-dependent verification remains limited to the guarded dedicated TEST DB path. Personal Vocabulary V1 is `DONE — HUMAN APPROVED`; integration into `dev` has not yet occurred.
+
 ### 14.1 Vocabulary Set V1 Active Architecture
 
 Vocabulary Set V1 uses the existing REST composition without a new framework or role model:

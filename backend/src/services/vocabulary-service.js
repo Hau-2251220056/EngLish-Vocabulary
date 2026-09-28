@@ -4,6 +4,8 @@ const UUID_PATTERN =
 const CEFR_LEVELS = new Set(["A1", "A2", "B1", "B2", "C1", "C2"]);
 const CREATE_FIELDS = new Set(["word", "phonetic", "pronunciation_url", "meanings"]);
 const PATCH_FIELDS = CREATE_FIELDS;
+const PRIVATE_PATCH_FIELDS = new Set(["word", "phonetic", "meanings"]);
+const PRIVATE_CREATE_FIELDS = PRIVATE_PATCH_FIELDS;
 const MEANING_FIELDS = new Set([
   "id",
   "part_of_speech",
@@ -13,6 +15,7 @@ const MEANING_FIELDS = new Set([
   "examples",
 ]);
 const EXAMPLE_FIELDS = new Set(["id", "example_en", "example_vi"]);
+const CANONICAL_WORD_UNIQUE_INDEX = "VOCABULARY_canonical_word_lower_key";
 
 export class VocabularyServiceError extends Error {
   constructor(code, message) {
@@ -66,7 +69,7 @@ export function createVocabularyService({ vocabularyRepository }) {
       } catch (error) {
         if (error?.code === "P2028" || error?.code === "P2034") {
           const competingVocabulary =
-            await vocabularyRepository.findByWordInsensitive(vocabulary.word);
+            await vocabularyRepository.findCanonicalByWordInsensitive(vocabulary.word);
           if (competingVocabulary) {
             throw duplicateWordError();
           }
@@ -127,6 +130,72 @@ export function createVocabularyService({ vocabularyRepository }) {
         throwKnownPersistenceError(error);
       }
     },
+
+    async getOwnedPrivateVocabulary(ownerId, vocabularyId) {
+      validateUuid(ownerId);
+      validateVocabularyId(vocabularyId);
+      return requireOwnedPrivateVocabulary(
+        vocabularyRepository,
+        ownerId,
+        vocabularyId,
+      );
+    },
+
+    async updateOwnedPrivateVocabulary(ownerId, vocabularyId, input) {
+      validateUuid(ownerId);
+      validateVocabularyId(vocabularyId);
+      validateBody(input);
+      rejectUnsupportedFields(input, PRIVATE_PATCH_FIELDS);
+      const patch = normalizePatchInput(input);
+
+      try {
+        return await vocabularyRepository.withTransaction(async (repository) => {
+          const existing = await requireOwnedPrivateVocabulary(
+            repository,
+            ownerId,
+            vocabularyId,
+          );
+          if (patch.meanings !== undefined) {
+            validateReplacementOwnership(existing, patch.meanings);
+          }
+          const vocabularyData = {};
+          for (const field of ["word", "phonetic"]) {
+            if (patch[field] !== undefined) vocabularyData[field] = patch[field];
+          }
+          if (Object.keys(vocabularyData).length > 0) {
+            await repository.updateOwnedPrivateVocabulary(
+              ownerId,
+              vocabularyId,
+              vocabularyData,
+            );
+          }
+          if (patch.meanings !== undefined) {
+            await replaceMeanings(repository, existing, patch.meanings);
+          }
+          return requireOwnedPrivateVocabulary(repository, ownerId, vocabularyId);
+        });
+      } catch (error) {
+        if (error?.code === "P2025") throw vocabularyNotFoundError();
+        throw error;
+      }
+    },
+  };
+}
+
+export function normalizePrivateVocabularyCreateInput(input) {
+  validateBody(input);
+  rejectUnsupportedFields(input, PRIVATE_CREATE_FIELDS);
+  if (!Object.hasOwn(input, "word") || !Object.hasOwn(input, "meanings")) {
+    throw validationError();
+  }
+
+  return {
+    word: validateWord(input.word),
+    phonetic: validateOptionalString(input.phonetic, 100, { optional: true }),
+    meanings: normalizeMeanings(input.meanings, {
+      allowIds: false,
+      examplesOptional: true,
+    }),
   };
 }
 
@@ -170,7 +239,7 @@ function normalizePatchInput(input) {
   return patch;
 }
 
-function normalizeMeanings(value, { allowIds }) {
+function normalizeMeanings(value, { allowIds, examplesOptional = false }) {
   if (!Array.isArray(value) || value.length === 0) {
     throw validationError();
   }
@@ -188,7 +257,7 @@ function normalizeMeanings(value, { allowIds }) {
     if (
       !Object.hasOwn(meaning, "part_of_speech") ||
       !Object.hasOwn(meaning, "meaning_vi") ||
-      !Object.hasOwn(meaning, "examples")
+      (!examplesOptional && !Object.hasOwn(meaning, "examples"))
     ) {
       throw validationError();
     }
@@ -198,7 +267,7 @@ function normalizeMeanings(value, { allowIds }) {
       meaning_vi: validateRequiredString(meaning.meaning_vi, 500),
       context: validateOptionalString(meaning.context, 500, { optional: true }),
       cefr_level: validateCefrLevel(meaning.cefr_level, { optional: true }),
-      examples: normalizeExamples(meaning.examples, {
+      examples: normalizeExamples(meaning.examples ?? [], {
         allowIds,
         seenExampleIds,
       }),
@@ -436,21 +505,50 @@ async function requireVocabulary(repository, vocabularyId) {
   return vocabulary;
 }
 
+async function requireOwnedPrivateVocabulary(repository, ownerId, vocabularyId) {
+  const vocabulary = await repository.findOwnedPrivateById(ownerId, vocabularyId);
+  if (!vocabulary) throw vocabularyNotFoundError();
+  return vocabulary;
+}
+
 async function ensureUniqueWord(repository, word, currentVocabularyId) {
-  const vocabulary = await repository.findByWordInsensitive(word);
+  const vocabulary = await repository.findCanonicalByWordInsensitive(word);
   if (vocabulary && vocabulary.id !== currentVocabularyId) {
     throw duplicateWordError();
   }
 }
 
 function throwKnownPersistenceError(error) {
-  if (error?.code === "P2002") {
+  if (isCanonicalWordUniqueError(error)) {
     throw duplicateWordError();
   }
   if (error?.code === "P2025") {
     throw vocabularyNotFoundError();
   }
   throw error;
+}
+
+function isCanonicalWordUniqueError(error) {
+  if (error?.code !== "P2002") {
+    return false;
+  }
+
+  if (
+    error?.meta?.modelName === "VOCABULARY" &&
+    Array.isArray(error?.meta?.target) &&
+    error.meta.target.length === 1 &&
+    error.meta.target[0] === "lower(word::text)"
+  ) {
+    return true;
+  }
+
+  const evidence = [
+    error?.meta,
+    error?.message,
+  ];
+  return evidence.some((value) =>
+    JSON.stringify(value)?.includes(CANONICAL_WORD_UNIQUE_INDEX),
+  );
 }
 
 function validationError() {

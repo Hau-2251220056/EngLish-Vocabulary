@@ -32,7 +32,20 @@ export function createVocabularySetService(client = httpClient) {
       return mutateAggregate(client, "post", `${itemEndpoint(PUBLIC_ENDPOINT, setId)}/copy`);
     },
     async searchVocabularyPicker(query) {
-      return getList(client, PICKER_ENDPOINT, { params: { query } });
+      try {
+        const response = await client.get(PICKER_ENDPOINT, { params: { query } });
+        if (!Array.isArray(response.data?.data)) throw invalidResponseError();
+        return response.data.data.map(requirePickerResult);
+      } catch (error) { throw mapVocabularySetError(error); }
+    },
+    async createPrivateVocabularyAndAdd(setId, operationId, vocabulary) {
+      try {
+        const response = await client.post(
+          `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/vocabulary`,
+          { operation_id: operationId, vocabulary: sanitizePrivateCreate(vocabulary) },
+        );
+        return requirePrivateCreateResult(response.data?.data);
+      } catch (error) { throw mapVocabularySetError(error); }
     },
     async listAdminSystemSets() { return getList(client, ADMIN_ENDPOINT); },
     async getAdminSystemSet(setId) { return getAggregate(client, itemEndpoint(ADMIN_ENDPOINT, setId)); },
@@ -72,12 +85,91 @@ function requireAggregate(value) {
   return value;
 }
 
+function requirePickerResult(value) {
+  if (
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    typeof value.id !== "string" || typeof value.word !== "string" ||
+    !["CANONICAL", "PRIVATE"].includes(value.source)
+  ) throw invalidResponseError();
+  const primaryMeaning = value.primary_meaning;
+  if (
+    primaryMeaning !== null &&
+    (!primaryMeaning || typeof primaryMeaning !== "object" ||
+      typeof primaryMeaning.part_of_speech !== "string" ||
+      typeof primaryMeaning.meaning_vi !== "string")
+  ) throw invalidResponseError();
+  return {
+    id: value.id,
+    word: value.word,
+    phonetic: value.phonetic ?? null,
+    source: value.source,
+    primary_meaning: primaryMeaning,
+    editable: value.source === "PRIVATE",
+  };
+}
+
+function sanitizePrivateCreate(value) {
+  return sanitizePrivateVocabulary(value, { preserveIds: false });
+}
+
+function sanitizePrivateVocabulary(value, { preserveIds }) {
+  const vocabulary = {
+    word: value?.word,
+    meanings: Array.isArray(value?.meanings)
+      ? value.meanings.map((meaning) => sanitizeMeaning(meaning, { preserveIds }))
+      : value?.meanings,
+  };
+  if (Object.hasOwn(value ?? {}, "phonetic")) vocabulary.phonetic = value.phonetic;
+  return vocabulary;
+}
+
+function sanitizeMeaning(value, { preserveIds }) {
+  const meaning = {
+    part_of_speech: value?.part_of_speech,
+    meaning_vi: value?.meaning_vi,
+  };
+  if (preserveIds && Object.hasOwn(value ?? {}, "id")) meaning.id = value.id;
+  for (const field of ["context", "cefr_level"]) {
+    if (Object.hasOwn(value ?? {}, field)) meaning[field] = value[field];
+  }
+  if (Object.hasOwn(value ?? {}, "examples")) {
+    meaning.examples = Array.isArray(value.examples)
+      ? value.examples.map((example) => {
+          const result = { example_en: example?.example_en };
+          if (preserveIds && Object.hasOwn(example ?? {}, "id")) result.id = example.id;
+          if (Object.hasOwn(example ?? {}, "example_vi")) result.example_vi = example.example_vi;
+          return result;
+        })
+      : value.examples;
+  }
+  return meaning;
+}
+
+function requirePrivateCreateResult(value) {
+  if (
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    !value.vocabulary || typeof value.vocabulary !== "object" ||
+    typeof value.vocabulary.id !== "string" ||
+    !value.membership || typeof value.membership !== "object" ||
+    value.membership.vocabulary_id !== value.vocabulary.id
+  ) throw invalidResponseError();
+  return value;
+}
+
 function mapVocabularySetError(error) {
   if (error instanceof VocabularySetApiError) return error;
   const status = error?.response?.status ?? null;
   const responseError = error?.response?.data?.error;
   return new VocabularySetApiError({
-    kind: status === 404 && responseError?.code === "VOCABULARY_SET_NOT_FOUND" ? "not-found" : status === null ? "operational" : "api",
+    kind: status === 409 && responseError?.code === "PRIVATE_VOCABULARY_OPERATION_CONFLICT"
+      ? "conflict"
+      : status === 404
+        ? "not-found"
+        : status === 400
+          ? "validation"
+          : status === 401 || status === 403
+            ? "authorization"
+            : status === null ? "operational" : "api",
     code: responseError?.code ?? "VOCABULARY_SET_REQUEST_FAILED",
     message: responseError?.message ?? (status === null ? "Vocabulary Set service is unavailable." : "Vocabulary Set request failed."),
     status,

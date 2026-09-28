@@ -85,6 +85,39 @@ test("one accepted answer per question advances in order and derives completion"
   assert.equal(JSON.stringify(state).includes("canonical answer"), false);
 });
 
+test("same-spelling canonical and private questions remain distinct by vocabulary ID", () => {
+  const payload = {
+    id: "set-1",
+    name: "Same spelling",
+    quiz_type: type,
+    run_id: runId,
+    questions: [
+      question("canonical-book", 1, "revision-c", 0),
+      question("private-book-one", 2, "revision-p1", 0),
+      question("private-book-two", 3, "revision-p2", 0),
+    ],
+  };
+  let state = reconcileQuizRunState(
+    createQuizRunState("user-1", "set-1", type, () => runId),
+    "user-1",
+    payload,
+  );
+  assert.equal(state.current_vocabulary_id, "canonical-book");
+  state = beginQuizAnswer(state, "canonical-book", "book", () => "event-c");
+  state = acceptQuizAnswer(state, answerResult("canonical-book", true, 1));
+  assert.equal(state.current_vocabulary_id, "private-book-one");
+  state = beginQuizAnswer(state, "private-book-one", "book", () => "event-p1");
+  state = acceptQuizAnswer(state, answerResult("private-book-one", false, 1));
+  assert.equal(state.current_vocabulary_id, "private-book-two");
+  assert.deepEqual(summarizeQuizRun(state), {
+    total: 3,
+    answered: 2,
+    correct: 1,
+    incorrect: 1,
+    completed: false,
+  });
+});
+
 test("retry payload survives operational errors while conflicts are modeled", () => {
   let state = reconcileQuizRunState(
     createQuizRunState("user-1", "set-1", type, () => runId),

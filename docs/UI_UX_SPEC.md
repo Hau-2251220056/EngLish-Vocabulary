@@ -915,7 +915,7 @@ Guest and authenticated visitors can open dedicated Topic-scoped System Set disc
 Inside the existing authenticated App Layout, USER navigation exposes My Sets only with implemented routes. A USER can list/search/view/create/edit/delete only owned private Sets and may retain an empty draft.
 
 - The Set editor has labelled Set metadata and Topic controls plus a semantic ordered Item collection.
-- Its authenticated Vocabulary picker exists only while editing, requires a word query, displays bounded `{ word, phonetic }` selection metadata, prevents duplicate additions and never links to a Vocabulary catalog/detail screen.
+- Its authenticated Vocabulary picker exists only while editing, requires a word query, displays bounded exact-ID results with word, primary part of speech/meaning and `Hệ thống`/`Của tôi` source context, prevents duplicate exact-ID additions and never links to a standalone Vocabulary catalog/detail screen.
 - Item add/remove and keyboard-accessible move-up/move-down controls make complete replacement order explicit.
 - Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
 
@@ -1014,6 +1014,29 @@ Clear error indication
 Character-level feedback when applicable
 Correct answer after submission when appropriate
 Continue / Retry action
+
+### 12.3.1 Personal Vocabulary V1 — Active Incremental UX Contract
+
+PV-08 implements the following behavior inside the existing owned private Set editor. PV-09 verifies Learning, Flashcard, Progress and TTS compatibility; Quiz compatibility remains a later task:
+
+- Owned-private-Set search returns matching canonical and session-owner private Vocabulary, including zero-membership private Vocabulary.
+- Results expose word, relevant `part_of_speech`, primary/relevant Vietnamese meaning and System/Private source indication so same-headword identities remain distinguishable.
+- Search is reuse-first, but USER may reuse an exact identity or intentionally create another regardless of spelling matches.
+- Selection/add state is keyed by exact `vocabulary_id`; distinct same-spelling IDs may coexist while the same exact ID cannot repeat.
+- The editor exposes approved private aggregate create/update fields but no `pronunciation_url` or server-managed identity/ownership fields.
+- Editing a reused private identity communicates that every Set referencing the exact ID observes updated content; final warning styling remains a UI decision.
+- Membership removal is labelled **Remove from Set** and never implies permanent Vocabulary deletion.
+- Zero-membership recovery occurs through the picker; no Personal Vocabulary Library is introduced.
+- Loading, empty, validation, pending, safe error/retry, keyboard, focus and responsive states remain required.
+- ADMIN System Set editing uses explicit canonical-only capability and exposes no private create/edit behavior.
+
+Flashcard and both Quiz modes present the `part_of_speech` corresponding to the displayed Meaning, consume the exact Set Item Vocabulary, and never substitute content by spelling. Private Vocabulary may use existing native TTS with its exact word and does not borrow canonical pronunciation/content. Broad redesign remains out of scope.
+
+PV-09 verification found the existing Learning path compatible as-is: Set-based authorization, position-ordered exact-ID traversal, deterministic primary Meaning selection with POS/Vietnamese presentation, `(user_id, vocabulary_id)` Progress, per-card pronunciation URL, and native TTS fallback all already preserve Personal Vocabulary identity. No Learning/Flashcard/Progress/TTS production correction or redesign was required. PV-09 is HUMAN approved.
+
+PV-10 verification found both existing Quiz modes compatible as-is. `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD` retain position-ordered exact Vocabulary IDs, use one deterministic selected Meaning with matching Vietnamese text and part of speech, render that POS, and keep exact-ID answer, result and Progress behavior for canonical and private entries. No Quiz production correction, new mode or redesign was required. PV-10 is HUMAN approved.
+
+PV-11 closure verification combines the existing affected real-stack regressions with six focused Personal Vocabulary browser scenarios. Together they cover atomic create/double-submit, exact-ID reuse/edit/removal/zero-membership recovery and Progress preservation, same-word coexistence and cross-user concealment, System Set rejection/copy behavior, Flashcard exact content/POS/TTS, and both Quiz modes. The approved contract requires this consolidated scenario matrix, not one monolithic browser journey. TASK-PV-01 through TASK-PV-11 are `COMPLETE — HUMAN APPROVED`; Personal Vocabulary V1 is `DONE — HUMAN APPROVED`. Integration into `dev` has not yet occurred.
 
 ### 12.4 Flashcard / Learning V1 Active UX Contract
 

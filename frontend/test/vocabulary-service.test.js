@@ -94,6 +94,34 @@ test("Vocabulary service maps safe API, operational, and invalid-response errors
   });
 });
 
+test("private Vocabulary GET/PATCH use exact IDs and sanitize editable aggregate fields", async () => {
+  const calls = [];
+  const privateVocabulary = {
+    id: "private/id", word: "book", phonetic: null,
+    meanings: [
+      { id: "meaning-1", part_of_speech: "noun", meaning_vi: "sÃ¡ch", context: null, cefr_level: "A1", examples: [{ id: "example-1", example_en: "A book", example_vi: null }] },
+      { id: "meaning-2", part_of_speech: "verb", meaning_vi: "Ä‘áº·t chá»—", context: null, cefr_level: null, examples: [] },
+    ],
+  };
+  const client = {
+    async get(url) { calls.push(["GET", url]); return { data: { data: privateVocabulary } }; },
+    async patch(url, body) { calls.push(["PATCH", url, body]); return { data: { data: privateVocabulary } }; },
+  };
+  const service = createVocabularyService(client);
+  assert.equal((await service.getPrivateVocabulary("private/id")).meanings.length, 2);
+  await service.updatePrivateVocabulary("private/id", {
+    ...privateVocabulary,
+    owner_id: "forbidden", pronunciation_url: "forbidden", source: "PRIVATE",
+    operation_id: "forbidden", created_at: "forbidden",
+  });
+  assert.deepEqual(calls, [
+    ["GET", "/api/my/vocabulary/private%2Fid"],
+    ["PATCH", "/api/my/vocabulary/private%2Fid", {
+      word: "book", phonetic: null, meanings: privateVocabulary.meanings,
+    }],
+  ]);
+});
+
 const summary = Object.freeze({ id: "vocabulary-1", word: "book" });
 const vocabulary = Object.freeze({
   ...summary,

@@ -24,7 +24,10 @@ import {
   createAdminTopicRouter,
   createPublicTopicRouter,
 } from "./routes/topic-routes.js";
-import { createAdminVocabularyRouter } from "./routes/vocabulary-routes.js";
+import {
+  createAdminVocabularyRouter,
+  createUserPrivateVocabularyRouter,
+} from "./routes/vocabulary-routes.js";
 import {
   createAdminVocabularySetRouter,
   createPublicVocabularySetRouter,
@@ -91,6 +94,11 @@ export function createApp({ prisma }) {
     adminAuthorizationMiddleware,
   });
   const userAuthorizationMiddleware = createRoleAuthorizationMiddleware({ allowedRoles: ["USER"] });
+  const userPrivateVocabularyRouter = createUserPrivateVocabularyRouter({
+    vocabularyController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
   const userVocabularySetRouter = createUserVocabularySetRouter({
     vocabularySetController,
     authenticationMiddleware,
@@ -125,6 +133,7 @@ export function createApp({ prisma }) {
   app.use("/api", publicVocabularySetRouter);
   app.use("/api", vocabularySetPickerRouter);
   app.use("/api", userVocabularySetRouter);
+  app.use("/api/my/vocabulary", userPrivateVocabularyRouter);
   app.use("/api/learning", learningRouter);
   app.use("/api/quiz", quizRouter);
   app.use("/api/admin/topics", adminTopicRouter);

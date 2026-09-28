@@ -402,6 +402,7 @@ Vocabulary Multiple Meanings	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Context / Example	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Search	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Pronunciation Information	DONE	✓	✓	✓	✓	✓	✓
+Personal Vocabulary V1	DONE — HUMAN APPROVED	HUMAN APPROVED	HUMAN APPROVED	HUMAN APPROVED	COMPLETE	PASS	APPROVED
 
 Vocabulary may have multiple meanings depending on context.
 

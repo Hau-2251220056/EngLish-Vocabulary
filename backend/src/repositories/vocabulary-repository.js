@@ -33,10 +33,18 @@ const VOCABULARY_DETAIL_SELECT = {
   },
 };
 
+const PRIVATE_VOCABULARY_DETAIL_SELECT = {
+  id: true,
+  word: true,
+  phonetic: true,
+  meanings: VOCABULARY_DETAIL_SELECT.meanings,
+};
+
 export function createVocabularyRepository(prisma) {
   return {
     list() {
       return prisma.vOCABULARY.findMany({
+        where: { owner_id: null },
         orderBy: { created_at: "asc" },
         select: VOCABULARY_SUMMARY_SELECT,
       });
@@ -44,28 +52,46 @@ export function createVocabularyRepository(prisma) {
 
     findCompleteById(id) {
       return prisma.vOCABULARY.findUnique({
-        where: { id },
+        where: { id, owner_id: null },
         select: VOCABULARY_DETAIL_SELECT,
       });
     },
 
-    findByWordInsensitive(word) {
+    findCanonicalByWordInsensitive(word) {
       return prisma.vOCABULARY.findFirst({
-        where: { word: { equals: word, mode: "insensitive" } },
+        where: {
+          owner_id: null,
+          word: { equals: word, mode: "insensitive" },
+        },
         select: { id: true },
+      });
+    },
+
+    findOwnedPrivateById(ownerId, id) {
+      return prisma.vOCABULARY.findUnique({
+        where: { id, owner_id: ownerId },
+        select: PRIVATE_VOCABULARY_DETAIL_SELECT,
       });
     },
 
     createAggregate(data) {
       return prisma.vOCABULARY.create({
-        data,
+        data: { ...data, owner_id: null },
         select: VOCABULARY_DETAIL_SELECT,
       });
     },
 
     updateVocabulary(id, data) {
       return prisma.vOCABULARY.update({
-        where: { id },
+        where: { id, owner_id: null },
+        data,
+        select: { id: true },
+      });
+    },
+
+    updateOwnedPrivateVocabulary(ownerId, id, data) {
+      return prisma.vOCABULARY.update({
+        where: { id, owner_id: ownerId },
         data,
         select: { id: true },
       });
@@ -123,7 +149,7 @@ export function createVocabularyRepository(prisma) {
 
     deleteVocabulary(id) {
       return prisma.vOCABULARY.delete({
-        where: { id },
+        where: { id, owner_id: null },
         select: { id: true },
       });
     },

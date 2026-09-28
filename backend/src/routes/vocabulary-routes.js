@@ -18,3 +18,16 @@ export function createAdminVocabularyRouter({
 
   return router;
 }
+
+export function createUserPrivateVocabularyRouter({
+  vocabularyController,
+  authenticationMiddleware,
+  userAuthorizationMiddleware,
+}) {
+  const router = express.Router();
+  router.use(authenticationMiddleware);
+  router.use(userAuthorizationMiddleware);
+  router.get("/:vocabularyId", vocabularyController.getOwnedPrivate);
+  router.patch("/:vocabularyId", vocabularyController.updateOwnedPrivate);
+  return router;
+}

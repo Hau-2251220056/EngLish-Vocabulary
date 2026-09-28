@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   isKeyboardShortcutSafe,
@@ -40,6 +41,21 @@ test("next card selection skips assessed cards in ordered circular traversal", (
   );
 });
 
+test("same-spelling cards retain exact identities and selected Meaning POS/text", () => {
+  const cards = [
+    { id: "canonical-book", word: "book", meanings: [{ id: "c", cefr_level: "A1", part_of_speech: "noun", meaning_vi: "canonical meaning" }] },
+    { id: "private-book", word: "book", meanings: [
+      { id: "p-b2", cefr_level: "B2", part_of_speech: "noun", meaning_vi: "private book meaning" },
+      { id: "p-a2", cefr_level: "A2", part_of_speech: "verb", meaning_vi: "private booking meaning" },
+    ] },
+  ];
+  assert.equal(nextUnassessedCardId(cards, { "canonical-book": "REMEMBERED" }, 0), "private-book");
+  const selected = selectPrimaryMeaning(cards[1].meanings);
+  assert.deepEqual({ id: selected.id, part_of_speech: selected.part_of_speech, meaning_vi: selected.meaning_vi }, {
+    id: "p-a2", part_of_speech: "verb", meaning_vi: "private booking meaning",
+  });
+});
+
 test("keyboard safety defaults safely outside a browser DOM", () => {
   assert.equal(isKeyboardShortcutSafe(null), true);
 });
@@ -53,6 +69,13 @@ test("pronunciation fallback prefers a default English voice without requiring o
   assert.equal(selectEnglishSpeechVoice(voices).name, "English US");
   assert.equal(selectEnglishSpeechVoice(voices.slice(0, 2)).name, "English UK");
   assert.equal(selectEnglishSpeechVoice([]), null);
+});
+
+test("Learning audio keeps card URL priority and exact-word native TTS fallback", async () => {
+  const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  assert.match(source, /if \(currentCard\.pronunciation_url\) \{[\s\S]*new Audio\(currentCard\.pronunciation_url\)/);
+  assert.match(source, /new window\.SpeechSynthesisUtterance\(currentCard\.word\)/);
+  assert.doesNotMatch(source, /find\([^\n]*\.word|filter\([^\n]*\.word/);
 });
 
 test("pending visual belongs only to the submitted learning outcome", () => {

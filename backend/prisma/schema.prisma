@@ -20,29 +20,31 @@ enum USER_ROLE {
 }
 
 model USER {
-  id                String         @id @default(uuid()) @db.Uuid
-  email             String         @unique @db.VarChar(255)
-  password_hash     String         @db.Text
-  display_name      String         @db.VarChar(100)
-  avatar_url        String?        @db.Text
-  role              USER_ROLE      @default(USER)
-  is_active         Boolean        @default(true)
-  total_xp          Int            @default(0)
-  daily_xp_goal     Int            @default(50)
-  created_at        DateTime       @default(now())
-  updated_at        DateTime       @updatedAt
-  auth_sessions     AUTH_SESSION[]
-  vocabulary_sets   VOCABULARY_SET[]
-  learning_progress LEARNING_PROGRESS[]
+  id                                   String                                @id @default(uuid()) @db.Uuid
+  email                                String                                @unique @db.VarChar(255)
+  password_hash                        String                                @db.Text
+  display_name                         String                                @db.VarChar(100)
+  avatar_url                           String?                               @db.Text
+  role                                 USER_ROLE                             @default(USER)
+  is_active                            Boolean                               @default(true)
+  total_xp                             Int                                   @default(0)
+  daily_xp_goal                        Int                                   @default(50)
+  created_at                           DateTime                              @default(now())
+  updated_at                           DateTime                              @updatedAt
+  auth_sessions                        AUTH_SESSION[]
+  vocabulary_sets                      VOCABULARY_SET[]
+  owned_vocabularies                   VOCABULARY[]                          @relation("VocabularyOwner")
+  private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationOwner")
+  learning_progress                    LEARNING_PROGRESS[]
 }
 
 model AUTH_SESSION {
-  id                       String   @id @default(uuid()) @db.Uuid
-  user_id                  String   @db.Uuid
-  session_identifier_hash  String   @unique @db.VarChar(64)
-  created_at               DateTime @default(now())
-  expires_at               DateTime
-  user                     USER     @relation(fields: [user_id], references: [id])
+  id                      String   @id @default(uuid()) @db.Uuid
+  user_id                 String   @db.Uuid
+  session_identifier_hash String   @unique @db.VarChar(64)
+  created_at              DateTime @default(now())
+  expires_at              DateTime
+  user                    USER     @relation(fields: [user_id], references: [id])
 }
 
 model TOPIC {
@@ -55,51 +57,55 @@ model TOPIC {
 }
 
 model VOCABULARY {
-  id                String                 @id @default(uuid()) @db.Uuid
-  word              String                 @db.VarChar(100)
-  phonetic          String?                @db.VarChar(100)
-  pronunciation_url String?                @db.VarChar(2048)
-  created_at        DateTime               @default(now())
-  updated_at        DateTime               @updatedAt
-  meanings          VOCABULARY_MEANING[]
-  vocabulary_items  VOCABULARY_SET_ITEM[]
-  learning_progress LEARNING_PROGRESS[]
+  id                        String                                @id @default(uuid()) @db.Uuid
+  owner_id                  String?                               @db.Uuid
+  word                      String                                @db.VarChar(100)
+  phonetic                  String?                               @db.VarChar(100)
+  pronunciation_url         String?                               @db.VarChar(2048)
+  created_at                DateTime                              @default(now())
+  updated_at                DateTime                              @updatedAt
+  owner                     USER?                                 @relation("VocabularyOwner", fields: [owner_id], references: [id], onDelete: Restrict)
+  meanings                  VOCABULARY_MEANING[]
+  vocabulary_items          VOCABULARY_SET_ITEM[]
+  learning_progress         LEARNING_PROGRESS[]
+  private_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationVocabulary")
 }
 
 model VOCABULARY_MEANING {
-  id              String                 @id @default(uuid()) @db.Uuid
-  vocabulary_id   String                 @db.Uuid
-  part_of_speech  String                 @db.VarChar(50)
-  meaning_vi      String                 @db.VarChar(500)
-  context         String?                @db.VarChar(500)
-  cefr_level      String?                @db.Text
-  created_at      DateTime               @default(now())
-  updated_at      DateTime               @updatedAt
-  vocabulary      VOCABULARY             @relation(fields: [vocabulary_id], references: [id], onDelete: Cascade)
-  examples        VOCABULARY_EXAMPLE[]
+  id             String               @id @default(uuid()) @db.Uuid
+  vocabulary_id  String               @db.Uuid
+  part_of_speech String               @db.VarChar(50)
+  meaning_vi     String               @db.VarChar(500)
+  context        String?              @db.VarChar(500)
+  cefr_level     String?              @db.Text
+  created_at     DateTime             @default(now())
+  updated_at     DateTime             @updatedAt
+  vocabulary     VOCABULARY           @relation(fields: [vocabulary_id], references: [id], onDelete: Cascade)
+  examples       VOCABULARY_EXAMPLE[]
 }
 
 model VOCABULARY_EXAMPLE {
-  id          String              @id @default(uuid()) @db.Uuid
-  meaning_id  String              @db.Uuid
-  example_en  String              @db.VarChar(1000)
-  example_vi  String?             @db.VarChar(1000)
-  created_at  DateTime            @default(now())
-  meaning     VOCABULARY_MEANING  @relation(fields: [meaning_id], references: [id], onDelete: Cascade)
+  id         String             @id @default(uuid()) @db.Uuid
+  meaning_id String             @db.Uuid
+  example_en String             @db.VarChar(1000)
+  example_vi String?            @db.VarChar(1000)
+  created_at DateTime           @default(now())
+  meaning    VOCABULARY_MEANING @relation(fields: [meaning_id], references: [id], onDelete: Cascade)
 }
 
 model VOCABULARY_SET {
-  id          String                @id @default(uuid()) @db.Uuid
-  topic_id    String                @db.Uuid
-  owner_id    String                @db.Uuid
-  name        String                @db.VarChar(100)
-  description String?               @db.VarChar(500)
-  is_public   Boolean
-  created_at  DateTime              @default(now())
-  updated_at  DateTime              @updatedAt
-  topic       TOPIC                 @relation(fields: [topic_id], references: [id], onDelete: Restrict)
-  owner       USER                  @relation(fields: [owner_id], references: [id], onDelete: Restrict)
-  items       VOCABULARY_SET_ITEM[]
+  id                                   String                                @id @default(uuid()) @db.Uuid
+  topic_id                             String                                @db.Uuid
+  owner_id                             String                                @db.Uuid
+  name                                 String                                @db.VarChar(100)
+  description                          String?                               @db.VarChar(500)
+  is_public                            Boolean
+  created_at                           DateTime                              @default(now())
+  updated_at                           DateTime                              @updatedAt
+  topic                                TOPIC                                 @relation(fields: [topic_id], references: [id], onDelete: Restrict)
+  owner                                USER                                  @relation(fields: [owner_id], references: [id], onDelete: Restrict)
+  items                                VOCABULARY_SET_ITEM[]
+  private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationSet")
 }
 
 model VOCABULARY_SET_ITEM {
@@ -133,4 +139,20 @@ model LEARNING_PROGRESS {
   vocabulary       VOCABULARY @relation(fields: [vocabulary_id], references: [id], onDelete: Restrict)
 
   @@unique([user_id, vocabulary_id])
+}
+
+model PRIVATE_VOCABULARY_CREATE_OPERATION {
+  operation_id        String         @id @db.Uuid
+  owner_id            String         @db.Uuid
+  vocabulary_set_id   String         @db.Uuid
+  vocabulary_id       String         @db.Uuid
+  request_fingerprint String         @db.Text
+  created_at          DateTime       @default(now())
+  owner               USER           @relation("PrivateVocabularyCreateOperationOwner", fields: [owner_id], references: [id], onDelete: Restrict)
+  vocabulary_set      VOCABULARY_SET @relation("PrivateVocabularyCreateOperationSet", fields: [vocabulary_set_id], references: [id], onDelete: Cascade)
+  vocabulary          VOCABULARY     @relation("PrivateVocabularyCreateOperationVocabulary", fields: [vocabulary_id], references: [id], onDelete: Restrict)
+
+  @@index([owner_id])
+  @@index([vocabulary_set_id])
+  @@index([vocabulary_id])
 }

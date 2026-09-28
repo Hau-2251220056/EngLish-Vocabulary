@@ -2,7 +2,10 @@ import { ArrowDown, ArrowUp, BookOpen, LoaderCircle, Plus, Search, Trash2, X } f
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { topicService } from "../services/topic-service.js";
+import { vocabularyService } from "../services/vocabulary-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
+import { createPrivateVocabularyAction, createPrivateVocabularySubmitter } from "./private-vocabulary-action.js";
+import { PrivateVocabularyEditor } from "./private-vocabulary-editor.jsx";
 
 const EMPTY_SET = { topic_id: "", name: "", description: "", items: [] };
 
@@ -112,7 +115,7 @@ export function MyVocabularySetsPage() {
       </header>
 
       {feedback ? <p className={`my-vocabulary-sets-feedback is-${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"} aria-live="polite">{feedback.message}</p> : null}
-      {editor ? <VocabularySetEditor aggregate={editor.aggregate} mode={editor.mode} pending={pending === "save"} onCancel={() => setEditor(null)} onSave={saveSet} /> : null}
+      {editor ? <VocabularySetEditor aggregate={editor.aggregate} mode={editor.mode} pending={pending === "save"} onCancel={() => setEditor(null)} onSave={saveSet} onSetChanged={retry} /> : null}
       {setId ? <MySetDetail detail={detail} state={detailState} pending={pending !== null} onClose={() => navigate("/my/vocabulary-sets")} onEdit={() => void openEdit()} onDelete={() => setDeleteTarget(detail)} onRetry={retry} /> : null}
 
       <section className="my-vocabulary-sets-list" aria-labelledby="my-vocabulary-sets-list-title">
@@ -137,7 +140,7 @@ function MySetDetail({ detail, onClose, onDelete, onEdit, onRetry, pending, stat
   return <section className="my-vocabulary-set-detail" aria-labelledby="my-vocabulary-set-detail-title"><div className="my-vocabulary-set-detail-heading"><div><p>Riêng tư</p><h2 id="my-vocabulary-set-detail-title">{detail.name}</h2></div><button type="button" aria-label="Đóng chi tiết bộ từ" onClick={onClose}><X className="size-5" aria-hidden="true" /></button></div><p>{detail.description || "Chưa có mô tả."}</p><p className="my-vocabulary-set-detail-count"><BookOpen className="size-4" aria-hidden="true" />{items.length} từ vựng theo thứ tự đã chọn</p><ol>{items.map((item) => <li key={item.id}><strong>{item.word}</strong>{item.phonetic ? <span>{item.phonetic}</span> : null}</li>)}</ol><div className="my-vocabulary-set-actions">{items.length > 0 ? <><Link to={`/learn/vocabulary-sets/${detail.id}`} state={{ returnTo: `/my/vocabulary-sets/${detail.id}` }}>Học bộ từ</Link><Link to={`/quiz/vocabulary-sets/${detail.id}`} state={{ returnTo: `/my/vocabulary-sets/${detail.id}`, setName: detail.name }}>Làm Quiz</Link></> : null}<button type="button" onClick={onEdit} disabled={pending}>Chỉnh sửa</button><button type="button" className="is-danger" onClick={onDelete} disabled={pending}>Xóa bộ từ</button></div></section>;
 }
 
-export function VocabularySetEditor({ aggregate, mode, onCancel, onSave, pending, requireItems = false }) {
+export function VocabularySetEditor({ aggregate, mode, onCancel, onSave, onSetChanged, pending, requireItems = false }) {
   const [values, setValues] = useState(() => formValues(aggregate));
   const [topics, setTopics] = useState([]);
   const [topicState, setTopicState] = useState("loading");
@@ -145,6 +148,10 @@ export function VocabularySetEditor({ aggregate, mode, onCancel, onSave, pending
   const [pickerItems, setPickerItems] = useState([]);
   const [pickerState, setPickerState] = useState("idle");
   const [errors, setErrors] = useState({});
+  const [privateEditor, setPrivateEditor] = useState(null);
+  const [privatePending, setPrivatePending] = useState(false);
+  const [privateError, setPrivateError] = useState(null);
+  const privateSubmit = useMemo(() => createPrivateVocabularySubmitter(vocabularySetService), []);
 
   useEffect(() => {
     let active = true;
@@ -154,23 +161,61 @@ export function VocabularySetEditor({ aggregate, mode, onCancel, onSave, pending
 
   function update(field, value) { setValues((current) => ({ ...current, [field]: value })); }
   function moveItem(index, direction) { setValues((current) => { const next = [...current.items]; const target = index + direction; if (target < 0 || target >= next.length) return current; [next[index], next[target]] = [next[target], next[index]]; return { ...current, items: next }; }); }
-  function addItem(item) { if (values.items.some((current) => current.vocabulary_id === item.id)) return; setValues((current) => ({ ...current, items: [...current.items, { vocabulary_id: item.id, word: item.word, phonetic: item.phonetic ?? null }] })); }
+  function addItem(item) { if (values.items.some((current) => current.vocabulary_id === item.id)) return; setValues((current) => ({ ...current, items: [...current.items, { vocabulary_id: item.id, word: item.word, phonetic: item.phonetic ?? null, source: item.source, primary_meaning: item.primary_meaning ?? null }] })); }
   function removeItem(index) { setValues((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) })); }
   async function searchPicker(event) { event.preventDefault(); const query = pickerQuery.trim(); if (!query) { setPickerState("validation"); return; } setPickerState("loading"); try { setPickerItems(await vocabularySetService.searchVocabularyPicker(query)); setPickerState("ready"); } catch { setPickerState("error"); } }
   async function submit(event) { event.preventDefault(); const nextErrors = validateSet(values, requireItems); setErrors(nextErrors); if (Object.keys(nextErrors).length) return; await onSave(serializeSet(values)); }
 
+  function openPrivateCreate() {
+    if (!aggregate.id) return;
+    const initial = { word: pickerQuery.trim(), phonetic: "", meanings: [] };
+    setPrivateError(null);
+    setPrivateEditor({ mode: "create", initial, action: createPrivateVocabularyAction(initial) });
+  }
+  async function openPrivateEdit(item) {
+    setPrivatePending(true);
+    setPrivateError(null);
+    try {
+      const vocabulary = await vocabularyService.getPrivateVocabulary(item.id ?? item.vocabulary_id);
+      setPrivateEditor({ mode: "edit", id: vocabulary.id, initial: vocabulary });
+    } catch (error) { setPrivateError(privateErrorMessage(error)); }
+    finally { setPrivatePending(false); }
+  }
+  async function savePrivateVocabulary(input) {
+    if (!privateEditor) return;
+    setPrivatePending(true);
+    setPrivateError(null);
+    try {
+      if (privateEditor.mode === "create") {
+        privateEditor.action.prepare(input);
+        const result = await privateSubmit(aggregate.id, privateEditor.action);
+        const item = { id: result.vocabulary.id, word: result.vocabulary.word, phonetic: result.vocabulary.phonetic ?? null, source: "PRIVATE", editable: true, primary_meaning: result.vocabulary.meanings?.[0] ?? null };
+        setValues((current) => current.items.some(({ vocabulary_id }) => vocabulary_id === item.id) ? current : { ...current, items: [...current.items, { ...item, vocabulary_id: item.id }] });
+        setPickerItems((current) => current.some(({ id }) => id === item.id) ? current : [...current, item]);
+        onSetChanged?.();
+      } else {
+        const updated = await vocabularyService.updatePrivateVocabulary(privateEditor.id, input);
+        setValues((current) => ({ ...current, items: current.items.map((item) => item.vocabulary_id === updated.id ? { ...item, word: updated.word, phonetic: updated.phonetic ?? null } : item) }));
+        setPickerItems((current) => current.map((item) => item.id === updated.id ? { ...item, word: updated.word, phonetic: updated.phonetic ?? null, primary_meaning: updated.meanings?.[0] ?? null } : item));
+      }
+      setPrivateEditor(null);
+    } catch (error) { setPrivateError(privateErrorMessage(error)); }
+    finally { setPrivatePending(false); }
+  }
+
   return <section className="my-vocabulary-set-editor" aria-labelledby="my-vocabulary-set-editor-title"><div className="my-vocabulary-set-editor-heading"><h2 id="my-vocabulary-set-editor-title">{mode === "create" ? requireItems ? "Tạo bộ từ hệ thống" : "Tạo bộ từ riêng" : `Chỉnh sửa ${aggregate.name}`}</h2><button type="button" aria-label="Đóng biểu mẫu bộ từ" onClick={onCancel} disabled={pending}><X className="size-5" aria-hidden="true" /></button></div><form noValidate onSubmit={submit}><div className="my-vocabulary-set-form-grid"><label htmlFor="my-set-name">Tên bộ từ<input id="my-set-name" value={values.name} onChange={(event) => update("name", event.target.value)} maxLength={101} disabled={pending} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? "my-set-name-error" : undefined} /></label>{errors.name ? <FieldError id="my-set-name-error" message={errors.name} /> : null}<label htmlFor="my-set-topic">Chủ đề<select id="my-set-topic" value={values.topic_id} onChange={(event) => update("topic_id", event.target.value)} disabled={pending || topicState !== "ready"} aria-invalid={Boolean(errors.topic_id)} aria-describedby={errors.topic_id ? "my-set-topic-error" : undefined}><option value="">{topicState === "loading" ? "Đang tải chủ đề…" : "Chọn chủ đề"}</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></label>{topicState === "error" ? <FieldError message="Không thể tải danh sách chủ đề. Hãy đóng biểu mẫu và thử lại." /> : null}{errors.topic_id ? <FieldError id="my-set-topic-error" message={errors.topic_id} /> : null}<label className="my-vocabulary-set-form-wide" htmlFor="my-set-description">Mô tả <span>(không bắt buộc)</span><textarea id="my-set-description" value={values.description} onChange={(event) => update("description", event.target.value)} maxLength={501} rows={3} disabled={pending} aria-invalid={Boolean(errors.description)} /></label>{errors.description ? <FieldError message={errors.description} /> : null}</div>
-    <fieldset className="my-vocabulary-set-items-editor"><legend>Danh sách từ vựng theo thứ tự</legend><p>Danh sách này là nội dung đầy đủ sẽ được lưu cho bộ từ. {requireItems ? "Bộ từ hệ thống cần ít nhất một từ vựng." : "Bạn có thể để trống bộ từ riêng tư."}</p>{errors.items ? <FieldError message={errors.items} /> : null}<ol>{values.items.map((item, index) => <li key={item.vocabulary_id}><div><strong>{item.word}</strong>{item.phonetic ? <span>{item.phonetic}</span> : null}</div><div className="my-vocabulary-set-item-controls"><button type="button" onClick={() => moveItem(index, -1)} disabled={pending || index === 0} aria-label={`Đưa ${item.word} lên`}><ArrowUp className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => moveItem(index, 1)} disabled={pending || index === values.items.length - 1} aria-label={`Đưa ${item.word} xuống`}><ArrowDown className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => removeItem(index)} disabled={pending} aria-label={`Bỏ ${item.word} khỏi bộ từ`}><Trash2 className="size-4" aria-hidden="true" /></button></div></li>)}</ol></fieldset>
-    <fieldset className="my-vocabulary-picker"><legend>Thêm từ vựng</legend><p>Tìm một từ để thêm vào bộ từ này. Kết quả chỉ dùng trong biểu mẫu hiện tại.</p><div><label htmlFor="my-set-vocabulary-query">Từ khóa<input id="my-set-vocabulary-query" type="search" value={pickerQuery} onChange={(event) => setPickerQuery(event.target.value)} disabled={pending} autoComplete="off" /></label><button type="button" onClick={searchPicker} disabled={pending || pickerState === "loading"}>{pickerState === "loading" ? "Đang tìm…" : "Tìm từ"}</button></div>{pickerState === "validation" ? <FieldError message="Nhập từ khóa trước khi tìm." /> : null}{pickerState === "error" ? <FieldError message="Không thể tìm từ vựng. Vui lòng thử lại." /> : null}{pickerState === "ready" && pickerItems.length === 0 ? <p role="status">Không tìm thấy từ phù hợp.</p> : null}{pickerState === "ready" && pickerItems.length > 0 ? <ul>{pickerItems.map((item) => { const added = values.items.some((current) => current.vocabulary_id === item.id); return <li key={item.id}><span><strong>{item.word}</strong>{item.phonetic ? ` ${item.phonetic}` : ""}</span><button type="button" onClick={() => addItem(item)} disabled={pending || added}>{added ? "Đã thêm" : "Thêm"}</button></li>; })}</ul> : null}</fieldset>
-    <div className="my-vocabulary-set-form-actions"><button type="button" onClick={onCancel} disabled={pending}>Hủy</button><button className="my-vocabulary-sets-primary" type="submit" disabled={pending || topicState !== "ready"} aria-busy={pending}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{pending ? "Đang lưu…" : "Lưu bộ từ"}</button></div></form></section>;
+    <fieldset className="my-vocabulary-set-items-editor"><legend>Danh sách từ vựng theo thứ tự</legend><p>Danh sách này là nội dung đầy đủ sẽ được lưu cho bộ từ. {requireItems ? "Bộ từ hệ thống cần ít nhất một từ vựng." : "Bạn có thể để trống bộ từ riêng tư."}</p>{errors.items ? <FieldError message={errors.items} /> : null}<ol>{values.items.map((item, index) => <li key={item.vocabulary_id}><div><strong>{item.word}</strong>{item.phonetic ? <span>{item.phonetic}</span> : null}</div><div className="my-vocabulary-set-item-controls">{item.source === "PRIVATE" ? <button type="button" onClick={() => void openPrivateEdit(item)} disabled={pending || privatePending}>Sửa</button> : null}<button type="button" onClick={() => moveItem(index, -1)} disabled={pending || index === 0} aria-label={`Đưa ${item.word} lên`}><ArrowUp className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => moveItem(index, 1)} disabled={pending || index === values.items.length - 1} aria-label={`Đưa ${item.word} xuống`}><ArrowDown className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => removeItem(index)} disabled={pending} aria-label={`Xóa ${item.word} khỏi bộ từ`}><Trash2 className="size-4" aria-hidden="true" /></button></div></li>)}</ol></fieldset>
+    <fieldset className="my-vocabulary-picker"><legend>Thêm từ vựng</legend><p>Tìm từ hệ thống hoặc từ của bạn để tái sử dụng. Bạn vẫn có thể tạo một từ mới dù có kết quả trùng từ.</p><div><label htmlFor="my-set-vocabulary-query">Từ khóa<input id="my-set-vocabulary-query" type="search" value={pickerQuery} onChange={(event) => setPickerQuery(event.target.value)} disabled={pending || privatePending} autoComplete="off" /></label><button type="button" onClick={searchPicker} disabled={pending || privatePending || pickerState === "loading"}>{pickerState === "loading" ? "Đang tìm…" : "Tìm từ"}</button></div>{pickerState === "validation" ? <FieldError message="Nhập từ khóa trước khi tìm." /> : null}{pickerState === "error" ? <FieldError message="Không thể tìm từ vựng. Vui lòng thử lại." /> : null}{privateError && !privateEditor ? <FieldError message={privateError} /> : null}{pickerState === "ready" && pickerItems.length === 0 ? <p role="status">Không tìm thấy từ phù hợp. Bạn có thể tạo từ mới.</p> : null}{pickerState === "ready" && pickerItems.length > 0 ? <ul>{pickerItems.map((item) => { const added = values.items.some((current) => current.vocabulary_id === item.id); return <li key={item.id} className="my-vocabulary-picker-result"><div><strong>{item.word}</strong><span>{item.primary_meaning ? `${item.primary_meaning.part_of_speech} · ${item.primary_meaning.meaning_vi}` : "Chưa có nghĩa chính"}</span><small>{item.source === "CANONICAL" ? "Hệ thống" : "Của tôi"}</small></div><div><button type="button" onClick={() => addItem(item)} disabled={pending || privatePending || added}>{added ? "Đã thêm" : "Thêm"}</button>{item.editable ? <button type="button" onClick={() => void openPrivateEdit(item)} disabled={pending || privatePending}>Chỉnh sửa</button> : null}</div></li>; })}</ul> : null}{aggregate.id && !requireItems ? <div className="private-vocabulary-create-entry"><p>{pickerItems.length === 0 && pickerState === "ready" ? "Không có kết quả phù hợp?" : "Muốn tạo một nghĩa riêng khác?"}</p><button type="button" onClick={openPrivateCreate} disabled={pending || privatePending}>Tạo từ mới</button></div> : null}</fieldset>
+    <div className="my-vocabulary-set-form-actions"><button type="button" onClick={onCancel} disabled={pending || privatePending}>Hủy</button><button className="my-vocabulary-sets-primary" type="submit" disabled={pending || privatePending || topicState !== "ready"} aria-busy={pending}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{pending ? "Đang lưu…" : "Lưu bộ từ"}</button></div></form>{privateEditor ? <PrivateVocabularyEditor error={privateError} initialValue={privateEditor.initial} mode={privateEditor.mode} pending={privatePending} onCancel={() => { if (!privatePending) { setPrivateEditor(null); setPrivateError(null); } }} onSubmit={savePrivateVocabulary} /> : null}</section>;
 }
 
 function DeleteDialog({ onCancel, onConfirm, pending, set }) { return <div className="my-vocabulary-set-dialog-backdrop"><section className="my-vocabulary-set-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-my-set-title"><h2 id="delete-my-set-title">Xóa bộ từ?</h2><p>Bạn sẽ xóa <strong>{set.name}</strong> và danh sách từ của bộ này. Hành động không thể hoàn tác.</p><div><button type="button" onClick={onCancel} disabled={pending} autoFocus>Hủy</button><button type="button" className="is-danger" onClick={onConfirm} disabled={pending} aria-busy={pending}>{pending ? "Đang xóa…" : "Xác nhận xóa"}</button></div></section></div>; }
 function MyState({ action, loading, message, role, title }) { return <div className="my-vocabulary-set-state" role={loading ? "status" : role} aria-live={loading ? "polite" : undefined}>{loading ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : null}{title ? <h2>{title}</h2> : null}<p>{message}</p>{action}</div>; }
 function FieldError({ id, message }) { return <p id={id} className="my-vocabulary-set-field-error" role="alert">{message}</p>; }
-function formValues(aggregate) { return { topic_id: aggregate.topic_id ?? "", name: aggregate.name ?? "", description: aggregate.description ?? "", items: (aggregate.items ?? []).slice().sort((left, right) => left.position - right.position).map((item) => ({ vocabulary_id: item.vocabulary_id, word: item.word, phonetic: item.phonetic ?? null })) }; }
+function formValues(aggregate) { return { topic_id: aggregate.topic_id ?? "", name: aggregate.name ?? "", description: aggregate.description ?? "", items: (aggregate.items ?? []).slice().sort((left, right) => left.position - right.position).map((item) => ({ vocabulary_id: item.vocabulary_id, word: item.word, phonetic: item.phonetic ?? null, source: item.source })) }; }
 function serializeSet(values) { return { topic_id: values.topic_id, name: values.name.trim(), description: values.description.trim() || null, items: values.items.map((item) => ({ vocabulary_id: item.vocabulary_id })) }; }
 function validateSet(values, requireItems) { const errors = {}; if (!values.name.trim()) errors.name = "Tên bộ từ là bắt buộc."; else if (values.name.trim().length > 100) errors.name = "Tên bộ từ không được quá 100 ký tự."; if (!values.topic_id) errors.topic_id = "Hãy chọn một chủ đề."; if (values.description.length > 500) errors.description = "Mô tả không được quá 500 ký tự."; if (requireItems && values.items.length === 0) errors.items = "Bộ từ hệ thống cần ít nhất một từ vựng."; return errors; }
 function filterSets(sets, query) { const normalized = query.trim().toLocaleLowerCase(); if (!normalized) return sets; return sets.filter((set) => [set.name, set.description].filter((value) => typeof value === "string").some((value) => value.toLocaleLowerCase().includes(normalized))); }
 function upsertSummary(sets, aggregate) { const summary = { ...aggregate, item_count: aggregate.items?.length ?? 0 }; delete summary.items; const index = sets.findIndex((set) => set.id === summary.id); return index === -1 ? [summary, ...sets] : sets.map((set) => set.id === summary.id ? summary : set); }
 function errorMessage(error, fallback) { const messages = { VOCABULARY_SET_NOT_FOUND: "Bộ từ không còn khả dụng.", TOPIC_NOT_FOUND: "Chủ đề đã chọn không còn khả dụng.", VOCABULARY_NOT_FOUND: "Có từ vựng đã chọn không còn khả dụng.", VALIDATION_ERROR: "Dữ liệu bộ từ không hợp lệ.", AUTHENTICATION_FAILED: "Phiên đăng nhập không còn hợp lệ.", FORBIDDEN: "Bạn không có quyền thực hiện hành động này." }; return messages[error?.code] ?? (error instanceof VocabularySetApiError && error.kind === "operational" ? "Không thể kết nối dịch vụ. Vui lòng thử lại." : fallback); }
+function privateErrorMessage(error) { const messages = { VALIDATION_ERROR: "Dữ liệu từ vựng chưa hợp lệ. Hãy kiểm tra lại các trường bắt buộc.", VOCABULARY_SET_NOT_FOUND: "Bộ từ không còn khả dụng.", VOCABULARY_NOT_FOUND: "Từ vựng không còn khả dụng.", AUTHENTICATION_FAILED: "Phiên đăng nhập không còn hợp lệ.", FORBIDDEN: "Bạn không có quyền thực hiện hành động này.", PRIVATE_VOCABULARY_OPERATION_CONFLICT: "Yêu cầu tạo từ đã thay đổi. Hãy hủy và bắt đầu một lần tạo mới." }; return messages[error?.code] ?? "Chưa thể lưu từ vựng. Bạn có thể thử lại an toàn."; }

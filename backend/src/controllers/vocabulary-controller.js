@@ -50,6 +50,31 @@ export function createVocabularyController({ vocabularyService }) {
         handleKnownVocabularyError(error, res, next);
       }
     },
+
+    async getOwnedPrivate(req, res, next) {
+      try {
+        const vocabulary = await vocabularyService.getOwnedPrivateVocabulary(
+          req.user.id,
+          req.params.vocabularyId,
+        );
+        res.status(200).json({ success: true, data: vocabulary });
+      } catch (error) {
+        handleKnownVocabularyError(error, res, next);
+      }
+    },
+
+    async updateOwnedPrivate(req, res, next) {
+      try {
+        const vocabulary = await vocabularyService.updateOwnedPrivateVocabulary(
+          req.user.id,
+          req.params.vocabularyId,
+          req.body,
+        );
+        res.status(200).json({ success: true, data: vocabulary });
+      } catch (error) {
+        handleKnownVocabularyError(error, res, next);
+      }
+    },
   };
 }
 

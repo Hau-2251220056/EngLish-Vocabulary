@@ -16,6 +16,8 @@ let thirdVocabulary;
 let adminCookie;
 let ownerCookie;
 let otherUserCookie;
+let owner;
+let otherUser;
 
 before(async () => {
   database = await createTestDatabase();
@@ -26,8 +28,8 @@ before(async () => {
 beforeEach(async () => {
   await database.reset();
   const admin = await createUserFixture(prisma, { role: "ADMIN" });
-  const owner = await createUserFixture(prisma, { role: "USER" });
-  const otherUser = await createUserFixture(prisma, { role: "USER" });
+  owner = await createUserFixture(prisma, { role: "USER" });
+  otherUser = await createUserFixture(prisma, { role: "USER" });
   const adminSession = await createSessionFixture(prisma, admin.id);
   const ownerSession = await createSessionFixture(prisma, owner.id);
   const otherSession = await createSessionFixture(prisma, otherUser.id);
@@ -163,16 +165,57 @@ test("USER copy creates independent private Set and leaves System source unchang
   assert.equal(source.json.data.items.length, 2);
 });
 
-test("authenticated picker is bounded minimal selection data and does not expose a USER Vocabulary catalog", async () => {
+test("owner-aware picker returns canonical and own-private metadata without foreign-private leakage", async () => {
+  const word = `picker-shared-${randomUUID()}`;
+  const canonical = await prisma.vOCABULARY.create({ data: { word, meanings: { create: { part_of_speech: "noun", meaning_vi: "system" } } } });
+  const ownOne = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word, meanings: { create: { part_of_speech: "verb", meaning_vi: "mine one" } } } });
+  const ownTwo = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word, meanings: { create: { part_of_speech: "noun", meaning_vi: "mine two" } } } });
+  const foreign = await prisma.vOCABULARY.create({ data: { owner_id: otherUser.id, word, meanings: { create: { part_of_speech: "noun", meaning_vi: "secret" } } } });
+  let response = await http.request(`/api/vocabulary-set-picker?query=${encodeURIComponent(word)}`, { cookie: ownerCookie });
+  assert.equal(response.status, 200);
+  assert.deepEqual(new Set(response.json.data.map(({ id }) => id)), new Set([canonical.id, ownOne.id, ownTwo.id]));
+  assert.equal(response.json.data.some(({ id }) => id === foreign.id), false);
+  assert.deepEqual(Object.keys(response.json.data[0]).sort(), ["id", "phonetic", "primary_meaning", "source", "word"]);
+  assert.deepEqual(new Set(response.json.data.map(({ source }) => source)), new Set(["CANONICAL", "PRIVATE"]));
+  assert.equal(response.json.data.find(({ id }) => id === ownOne.id).primary_meaning.meaning_vi, "mine one");
+  response = await http.request(`/api/vocabulary-set-picker?query=${encodeURIComponent(word)}`, { cookie: adminCookie });
+  assert.deepEqual(response.json.data.map(({ id }) => id), [canonical.id]);
+
   for (let index = 0; index < 21; index += 1) await createVocabulary(`picker-${index}`);
-  let response = await http.request("/api/vocabulary-set-picker?query=picker", { cookie: ownerCookie });
+  response = await http.request("/api/vocabulary-set-picker?query=picker-", { cookie: ownerCookie });
   assert.equal(response.status, 200);
   assert.equal(response.json.data.length, 20);
-  assert.deepEqual(Object.keys(response.json.data[0]).sort(), ["id", "phonetic", "word"]);
   assert.equal((await http.request("/api/vocabulary-set-picker?query=picker", { cookie: adminCookie })).status, 200);
   assert.equal((await http.request("/api/vocabulary-set-picker?query=", { cookie: ownerCookie })).status, 400);
   assert.equal((await http.request("/api/vocabulary-set-picker")).status, 401);
   assert.equal((await http.request("/api/vocabulary")).status, 404);
+});
+
+test("private Set accepts canonical and owned same-spelling IDs, rejects foreign IDs atomically, and removal preserves Vocabulary and Progress", async () => {
+  const word = `membership-${randomUUID()}`;
+  const canonical = await prisma.vOCABULARY.create({ data: { word } });
+  const ownOne = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word } });
+  const ownTwo = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word } });
+  const foreign = await prisma.vOCABULARY.create({ data: { owner_id: otherUser.id, word } });
+  const set = await createPrivateSet();
+  let response = await http.request(`/api/my/vocabulary-sets/${set.id}`, { method: "PATCH", cookie: ownerCookie, json: { items: [canonical.id, ownOne.id, ownTwo.id].map((vocabulary_id) => ({ vocabulary_id })) } });
+  assert.equal(response.status, 200, response.text);
+  assert.deepEqual(response.json.data.items.map(({ vocabulary_id }) => vocabulary_id), [canonical.id, ownOne.id, ownTwo.id]);
+  assert.deepEqual(response.json.data.items.map(({ source }) => source), ["CANONICAL", "PRIVATE", "PRIVATE"]);
+  response = await http.request(`/api/my/vocabulary-sets/${set.id}`, { method: "PATCH", cookie: ownerCookie, json: { items: [{ vocabulary_id: ownOne.id }, { vocabulary_id: ownOne.id }] } });
+  assert.equal(response.status, 400);
+  response = await http.request(`/api/my/vocabulary-sets/${set.id}`, { method: "PATCH", cookie: ownerCookie, json: { items: [{ vocabulary_id: canonical.id }, { vocabulary_id: foreign.id }] } });
+  assert.equal(response.status, 404);
+  assert.deepEqual((await prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: set.id }, orderBy: { position: "asc" } })).map(({ vocabulary_id }) => vocabulary_id), [canonical.id, ownOne.id, ownTwo.id]);
+  const progress = await prisma.lEARNING_PROGRESS.create({ data: { user_id: owner.id, vocabulary_id: ownOne.id, status: "LEARNING" } });
+  response = await http.request(`/api/my/vocabulary-sets/${set.id}`, { method: "PATCH", cookie: ownerCookie, json: { items: [] } });
+  assert.equal(response.status, 200);
+  assert.equal(await prisma.vOCABULARY.count({ where: { id: ownOne.id } }), 1);
+  assert.deepEqual(await prisma.lEARNING_PROGRESS.findUniqueOrThrow({ where: { id: progress.id } }), progress);
+  const picker = await http.request(`/api/vocabulary-set-picker?query=${encodeURIComponent(word)}`, { cookie: ownerCookie });
+  assert.equal(picker.json.data.some(({ id }) => id === ownOne.id), true);
+  const systemAttempt = await http.request("/api/admin/vocabulary-sets", { method: "POST", cookie: adminCookie, json: { topic_id: topic.id, name: "Private forbidden", items: [{ vocabulary_id: ownOne.id }] } });
+  assert.equal(systemAttempt.status, 404);
 });
 
 test("all protected Set routes retain authentication and safe error contracts", async () => {
