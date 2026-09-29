@@ -28,7 +28,7 @@ test("USER composes independent Progress and bounded My Sets sources", async ({ 
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByText(`Chào buổi sáng, ${publicUser.display_name}.`)).toBeVisible();
+  await expect(page.getByRole("heading", { name: `Chào buổi sáng, ${publicUser.display_name}` })).toBeVisible();
   await expect(page.getByRole("status", { name: "" }).filter({ hasText: "Đang tải tóm tắt học tập" })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Không thể tải bộ từ riêng");
 
@@ -48,18 +48,16 @@ test("USER composes independent Progress and bounded My Sets sources", async ({ 
   await retrySets.fulfill(setsResponse());
 
   const preview = page.getByRole("list", { name: "Bộ từ riêng xem trước" });
-  await expect(page.getByText("Bạn có 4 bộ từ riêng.")).toBeVisible();
+  await expect(page.getByText("Bạn đang có 4 bộ từ riêng.")).toBeVisible();
   await expect(preview.getByRole("listitem")).toHaveCount(3);
   await expect(preview).toContainText("Set one");
   await expect(preview).toContainText("Set three");
   await expect(preview).not.toContainText("Set four");
-  await expect(preview.getByRole("link", { name: "Học bộ từ" })).toHaveCount(2);
-  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Học bộ từ" })).toHaveCount(0);
-  await expect(preview.getByRole("link", { name: "Xem bộ từ" })).toHaveCount(3);
-  await expect(page.getByRole("heading", { name: "Bộ từ riêng của bạn" })).toBeFocused();
-  const quickLinks = page.getByRole("navigation", { name: "Lối tắt Dashboard" });
-  await expect(quickLinks.getByRole("link")).toHaveCount(3);
-  await expect(quickLinks.getByRole("link", { name: /Khám phá chủ đề/ })).toHaveAttribute("href", "/topics");
+  await expect(preview.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(2);
+  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
+  await expect(preview.getByRole("link", { name: "Xem chi tiết" })).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "Bộ từ của bạn" })).toBeFocused();
+  await expect(page.getByRole("navigation", { name: "Lối tắt Dashboard" })).toHaveCount(0);
 });
 
 test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ page }) => {
@@ -78,7 +76,7 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: `Xin chào, ${publicAdmin.display_name}.` })).toBeVisible();
-  await expect(page.getByRole("main").getByText("Dashboard", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("Dashboard", { exact: true })).toHaveCount(0);
   await expect(page.getByText("điểm bắt đầu an toàn cho tài khoản quản trị")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tóm tắt học tập" })).toHaveCount(0);
   await page.waitForTimeout(100);
@@ -134,9 +132,12 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
   await expect(summary).toContainText("Đang học0");
   await expect(summary).toContainText("Đã thuộc0");
   await expect(page.getByRole("heading", { name: "Bạn chưa bắt đầu học từ vựng nào" })).toBeVisible();
-  await expect(page.getByText("Bạn có 0 bộ từ riêng.")).toBeVisible();
+  await expect(page.getByText("Không gian học của riêng bạn đang chờ bộ từ đầu tiên.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ riêng" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Học bộ từ" })).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("link", { name: "Xem tất cả" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Tạo bộ từ" })).toHaveAttribute("href", "/my/vocabulary-sets");
+  await expect(page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" })).toHaveAttribute("href", "/topics");
 });
 
 test("Progress failure preserves successful Sets and supports one keyboard retry with predictable focus", async ({ page }) => {
@@ -235,8 +236,8 @@ test("Dashboard removes non-essential animation when reduced motion is requested
     progress.fulfill(progressResponse({ total_started: 1, learning: 1, learned: 0, needs_review: 0 })),
     sets.fulfill(setsResponse()),
   ]);
-  const quickLink = page.getByRole("navigation", { name: "Lối tắt Dashboard" }).getByRole("link").first();
-  await expect(quickLink).toHaveCSS("transition-duration", "0s");
+  const setCard = page.locator(".dashboard-set-card").first();
+  await expect(setCard).toHaveCSS("transition-duration", "0s");
 });
 
 function progressResponse(summary) {

@@ -144,10 +144,10 @@ test("ignores a stale response after route unmount", async ({ page }) => {
 
   await page.goto("/my/learning-progress");
   await expect(page.getByRole("status")).toBeVisible();
-  await page.getByRole("link", { name: "Dashboard" }).click();
+  await page.getByRole("link", { name: "Trang chủ", exact: true }).click();
   useStaleResponse = false;
   stale.resolve(success(populatedPage({ items: [progressItem("stale-word", "LEARNING", 1)] })));
-  await page.getByRole("link", { name: "Tiến độ học tập" }).click();
+  await page.getByRole("link", { name: "Xem tiến độ chi tiết", exact: true }).click();
 
   await expect(page.getByText("fresh-word", { exact: true })).toBeVisible();
   await expect(page.getByText("stale-word", { exact: true })).toHaveCount(0);

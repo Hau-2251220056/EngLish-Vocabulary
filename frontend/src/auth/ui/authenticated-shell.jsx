@@ -1,9 +1,21 @@
-import { Activity, BookOpenCheck, BookText, LoaderCircle, LogOut, Menu, ShieldCheck, Tags, X } from "lucide-react";
+import {
+  BookOpenCheck,
+  BookText,
+  Compass,
+  Home,
+  LoaderCircle,
+  LogOut,
+  Menu,
+  ShieldCheck,
+  Tags,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuthentication } from "../use-authentication.js";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
+const MOBILE_NAVIGATION_QUERY = "(max-width: 1023px)";
 
 export function AuthenticatedShell() {
   const navigate = useNavigate();
@@ -12,32 +24,88 @@ export function AuthenticatedShell() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isMobileNavigation, setIsMobileNavigation] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isMobileNavigation, setIsMobileNavigation] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(MOBILE_NAVIGATION_QUERY).matches,
+  );
   const drawerToggleRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const accountMenuRef = useRef(null);
+  const accountMenuTriggerRef = useRef(null);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 900px)");
-    function syncNavigationMode(event) { setIsMobileNavigation(event.matches); if (!event.matches) setIsDrawerOpen(false); }
+    const mediaQuery = window.matchMedia(MOBILE_NAVIGATION_QUERY);
+    function syncNavigationMode(event) {
+      setIsMobileNavigation(event.matches);
+      if (!event.matches) setIsDrawerOpen(false);
+    }
     syncNavigationMode(mediaQuery);
     mediaQuery.addEventListener("change", syncNavigationMode);
     return () => mediaQuery.removeEventListener("change", syncNavigationMode);
   }, []);
 
-  function closeDrawer({ restoreFocus = true } = {}) { setIsDrawerOpen(false); if (restoreFocus) drawerToggleRef.current?.focus(); }
+  function closeDrawer({ restoreFocus = true } = {}) {
+    setIsDrawerOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => drawerToggleRef.current?.focus());
+  }
+
+  function closeAccountMenu({ restoreFocus = true } = {}) {
+    setIsAccountMenuOpen(false);
+    if (restoreFocus) accountMenuTriggerRef.current?.focus();
+  }
+
+  function openDrawer() {
+    setIsAccountMenuOpen(false);
+    setIsDrawerOpen(true);
+    window.requestAnimationFrame(() => sidebarRef.current?.querySelector("a")?.focus());
+  }
+
+  function toggleAccountMenu() {
+    if (!isAccountMenuOpen) setIsDrawerOpen(false);
+    setIsAccountMenuOpen((isOpen) => !isOpen);
+  }
 
   useEffect(() => {
     if (!isDrawerOpen) return undefined;
-    function handleKeyDown(event) { if (event.key === "Escape") closeDrawer(); }
+    function handleKeyDown(event) {
+      if (event.key === "Escape") closeDrawer();
+    }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isDrawerOpen]);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) return undefined;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") closeAccountMenu();
+    }
+    function handlePointerDown(event) {
+      if (!accountMenuRef.current?.contains(event.target)) {
+        closeAccountMenu({ restoreFocus: false });
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isAccountMenuOpen]);
 
   async function handleLogout() {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     setLogoutError(null);
-    try { await logout(); closeDrawer({ restoreFocus: false }); navigate("/login", { replace: true }); }
-    catch { setLogoutError(LOGOUT_ERROR_MESSAGE); setIsLoggingOut(false); }
+    try {
+      await logout();
+      setIsAccountMenuOpen(false);
+      navigate("/login", { replace: true });
+    } catch {
+      setLogoutError(LOGOUT_ERROR_MESSAGE);
+      setIsLoggingOut(false);
+    }
   }
 
   const displayName = user.display_name;
@@ -49,30 +117,141 @@ export function AuthenticatedShell() {
     return <div className="learning-focus-shell"><Outlet /></div>;
   }
 
+  const brand = (
+    <div className="authenticated-brand">
+      <span className="authenticated-brand-mark" aria-hidden="true">E</span>
+      <span>ELVocab</span>
+    </div>
+  );
+
+  function navigationLink(to, label, Icon, { end = false } = {}) {
+    return (
+      <NavLink
+        to={to}
+        end={end}
+        onClick={() => closeDrawer({ restoreFocus: false })}
+        className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}
+      >
+        <Icon className="size-5" aria-hidden="true" />
+        <span>{label}</span>
+      </NavLink>
+    );
+  }
+
   return (
     <div className="authenticated-app">
-      <header className="authenticated-header">
-        <div className="authenticated-brand"><span className="authenticated-brand-mark" aria-hidden="true">E</span><span>ELVocab</span></div>
-        <div className="authenticated-header-actions">
-        <button ref={drawerToggleRef} type="button" className="authenticated-drawer-toggle" aria-label={isDrawerOpen ? "Đóng điều hướng" : "Mở điều hướng"} aria-controls="authenticated-sidebar" aria-expanded={isMobileNavigation ? isDrawerOpen : undefined} onClick={() => (isDrawerOpen ? closeDrawer() : setIsDrawerOpen(true))}>
-          {isDrawerOpen ? <X className="size-5" aria-hidden="true" /> : <Menu className="size-5" aria-hidden="true" />}
-        </button>
-        <div className="authenticated-header-account">
-          {user.avatar_url ? <img className="authenticated-avatar" src={user.avatar_url} alt="" /> : <span className="authenticated-avatar" aria-hidden="true">{defaultAvatar}</span>}
-          <div className="min-w-0"><p className="authenticated-header-name" title={displayName}>{displayName}</p>{user.role === "ADMIN" ? <span className="authenticated-admin-indicator"><ShieldCheck className="size-4" aria-hidden="true" />Quản trị viên</span> : null}</div>
+      <aside
+        ref={sidebarRef}
+        id="authenticated-sidebar"
+        className={`authenticated-sidebar${drawerIsVisible ? " is-open" : ""}`}
+        aria-label="Điều hướng chính"
+        aria-hidden={isMobileNavigation && !isDrawerOpen}
+        inert={(isMobileNavigation && !isDrawerOpen) || undefined}
+      >
+        <div className="authenticated-sidebar-brand">{brand}</div>
+        <nav className="authenticated-navigation" aria-label="Điều hướng ứng dụng">
+          {user.role === "USER" ? (
+            <>
+              <p className="authenticated-nav-heading">Từ vựng</p>
+              {navigationLink("/dashboard", "Trang chủ", Home, { end: true })}
+              {navigationLink("/my/vocabulary-sets", "Bộ từ của tôi", BookText)}
+              {navigationLink("/topics", "Khám phá bộ từ", Compass)}
+            </>
+          ) : (
+            <>
+              {navigationLink("/dashboard", "Trang chủ", Home, { end: true })}
+              <p className="authenticated-nav-heading">Quản trị</p>
+              {navigationLink("/admin/topics", "Quản lý chủ đề", Tags)}
+              {navigationLink("/admin/vocabulary", "Quản lý từ vựng", BookOpenCheck)}
+              {navigationLink("/admin/vocabulary-sets", "Quản lý bộ từ", BookText)}
+            </>
+          )}
+        </nav>
+        <div className="authenticated-sidebar-account">
+          <span className="authenticated-sidebar-avatar" aria-hidden="true">{defaultAvatar}</span>
+          <div className="min-w-0">
+            <p className="authenticated-sidebar-name" title={displayName}>{displayName}</p>
+            <p className="authenticated-sidebar-role">
+              {user.role === "ADMIN" ? "Quản trị viên" : "Người học"}
+            </p>
+          </div>
         </div>
-        </div>
-      </header>
-      {isMobileNavigation && isDrawerOpen ? <button type="button" className="authenticated-drawer-backdrop" aria-label="Đóng điều hướng" onClick={() => closeDrawer()} /> : null}
-      <div className="authenticated-layout">
-        <aside id="authenticated-sidebar" className={`authenticated-sidebar${drawerIsVisible ? " is-open" : ""}`} aria-label="Điều hướng chính" aria-hidden={isMobileNavigation && !isDrawerOpen} inert={isMobileNavigation && !isDrawerOpen || undefined}>
-          <nav className="authenticated-navigation" aria-label="Khu vực học tập"><NavLink to="/dashboard" end onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookOpenCheck className="size-5" aria-hidden="true" /><span>Dashboard</span></NavLink>{user.role === "USER" ? <><NavLink to="/my/vocabulary-sets" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookText className="size-5" aria-hidden="true" /><span>Bộ từ của tôi</span></NavLink><NavLink to="/my/learning-progress" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><Activity className="size-5" aria-hidden="true" /><span>Tiến độ học tập</span></NavLink></> : null}{user.role === "ADMIN" ? <><NavLink to="/admin/topics" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><Tags className="size-5" aria-hidden="true" /><span>Quản lý chủ đề</span></NavLink><NavLink to="/admin/vocabulary" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookText className="size-5" aria-hidden="true" /><span>Quản lý từ vựng</span></NavLink><NavLink to="/admin/vocabulary-sets" onClick={() => closeDrawer({ restoreFocus: false })} className={({ isActive }) => `authenticated-nav-link${isActive ? " is-active" : ""}`}><BookText className="size-5" aria-hidden="true" /><span>Quản lý bộ từ</span></NavLink></> : null}</nav>
-          <div className="authenticated-account"><div className="min-w-0"><p className="authenticated-account-label">Tài khoản</p><p className="authenticated-display-name" title={displayName}>{displayName}</p></div><button type="button" className="authenticated-logout-button" onClick={handleLogout} disabled={isLoggingOut} aria-busy={isLoggingOut}>{isLoggingOut ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}<span>{isLoggingOut ? "Đang đăng xuất…" : "Đăng xuất"}</span></button>{logoutError ? <p className="authenticated-logout-error" role="alert">{logoutError}</p> : null}</div>
-        </aside>
-        <div className="authenticated-content">
-          <main className="authenticated-main"><Outlet /></main>
-          <footer className="authenticated-footer">© 2026 ELVocab</footer>
-        </div>
+      </aside>
+
+      {isMobileNavigation && isDrawerOpen ? (
+        <button
+          type="button"
+          className="authenticated-drawer-backdrop"
+          aria-label="Đóng điều hướng"
+          onClick={() => closeDrawer()}
+        />
+      ) : null}
+
+      <div className="authenticated-shell-main" inert={(isMobileNavigation && isDrawerOpen) || undefined}>
+        <header className="authenticated-header">
+          <button
+            ref={drawerToggleRef}
+            type="button"
+            className="authenticated-drawer-toggle"
+            aria-label={isDrawerOpen ? "Đóng điều hướng" : "Mở điều hướng"}
+            aria-controls="authenticated-sidebar"
+            aria-expanded={isMobileNavigation ? isDrawerOpen : undefined}
+            onClick={() => (isDrawerOpen ? closeDrawer() : openDrawer())}
+          >
+            {isDrawerOpen ? <X className="size-5" aria-hidden="true" /> : <Menu className="size-5" aria-hidden="true" />}
+          </button>
+
+          <div className="authenticated-mobile-brand">{brand}</div>
+
+          <div ref={accountMenuRef} className="authenticated-account-menu">
+            <button
+              ref={accountMenuTriggerRef}
+              type="button"
+              className="authenticated-avatar-trigger"
+              aria-label={`Mở menu tài khoản của ${displayName}`}
+              aria-controls="authenticated-account-dropdown"
+              aria-expanded={isAccountMenuOpen}
+              onClick={toggleAccountMenu}
+            >
+              {user.avatar_url ? (
+                <img className="authenticated-avatar" src={user.avatar_url} alt="" />
+              ) : (
+                <span className="authenticated-avatar" aria-hidden="true">{defaultAvatar}</span>
+              )}
+            </button>
+
+            {isAccountMenuOpen ? (
+              <div id="authenticated-account-dropdown" className="authenticated-account-dropdown" aria-label="Tài khoản">
+                <div className="authenticated-account-identity">
+                  <p title={displayName}>{displayName}</p>
+                  {user.role === "ADMIN" ? (
+                    <span className="authenticated-admin-indicator">
+                      <ShieldCheck className="size-4" aria-hidden="true" />Quản trị viên
+                    </span>
+                  ) : null}
+                </div>
+                <hr />
+                <button
+                  type="button"
+                  className="authenticated-logout-button"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  aria-busy={isLoggingOut}
+                >
+                  {isLoggingOut ? (
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <LogOut className="size-4" aria-hidden="true" />
+                  )}
+                  <span>{isLoggingOut ? "Đang đăng xuất…" : "Đăng xuất"}</span>
+                </button>
+                {logoutError ? <p className="authenticated-logout-error" role="alert">{logoutError}</p> : null}
+              </div>
+            ) : null}
+          </div>
+        </header>
+
+        <main className="authenticated-main"><Outlet /></main>
       </div>
     </div>
   );

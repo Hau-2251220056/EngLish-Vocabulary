@@ -80,7 +80,7 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await login(page, accounts.learner);
 
   await expect(page.getByRole("heading", {
-    name: /^Chào buổi (sáng|trưa|chiều|tối), Dashboard Real Learner\.$/,
+    name: /^Chào buổi (sáng|trưa|chiều|tối), Dashboard Real Learner$/,
   })).toBeVisible();
   const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
   await expect(summary).toContainText("Tổng đã bắt đầu3");
@@ -88,7 +88,7 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await expect(summary).toContainText("Đã thuộc1");
   await expect(summary).not.toContainText("Cần ôn");
 
-  await expect(page.getByText("Bạn có 4 bộ từ riêng.")).toBeVisible();
+  await expect(page.getByText("Bạn đang có 4 bộ từ riêng.")).toBeVisible();
   const preview = page.getByRole("list", { name: "Bộ từ riêng xem trước" });
   await expect(preview.getByRole("listitem")).toHaveCount(3);
   await expect(preview).toContainText(`${prefix} 01 Empty`);
@@ -96,10 +96,10 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await expect(preview).toContainText(`${prefix} 03 Learn`);
   await expect(preview).not.toContainText(`${prefix} 04 Beyond preview`);
   await expect(preview).not.toContainText("Outsider private");
-  await expect(preview.getByRole("link", { name: "Học bộ từ" })).toHaveCount(2);
-  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Học bộ từ" })).toHaveCount(0);
+  await expect(preview.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(2);
+  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
 
-  await preview.getByRole("listitem").nth(1).getByRole("link", { name: "Học bộ từ" }).click();
+  await preview.getByRole("listitem").nth(1).getByRole("link", { name: "Bắt đầu học" }).click();
   await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${ownedSets[1].id}$`));
   await expect(page.getByRole("heading", { name: vocabularies[0].word })).toBeVisible();
   expect(await persistedSnapshot()).toEqual(before);

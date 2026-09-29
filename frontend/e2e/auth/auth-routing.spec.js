@@ -18,7 +18,7 @@ test("initialization shows a neutral status without protected-content flash", as
 
   pending.resolve(responses.currentUser(publicUser));
   await expect(page.getByRole("heading", {
-    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối), ${publicUser.display_name}\\.$`),
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối), ${publicUser.display_name}$`),
   })).toBeVisible();
 });
 
@@ -52,26 +52,26 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   });
   await page.goto("/dashboard");
 
-  await expect(page.locator(".authenticated-header-name")).toHaveText(publicUser.display_name);
+  await expect(page.locator(".authenticated-sidebar-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.locator(".authenticated-navigation").getByRole("link");
   await expect(links).toHaveCount(3);
-  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
+  await expect(page.getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
     await expect(
       page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
     ).toHaveCount(1);
     await expect(
-      page.locator(".authenticated-navigation").locator('a[href="/my/learning-progress"]'),
+      page.locator(".authenticated-navigation").locator('a[href="/topics"]'),
     ).toHaveCount(1);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 
   await page
     .locator(".authenticated-navigation")
-    .locator('a[href="/my/learning-progress"]')
+    .locator('a[href="/topics"]')
     .click();
-  await expect(page).toHaveURL(/\/my\/learning-progress$/);
-  await expect(page.locator("h1#learning-progress-title")).toBeVisible();
+  await expect(page).toHaveURL(/\/topics$/);
+  await expect(page.getByRole("heading", { name: "Chủ đề tiếng Anh" })).toBeVisible();
 });
 
 test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
@@ -80,7 +80,8 @@ test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
   });
   await page.goto("/dashboard");
 
-  const indicator = page.getByText("Quản trị viên", { exact: true });
+  await page.getByRole("button", { name: `Mở menu tài khoản của ${publicAdmin.display_name}` }).click();
+  const indicator = page.locator(".authenticated-account-dropdown").getByText("Quản trị viên", { exact: true });
   await expect(indicator).toBeVisible();
   await expect(indicator).toHaveJSProperty("tagName", "SPAN");
   await expect(indicator).not.toHaveAttribute("role", "button");

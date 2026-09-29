@@ -1,15 +1,16 @@
 import {
-  Activity,
   AlertTriangle,
+  ArrowRight,
   BookOpenCheck,
   CheckCircle2,
   FolderOpen,
   LibraryBig,
-  Map,
+  Plus,
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import dashboardLearningIllustration from "../assets/images/banner.png";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { learningService } from "../services/learning-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
@@ -45,17 +46,16 @@ export function DashboardPage() {
       </DashboardSection>
 
       <DashboardSection
-        action={<Link to="/my/vocabulary-sets">Xem tất cả</Link>}
+        action={mySets.status !== "success" || mySets.data.length > 0 ? <Link to="/my/vocabulary-sets">Xem tất cả</Link> : null}
         errorMessage="Không thể tải bộ từ riêng. Vui lòng thử lại."
         loadingMessage="Đang tải bộ từ riêng…"
         source={mySets}
-        title="Bộ từ riêng của bạn"
+        title="Bộ từ của bạn"
         type="sets"
       >
         {(sets) => <MySetsSummary sets={sets} />}
       </DashboardSection>
 
-      <DashboardQuickLinks />
     </section>
   );
 }
@@ -64,10 +64,23 @@ function DashboardIntroduction({ displayName }) {
   const greeting = getDashboardGreeting();
 
   return (
-    <header className="dashboard-introduction">
-      <p className="dashboard-eyebrow">Dashboard</p>
-      <h1 id="dashboard-title">{greeting}, {displayName}.</h1>
-      <p>Tổng quan ngắn về hành trình học từ vựng hiện tại của bạn.</p>
+    <header className="dashboard-introduction dashboard-hero">
+      <div className="dashboard-hero-copy">
+        <h1 id="dashboard-title">{greeting}, {displayName} <span aria-hidden="true">👋</span></h1>
+        <p>Sẵn sàng học thêm vài từ hôm nay chưa?</p>
+      </div>
+      <div className="dashboard-hero-visual" aria-hidden="true">
+        <span className="dashboard-hero-bubble is-one" />
+        <span className="dashboard-hero-bubble is-two" />
+        <span className="dashboard-hero-bubble is-three" />
+        <span className="dashboard-hero-bubble is-four" />
+        <span className="dashboard-hero-bubble is-five" />
+        <span className="dashboard-hero-bubble is-six" />
+        <span className="dashboard-hero-bubble is-seven" />
+        <span className="dashboard-hero-bubble is-eight" />
+        <span className="dashboard-hero-dots" />
+        <img alt="" src={dashboardLearningIllustration} />
+      </div>
     </header>
   );
 }
@@ -76,7 +89,6 @@ function DashboardAdminLanding({ displayName }) {
   return (
     <section aria-labelledby="dashboard-title" className="dashboard-page dashboard-admin-page">
       <header className="dashboard-introduction">
-        <p className="dashboard-eyebrow">Dashboard</p>
         <h1 id="dashboard-title">Xin chào, {displayName}.</h1>
       </header>
       <section className="dashboard-admin-panel" aria-labelledby="dashboard-admin-title">
@@ -169,10 +181,9 @@ function ProgressSummary({ summary }) {
         {values.map(({ icon: Icon, key, label, value }) => (
           <div className={`dashboard-progress-card is-${key}`} key={key}>
             <span className="dashboard-progress-icon" aria-hidden="true"><Icon /></span>
-            <div>
+            <div className="dashboard-progress-copy">
               <dt>{label}</dt>
-              <dd>{value}</dd>
-              <span>từ vựng</span>
+              <dd>{value} <span>từ vựng</span></dd>
             </div>
           </div>
         ))}
@@ -194,13 +205,17 @@ function MySetsSummary({ sets }) {
   const preview = sets.slice(0, DASHBOARD_SET_PREVIEW_LIMIT);
   return (
     <div className="dashboard-sets-content">
-      <p className="dashboard-set-total">Bạn có <strong>{sets.length}</strong> bộ từ riêng.</p>
+      <p className="dashboard-set-total">{sets.length > 0 ? <>Bạn đang có <strong>{sets.length}</strong> bộ từ riêng.</> : "Không gian học của riêng bạn đang chờ bộ từ đầu tiên."}</p>
       {preview.length === 0 ? (
-        <div className="dashboard-empty-note" role="status">
-          <FolderOpen aria-hidden="true" />
-          <div>
+        <div className="dashboard-empty-note dashboard-sets-empty" role="status">
+          <span className="dashboard-empty-icon" aria-hidden="true"><FolderOpen /></span>
+          <div className="dashboard-empty-copy">
             <h3>Bạn chưa có bộ từ riêng</h3>
-            <p>Các bộ từ bạn tạo hoặc sao chép sẽ xuất hiện tại đây.</p>
+            <p>Tự tạo một bộ từ theo mục tiêu của bạn, hoặc khám phá nội dung có sẵn để bắt đầu học.</p>
+            <div className="dashboard-empty-actions">
+              <Link className="dashboard-primary-link" to="/my/vocabulary-sets"><Plus aria-hidden="true" /> Tạo bộ từ</Link>
+              <Link className="dashboard-secondary-link" to="/topics">Khám phá bộ từ <ArrowRight aria-hidden="true" /></Link>
+            </div>
           </div>
         </div>
       ) : (
@@ -212,11 +227,11 @@ function MySetsSummary({ sets }) {
                   <span className="dashboard-set-icon" aria-hidden="true"><LibraryBig /></span>
                   <h3>{set.name}</h3>
                   {set.description ? <p>{set.description}</p> : <p className="is-muted">Chưa có mô tả.</p>}
-                  <span className="dashboard-set-count">{set.item_count} từ vựng</span>
+                  <span className="dashboard-set-count"><BookOpenCheck aria-hidden="true" /> {set.item_count} từ vựng</span>
                 </div>
                 <div className="dashboard-set-actions">
                   <Link className="dashboard-secondary-link" to={`/my/vocabulary-sets/${set.id}`}>
-                    Xem bộ từ
+                    Xem chi tiết
                   </Link>
                   {set.item_count > 0 ? (
                     <Link
@@ -224,7 +239,7 @@ function MySetsSummary({ sets }) {
                       to={`/learn/vocabulary-sets/${set.id}`}
                       state={{ returnTo: "/dashboard" }}
                     >
-                      Học bộ từ
+                      Bắt đầu học <ArrowRight aria-hidden="true" />
                     </Link>
                   ) : null}
                 </div>
@@ -234,33 +249,6 @@ function MySetsSummary({ sets }) {
         </ul>
       )}
     </div>
-  );
-}
-
-function DashboardQuickLinks() {
-  const links = [
-    { to: "/topics", title: "Khám phá chủ đề", description: "Tìm các bộ từ hệ thống theo chủ đề.", icon: Map },
-    { to: "/my/vocabulary-sets", title: "Bộ từ của tôi", description: "Tạo và quản lý các bộ từ riêng.", icon: LibraryBig },
-    { to: "/my/learning-progress", title: "Tiến độ chi tiết", description: "Xem trạng thái từng từ đã bắt đầu học.", icon: Activity },
-  ];
-  return (
-    <section className="dashboard-section dashboard-quick-section" aria-labelledby="dashboard-quick-title">
-      <div className="dashboard-section-heading">
-        <h2 id="dashboard-quick-title">Khám phá và quản lý</h2>
-      </div>
-      <nav aria-label="Lối tắt Dashboard">
-        <ul className="dashboard-quick-grid">
-          {links.map(({ description, icon: Icon, title, to }) => (
-            <li key={to}>
-              <Link to={to}>
-                <span aria-hidden="true"><Icon /></span>
-                <div><strong>{title}</strong><small>{description}</small></div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </section>
   );
 }
 
