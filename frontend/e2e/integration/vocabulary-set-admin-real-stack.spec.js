@@ -70,7 +70,7 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
   expect(persisted?.items.map(({ vocabulary }) => vocabulary.word)).toEqual([`${prefix} beta`, `${prefix} alpha`]);
 
   await page.getByRole("button", { name: "Chỉnh sửa" }).click();
-  await orderedEditor.getByRole("button", { name: new RegExp(`Bỏ ${prefix} alpha`) }).click();
+  await orderedEditor.getByRole("button", { name: `Xóa ${prefix} alpha khỏi bộ từ` }).click();
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
   await expect(page.locator(".my-vocabulary-set-detail ol li")).toHaveCount(1);
   await page.getByRole("button", { name: "Xóa bộ từ" }).click();
