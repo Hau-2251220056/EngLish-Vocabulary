@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, BookOpen, LoaderCircle, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, BookOpen, FolderHeart, LoaderCircle, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { topicService } from "../services/topic-service.js";
@@ -15,6 +15,7 @@ export function MyVocabularySetsPage() {
   const [sets, setSets] = useState([]);
   const [listState, setListState] = useState("loading");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("server");
   const [editor, setEditor] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailState, setDetailState] = useState("idle");
@@ -48,7 +49,7 @@ export function MyVocabularySetsPage() {
     return () => { active = false; };
   }, [reload, setId]);
 
-  const visibleSets = useMemo(() => filterSets(sets, query), [query, sets]);
+  const visibleSets = useMemo(() => sortSets(filterSets(sets, query), sort), [query, sets, sort]);
 
   function retry() { setReload((value) => value + 1); }
 
@@ -110,7 +111,7 @@ export function MyVocabularySetsPage() {
   return (
     <section className="my-vocabulary-sets-page" aria-labelledby="my-vocabulary-sets-title">
       <header className="my-vocabulary-sets-header">
-        <div><p className="my-vocabulary-sets-eyebrow">Bộ từ riêng tư</p><h1 id="my-vocabulary-sets-title">Bộ từ của tôi</h1><p>Tạo và sắp xếp các bộ từ chỉ bạn có thể quản lý.</p></div>
+        <div><h1 id="my-vocabulary-sets-title">Bộ từ của tôi</h1><p>Quản lý và tiếp tục học các bộ từ bạn đã tạo.</p></div>
         <button className="my-vocabulary-sets-primary" type="button" onClick={openCreate} disabled={pending !== null}><Plus className="size-5" aria-hidden="true" />Tạo bộ từ</button>
       </header>
 
@@ -119,12 +120,18 @@ export function MyVocabularySetsPage() {
       {setId ? <MySetDetail detail={detail} state={detailState} pending={pending !== null} onClose={() => navigate("/my/vocabulary-sets")} onEdit={() => void openEdit()} onDelete={() => setDeleteTarget(detail)} onRetry={retry} /> : null}
 
       <section className="my-vocabulary-sets-list" aria-labelledby="my-vocabulary-sets-list-title">
-        <div className="my-vocabulary-sets-toolbar"><h2 id="my-vocabulary-sets-list-title">Danh sách bộ từ</h2><label className="my-vocabulary-sets-search"><span className="sr-only">Tìm kiếm bộ từ của tôi</span><Search className="size-5" aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm theo tên hoặc mô tả" autoComplete="off" /></label></div>
-        {listState === "loading" ? <MyState loading message="Đang tải bộ từ của bạn…" /> : null}
+        <div className="my-vocabulary-sets-toolbar">
+          <div><h2 id="my-vocabulary-sets-list-title">Danh sách bộ từ</h2>{listState === "ready" && sets.length > 0 ? <p>{sets.length} bộ từ trong thư viện</p> : null}</div>
+          <div className="my-vocabulary-sets-controls">
+            <label className="my-vocabulary-sets-search"><span className="sr-only">Tìm bộ từ</span><Search className="size-5" aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm bộ từ..." autoComplete="off" /></label>
+            <label className="my-vocabulary-sets-sort"><span className="sr-only">Sắp xếp bộ từ</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="server">Mặc định</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option><option value="count-asc">Số từ tăng dần</option><option value="count-desc">Số từ giảm dần</option></select></label>
+          </div>
+        </div>
+        {listState === "loading" ? <MySetSkeleton /> : null}
         {listState === "error" ? <MyState role="alert" title="Không thể tải bộ từ" message="Vui lòng thử lại." action={<button type="button" onClick={retry}>Thử lại</button>} /> : null}
-        {listState === "ready" && sets.length === 0 ? <MyState title="Chưa có bộ từ riêng" message="Tạo bộ từ đầu tiên hoặc sao chép một bộ từ hệ thống." /> : null}
-        {listState === "ready" && sets.length > 0 && visibleSets.length === 0 ? <MyState title="Không có kết quả" message="Hãy thử từ khóa khác." /> : null}
-        {listState === "ready" && visibleSets.length > 0 ? <ul className="my-vocabulary-sets-grid">{visibleSets.map((set) => <li key={set.id}><article className="my-vocabulary-set-card"><p>Riêng tư</p><h3>{set.name}</h3><span>{set.description || "Chưa có mô tả."}</span><small>{set.item_count} từ vựng</small><Link to={`/my/vocabulary-sets/${set.id}`}>Xem và chỉnh sửa</Link></article></li>)}</ul> : null}
+        {listState === "ready" && sets.length === 0 ? <MyState visual title="Bạn chưa có bộ từ nào" message="Tạo bộ từ đầu tiên để xây dựng thư viện học tập của riêng bạn." action={<><button type="button" aria-label="Tạo bộ từ đầu tiên" onClick={openCreate}><Plus aria-hidden="true" />Tạo bộ từ</button><Link to="/topics">Khám phá bộ từ</Link></>} /> : null}
+        {listState === "ready" && sets.length > 0 && visibleSets.length === 0 ? <MyState title="Không tìm thấy bộ từ phù hợp" message="Thử một từ khóa khác hoặc xóa nội dung tìm kiếm." action={<button type="button" onClick={() => setQuery("")}>Xóa tìm kiếm</button>} /> : null}
+        {listState === "ready" && visibleSets.length > 0 ? <ul className="my-vocabulary-sets-grid" aria-label="Các bộ từ của tôi">{visibleSets.map((set, index) => <MySetCard key={set.id} set={set} accent={index % 3} />)}</ul> : null}
       </section>
 
       {deleteTarget ? <DeleteDialog set={deleteTarget} pending={pending === "delete"} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} /> : null}
@@ -211,12 +218,28 @@ export function VocabularySetEditor({ aggregate, mode, onCancel, onSave, onSetCh
 }
 
 function DeleteDialog({ onCancel, onConfirm, pending, set }) { return <div className="my-vocabulary-set-dialog-backdrop"><section className="my-vocabulary-set-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-my-set-title"><h2 id="delete-my-set-title">Xóa bộ từ?</h2><p>Bạn sẽ xóa <strong>{set.name}</strong> và danh sách từ của bộ này. Hành động không thể hoàn tác.</p><div><button type="button" onClick={onCancel} disabled={pending} autoFocus>Hủy</button><button type="button" className="is-danger" onClick={onConfirm} disabled={pending} aria-busy={pending}>{pending ? "Đang xóa…" : "Xác nhận xóa"}</button></div></section></div>; }
-function MyState({ action, loading, message, role, title }) { return <div className="my-vocabulary-set-state" role={loading ? "status" : role} aria-live={loading ? "polite" : undefined}>{loading ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : null}{title ? <h2>{title}</h2> : null}<p>{message}</p>{action}</div>; }
+function MySetCard({ accent, set }) {
+  const canLearn = set.item_count > 0;
+  return <li><article className={`my-vocabulary-set-card accent-${accent}`}><div className="my-vocabulary-set-card-art" aria-hidden="true"><BookOpen /></div><div className="my-vocabulary-set-card-body"><p className="my-vocabulary-set-count">{set.item_count} từ vựng</p><h3>{set.name}</h3><p className="my-vocabulary-set-description">{set.description || "Chưa có mô tả."}</p></div><div className="my-vocabulary-set-card-actions">{canLearn ? <Link className="my-vocabulary-set-learn" to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: "/my/vocabulary-sets" }}>Học<ArrowRight aria-hidden="true" /></Link> : <span className="my-vocabulary-set-empty-label">Chưa có từ để học</span>}<Link className="my-vocabulary-set-detail-link" to={`/my/vocabulary-sets/${set.id}`} aria-label={`Xem chi tiết ${set.name}`}>Chi tiết</Link></div></article></li>;
+}
+
+function MySetSkeleton() {
+  return <div className="my-vocabulary-set-skeleton" role="status" aria-label="Đang tải bộ từ của bạn"><span className="sr-only">Đang tải bộ từ của bạn…</span>{[0, 1, 2].map((item) => <div key={item} aria-hidden="true"><span /><span /><span /></div>)}</div>;
+}
+
+function MyState({ action, loading, message, role, title, visual = false }) { return <div className={`my-vocabulary-set-state${visual ? " is-visual" : ""}`} role={loading ? "status" : role} aria-live={loading ? "polite" : undefined}>{loading ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : null}{visual ? <span className="my-vocabulary-set-state-visual" aria-hidden="true"><FolderHeart /></span> : null}{title ? <h2>{title}</h2> : null}<p>{message}</p>{action ? <div className="my-vocabulary-set-state-actions">{action}</div> : null}</div>; }
 function FieldError({ id, message }) { return <p id={id} className="my-vocabulary-set-field-error" role="alert">{message}</p>; }
 function formValues(aggregate) { return { topic_id: aggregate.topic_id ?? "", name: aggregate.name ?? "", description: aggregate.description ?? "", items: (aggregate.items ?? []).slice().sort((left, right) => left.position - right.position).map((item) => ({ vocabulary_id: item.vocabulary_id, word: item.word, phonetic: item.phonetic ?? null, source: item.source })) }; }
 function serializeSet(values, requireTopic) { return { ...(requireTopic ? { topic_id: values.topic_id } : {}), name: values.name.trim(), description: values.description.trim() || null, items: values.items.map((item) => ({ vocabulary_id: item.vocabulary_id })) }; }
 function validateSet(values, requireItems) { const errors = {}; if (!values.name.trim()) errors.name = "Tên bộ từ là bắt buộc."; else if (values.name.trim().length > 100) errors.name = "Tên bộ từ không được quá 100 ký tự."; if (requireItems && !values.topic_id) errors.topic_id = "Hãy chọn một chủ đề."; if (values.description.length > 500) errors.description = "Mô tả không được quá 500 ký tự."; if (requireItems && values.items.length === 0) errors.items = "Bộ từ hệ thống cần ít nhất một từ vựng."; return errors; }
 function filterSets(sets, query) { const normalized = query.trim().toLocaleLowerCase(); if (!normalized) return sets; return sets.filter((set) => [set.name, set.description].filter((value) => typeof value === "string").some((value) => value.toLocaleLowerCase().includes(normalized))); }
+function sortSets(sets, sort) {
+  if (sort === "server") return sets;
+  const sorted = [...sets];
+  if (sort === "name-asc" || sort === "name-desc") sorted.sort((left, right) => left.name.localeCompare(right.name, "vi", { sensitivity: "base" }) * (sort === "name-asc" ? 1 : -1));
+  if (sort === "count-asc" || sort === "count-desc") sorted.sort((left, right) => (left.item_count - right.item_count) * (sort === "count-asc" ? 1 : -1));
+  return sorted;
+}
 function upsertSummary(sets, aggregate) { const summary = { ...aggregate, item_count: aggregate.items?.length ?? 0 }; delete summary.items; const index = sets.findIndex((set) => set.id === summary.id); return index === -1 ? [summary, ...sets] : sets.map((set) => set.id === summary.id ? summary : set); }
 function errorMessage(error, fallback) { const messages = { VOCABULARY_SET_NOT_FOUND: "Bộ từ không còn khả dụng.", TOPIC_NOT_FOUND: "Chủ đề đã chọn không còn khả dụng.", VOCABULARY_NOT_FOUND: "Có từ vựng đã chọn không còn khả dụng.", VALIDATION_ERROR: "Dữ liệu bộ từ không hợp lệ.", AUTHENTICATION_FAILED: "Phiên đăng nhập không còn hợp lệ.", FORBIDDEN: "Bạn không có quyền thực hiện hành động này." }; return messages[error?.code] ?? (error instanceof VocabularySetApiError && error.kind === "operational" ? "Không thể kết nối dịch vụ. Vui lòng thử lại." : fallback); }
 function privateErrorMessage(error) { const messages = { VALIDATION_ERROR: "Dữ liệu từ vựng chưa hợp lệ. Hãy kiểm tra lại các trường bắt buộc.", VOCABULARY_SET_NOT_FOUND: "Bộ từ không còn khả dụng.", VOCABULARY_NOT_FOUND: "Từ vựng không còn khả dụng.", AUTHENTICATION_FAILED: "Phiên đăng nhập không còn hợp lệ.", FORBIDDEN: "Bạn không có quyền thực hiện hành động này.", PRIVATE_VOCABULARY_OPERATION_CONFLICT: "Yêu cầu tạo từ đã thay đổi. Hãy hủy và bắt đầu một lần tạo mới." }; return messages[error?.code] ?? "Chưa thể lưu từ vựng. Bạn có thể thử lại an toàn."; }
