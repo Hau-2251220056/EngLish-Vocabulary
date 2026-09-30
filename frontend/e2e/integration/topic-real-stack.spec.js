@@ -148,7 +148,7 @@ test("@topic USER reaches public Topics but not ADMIN management", async ({ page
   await page.goto("/admin/topics");
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", {
-    name: /^Chào buổi (sáng|trưa|chiều|tối), Topic Browser User\.$/,
+    name: /^Chào buổi (sáng|trưa|chiều|tối), Topic Browser User$/,
   })).toBeVisible();
 });
 

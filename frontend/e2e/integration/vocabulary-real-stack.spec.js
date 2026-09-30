@@ -70,12 +70,44 @@ test("ADMIN creates, replaces owned children, and confirms aggregate deletion", 
   await page.locator(".admin-topic-panel").filter({ has: page.getByRole("heading", { name: createdWord }) }).locator("button").last().click();
   const row = page.getByRole("row").filter({ hasText: createdWord });
   await row.locator("button").nth(2).click();
-  const confirmation = page.locator("dialog[open]");
+  const confirmation = page.getByRole("dialog", { name: "Xóa từ vựng?" });
   await expect(confirmation).toBeVisible();
-  await confirmation.locator("button").first().click();
-  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await confirmation.getByRole("button", { name: "Hủy" }).click();
+  await expect(confirmation).toHaveCount(0);
+
+  let releaseDeleteFailure;
+  let deleteAttempts = 0;
+  await page.route(`**/api/admin/vocabulary/${created.id}`, async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    deleteAttempts += 1;
+    if (deleteAttempts === 1) await new Promise((resolve) => { releaseDeleteFailure = resolve; });
+    await route.fulfill({
+      status: 500,
+      json: { success: false, error: { code: "INTERNAL_ERROR", message: "raw database detail must stay hidden" } },
+    });
+  });
+
   await row.locator("button").nth(2).click();
-  await confirmation.locator("button").last().click();
+  const failedConfirmation = page.getByRole("dialog", { name: "Xóa từ vựng?" });
+  const confirmDelete = failedConfirmation.getByRole("button", { name: "Xác nhận xóa" });
+  await confirmDelete.click();
+  await expect(failedConfirmation.getByRole("button", { name: "Đang xóa…" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(failedConfirmation).toBeVisible();
+  releaseDeleteFailure();
+  const safeDeleteError = failedConfirmation.getByRole("alert");
+  await expect(safeDeleteError).toHaveText("Unable to delete this Vocabulary. Please try again.");
+  await expect(failedConfirmation.getByText("raw database detail must stay hidden")).toHaveCount(0);
+  await failedConfirmation.getByRole("button", { name: "Hủy" }).click();
+  await expect(failedConfirmation).toHaveCount(0);
+
+  await row.locator("button").nth(2).click();
+  const retryConfirmation = page.getByRole("dialog", { name: "Xóa từ vựng?" });
+  await expect(retryConfirmation.getByRole("alert")).toHaveCount(0);
+  await retryConfirmation.getByRole("button", { name: "Xác nhận xóa" }).click();
+  await expect(retryConfirmation.getByRole("alert")).toHaveText("Unable to delete this Vocabulary. Please try again.");
+  await page.unroute(`**/api/admin/vocabulary/${created.id}`);
+  await retryConfirmation.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(page.getByRole("row").filter({ hasText: createdWord })).toHaveCount(0);
   await expect(prisma.vOCABULARY.count({ where: { id: created.id } })).resolves.toBe(0);
 });

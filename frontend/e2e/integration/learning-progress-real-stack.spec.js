@@ -222,9 +222,10 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
   await login(page, accounts.learner);
   await page.goto("/my/learning-progress");
   await expect(page.locator(".learning-progress-row")).toHaveCount(20);
+  await expect(page.locator(".authenticated-main")).toHaveCount(1);
 
   const desktop = await page.evaluate(() => {
-    const content = document.querySelector(".authenticated-content");
+    const content = document.querySelector(".authenticated-main");
     const sidebar = document.querySelector(".authenticated-sidebar");
     const before = sidebar.getBoundingClientRect();
     content.scrollTop = Math.min(400, content.scrollHeight - content.clientHeight);
@@ -235,7 +236,7 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
       contentScrollTop: content.scrollTop,
       sidebarTopDelta: after.top - before.top,
       sidebarBottomDelta: after.bottom - before.bottom,
-      sidebarAccountVisible: Boolean(sidebar.querySelector(".authenticated-account")),
+      sidebarAccountVisible: Boolean(sidebar.querySelector(".authenticated-sidebar-account")),
     };
   });
   expect(desktop.bodyOverflow).toBeLessThanOrEqual(1);

@@ -54,55 +54,57 @@ test.afterAll(async () => {
   } finally { await prisma.$disconnect(); }
 });
 
-test("create action double-submit persists one private identity and membership", async ({ page }) => {
+test("create-and-add retry persists one private identity and membership", async ({ page }) => {
   await login(page, accounts.owner);
-  await openEditor(page, emptySet.id);
-  await page.getByRole("button", { name: "Tạo từ mới" }).click();
-  const dialog = page.getByRole("dialog", { name: "Tạo và thêm vào bộ từ" });
   const createdWord = `${prefix}-created`;
-  await dialog.locator("#private-vocabulary-word").fill(createdWord);
-  await dialog.getByLabel("Loại từ").fill("noun");
-  await dialog.getByLabel("Nghĩa tiếng Việt").fill("nghĩa tạo mới");
-  let posts = 0;
-  page.on("request", (request) => { if (request.method() === "POST" && request.url().includes(`/api/my/vocabulary-sets/${emptySet.id}/vocabulary`)) posts += 1; });
-  const submit = dialog.getByRole("button", { name: "Tạo và thêm" });
-  await submit.evaluate((button) => { button.click(); button.click(); });
-  await expect(dialog).toHaveCount(0);
-  expect(posts).toBe(1);
+  const operationId = randomUUID();
+  const responses = await page.evaluate(async ({ setId, operationId, word }) => {
+    const request = () => fetch(`/api/my/vocabulary-sets/${setId}/vocabulary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation_id: operationId,
+        vocabulary: {
+          word,
+          phonetic: null,
+          meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa tạo mới", context: null, cefr_level: null, examples: [] }],
+        },
+      }),
+    }).then(async (response) => ({ status: response.status, body: await response.json() }));
+    return [await request(), await request()];
+  }, { setId: emptySet.id, operationId, word: createdWord });
+  expect(responses.map(({ status }) => status)).toEqual([201, 200]);
+  expect(responses[1].body.data.vocabulary.id).toBe(responses[0].body.data.vocabulary.id);
   const created = await prisma.vOCABULARY.findMany({ where: { owner_id: owner.id, word: createdWord } });
   expect(created).toHaveLength(1); ids.vocabulary.push(created[0].id);
   expect(await prisma.vOCABULARY_SET_ITEM.count({ where: { vocabulary_set_id: emptySet.id, vocabulary_id: created[0].id } })).toBe(1);
   expect(await prisma.pRIVATE_VOCABULARY_CREATE_OPERATION.count({ where: { vocabulary_id: created[0].id } })).toBe(1);
 });
 
-test("reuse edit remove and zero-membership recovery preserve identity and Progress", async ({ page }) => {
+test("private edit, membership removal and picker reuse preserve identity and Progress", async ({ page }) => {
   await login(page, accounts.owner);
-  await openEditor(page, setA.id);
-  const item = page.getByRole("group", { name: "Danh sách từ vựng theo thứ tự" }).getByRole("listitem").filter({ hasText: "book" }).nth(1);
-  await item.getByRole("button", { name: "Sửa" }).click();
-  const dialog = page.getByRole("dialog", { name: "Chỉnh sửa từ vựng" });
-  await dialog.locator("#private-vocabulary-word").fill("reserve");
-  await dialog.getByRole("button", { name: "Lưu thay đổi" }).click();
-  await expect(dialog).toHaveCount(0);
+  const updated = await page.evaluate(async (id) => fetch(`/api/my/vocabulary/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ word: "reserve" }),
+  }).then(async (response) => ({ status: response.status, body: await response.json() })), privateOne.id);
+  expect(updated.status).toBe(200);
   await expect.poll(async () => (await prisma.vOCABULARY.findUnique({ where: { id: privateOne.id } })).word).toBe("reserve");
-  await removeAndSave(page, setA.id, "reserve");
-  await removeAndSave(page, setB.id, "reserve");
-  await removeAndSave(page, learningSet.id, "reserve");
+  await replaceItems(page, setA.id, [canonical.id, privateTwo.id]);
+  await replaceItems(page, setB.id, []);
+  await replaceItems(page, learningSet.id, []);
   expect(await prisma.vOCABULARY.count({ where: { id: privateOne.id } })).toBe(1);
   expect(await prisma.lEARNING_PROGRESS.count({ where: { user_id: owner.id, vocabulary_id: privateOne.id } })).toBe(1);
-  await openEditor(page, setA.id);
-  const picker = page.getByRole("group", { name: "Thêm từ vựng" });
-  await picker.getByRole("searchbox").fill("reserve"); await picker.getByRole("button", { name: "Tìm từ" }).click();
-  await expect(picker.getByText("reserve", { exact: true })).toBeVisible();
+  const picker = await page.evaluate(() => fetch("/api/vocabulary-set-picker?query=reserve").then((response) => response.json()));
+  expect(picker.data).toContainEqual(expect.objectContaining({ id: privateOne.id, word: "reserve", source: "PRIVATE" }));
 });
 
 test("same-word identities remain distinct and cross-user search/direct IDs are concealed", async ({ page }) => {
-  await login(page, accounts.owner); await openEditor(page, setA.id);
-  const picker = page.getByRole("group", { name: "Thêm từ vựng" });
-  await picker.getByRole("searchbox").fill("book"); await picker.getByRole("button", { name: "Tìm từ" }).click();
-  await expect(picker.getByRole("listitem")).toHaveCount(2);
-  await expect(picker.getByText("Hệ thống", { exact: true })).toBeVisible();
-  await expect(picker.getByText("Của tôi", { exact: true })).toBeVisible();
+  await login(page, accounts.owner);
+  const ownerSearch = await page.evaluate(() => fetch("/api/vocabulary-set-picker?query=book").then((response) => response.json()));
+  expect(ownerSearch.data.map(({ id }) => id)).toEqual(expect.arrayContaining([canonical.id, privateTwo.id]));
+  expect(ownerSearch.data).toContainEqual(expect.objectContaining({ id: canonical.id, source: "CANONICAL" }));
+  expect(ownerSearch.data).toContainEqual(expect.objectContaining({ id: privateTwo.id, source: "PRIVATE" }));
   await login(page, accounts.outsider);
   const result = await page.evaluate(async (id) => ({
     search: await fetch("/api/vocabulary-set-picker?query=reserve").then((r) => r.json()),
@@ -124,11 +126,7 @@ test("System Set rejects private ID while its private copy accepts owner-private
   const systemAttempt = await page.evaluate(async ({ setId, topicId, privateId }) => fetch(`/api/admin/vocabulary-sets/${setId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic_id: topicId, name: "System", description: null, items: [{ vocabulary_id: privateId }] }) }).then(async (r) => ({ status: r.status, body: await r.json() })), { setId: systemSet.id, topicId: ids.topic, privateId: privateTwo.id });
   expect(systemAttempt.status).toBe(404);
   await login(page, accounts.owner);
-  await openEditor(page, copiedId); const picker = page.getByRole("group", { name: "Thêm từ vựng" });
-  await picker.getByRole("searchbox").fill("book"); await picker.getByRole("button", { name: "Tìm từ" }).click();
-  await picker.getByRole("listitem").filter({ hasText: "private volume" }).getByRole("button", { name: "Thêm" }).click();
-  await page.getByRole("button", { name: "Lưu bộ từ" }).click();
-  await expect(page.getByRole("button", { name: "Đang lưu…" })).toHaveCount(0);
+  await replaceItems(page, copiedId, [canonical.id, privateTwo.id]);
   await expect.poll(() => prisma.vOCABULARY_SET_ITEM.count({ where: { vocabulary_set_id: copiedId, vocabulary_id: privateTwo.id } })).toBe(1);
 });
 
@@ -170,7 +168,15 @@ test("both Quiz modes retain exact private identities, selected meaning and POS"
 });
 
 async function login(page, account) { await page.context().clearCookies(); await page.goto("/login"); await page.locator("#login-email").fill(account.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/dashboard/); }
-async function openEditor(page, setId) { await page.goto(`/my/vocabulary-sets/${setId}`); await page.getByRole("button", { name: "Chỉnh sửa" }).click(); }
-async function removeAndSave(page, setId, wordValue) { await openEditor(page, setId); await page.getByRole("button", { name: `Xóa ${wordValue} khỏi bộ từ` }).click(); await page.getByRole("button", { name: "Lưu bộ từ" }).click(); }
+// Personal Set membership UI coverage resumes in Set Detail V1. These guarded
+// checks exercise the existing authoritative API contracts until that UI exists.
+async function replaceItems(page, setId, vocabularyIds) {
+  const result = await page.evaluate(async ({ setId: id, vocabularyIds: idsToKeep }) => fetch(`/api/my/vocabulary-sets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: idsToKeep.map((vocabulary_id) => ({ vocabulary_id })) }),
+  }).then(async (response) => ({ status: response.status, body: await response.json() })), { setId, vocabularyIds });
+  expect(result.status).toBe(200);
+}
 async function word(ownerId, value, part, meaning) { const record = await prisma.vOCABULARY.create({ data: { owner_id: ownerId, word: value, meanings: { create: { part_of_speech: part, meaning_vi: meaning, cefr_level: "A1" } } } }); ids.vocabulary.push(record.id); return record; }
 async function set(ownerId, isPublic, suffix, vocabularyIds) { const record = await prisma.vOCABULARY_SET.create({ data: { owner_id: ownerId, topic_id: isPublic ? ids.topic : null, name: `${prefix} ${suffix}`, is_public: isPublic, items: { create: vocabularyIds.map((vocabulary_id, index) => ({ vocabulary_id, position: index + 1 })) } } }); ids.sets.push(record.id); return record; }
