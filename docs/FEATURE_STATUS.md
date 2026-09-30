@@ -451,6 +451,16 @@ Users can share their own vocabulary sets through Community.
 
 A copied vocabulary set becomes a new private set owned by the user who copied it.
 
+## Personal Vocabulary Set Topic Decoupling V1
+
+Status: DONE — implementation, TEST and REVIEW complete; HUMAN-approved for closure.
+
+- Public ADMIN-managed System Sets retain one required Topic, enforced by service validation and the database check `NOT is_public OR topic_id IS NOT NULL`.
+- USER Personal Set writes reject `topic_id`; new and copied Personal Sets are topicless, while existing categorized Personal Sets remain readable and preserve their reference on supported updates.
+- Topic deletion remains `RESTRICT`; referenced deletion returns `409 TOPIC_IN_USE` without cascade.
+- Learning exposes `topic: TopicSummary | null`; Quiz, ordered exact-ID membership, ownership, visibility and public Topic discovery remain unchanged.
+- Approved source: `docs/specs/PERSONAL_VOCABULARY_SET_TOPIC_DECOUPLING_V1_SPEC.md`; formal REVIEW result: APPROVE.
+
 ## Vocabulary Set V1 Closure Preparation
 
 Status: DONE

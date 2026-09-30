@@ -245,7 +245,7 @@ Vocabulary Set là tập hợp các Vocabulary phục vụ cho việc học.
 
 Admin có thể tạo và quản lý các Vocabulary Set chính thức của hệ thống.
 
-System Vocabulary Set có thể được gắn với một Topic.
+Mỗi System Vocabulary Set công khai phải được gắn với một Topic để phục vụ khám phá. Personal Vocabulary Set riêng tư của User không yêu cầu Topic và User không quản lý Topic của Set.
 
 ## 7.2. User Vocabulary Set
 

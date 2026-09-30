@@ -317,7 +317,7 @@ function createSet(ownerId, isPublic, suffix) {
   return prisma.vOCABULARY_SET.create({
     data: {
       owner_id: ownerId,
-      topic_id: topic.id,
+      topic_id: isPublic ? topic.id : null,
       name: `${prefix} ${suffix}`,
       is_public: isPublic,
       items: {

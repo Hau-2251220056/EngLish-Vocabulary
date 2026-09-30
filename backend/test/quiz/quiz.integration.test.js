@@ -393,7 +393,7 @@ function createSet(ownerId, isPublic, vocabularyIds) {
   return prisma.vOCABULARY_SET.create({
     data: {
       owner_id: ownerId,
-      topic_id: topic.id,
+      topic_id: isPublic ? topic.id : null,
       name: `Quiz Set ${randomUUID()}`,
       is_public: isPublic,
       items: {

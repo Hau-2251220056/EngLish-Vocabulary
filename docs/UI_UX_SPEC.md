@@ -914,14 +914,14 @@ Guest and authenticated visitors can open dedicated Topic-scoped System Set disc
 
 Inside the existing authenticated App Layout, USER navigation exposes My Sets only with implemented routes. A USER can list/search/view/create/edit/delete only owned private Sets and may retain an empty draft.
 
-- The Set editor has labelled Set metadata and Topic controls plus a semantic ordered Item collection.
+- The Personal Set editor has labelled Set metadata and a semantic ordered Item collection, but no Topic selector, Topic loading dependency or Topic field in its create/update payload.
 - Its authenticated Vocabulary picker exists only while editing, requires a word query, displays bounded exact-ID results with word, primary part of speech/meaning and `Hệ thống`/`Của tôi` source context, prevents duplicate exact-ID additions and never links to a standalone Vocabulary catalog/detail screen.
 - Item add/remove and keyboard-accessible move-up/move-down controls make complete replacement order explicit.
 - Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
 
 #### ADMIN System Set Management
 
-`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. A System Set editor uses the same approved picker/editor boundary but must prevent save with zero Items.
+`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. A System Set editor uses the same approved picker/editor boundary, retains a human-readable Topic selector mapped internally to `topic_id`, and must prevent save with no Topic or zero Items. Raw Topic UUID entry is never exposed.
 
 All Set screens preserve current dashboard, logout, mobile drawer, Topic routes/management and Vocabulary management. Forms use associated labels/errors; dialogs restore focus and block duplicate pending actions; ordered Item controls remain keyboard-accessible and responsive at existing breakpoints.
 11.6 Achievement Management

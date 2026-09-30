@@ -631,14 +631,14 @@ TOPIC --RESTRICT--> VOCABULARY_SET --CASCADE--> VOCABULARY_SET_ITEM --RESTRICT--
 #### VOCABULARY_SET
 
 - `id`: UUID primary key.
-- `topic_id`: required UUID foreign key to `TOPIC.id`.
+- `topic_id`: nullable UUID foreign key to `TOPIC.id`. It is required when `is_public = true` and may be null when `is_public = false`.
 - `owner_id`: required UUID foreign key to `USER.id`; derived by Backend, never trusted from client input.
 - `name`: required trimmed non-empty `VARCHAR(100)`.
 - `description`: nullable `VARCHAR(500)`.
 - `is_public`: required boolean. ADMIN-created System Sets are `true`; USER-created and copied User Sets are `false`.
 - `created_at`, `updated_at`.
 
-There is no Set-type enum. The service enforces that System Sets are ADMIN-created/public and User Sets are USER-owned/private. Every Set belongs to exactly one Topic. `TOPIC -> VOCABULARY_SET` must use `ON DELETE RESTRICT` / no cascade.
+There is no Set-type enum. The service enforces that System Sets are ADMIN-created/public and User Sets are USER-owned/private. PostgreSQL enforces `CHECK (NOT is_public OR topic_id IS NOT NULL)`. Every non-null `TOPIC -> VOCABULARY_SET` reference uses `ON DELETE RESTRICT` / no cascade. Existing categorized Personal Sets remain valid legacy rows; new Personal Sets are topicless.
 
 #### VOCABULARY_SET_ITEM
 
@@ -654,7 +654,7 @@ The migration must enforce `UNIQUE(vocabulary_set_id, vocabulary_id)`, `UNIQUE(v
 
 System Sets require one-or-more Items. Private User Sets may be empty drafts. A supplied aggregate `items` collection is the complete desired ordered collection; Backend validates each Vocabulary ID and atomically replaces/reorders owned Items. There is no granular Set Item API.
 
-Copying a System Set creates an independent private User Set with fresh Set/Item IDs, copied Topic/name/description and preserved Vocabulary order. No source-link, synchronization, Community sharing, public User Set, Flashcard, Learning, Progress, SRS, Quiz, XP, Streak, Pronunciation Practice or AI behavior is materialized in V1.
+Copying a System Set creates an independent topicless private User Set with fresh Set/Item IDs, copied name/description and preserved exact Vocabulary IDs/order. No source-link or synchronization is created. Existing categorized rows are not rewritten; restoring `NOT NULL` requires an approved remediation if topicless rows exist.
 
 12. LEARNING_PROGRESS
 12.1. Mục đích

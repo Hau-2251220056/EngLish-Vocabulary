@@ -214,7 +214,7 @@ async function cookieFor(userId) {
 
 async function createPrivateSet(ownerId, vocabularyIds = []) {
   return prisma.vOCABULARY_SET.create({ data: {
-    topic_id: topic.id,
+    topic_id: null,
     owner_id: ownerId,
     name: `Private-${randomUUID()}`,
     is_public: false,

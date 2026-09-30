@@ -18,7 +18,6 @@ const accounts = {
 };
 
 let records;
-let topic;
 let vocabularies;
 let ownedSets;
 
@@ -36,7 +35,6 @@ test.beforeAll(async () => {
     ]),
   );
   records = Object.fromEntries(users);
-  topic = await prisma.tOPIC.create({ data: { name: `${prefix} Topic` } });
   vocabularies = await Promise.all([
     createVocabulary("alpha"),
     createVocabulary("beta"),
@@ -152,7 +150,7 @@ function createVocabulary(suffix) {
 function createSet(ownerId, suffix, vocabularyIds) {
   return prisma.vOCABULARY_SET.create({
     data: {
-      topic_id: topic.id,
+      topic_id: null,
       owner_id: ownerId,
       name: `${prefix} ${suffix}`,
       description: `${prefix} controlled private Set`,

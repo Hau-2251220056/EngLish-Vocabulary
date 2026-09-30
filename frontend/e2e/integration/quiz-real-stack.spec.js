@@ -204,7 +204,7 @@ async function createSet(ownerId, isPublic, suffix, vocabularies) {
   const set = await prisma.vOCABULARY_SET.create({
     data: {
       owner_id: ownerId,
-      topic_id: created.topicId,
+      topic_id: isPublic ? created.topicId : null,
       name: `${prefix} ${suffix}`,
       is_public: isPublic,
       items: {

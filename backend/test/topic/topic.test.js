@@ -13,6 +13,7 @@ const ERROR_CODES = {
   validation: "VALIDATION_ERROR",
   missing: "TOPIC_NOT_FOUND",
   duplicate: "TOPIC_NAME_ALREADY_EXISTS",
+  inUse: "TOPIC_IN_USE",
 };
 
 let database;
@@ -195,6 +196,33 @@ test("ADMIN can create, update, and delete a Topic with approved responses", asy
   assert.equal(deleted.status, 204);
   assert.equal(deleted.text, "");
   assert.equal(await prisma.tOPIC.count(), 0);
+});
+
+test("referenced Topics return TOPIC_IN_USE while topicless Personal Sets add no dependency", async () => {
+  const cookie = await authenticatedCookie("ADMIN");
+  const admin = await createUserFixture(prisma, { role: "ADMIN" });
+  const user = await createUserFixture(prisma, { role: "USER" });
+  const systemTopic = await prisma.tOPIC.create({ data: { name: `System reference ${randomUUID()}` } });
+  const legacyTopic = await prisma.tOPIC.create({ data: { name: `Legacy reference ${randomUUID()}` } });
+  const unrelatedTopic = await prisma.tOPIC.create({ data: { name: `Unrelated ${randomUUID()}` } });
+  const systemSet = await prisma.vOCABULARY_SET.create({ data: {
+    topic_id: systemTopic.id, owner_id: admin.id, name: "System reference", is_public: true,
+  } });
+  const legacySet = await prisma.vOCABULARY_SET.create({ data: {
+    topic_id: legacyTopic.id, owner_id: user.id, name: "Legacy reference", is_public: false,
+  } });
+  const topiclessSet = await prisma.vOCABULARY_SET.create({ data: {
+    topic_id: null, owner_id: user.id, name: "Topicless", is_public: false,
+  } });
+
+  for (const referencedTopic of [systemTopic, legacyTopic]) {
+    const response = await adminRequest(`/api/admin/topics/${referencedTopic.id}`, cookie, { method: "DELETE" });
+    assertError(response, 409, ERROR_CODES.inUse);
+  }
+  assert.equal(await prisma.vOCABULARY_SET.count({ where: { id: { in: [systemSet.id, legacySet.id, topiclessSet.id] } } }), 3);
+
+  const deleted = await adminRequest(`/api/admin/topics/${unrelatedTopic.id}`, cookie, { method: "DELETE" });
+  assert.equal(deleted.status, 204);
 });
 
 test("create rejects missing, invalid, empty, and overlong names", async () => {

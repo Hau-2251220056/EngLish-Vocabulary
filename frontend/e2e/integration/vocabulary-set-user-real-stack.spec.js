@@ -44,14 +44,21 @@ test.afterAll(async () => {
 });
 
 test("USER creates, edits ordered private items with the editor picker, and confirms deletion", async ({ page }) => {
+  const topicRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/topics") topicRequests.push(request.url());
+  });
   await login(page);
   await page.getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Chưa có bộ từ riêng" })).toBeVisible();
   await page.getByRole("button", { name: "Tạo bộ từ" }).click();
   await page.locator("#my-set-name").fill(`${prefix} Private`);
-  await page.locator("#my-set-topic").selectOption(topic.id);
+  await expect(page.locator("#my-set-topic")).toHaveCount(0);
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
   await expect(page.getByRole("heading", { name: `${prefix} Private` })).toBeVisible();
+  expect(topicRequests).toEqual([]);
+  const created = await prisma.vOCABULARY_SET.findFirstOrThrow({ where: { name: `${prefix} Private` } });
+  expect(created.topic_id).toBeNull();
   await page.getByRole("button", { name: "Chỉnh sửa" }).click();
   const picker = page.getByRole("group", { name: "Thêm từ vựng" });
   await picker.getByRole("searchbox", { name: "Từ khóa" }).fill(prefix);
@@ -79,6 +86,15 @@ test("USER copies a public System Set into an independent private Set", async ({
   await expect(page.getByRole("heading", { name: sourceSet.name })).toBeVisible();
   await expect(page.locator(".my-vocabulary-set-detail ol li")).toHaveCount(2);
   await expect(page.getByText("Riêng tư").first()).toBeVisible();
+  const copy = await prisma.vOCABULARY_SET.findFirstOrThrow({
+    where: { owner: { email: user.email }, name: sourceSet.name },
+    include: { items: { orderBy: { position: "asc" } } },
+  });
+  const source = await prisma.vOCABULARY_SET.findUniqueOrThrow({
+    where: { id: sourceSet.id }, include: { items: { orderBy: { position: "asc" } } },
+  });
+  expect(copy.topic_id).toBeNull();
+  expect(copy.items.map(({ vocabulary_id }) => vocabulary_id)).toEqual(source.items.map(({ vocabulary_id }) => vocabulary_id));
 });
 
 async function login(page) {

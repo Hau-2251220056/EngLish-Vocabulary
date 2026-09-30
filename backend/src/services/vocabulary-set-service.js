@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { normalizePrivateVocabularyCreateInput } from "./vocabulary-service.js";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CREATE_FIELDS = new Set(["topic_id", "name", "description", "items"]);
-const PATCH_FIELDS = CREATE_FIELDS;
+const SYSTEM_CREATE_FIELDS = new Set(["topic_id", "name", "description", "items"]);
+const SYSTEM_PATCH_FIELDS = SYSTEM_CREATE_FIELDS;
+const PRIVATE_CREATE_FIELDS = new Set(["name", "description", "items"]);
+const PRIVATE_PATCH_FIELDS = PRIVATE_CREATE_FIELDS;
 const ITEM_FIELDS = new Set(["vocabulary_id"]);
 const PICKER_RESULT_LIMIT = 20;
 const PRIVATE_CREATE_REQUEST_FIELDS = new Set(["operation_id", "vocabulary"]);
@@ -44,7 +46,7 @@ export function createVocabularySetService({ vocabularySetRepository }) {
     async createSystemSet(ownerId, input) {
       validateUuid(ownerId);
       validateBody(input);
-      rejectUnsupportedFields(input, CREATE_FIELDS);
+      rejectUnsupportedFields(input, SYSTEM_CREATE_FIELDS);
       const aggregate = normalizeCreateInput(input);
 
       try {
@@ -73,8 +75,8 @@ export function createVocabularySetService({ vocabularySetRepository }) {
     async updateSystemSet(vocabularySetId, input) {
       validateUuid(vocabularySetId);
       validateBody(input);
-      rejectUnsupportedFields(input, PATCH_FIELDS);
-      const patch = normalizePatchInput(input);
+      rejectUnsupportedFields(input, SYSTEM_PATCH_FIELDS);
+      const patch = normalizeSystemPatchInput(input);
 
       try {
         return await vocabularySetRepository.withTransaction(async (repository) => {
@@ -133,14 +135,14 @@ export function createVocabularySetService({ vocabularySetRepository }) {
     async createPrivateSet(ownerId, input) {
       validateUuid(ownerId);
       validateBody(input);
-      rejectUnsupportedFields(input, CREATE_FIELDS);
+      rejectUnsupportedFields(input, PRIVATE_CREATE_FIELDS);
       const aggregate = normalizePrivateCreateInput(input);
 
       try {
         return await vocabularySetRepository.withTransaction(async (repository) => {
           await validatePrivateReferences(repository, ownerId, aggregate);
           return toDetail(await repository.createPrivate({
-            topic_id: aggregate.topic_id,
+            topic_id: null,
             owner_id: ownerId,
             name: aggregate.name,
             description: aggregate.description,
@@ -157,13 +159,12 @@ export function createVocabularySetService({ vocabularySetRepository }) {
       validateUuid(ownerId);
       validateUuid(vocabularySetId);
       validateBody(input);
-      rejectUnsupportedFields(input, PATCH_FIELDS);
-      const patch = normalizePatchInput(input, { allowEmptyItems: true });
+      rejectUnsupportedFields(input, PRIVATE_PATCH_FIELDS);
+      const patch = normalizePrivatePatchInput(input);
 
       try {
         return await vocabularySetRepository.withTransaction(async (repository) => {
           await requirePrivateSet(repository, vocabularySetId, ownerId);
-          if (patch.topic_id !== undefined) await requireTopic(repository, patch.topic_id);
           if (patch.vocabularyIds !== undefined) {
             await requireReusableVocabularyIds(repository, ownerId, patch.vocabularyIds);
           }
@@ -199,7 +200,7 @@ export function createVocabularySetService({ vocabularySetRepository }) {
             source.items.map(({ vocabulary_id }) => vocabulary_id),
           );
           return toDetail(await repository.createPrivate({
-            topic_id: source.topic_id,
+            topic_id: null,
             owner_id: ownerId,
             name: source.name,
             description: source.description,
@@ -335,26 +336,38 @@ function normalizeCreateInput(input) {
   };
 }
 
-function normalizePatchInput(input, { allowEmptyItems = false } = {}) {
-  if (![...PATCH_FIELDS].some((field) => Object.hasOwn(input, field))) {
+function normalizeSystemPatchInput(input) {
+  if (![...SYSTEM_PATCH_FIELDS].some((field) => Object.hasOwn(input, field))) {
     throw validationError();
   }
   const patch = {};
   if (Object.hasOwn(input, "topic_id")) patch.topic_id = validateUuid(input.topic_id);
   if (Object.hasOwn(input, "name")) patch.name = validateName(input.name);
   if (Object.hasOwn(input, "description")) patch.description = validateDescription(input.description);
-  if (Object.hasOwn(input, "items")) patch.vocabularyIds = validateItems(input.items, { allowEmptyItems });
+  if (Object.hasOwn(input, "items")) patch.vocabularyIds = validateItems(input.items);
   return patch;
 }
 
 function normalizePrivateCreateInput(input) {
-  if (!Object.hasOwn(input, "topic_id") || !Object.hasOwn(input, "name")) throw validationError();
+  if (!Object.hasOwn(input, "name")) throw validationError();
   return {
-    topic_id: validateUuid(input.topic_id),
     name: validateName(input.name),
     description: validateDescription(input.description, { optional: true }),
     vocabularyIds: Object.hasOwn(input, "items") ? validateItems(input.items, { allowEmptyItems: true }) : [],
   };
+}
+
+function normalizePrivatePatchInput(input) {
+  if (![...PRIVATE_PATCH_FIELDS].some((field) => Object.hasOwn(input, field))) {
+    throw validationError();
+  }
+  const patch = {};
+  if (Object.hasOwn(input, "name")) patch.name = validateName(input.name);
+  if (Object.hasOwn(input, "description")) patch.description = validateDescription(input.description);
+  if (Object.hasOwn(input, "items")) {
+    patch.vocabularyIds = validateItems(input.items, { allowEmptyItems: true });
+  }
+  return patch;
 }
 
 function validateBody(value) {
@@ -424,7 +437,6 @@ async function validateSystemReferences(repository, aggregate) {
 }
 
 async function validatePrivateReferences(repository, ownerId, aggregate) {
-  await requireTopic(repository, aggregate.topic_id);
   await requireReusableVocabularyIds(repository, ownerId, aggregate.vocabularyIds);
 }
 

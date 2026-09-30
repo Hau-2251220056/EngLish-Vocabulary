@@ -137,10 +137,9 @@ test("learning Set access is USER-only and conceals inaccessible private Sets", 
     (await http.request(`/api/learning/sets/${systemSet.id}`, { cookie: ownerCookie })).status,
     200,
   );
-  assert.equal(
-    (await http.request(`/api/learning/sets/${ownedSet.id}`, { cookie: ownerCookie })).status,
-    200,
-  );
+  const ownedResponse = await http.request(`/api/learning/sets/${ownedSet.id}`, { cookie: ownerCookie });
+  assert.equal(ownedResponse.status, 200);
+  assert.equal(ownedResponse.json.data.topic, null);
   for (const setId of [otherSet.id, randomUUID()]) {
     assertError(
       await http.request(`/api/learning/sets/${setId}`, { cookie: ownerCookie }),
@@ -803,7 +802,7 @@ function createSet({ ownerId, isPublic, vocabularyIds }) {
   return prisma.vOCABULARY_SET.create({
     data: {
       owner_id: ownerId,
-      topic_id: topic.id,
+      topic_id: isPublic ? topic.id : null,
       name: `Learning Set ${randomUUID()}`,
       is_public: isPublic,
       items: {

@@ -358,9 +358,9 @@ Admin.
 
 `topicId` is a UUID string. Success: `204` with no response body.
 
-Topic V1 itself created no Vocabulary Set relation. Vocabulary Set V1 materializes `ON DELETE RESTRICT` / no cascade; an ADMIN Topic delete blocked by a Set must use the finalized relation error contract when that feature is implemented.
+Topic V1 itself created no Vocabulary Set relation. Vocabulary Set V1 materializes `ON DELETE RESTRICT` / no cascade. An ADMIN delete blocked by any System or legacy Personal Set reference returns `409 TOPIC_IN_USE`; topicless Personal Sets create no Topic dependency.
 
-Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
+Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, `409 TOPIC_IN_USE`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
 
 12. Vocabulary V1
 
@@ -598,7 +598,7 @@ Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `w
 | `DELETE /api/my/vocabulary-sets/:setId` | owner USER | `204` |
 | `POST /api/vocabulary-sets/:systemSetId/copy` | USER | `201` |
 
-USER create/update accepts only `topic_id`, `name`, optional `description` and optional complete `items` collection. `owner_id` and `is_public` are server-controlled. A User Set remains private; inaccessible/non-owned private Sets return not found. User drafts may be empty. Copy accepts an accessible System Set only and creates an independent private aggregate with fresh IDs and preserved Item order.
+USER create/update accepts only `name`, optional `description` and optional complete `items` collection. `topic_id`, `owner_id` and `is_public` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order.
 
 Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so the Set editor can authorize private editing without inferring identity from spelling. Public System Set detail retains its existing minimum Item projection and does not expose `source`.
 
@@ -612,7 +612,7 @@ Owned private Set detail Items additionally expose derived `source` (`CANONICAL`
 | `PATCH /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
 | `DELETE /api/admin/vocabulary-sets/:setId` | ADMIN | `204` |
 
-ADMIN routes manage System Sets only. Create/PATCH accepts `topic_id`, `name`, optional `description` and optional complete `items`; a System Set must contain one-or-more valid Items. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
+ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, and one-or-more valid Items. PATCH accepts Topic reassignment but rejects clearing Topic; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
 
 Known errors are `400 VALIDATION_ERROR`, `404 VOCABULARY_SET_NOT_FOUND`, `404 TOPIC_NOT_FOUND`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_ALREADY_IN_SET`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
 
@@ -709,7 +709,7 @@ The active V1 contract supersedes the generic numeric-ID and review/gamification
 
 The requested Set must be either a public System Set or a private Set owned by the current USER. Inaccessible private Sets use the not-found boundary. An accessible empty Set returns `409 LEARNING_SET_EMPTY`.
 
-The response uses `{ "success": true, "data": ... }` and contains Set ID/name/Topic metadata plus cards in exact Set Item `position` order. Each card contains the approved Vocabulary metadata, all Meanings and their Examples in deterministic order, plus only the current USER's public progress projection:
+The response uses `{ "success": true, "data": ... }` and contains Set ID/name, a stable `topic` value (`TopicSummary | null`), and cards in exact Set Item `position` order. Topicless Personal Sets return `topic: null`; categorized System and legacy Personal Sets return the Topic summary. Each card contains the approved Vocabulary metadata, all Meanings and their Examples in deterministic order, plus only the current USER's public progress projection:
 
 ```json
 {

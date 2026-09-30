@@ -953,11 +953,11 @@ public/User/ADMIN Set route
   -> Set controller -> Set service -> Set repository -> Prisma -> PostgreSQL
 ```
 
-The materialized data path is `TOPIC -> VOCABULARY_SET -> VOCABULARY_SET_ITEM -> VOCABULARY`. The Set service owns owner/private/System visibility checks, aggregate Item replacement/reordering, System copy and save-time Vocabulary validation. Set Items reference Vocabulary only; Meaning/Example/CEFR data is not selected for Set editor picker results.
+The materialized data path is `TOPIC -> public VOCABULARY_SET -> VOCABULARY_SET_ITEM -> VOCABULARY`; private Personal Sets use the same aggregate but may have no Topic. `is_public`, not `owner_id`, is the existing Set-kind discriminator: the database and service require Topic for public System Sets, while USER writes reject Topic and create topicless private Sets. The Set service owns owner/private/System visibility checks, aggregate Item replacement/reordering, System copy and save-time Vocabulary validation. Set Items reference Vocabulary only; Meaning/Example/CEFR data is not selected for Set editor picker results.
 
 Public System discovery/detail routes are separate from completed Topic metadata responses. USER My Sets and ADMIN System management reuse the existing `ProtectedRoute`, `AdminRoute`, `AuthenticatedShell`, session state and role middleware. The only USER-facing Vocabulary access is the authenticated, bounded Set-editor picker; it is not a standalone catalog or detail module.
 
-Transactions are required for aggregate Item replacement/reorder and System copy. Database cascade is limited to Set-owned Items; Topic-to-Set and Vocabulary-to-Item use `RESTRICT`. Community sharing, Flashcard, Learning, SRS, Progress, Quiz, XP, Streak, Pronunciation Practice and AI remain outside this V1 architecture.
+Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remain outside this contract revision.
 
 15. Community Architecture
 

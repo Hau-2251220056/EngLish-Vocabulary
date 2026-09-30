@@ -54,6 +54,15 @@ after(async () => {
 test("database materializes approved Set constraints and owned/external delete behavior", async () => {
   const system = await createSystemSet({ items: [firstVocabulary.id] });
   const copied = await copySystemSet(system.id);
+  assert.equal(copied.topic_id, null);
+  const storedCopy = await prisma.vOCABULARY_SET.findUniqueOrThrow({ where: { id: copied.id } });
+  assert.equal(storedCopy.topic_id, null);
+  await assert.rejects(
+    () => prisma.vOCABULARY_SET.create({ data: {
+      topic_id: null, owner_id: owner.id, name: "Invalid public Set", is_public: true,
+    } }),
+    /public_topic_required|constraint/i,
+  );
   await assert.rejects(
     () => prisma.tOPIC.delete({ where: { id: topic.id } }),
     { code: "P2003" },
@@ -94,6 +103,10 @@ test("Guest discovers only public System summaries and full ordered detail", asy
 });
 
 test("ADMIN manages complete non-empty System aggregates and USER cannot mutate them", async () => {
+  assert.equal((await http.request("/api/admin/vocabulary-sets", {
+    method: "POST", cookie: adminCookie,
+    json: { name: "Missing topic", items: [{ vocabulary_id: firstVocabulary.id }] },
+  })).status, 400);
   let response = await http.request("/api/admin/vocabulary-sets", {
     method: "POST", cookie: adminCookie,
     json: { topic_id: topic.id, name: "  System Set  ", description: "description", items: [{ vocabulary_id: firstVocabulary.id }, { vocabulary_id: secondVocabulary.id }] },
@@ -101,6 +114,15 @@ test("ADMIN manages complete non-empty System aggregates and USER cannot mutate 
   assert.equal(response.status, 201);
   const systemId = response.json.data.id;
   assert.equal(response.json.data.name, "System Set");
+  const replacementTopic = await prisma.tOPIC.create({ data: { name: `Replacement ${randomUUID()}` } });
+  response = await http.request(`/api/admin/vocabulary-sets/${systemId}`, {
+    method: "PATCH", cookie: adminCookie, json: { topic_id: replacementTopic.id },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.json.data.topic_id, replacementTopic.id);
+  assert.equal((await http.request(`/api/admin/vocabulary-sets/${systemId}`, {
+    method: "PATCH", cookie: adminCookie, json: { topic_id: null },
+  })).status, 400);
   response = await http.request(`/api/admin/vocabulary-sets/${systemId}`, {
     method: "PATCH", cookie: adminCookie,
     json: { description: null, items: [{ vocabulary_id: secondVocabulary.id }, { vocabulary_id: thirdVocabulary.id }] },
@@ -136,11 +158,18 @@ test("System aggregate validation and failed replacement leave existing ordered 
 test("USER private CRUD enforces owner-only private visibility and complete ordered replacement", async () => {
   let response = await http.request("/api/my/vocabulary-sets", {
     method: "POST", cookie: ownerCookie,
-    json: { topic_id: topic.id, name: "Private draft", items: [] },
+    json: { name: "Private draft", items: [] },
   });
   assert.equal(response.status, 201);
   const privateId = response.json.data.id;
   assert.equal(response.json.data.is_public, false);
+  assert.equal(response.json.data.topic_id, null);
+  assert.equal((await http.request("/api/my/vocabulary-sets", {
+    method: "POST", cookie: ownerCookie, json: { topic_id: topic.id, name: "Topic rejected" },
+  })).status, 400);
+  assert.equal((await http.request(`/api/my/vocabulary-sets/${privateId}`, {
+    method: "PATCH", cookie: ownerCookie, json: { topic_id: topic.id },
+  })).status, 400);
   response = await http.request(`/api/my/vocabulary-sets/${privateId}`, {
     method: "PATCH", cookie: ownerCookie,
     json: { items: [{ vocabulary_id: thirdVocabulary.id }, { vocabulary_id: firstVocabulary.id }] },
@@ -153,11 +182,25 @@ test("USER private CRUD enforces owner-only private visibility and complete orde
   assert.equal((await http.request(`/api/my/vocabulary-sets/${privateId}`, { method: "DELETE", cookie: ownerCookie })).status, 204);
 });
 
+test("USER metadata update preserves a legacy Personal Set Topic reference", async () => {
+  const legacy = await prisma.vOCABULARY_SET.create({ data: {
+    topic_id: topic.id, owner_id: owner.id, name: "Legacy Personal", is_public: false,
+  } });
+  const response = await http.request(`/api/my/vocabulary-sets/${legacy.id}`, {
+    method: "PATCH", cookie: ownerCookie, json: { name: "Legacy renamed" },
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.topic_id, topic.id);
+  assert.equal((await prisma.vOCABULARY_SET.findUniqueOrThrow({ where: { id: legacy.id } })).topic_id, topic.id);
+});
+
 test("USER copy creates independent private Set and leaves System source unchanged", async () => {
   const system = await createSystemSet({ items: [thirdVocabulary.id, firstVocabulary.id] });
   const copy = await copySystemSet(system.id);
   assert.notEqual(copy.id, system.id);
   assert.equal(copy.is_public, false);
+  assert.equal(copy.topic_id, null);
+  assert.notDeepEqual(copy.items.map(({ id }) => id), system.items.map(({ id }) => id));
   assert.deepEqual(copy.items.map(({ vocabulary_id, position }) => [vocabulary_id, position]), [[thirdVocabulary.id, 1], [firstVocabulary.id, 2]]);
   await http.request(`/api/my/vocabulary-sets/${copy.id}`, { method: "PATCH", cookie: ownerCookie, json: { items: [] } });
   const source = await http.request(`/api/vocabulary-sets/${system.id}`);
@@ -251,7 +294,7 @@ async function createSystemSet({ items }) {
 
 async function createPrivateSet() {
   const response = await http.request("/api/my/vocabulary-sets", {
-    method: "POST", cookie: ownerCookie, json: { topic_id: topic.id, name: `Private-${randomUUID()}` },
+    method: "POST", cookie: ownerCookie, json: { name: `Private-${randomUUID()}` },
   });
   assert.equal(response.status, 201);
   return response.json.data;

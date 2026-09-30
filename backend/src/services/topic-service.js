@@ -148,7 +148,17 @@ function throwKnownPersistenceError(error) {
   if (error?.code === "P2025") {
     throw topicNotFoundError();
   }
+  if (error?.code === "P2003") {
+    throw topicInUseError();
+  }
   throw error;
+}
+
+function topicInUseError() {
+  return new TopicServiceError(
+    "TOPIC_IN_USE",
+    "Topic is referenced by a Vocabulary Set and cannot be deleted.",
+  );
 }
 
 function validationError() {

@@ -95,14 +95,14 @@ model VOCABULARY_EXAMPLE {
 
 model VOCABULARY_SET {
   id                                   String                                @id @default(uuid()) @db.Uuid
-  topic_id                             String                                @db.Uuid
+  topic_id                             String?                               @db.Uuid
   owner_id                             String                                @db.Uuid
   name                                 String                                @db.VarChar(100)
   description                          String?                               @db.VarChar(500)
   is_public                            Boolean
   created_at                           DateTime                              @default(now())
   updated_at                           DateTime                              @updatedAt
-  topic                                TOPIC                                 @relation(fields: [topic_id], references: [id], onDelete: Restrict)
+  topic                                TOPIC?                                @relation(fields: [topic_id], references: [id], onDelete: Restrict)
   owner                                USER                                  @relation(fields: [owner_id], references: [id], onDelete: Restrict)
   items                                VOCABULARY_SET_ITEM[]
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationSet")

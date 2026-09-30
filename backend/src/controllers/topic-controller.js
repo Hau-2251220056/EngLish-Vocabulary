@@ -56,6 +56,7 @@ function handleKnownTopicError(error, res, next) {
     VALIDATION_ERROR: 400,
     TOPIC_NOT_FOUND: 404,
     TOPIC_NAME_ALREADY_EXISTS: 409,
+    TOPIC_IN_USE: 409,
   };
   const status = statusByCode[error?.code];
 
