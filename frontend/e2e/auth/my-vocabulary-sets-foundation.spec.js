@@ -45,7 +45,7 @@ test("first-use state offers the existing create behavior and Topics route", asy
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ nào" })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" })).toHaveAttribute("href", "/topics");
   await page.getByRole("button", { name: "Tạo bộ từ đầu tiên" }).click();
-  await expect(page.getByRole("heading", { name: "Tạo bộ từ riêng" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Tạo bộ từ" })).toBeVisible();
 });
 
 test("load error remains distinct and keyboard retry restores the list", async ({ page }) => {

@@ -7,12 +7,6 @@ import {
   validatePrivateVocabulary,
 } from "../src/vocabulary-sets/private-vocabulary-form-model.js";
 
-test("existing Set detail items preserve private edit capability", async () => {
-  const source = await readFile(new URL("../src/vocabulary-sets/my-vocabulary-sets-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /source:\s*item\.source/);
-  assert.match(source, /item\.source === "PRIVATE"/);
-});
-
 test("private form pre-fills searched word and enforces required V1 fields", () => {
   const values = privateVocabularyFormValues({ word: "book" });
   assert.equal(values.word, "book");
@@ -53,29 +47,6 @@ test("blank nested Example is rejected before backend submission", () => {
   );
 });
 
-test("Set editor renders exact-ID picker choices, source context, create entry, and private-only edit", async () => {
-  const source = await readFile(new URL("../src/vocabulary-sets/my-vocabulary-sets-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /key=\{item\.id\}/);
-  assert.match(source, /current\.vocabulary_id === item\.id/);
-  assert.match(source, /item\.source === "CANONICAL" \? "Hệ thống" : "Của tôi"/);
-  assert.match(source, /item\.primary_meaning\.part_of_speech/);
-  assert.match(source, /item\.primary_meaning\.meaning_vi/);
-  assert.match(source, /item\.editable \? <button/);
-  assert.match(source, /openPrivateEdit\(item\)/);
-  assert.match(source, /Tạo từ mới/);
-  assert.match(source, /Bạn vẫn có thể tạo một từ mới dù có kết quả trùng từ/);
-});
-
-test("create/edit integration uses PV-07 lifecycle and exact backend identities", async () => {
-  const source = await readFile(new URL("../src/vocabulary-sets/my-vocabulary-sets-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /createPrivateVocabularyAction\(initial\)/);
-  assert.match(source, /privateSubmit\(aggregate\.id, privateEditor\.action\)/);
-  assert.match(source, /result\.vocabulary\.id/);
-  assert.match(source, /getPrivateVocabulary\(item\.id \?\? item\.vocabulary_id\)/);
-  assert.match(source, /updatePrivateVocabulary\(privateEditor\.id, input\)/);
-  assert.doesNotMatch(source, /deletePrivateVocabulary/);
-});
-
 test("edit dialog warns about shared identity without claiming a Set count or exposing internal fields", async () => {
   const source = await readFile(new URL("../src/vocabulary-sets/private-vocabulary-editor.jsx", import.meta.url), "utf8");
   assert.match(source, /Thay đổi này sẽ áp dụng cho mọi bộ từ đang sử dụng cùng từ vựng này/);
@@ -85,13 +56,4 @@ test("edit dialog warns about shared identity without claiming a Set count or ex
   }
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /disabled=\{pending\}/);
-});
-
-test("removal wording is membership-only and retains existing reorder controls", async () => {
-  const source = await readFile(new URL("../src/vocabulary-sets/my-vocabulary-sets-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /Xóa \$\{item\.word\} khỏi bộ từ/);
-  assert.doesNotMatch(source, /Xóa từ vựng vĩnh viễn/);
-  assert.match(source, /moveItem\(index, -1\)/);
-  assert.match(source, /moveItem\(index, 1\)/);
-  assert.match(source, /removeItem\(index\)/);
 });

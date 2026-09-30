@@ -1,6 +1,6 @@
 import { BookOpen, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { VocabularySetEditor } from "./my-vocabulary-sets-page.jsx";
+import { AdminVocabularySetEditor } from "./my-vocabulary-sets-page.jsx";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 
 const EMPTY_SYSTEM_SET = { topic_id: "", name: "", description: "", items: [] };
@@ -67,7 +67,7 @@ export function AdminVocabularySetsPage() {
 
   return <section className="my-vocabulary-sets-page" aria-labelledby="admin-vocabulary-sets-title"><header className="my-vocabulary-sets-header"><div><p className="my-vocabulary-sets-eyebrow">Quản trị nội dung</p><h1 id="admin-vocabulary-sets-title">Quản lý bộ từ hệ thống</h1><p>Tạo và duy trì các bộ từ công khai theo chủ đề.</p></div><button className="my-vocabulary-sets-primary" type="button" disabled={pending !== null} onClick={() => { setSelected(null); setEditor({ mode: "create", aggregate: EMPTY_SYSTEM_SET }); setFeedback(null); }}><Plus className="size-5" aria-hidden="true" />Tạo bộ từ</button></header>
     {feedback ? <p className={`my-vocabulary-sets-feedback is-${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"} aria-live="polite">{feedback.message}</p> : null}
-    {editor ? <VocabularySetEditor aggregate={editor.aggregate} mode={editor.mode} requireItems pending={pending === "save"} onCancel={() => setEditor(null)} onSave={save} /> : null}
+    {editor ? <AdminVocabularySetEditor aggregate={editor.aggregate} mode={editor.mode} pending={pending === "save"} onCancel={() => setEditor(null)} onSave={save} /> : null}
     {selected ? <SystemSetDetail aggregate={selected} pending={pending !== null} onClose={() => setSelected(null)} onEdit={() => setEditor({ mode: "edit", aggregate: selected })} onDelete={() => setDeleting(selected)} /> : null}
     <section className="my-vocabulary-sets-list" aria-labelledby="admin-vocabulary-set-list-title"><div className="my-vocabulary-sets-toolbar"><h2 id="admin-vocabulary-set-list-title">Danh sách bộ từ hệ thống</h2><label className="my-vocabulary-sets-search"><span className="sr-only">Tìm kiếm bộ từ hệ thống</span><Search className="size-5" aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm theo tên hoặc mô tả" autoComplete="off" /></label></div>
       {state === "loading" ? <State loading message="Đang tải bộ từ hệ thống…" /> : null}

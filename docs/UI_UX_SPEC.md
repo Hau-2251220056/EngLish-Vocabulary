@@ -914,16 +914,16 @@ Guest and authenticated visitors can open dedicated Topic-scoped System Set disc
 
 Inside the existing authenticated App Layout, USER navigation exposes My Sets only with implemented routes. A USER can list/search/view/create/edit/delete only owned private Sets and may retain an empty draft.
 
-- The Personal Set editor has labelled Set metadata and a semantic ordered Item collection, but no Topic selector, Topic loading dependency or Topic field in its create/update payload.
-- Its authenticated Vocabulary picker exists only while editing, requires a word query, displays bounded exact-ID results with word, primary part of speech/meaning and `Hệ thống`/`Của tôi` source context, prevents duplicate exact-ID additions and never links to a standalone Vocabulary catalog/detail screen.
-- Item add/remove and keyboard-accessible move-up/move-down controls make complete replacement order explicit.
+- Personal Set Create/Edit uses a compact centered metadata-only modal with labelled `Tên bộ từ` and optional `Mô tả` fields.
+- USER create/update requests do not own Vocabulary membership and contain neither Topic nor Item fields. The modal has no Topic loading dependency or selector, Vocabulary picker, selected-Vocabulary collection, or add/remove/reorder controls.
+- Vocabulary membership management is deferred to future Personal Set Detail work. This contract does not define or redesign that future Detail UI.
 - Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
 
 #### ADMIN System Set Management
 
-`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. A System Set editor uses the same approved picker/editor boundary, retains a human-readable Topic selector mapped internally to `topic_id`, and must prevent save with no Topic or zero Items. Raw Topic UUID entry is never exposed.
+`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. The System Set editor retains its Vocabulary picker plus add/remove/reorder controls, uses a human-readable Topic selector mapped internally to `topic_id`, and must prevent save with no Topic or zero Items. Raw Topic UUID entry is never exposed.
 
-All Set screens preserve current dashboard, logout, mobile drawer, Topic routes/management and Vocabulary management. Forms use associated labels/errors; dialogs restore focus and block duplicate pending actions; ordered Item controls remain keyboard-accessible and responsive at existing breakpoints.
+All Set screens preserve current dashboard, logout, mobile drawer, Topic routes/management and Vocabulary management. Forms use associated labels/errors; dialogs restore focus and block duplicate pending actions; ADMIN ordered Item controls remain keyboard-accessible and responsive at existing breakpoints.
 11.6 Achievement Management
 
 Admin can manage system achievement definitions.
