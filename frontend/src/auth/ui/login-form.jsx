@@ -99,7 +99,7 @@ function SessionExpiredAlert({ isVisible, onDismiss }) {
       </p>
       <button
         type="button"
-        className="-m-1 rounded-lg p-1 text-amber-800 outline-none hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-600"
+        className="-m-1 cursor-pointer rounded-lg p-1 text-amber-800 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-600"
         onClick={onDismiss}
         aria-label="Đóng thông báo phiên đăng nhập"
       >
@@ -113,10 +113,10 @@ export function AuthFormFrame({ eyebrow, title, description, children }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-md flex-col justify-center px-6 py-8 md:px-8 lg:px-10">
       <div className="mb-6">
-        <p className="text-xs font-extrabold tracking-[0.17em] text-indigo-600 uppercase">
+        <p className="text-sm font-semibold tracking-[0.12em] text-[#4ca2e6] uppercase">
           {eyebrow}
         </p>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+        <h1 className="mt-2 text-[2rem] font-semibold tracking-tight text-slate-900">
           {title}
         </h1>
         <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
@@ -132,7 +132,7 @@ export function SubmitButton({ isSubmitting, pendingLabel, children }) {
       type="submit"
       disabled={isSubmitting}
       aria-busy={isSubmitting}
-      className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm outline-none transition hover:bg-indigo-700 focus-visible:ring-4 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-400"
+      className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#4ca2e6] px-4 text-sm font-[550] text-white shadow-sm outline-none transition hover:bg-[#378fce] focus-visible:ring-4 focus-visible:ring-[#c7e7fa] disabled:cursor-not-allowed disabled:bg-[#a8d4f3] motion-reduce:transition-none"
     >
       {isSubmitting ? (
         <>
@@ -156,7 +156,7 @@ export function ModeSwitch({ text, action, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        className="rounded font-bold text-indigo-700 outline-none hover:text-indigo-900 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+        className="cursor-pointer rounded text-sm font-[550] text-[#4ca2e6] outline-none transition hover:text-[#378fce] focus-visible:ring-2 focus-visible:ring-[#4ca2e6] focus-visible:ring-offset-2 motion-reduce:transition-none"
       >
         {action}
       </button>

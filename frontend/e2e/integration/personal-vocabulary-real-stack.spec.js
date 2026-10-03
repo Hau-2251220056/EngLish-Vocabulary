@@ -115,6 +115,25 @@ test("same-word identities remain distinct and cross-user search/direct IDs are 
   expect(result.direct.body.error.code).toBe("VOCABULARY_NOT_FOUND");
 });
 
+test("Set Detail keeps an empty Set manageable and appends the selected exact identity", async ({ page }) => {
+  const detailSet = await set(owner.id, false, "Detail UI", []);
+  await login(page, accounts.owner);
+  await page.goto(`/my/vocabulary-sets/${detailSet.id}`);
+  await expect(page.getByRole("heading", { level: 1, name: `${prefix} Detail UI` })).toBeVisible();
+  await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Thêm từ vựng" }).click();
+  const dialog = page.getByRole("dialog", { name: "Thêm từ vựng" });
+  await dialog.getByRole("searchbox", { name: "Tìm từ vựng" }).fill("book");
+  await dialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
+  const canonicalResult = dialog.getByRole("listitem").filter({ hasText: "Từ hệ thống" });
+  await canonicalResult.getByRole("button", { name: "Thêm", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "book", exact: true })).toBeVisible();
+  await expect.poll(() => prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: detailSet.id }, select: { vocabulary_id: true, position: true } })).toEqual([{ vocabulary_id: canonical.id, position: 1 }]);
+});
+
 test("System Set rejects private ID while its private copy accepts owner-private content", async ({ page }) => {
   await login(page, accounts.owner);
   const copiedResponse = page.waitForResponse((response) => response.url().includes(`/api/vocabulary-sets/${systemSet.id}/copy`) && response.status() === 201);
@@ -168,8 +187,7 @@ test("both Quiz modes retain exact private identities, selected meaning and POS"
 });
 
 async function login(page, account) { await page.context().clearCookies(); await page.goto("/login"); await page.locator("#login-email").fill(account.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/dashboard/); }
-// Personal Set membership UI coverage resumes in Set Detail V1. These guarded
-// checks exercise the existing authoritative API contracts until that UI exists.
+// API helpers retain direct contract coverage alongside the Set Detail UI flow.
 async function replaceItems(page, setId, vocabularyIds) {
   const result = await page.evaluate(async ({ setId: id, vocabularyIds: idsToKeep }) => fetch(`/api/my/vocabulary-sets/${id}`, {
     method: "PATCH",

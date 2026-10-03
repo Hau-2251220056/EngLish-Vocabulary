@@ -56,8 +56,8 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.locator(".authenticated-navigation").getByRole("link");
   await expect(links).toHaveCount(3);
-  await expect(page.getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
-  await expect(page.getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
+  await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
     await expect(
       page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
     ).toHaveCount(1);

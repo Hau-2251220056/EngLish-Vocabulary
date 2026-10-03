@@ -474,13 +474,25 @@ function toSummary(set) {
 function toDetail(set) {
   return {
     ...set,
-    items: set.items.map(({ vocabulary: { owner_id, ...vocabulary }, ...item }) => ({
-      ...item,
-      ...vocabulary,
-      ...(!set.is_public
-        ? { source: owner_id === null ? "CANONICAL" : "PRIVATE" }
-        : {}),
-    })),
+    items: set.items.map(({ vocabulary: { owner_id, meanings, ...vocabulary }, ...item }) => {
+      const meaning = meanings?.[0] ?? null;
+      return {
+        ...item,
+        ...vocabulary,
+        ...(!set.is_public
+          ? {
+              source: owner_id === null ? "CANONICAL" : "PRIVATE",
+              primary_meaning: meaning
+                ? {
+                    part_of_speech: meaning.part_of_speech,
+                    meaning_vi: meaning.meaning_vi,
+                    example: meaning.examples[0] ?? null,
+                  }
+                : null,
+            }
+          : {}),
+      };
+    }),
   };
 }
 

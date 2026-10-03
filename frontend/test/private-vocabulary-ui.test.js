@@ -54,6 +54,8 @@ test("edit dialog warns about shared identity without claiming a Set count or ex
   for (const forbidden of ["operation_id", "owner_id", "pronunciation_url", "fingerprint"]) {
     assert.doesNotMatch(source, new RegExp(forbidden));
   }
-  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /dialog\?\.showModal\(\)/);
+  assert.match(source, /<dialog ref=\{dialogRef\}/);
+  assert.match(source, /private-vocabulary-embedded/);
   assert.match(source, /disabled=\{pending\}/);
 });

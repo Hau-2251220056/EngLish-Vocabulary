@@ -132,6 +132,123 @@ test.beforeEach(async ({ page }) => {
   await installSpeechSynthesisProbe(page);
 });
 
+test("loading decoration stays static and the whole Flashcard shell flips front-back-front", async ({ page }) => {
+  await login(page, learner);
+  let releaseLoad;
+  const loadGate = new Promise((resolve) => { releaseLoad = resolve; });
+  await page.route("**/api/learning/sets/*", async (route) => {
+    await loadGate;
+    await route.continue();
+  });
+
+  const navigation = page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  const loadingIcon = page.locator(".learning-loading-icon");
+  await expect(loadingIcon).toBeVisible();
+  await expect(loadingIcon).toHaveCSS("animation-name", "none");
+  await expect(loadingIcon.locator("svg")).not.toHaveCSS("animation-name", "none");
+  releaseLoad();
+  await navigation;
+
+  const stage = page.locator(".learning-flip-stage");
+  const shell = page.locator(".learning-card-flipper");
+  const front = page.locator(".learning-card").first();
+  const back = page.locator(".learning-card-back");
+  const initialFrame = await shell.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      color: style.borderTopColor,
+      width: style.borderTopWidth,
+      radius: style.borderTopLeftRadius,
+      shadow: style.boxShadow,
+      transform: style.transform,
+    };
+  });
+  expect(initialFrame.color).toBe("rgb(185, 220, 246)");
+  expect(initialFrame.width).toBe("1px");
+  expect(initialFrame.shadow).not.toBe("none");
+  expect(initialFrame.radius).not.toBe("0px");
+  expect(initialFrame.transform).toBe("none");
+  await expect(shell).toHaveCSS("transform-style", "preserve-3d");
+  await expect(shell).toHaveCSS("overflow", "visible");
+  await expect(stage).toHaveCSS("border-top-width", "0px");
+  await expect(stage).toHaveCSS("box-shadow", "none");
+  await expect(front).toHaveCSS("border-top-width", "0px");
+  await expect(back).toHaveCSS("border-top-width", "0px");
+  await expect(front).toHaveCSS("backface-visibility", "hidden");
+  await expect(back).toHaveCSS("backface-visibility", "hidden");
+  await expect(front).toHaveCSS("position", "absolute");
+  await expect(back).toHaveCSS("position", "absolute");
+
+  await page.keyboard.press("Space");
+  await expect(shell).toHaveClass(/is-revealed/);
+  await expect.poll(() => shell.evaluate((element) => getComputedStyle(element).transform)).not.toBe(initialFrame.transform);
+  await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeFocused();
+  await expect(shell).toHaveCSS("border-top-color", initialFrame.color);
+  await expect(shell).toHaveCSS("border-top-width", initialFrame.width);
+  await expect(shell).toHaveCSS("border-top-left-radius", initialFrame.radius);
+  await expect(shell).toHaveCSS("box-shadow", initialFrame.shadow);
+  await expect.poll(() => page.evaluate(() => {
+    const flipper = new DOMMatrix(getComputedStyle(document.querySelector(".learning-card-flipper")).transform);
+    const back = new DOMMatrix(getComputedStyle(document.querySelector(".learning-card-back")).transform);
+    return flipper.multiply(back).m11;
+  })).toBeGreaterThan(0.99);
+
+  await page.keyboard.press("Space");
+  await expect(shell).not.toHaveClass(/is-revealed/);
+  await expect.poll(() => shell.evaluate((element) => getComputedStyle(element).transform)).toBe(initialFrame.transform);
+  await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
+  await expect(shell).toHaveCSS("border-top-color", initialFrame.color);
+  await expect(shell).toHaveCSS("border-top-width", initialFrame.width);
+  await expect(shell).toHaveCSS("border-top-left-radius", initialFrame.radius);
+  await expect(shell).toHaveCSS("box-shadow", initialFrame.shadow);
+});
+
+test("Flashcard keeps focus on the outer card and ignores superseded pronunciation errors", async ({ page }) => {
+  await login(page, learner);
+  await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+
+  const stage = page.locator(".learning-flip-stage");
+  const frontHeading = page.locator("#learning-card-word");
+  const meaningHeading = page.locator(".learning-card-back h3");
+  const audioError = page.getByText("Không thể phát âm từ này. Bạn có thể tiếp tục học bình thường.");
+
+  await expect(frontHeading).toBeFocused();
+  await expect(frontHeading).toHaveCSS("box-shadow", "none");
+
+  await stage.click();
+  await expect(meaningHeading).toBeFocused();
+  await expect(meaningHeading).toHaveCSS("box-shadow", "none");
+  await expect(page.locator(".learning-card-flipper")).not.toHaveCSS("box-shadow", "none");
+
+  await stage.click();
+  await expect(frontHeading).toBeFocused();
+  await expect(frontHeading).toHaveCSS("box-shadow", "none");
+  await stage.click();
+  await expect(meaningHeading).toBeFocused();
+  await expect(audioError).toHaveCount(0);
+
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
+  await expect(meaningHeading).toBeFocused();
+  await expect(meaningHeading).toHaveCSS("box-shadow", "none");
+  await expect(audioError).toHaveCount(0);
+
+  const staleUtteranceIndex = await speechCount(page) - 1;
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: /Thẻ sau/ }).click();
+  await page.evaluate(
+    ({ error, index }) => window.__failLearningSpeechAt(index, error),
+    { error: "network", index: staleUtteranceIndex },
+  );
+  await expect(audioError).toHaveCount(0);
+
+  await page.locator('.learning-card:not([inert]) button[aria-label^="Phát âm từ"]').click();
+  await page.evaluate(() => window.__failCurrentLearningSpeech("synthesis-failed"));
+  await expect(audioError).toBeVisible();
+});
+
 test("USER completes ordered cards with reveal, outcomes, resume and summary", async ({
   page,
 }) => {
@@ -269,6 +386,80 @@ test("Focus Mode supports safe keyboard, reduced motion and mobile layout", asyn
   expect(["0s", "0.001s", "0.01s"]).toContain(metrics.transitionDuration);
 });
 
+test("Flashcard stays centered at a narrower desktop width and preserves responsive front layout", async ({
+  page,
+}) => {
+  await login(page, learner);
+
+  for (const viewport of [
+    { name: "desktop", width: 1366, height: 768 },
+    { name: "tablet", width: 820, height: 1180 },
+    { name: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+    await expect(page.locator(".learning-flip-stage")).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const stage = document.querySelector(".learning-flip-stage").getBoundingClientRect();
+      const column = document.querySelector(".learning-flip-stage").parentElement.getBoundingClientRect();
+      const content = document.querySelector(".learning-front-content").getBoundingClientRect();
+      const stack = document.querySelector(".learning-front-content > div").getBoundingClientRect();
+      const hint = [...document.querySelectorAll(".learning-card p")]
+        .find((element) => element.textContent.includes("Nhấn hoặc Space"))
+        .getBoundingClientRect();
+      return {
+        stage,
+        columnCenterOffset: Math.abs((stage.left + stage.width / 2) - (column.left + column.width / 2)),
+        stackCenterOffset: Math.abs((stack.top + stack.height / 2) - (content.top + content.height / 2)),
+        hintBottomGap: stage.bottom - hint.bottom,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(geometry.overflow, viewport.name).toBeLessThanOrEqual(1);
+    expect(geometry.columnCenterOffset, viewport.name).toBeLessThanOrEqual(8);
+    expect(geometry.stage.width, viewport.name).toBeLessThanOrEqual(viewport.name === "desktop" ? 640 : viewport.width - 24);
+    if (viewport.name === "desktop") expect(geometry.stage.height).toBe(384);
+    else expect(geometry.stage.height).toBeGreaterThanOrEqual(224);
+    expect(geometry.stackCenterOffset, viewport.name).toBeLessThanOrEqual(1);
+    expect(geometry.hintBottomGap, viewport.name).toBeGreaterThanOrEqual(15);
+    expect(geometry.hintBottomGap, viewport.name).toBeLessThanOrEqual(30);
+  }
+});
+
+test("Flashcard navigation uses expressive actionable colors and neutral disabled states", async ({
+  page,
+}) => {
+  await login(page, learner);
+  await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+
+  const previous = page.getByRole("button", { name: /Thẻ trước/ });
+  const next = page.getByRole("button", { name: /Thẻ sau/ });
+  await expect(previous).toBeDisabled();
+  await expect(previous).toHaveClass(/disabled:bg-slate-100/);
+  await expect(previous).toHaveClass(/disabled:border-slate-200/);
+  await expect(previous).toHaveClass(/disabled:text-slate-400/);
+  await expect(previous).toHaveCSS("cursor", "not-allowed");
+  await expect(next).toBeEnabled();
+  await expect(next).toHaveClass(/bg-emerald-500/);
+  await expect(next).toHaveClass(/border-emerald-500/);
+  await expect(next).toHaveClass(/text-white/);
+  await expect(next).toHaveCSS("cursor", "pointer");
+
+  await next.click();
+  await expect(previous).toBeEnabled();
+  await expect(previous).toHaveClass(/bg-white/);
+  await expect(previous).toHaveClass(/border-amber-300/);
+  await expect(previous).toHaveClass(/text-amber-700/);
+  await expect(previous).toHaveCSS("cursor", "pointer");
+  await expect(next).toBeDisabled();
+  await expect(next).toHaveClass(/disabled:bg-slate-100/);
+  await expect(next).toHaveClass(/disabled:border-slate-200/);
+  await expect(next).toHaveClass(/disabled:text-slate-400/);
+  await expect(next).toHaveCSS("cursor", "not-allowed");
+});
+
 test("Guest, ADMIN and non-owner cannot enter an unauthorized learning run", async ({
   page,
 }) => {
@@ -346,6 +537,14 @@ async function logoutThroughApi(page) {
 async function installSpeechSynthesisProbe(page) {
   await page.addInitScript(() => {
     window.__learningSpeechCount = 0;
+    window.__learningSpeechUtterances = [];
+    window.__currentLearningSpeech = null;
+    window.__failCurrentLearningSpeech = (error) => {
+      window.__currentLearningSpeech?.onerror?.({ error });
+    };
+    window.__failLearningSpeechAt = (index, error) => {
+      window.__learningSpeechUtterances[index]?.onerror?.({ error });
+    };
     window.SpeechSynthesisUtterance = class {
       constructor(text) {
         this.text = text;
@@ -356,12 +555,18 @@ async function installSpeechSynthesisProbe(page) {
     Object.defineProperty(window, "speechSynthesis", {
       configurable: true,
       value: {
-        cancel() {},
+        cancel() {
+          const utterance = window.__currentLearningSpeech;
+          window.__currentLearningSpeech = null;
+          utterance?.onerror?.({ error: "canceled" });
+        },
         getVoices() {
           return [{ name: "Test English", lang: "en-US", default: true }];
         },
-        speak() {
+        speak(utterance) {
           window.__learningSpeechCount += 1;
+          window.__learningSpeechUtterances.push(utterance);
+          window.__currentLearningSpeech = utterance;
         },
       },
     });

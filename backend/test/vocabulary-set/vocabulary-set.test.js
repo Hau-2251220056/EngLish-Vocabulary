@@ -182,6 +182,48 @@ test("USER private CRUD enforces owner-only private visibility and complete orde
   assert.equal((await http.request(`/api/my/vocabulary-sets/${privateId}`, { method: "DELETE", cookie: ownerCookie })).status, 204);
 });
 
+test("USER owner detail projects the first deterministic Meaning and Example without changing public detail", async () => {
+  const vocabulary = await prisma.vOCABULARY.create({ data: { word: `projection-${randomUUID()}` } });
+  const firstMeaning = await prisma.vOCABULARY_MEANING.create({ data: {
+    vocabulary_id: vocabulary.id,
+    part_of_speech: "noun",
+    meaning_vi: "nghĩa đầu tiên",
+    cefr_level: "C2",
+    created_at: new Date("2024-01-01T00:00:00.000Z"),
+  } });
+  await prisma.vOCABULARY_EXAMPLE.createMany({ data: [
+    { meaning_id: firstMeaning.id, example_en: "First example", example_vi: null, created_at: new Date("2024-01-01T00:00:00.000Z") },
+    { meaning_id: firstMeaning.id, example_en: "Second example", example_vi: "Ví dụ thứ hai", created_at: new Date("2024-01-02T00:00:00.000Z") },
+  ] });
+  await prisma.vOCABULARY_MEANING.create({ data: {
+    vocabulary_id: vocabulary.id,
+    part_of_speech: "verb",
+    meaning_vi: "nghĩa CEFR thấp hơn nhưng tạo sau",
+    cefr_level: "A1",
+    created_at: new Date("2024-01-02T00:00:00.000Z"),
+  } });
+  const personal = await createPrivateSet();
+  let response = await http.request(`/api/my/vocabulary-sets/${personal.id}`, {
+    method: "PATCH", cookie: ownerCookie, json: { items: [{ vocabulary_id: vocabulary.id }] },
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.deepEqual(response.json.data.items[0].primary_meaning, {
+    part_of_speech: "noun",
+    meaning_vi: "nghĩa đầu tiên",
+    example: { example_en: "First example", example_vi: null },
+  });
+
+  const noMeaning = await prisma.vOCABULARY.create({ data: { word: `no-meaning-${randomUUID()}` } });
+  response = await http.request(`/api/my/vocabulary-sets/${personal.id}`, {
+    method: "PATCH", cookie: ownerCookie, json: { items: [{ vocabulary_id: noMeaning.id }] },
+  });
+  assert.equal(response.json.data.items[0].primary_meaning, null);
+
+  const system = await createSystemSet({ items: [vocabulary.id] });
+  response = await http.request(`/api/vocabulary-sets/${system.id}`);
+  assert.equal(Object.hasOwn(response.json.data.items[0], "primary_meaning"), false);
+});
+
 test("USER metadata update preserves a legacy Personal Set Topic reference", async () => {
   const legacy = await prisma.vOCABULARY_SET.create({ data: {
     topic_id: topic.id, owner_id: owner.id, name: "Legacy Personal", is_public: false,

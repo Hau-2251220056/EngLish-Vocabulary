@@ -51,7 +51,10 @@ test("USER creates and metadata-edits a topicless Set without changing ordered m
     if (new URL(request.url()).pathname === "/api/topics") topicRequests.push(request.url());
   });
   await login(page);
-  await page.getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Điều hướng ứng dụng" })
+    .getByRole("link", { name: "Bộ từ của tôi", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ nào" })).toBeVisible();
   await page.getByRole("button", { name: "Tạo bộ từ", exact: true }).first().click();
   const createDialog = page.getByRole("dialog", { name: "Tạo bộ từ" });
@@ -69,16 +72,25 @@ test("USER creates and metadata-edits a topicless Set without changing ordered m
   ] });
   await page.reload();
   const before = await prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: created.id }, orderBy: { position: "asc" } });
-  await page.getByRole("button", { name: "Chỉnh sửa" }).click();
+  await page.getByRole("main").getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
+  const createdCard = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { level: 3, name: `${prefix} Private`, exact: true }),
+  });
+  await createdCard.getByRole("button", { name: `Quản lý ${prefix} Private` }).click();
+  await createdCard.getByRole("menuitem", { name: "Chỉnh sửa" }).click();
   const editDialog = page.getByRole("dialog", { name: "Chỉnh sửa bộ từ" });
   await expect(editDialog.getByRole("searchbox")).toHaveCount(0);
   await editDialog.getByLabel("Tên bộ từ").fill(`${prefix} Private Updated`);
   await editDialog.getByLabel("Mô tả (không bắt buộc)").fill("Metadata only");
   await editDialog.getByRole("button", { name: "Lưu thay đổi" }).click();
-  await expect(page.getByRole("heading", { level: 2, name: `${prefix} Private Updated` })).toBeVisible();
+  const updatedCard = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { level: 3, name: `${prefix} Private Updated`, exact: true }),
+  });
+  await expect(updatedCard).toBeVisible();
   const after = await prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: created.id }, orderBy: { position: "asc" } });
   expect(after.map(({ id, vocabulary_id, position }) => ({ id, vocabulary_id, position }))).toEqual(before.map(({ id, vocabulary_id, position }) => ({ id, vocabulary_id, position })));
-  await page.getByRole("button", { name: "Xóa bộ từ" }).click();
+  await updatedCard.getByRole("button", { name: `Quản lý ${prefix} Private Updated` }).click();
+  await updatedCard.getByRole("menuitem", { name: "Xóa bộ từ" }).click();
   await expect(page.getByRole("dialog", { name: "Xóa bộ từ?" })).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(page).toHaveURL(/\/my\/vocabulary-sets$/);
@@ -91,8 +103,16 @@ test("USER copies a public System Set into an independent private Set", async ({
   await page.getByRole("button", { name: "Sao chép bộ từ" }).click();
   await expect(page).toHaveURL(/\/my\/vocabulary-sets\//);
   await expect(page.getByRole("heading", { name: sourceSet.name })).toBeVisible();
-  await expect(page.locator(".my-vocabulary-set-detail ol li")).toHaveCount(2);
-  await expect(page.getByText("Riêng tư").first()).toBeVisible();
+  await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Chỉnh sửa", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Xóa bộ từ", exact: true })).toHaveCount(0);
+  await page.getByRole("main").getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
+  const copiedCard = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { level: 3, name: sourceSet.name, exact: true }),
+  });
+  await copiedCard.getByRole("button", { name: `Quản lý ${sourceSet.name}` }).click();
+  await expect(copiedCard.getByRole("menuitem", { name: "Chỉnh sửa" })).toBeVisible();
+  await expect(copiedCard.getByRole("menuitem", { name: "Xóa bộ từ" })).toBeVisible();
   const copy = await prisma.vOCABULARY_SET.findFirstOrThrow({
     where: { owner: { email: user.email }, name: sourceSet.name },
     include: { items: { orderBy: { position: "asc" } } },

@@ -90,6 +90,10 @@ Follow these principles:
 9. Encourage learning progress
 10. Keep important actions obvious
 
+## 3.3 Frontend Styling Convention
+
+Prefer Tailwind utilities for all supported styling concerns. Use custom CSS only for semantic theme variables, complex animations/background effects, unsupported selectors/states, browser-specific behavior, or cases where utilities materially reduce clarity.
+
 # 4. Information Architecture
 
 The application should be organized into the following main areas:
@@ -621,6 +625,8 @@ Quiz V1 is a USER-only, Set-scoped flow at `/quiz/vocabulary-sets/:setId`. The U
 
 Quiz entry actions appear only on currently accessible, non-empty public System Sets or owned private Sets. There is no standalone Quiz catalog, Guest route or ADMIN Quiz page.
 
+Quiz uses the authenticated USER Focus Mode shared with Flashcard: the normal authenticated Header, Sidebar and Footer are absent while the existing authentication and USER route guards remain active. A compact top bar shows a back control with the current Set name and the restart action. Back navigation resolves only to that Set's public or owned Set Detail route and never to Dashboard, the My Sets list or unrelated browser history.
+
 The page must provide accessible loading, empty, safe error/retry, question-changed, stale Progress conflict, pending, answered and completion states. Submission controls prevent duplicate answers while pending and do not permit immediate re-answer after an accepted result.
 
 Same-tab resume may use a Quiz-owned `sessionStorage` namespace. Stored state is reconciled against a fresh authorized question payload and cleared by Quiz-owned handling when logout/session invalidation is observed.
@@ -744,6 +750,20 @@ Save changes
 Cancel
 
 User-created vocabulary sets remain private and are not directly converted to public sets through this screen.
+
+### 10.12.1 Personal Vocabulary Set Detail V1
+
+`/my/vocabulary-sets/:setId` is an authenticated USER-only, owner-scoped learning hub. My Sets cards expose one **Xem** CTA to this route, including empty Sets; the retired separate **Chi tiết** CTA and direct card-to-Flashcard behavior are not used.
+
+The compact header shows only **← Bộ từ của tôi** and the authoritative Set name. Description, standalone count and Set management actions are not rendered here. Set-level **Chỉnh sửa** and **Xóa bộ từ** live in the shared kebab menu on each My Sets card; the existing metadata modal remains centered and contains only **Tên bộ từ** and **Mô tả**—no Topic or membership controls.
+
+Only real activities are shown as compact learning tiles: **Thẻ ghi nhớ** (Flashcard) and **Quiz**. For non-empty Sets they link to `/learn/vocabulary-sets/:setId` and `/quiz/vocabulary-sets/:setId` and return to Set Detail. For empty Sets both cards remain visible but disabled with **Thêm từ vựng để bắt đầu**; vocabulary management remains usable. No Luyện nói placeholder, audio control, fake progress or analytics is rendered.
+
+The section title is **Từ vựng trong bộ (N)** with its authoritative ordered-item count. The ordered Vocabulary presentation uses desktop columns **Từ vựng / Phiên âm / Từ loại / Nghĩa / Ví dụ / Thao tác** and mobile fields **Từ vựng / Nghĩa / Thao tác**. Missing read-projection data is shown truthfully without fallback. Canonical Vocabulary exposes **Gỡ khỏi bộ**; owner-private Vocabulary exposes **Chỉnh sửa** and **Gỡ khỏi bộ** through the shared kebab-menu pattern. Removal deletes membership only and preserves Vocabulary and Learning Progress. Manual reorder is deferred.
+
+**Thêm từ vựng** opens one centered modal (approximately 640–720px desktop, safe mobile margins), not a drawer. Its search input and icon-only search action share one row. It searches canonical plus owner-private exact identities through the scoped picker. Same-spelling distinct IDs remain separate. Existing selection appends through complete ordered Set PATCH. **Tạo từ mới** changes step inside the same modal and reuses atomic Set-scoped private creation; no nested modal is opened. Private Vocabulary forms use the approved part-of-speech select while preserving the existing string data contract.
+
+The page distinguishes loading, retryable error, safe inaccessible/not-found, empty and scoped mutation states. Dialogs manage initial/restored focus, Escape/backdrop/cancel, pending dismissal protection and safe inline errors. Controls use semantic buttons/links, visible focus and appropriate 44px touch targets; table/list behavior remains meaningful at responsive reductions, respects reduced motion and has no horizontal overflow.
 
 10.13 Community
 
@@ -916,7 +936,7 @@ Inside the existing authenticated App Layout, USER navigation exposes My Sets on
 
 - Personal Set Create/Edit uses a compact centered metadata-only modal with labelled `Tên bộ từ` and optional `Mô tả` fields.
 - USER create/update requests do not own Vocabulary membership and contain neither Topic nor Item fields. The modal has no Topic loading dependency or selector, Vocabulary picker, selected-Vocabulary collection, or add/remove/reorder controls.
-- Vocabulary membership management is deferred to future Personal Set Detail work. This contract does not define or redesign that future Detail UI.
+- Vocabulary membership management belongs to the dedicated Personal Set Detail V1, not the Create/Edit modal. Set Detail provides the approved flows to add existing Vocabulary, create private Vocabulary, edit owner-private Vocabulary, and remove Set membership.
 - Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
 
 #### ADMIN System Set Management

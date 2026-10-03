@@ -10,7 +10,7 @@ export function FormAlert({ error }) {
     >
       <CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
       <div>
-        <p className="text-sm font-bold">{error.title}</p>
+        <p className="text-sm font-normal">{error.title}</p>
         <p className="mt-0.5 text-sm leading-5 text-red-700">{error.message}</p>
       </div>
     </div>

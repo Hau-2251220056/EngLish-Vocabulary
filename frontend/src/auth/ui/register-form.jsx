@@ -75,8 +75,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
           id="register-password"
           label="Mật khẩu"
           autoComplete="new-password"
-          placeholder="Tối thiểu 8 ký tự"
-          hint="Sử dụng ít nhất 8 ký tự."
+          placeholder="Mật khẩu (tối thiểu 8 ký tự)"
           error={errors.password}
           disabled={isSubmitting}
           {...register("password")}

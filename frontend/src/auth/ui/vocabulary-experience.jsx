@@ -25,7 +25,7 @@ export function VocabularyExperience({ mode }) {
   const content = VOCABULARY[mode];
 
   return (
-    <section className="vocabulary-panel-surface learning-grid relative flex h-full flex-col justify-between overflow-hidden p-6 text-white md:p-8 lg:p-9">
+    <section className="learning-grid relative flex h-full flex-col justify-between overflow-hidden bg-[#5870c7] p-6 text-white md:p-8 lg:p-9">
       <div className="pointer-events-none absolute -top-16 -right-12 size-52 rounded-full border border-white/10" />
       <div className="pointer-events-none absolute right-10 bottom-16 size-24 rotate-12 border border-white/10" />
 

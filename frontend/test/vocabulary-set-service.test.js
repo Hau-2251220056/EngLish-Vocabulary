@@ -45,6 +45,22 @@ test("Vocabulary Set service maps safe API, not-found, operational, and invalid-
   });
 });
 
+test("USER detail validates and preserves deterministic display projection nulls", async () => {
+  const aggregate = {
+    id: "set-1", name: "Set", items: [
+      { id: "item-1", vocabulary_id: "vocabulary-1", position: 1, word: "book", phonetic: null, source: "CANONICAL", primary_meaning: { part_of_speech: "noun", meaning_vi: "sách", example: { example_en: "A book", example_vi: null } } },
+      { id: "item-2", vocabulary_id: "vocabulary-2", position: 2, word: "empty", phonetic: null, source: "PRIVATE", primary_meaning: null },
+    ],
+  };
+  const service = createVocabularySetService({ async get() { return { data: { data: aggregate } }; } });
+  const result = await service.getMySet("set-1");
+  assert.equal(result.items[0].primary_meaning.example.example_vi, null);
+  assert.equal(result.items[1].primary_meaning, null);
+
+  const invalid = createVocabularySetService({ async get() { return { data: { data: { ...aggregate, items: [{ ...aggregate.items[0], primary_meaning: { part_of_speech: "noun", meaning_vi: "sách", example: undefined } }] } } }; } });
+  await assert.rejects(invalid.getMySet("set-1"), (error) => error.code === "INVALID_VOCABULARY_SET_RESPONSE");
+});
+
 test("picker preserves canonical and same-spelling private identities with source context", async () => {
   const values = [
     { id: "canonical-book", word: "book", phonetic: null, source: "CANONICAL", primary_meaning: { part_of_speech: "noun", meaning_vi: "sÃ¡ch" } },

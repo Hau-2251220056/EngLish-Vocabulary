@@ -24,7 +24,7 @@ export function createVocabularySetService(client = httpClient) {
       return getAggregate(client, itemEndpoint(PUBLIC_ENDPOINT, setId));
     },
     async listMySets() { return getList(client, MY_SETS_ENDPOINT); },
-    async getMySet(setId) { return getAggregate(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
+    async getMySet(setId) { return getPrivateAggregate(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
     async createMySet(input) { return mutateAggregate(client, "post", MY_SETS_ENDPOINT, input); },
     async updateMySet(setId, input) { return mutateAggregate(client, "patch", itemEndpoint(MY_SETS_ENDPOINT, setId), input); },
     async deleteMySet(setId) { return deleteSet(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
@@ -68,6 +68,11 @@ async function getAggregate(client, url) {
   catch (error) { throw mapVocabularySetError(error); }
 }
 
+async function getPrivateAggregate(client, url) {
+  try { return requirePrivateAggregate((await client.get(url)).data?.data); }
+  catch (error) { throw mapVocabularySetError(error); }
+}
+
 async function mutateAggregate(client, method, url, input) {
   try { return requireAggregate((await client[method](url, input)).data?.data); }
   catch (error) { throw mapVocabularySetError(error); }
@@ -83,6 +88,38 @@ function itemEndpoint(base, setId) { return `${base}/${encodeURIComponent(setId)
 function requireAggregate(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponseError();
   return value;
+}
+
+function requirePrivateAggregate(value) {
+  const aggregate = requireAggregate(value);
+  if (!Array.isArray(aggregate.items)) throw invalidResponseError();
+  return {
+    ...aggregate,
+    items: aggregate.items.map((item) => {
+      if (
+        !item || typeof item !== "object" || Array.isArray(item) ||
+        typeof item.id !== "string" || typeof item.vocabulary_id !== "string" ||
+        typeof item.word !== "string" || typeof item.position !== "number" ||
+        !["CANONICAL", "PRIVATE"].includes(item.source)
+      ) throw invalidResponseError();
+      const meaning = item.primary_meaning;
+      if (meaning !== null && (
+        !meaning || typeof meaning !== "object" || Array.isArray(meaning) ||
+        typeof meaning.part_of_speech !== "string" ||
+        typeof meaning.meaning_vi !== "string" ||
+        !validExample(meaning.example)
+      )) throw invalidResponseError();
+      return { ...item, phonetic: item.phonetic ?? null, primary_meaning: meaning };
+    }),
+  };
+}
+
+function validExample(example) {
+  return example === null || (
+    example && typeof example === "object" && !Array.isArray(example) &&
+    typeof example.example_en === "string" &&
+    (example.example_vi === null || typeof example.example_vi === "string")
+  );
 }
 
 function requirePickerResult(value) {

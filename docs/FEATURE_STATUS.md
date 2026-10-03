@@ -461,6 +461,18 @@ Status: DONE — implementation, TEST and REVIEW complete; HUMAN-approved for cl
 - Learning exposes `topic: TopicSummary | null`; Quiz, ordered exact-ID membership, ownership, visibility and public Topic discovery remain unchanged.
 - Approved source: `docs/specs/PERSONAL_VOCABULARY_SET_TOPIC_DECOUPLING_V1_SPEC.md`; formal REVIEW result: APPROVE.
 
+## Set Detail V1
+
+Status: DONE — implementation, cumulative TEST, and REVIEW complete; ready for HUMAN commit approval.
+
+- Personal Set Detail is implemented as the owner-scoped learning and vocabulary-management hub, including add/search/create/edit/remove Vocabulary flows with exact identity and ownership boundaries preserved.
+- Populated Personal Sets enter Flashcard and Quiz through the approved focus-mode flows; empty Sets remain manageable without starting an invalid run.
+- Authenticated USER mobile/tablet/desktop presentation includes the responsive ELVocab header branding and approved App Shell behavior.
+- Relevant Set Detail, Learning Progress, Quiz, Dashboard, and shared USER presentation styles completed the approved CSS-to-Tailwind migration while retaining required global primitives.
+- Focused and cumulative regression verification passed, including the guarded dedicated-TEST-database real-stack suites and reconciled accessible workflow assertions.
+- SRS scheduling and Flashcard self-rating remain explicitly deferred to a separate future feature/branch; they are not part of Set Detail V1.
+- Approved sources: `docs/specs/SET_DETAIL_V1_SPEC.md`, `docs/plans/SET_DETAIL_V1_PLAN.md`, and `docs/tasks/SET_DETAIL_V1_TASK.md`.
+
 ## Vocabulary Set V1 Closure Preparation
 
 Status: DONE

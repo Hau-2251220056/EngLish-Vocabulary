@@ -144,7 +144,7 @@ test("ignores a stale response after route unmount", async ({ page }) => {
 
   await page.goto("/my/learning-progress");
   await expect(page.getByRole("status")).toBeVisible();
-  await page.getByRole("link", { name: "Trang chủ", exact: true }).click();
+  await page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ", exact: true }).click();
   useStaleResponse = false;
   stale.resolve(success(populatedPage({ items: [progressItem("stale-word", "LEARNING", 1)] })));
   await page.getByRole("link", { name: "Xem tiến độ chi tiết", exact: true }).click();
@@ -152,6 +152,25 @@ test("ignores a stale response after route unmount", async ({ page }) => {
   await expect(page.getByText("fresh-word", { exact: true })).toBeVisible();
   await expect(page.getByText("stale-word", { exact: true })).toHaveCount(0);
 });
+
+for (const viewport of [
+  { name: "desktop", width: 1366, height: 768, summaryColumns: 4 },
+  { name: "tablet", width: 768, height: 1024, summaryColumns: 2 },
+  { name: "mobile", width: 375, height: 812, summaryColumns: 1 },
+]) {
+  test(`preserves the responsive Learning Progress layout on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installProgressMock(page, () => success(populatedPage()));
+    await page.goto("/my/learning-progress");
+
+    const summary = page.locator(".learning-progress-summary");
+    await expect(summary).toBeVisible();
+    await expect
+      .poll(() => summary.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length))
+      .toBe(viewport.summaryColumns);
+    await expectNoHorizontalOverflow(page);
+  });
+}
 
 async function installProgressMock(page, handler) {
   await page.route("**/api/learning/progress**", async (route) => {

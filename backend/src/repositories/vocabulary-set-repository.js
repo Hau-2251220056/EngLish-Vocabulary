@@ -30,6 +30,39 @@ const SET_DETAIL_SELECT = {
   },
 };
 
+const PRIVATE_SET_DETAIL_SELECT = {
+  ...SET_DETAIL_SELECT,
+  items: {
+    orderBy: { position: "asc" },
+    select: {
+      id: true,
+      vocabulary_id: true,
+      position: true,
+      created_at: true,
+      vocabulary: {
+        select: {
+          word: true,
+          phonetic: true,
+          owner_id: true,
+          meanings: {
+            orderBy: [{ created_at: "asc" }, { id: "asc" }],
+            take: 1,
+            select: {
+              part_of_speech: true,
+              meaning_vi: true,
+              examples: {
+                orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                take: 1,
+                select: { example_en: true, example_vi: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 const PRIVATE_CREATED_VOCABULARY_SELECT = {
   id: true,
   word: true,
@@ -86,7 +119,7 @@ export function createVocabularySetRepository(prisma) {
     findPrivateByIdForOwner(id, ownerId) {
       return prisma.vOCABULARY_SET.findFirst({
         where: { id, owner_id: ownerId, is_public: false },
-        select: SET_DETAIL_SELECT,
+        select: PRIVATE_SET_DETAIL_SELECT,
       });
     },
 
@@ -225,7 +258,7 @@ export function createVocabularySetRepository(prisma) {
     createPrivate(data) {
       return prisma.vOCABULARY_SET.create({
         data,
-        select: SET_DETAIL_SELECT,
+        select: PRIVATE_SET_DETAIL_SELECT,
       });
     },
 

@@ -1,4 +1,5 @@
 export function privateVocabularyFormValues(value = {}) {
+  value ??= {};
   return {
     word: value.word ?? "",
     phonetic: value.phonetic ?? "",

@@ -12,6 +12,7 @@ test("pointer submission announces a correct result without moving focus", async
   const next = page.getByRole("button", { name: "Xem kết quả" });
   await expect(heading).toBeVisible();
   await expect(heading).not.toBeFocused();
+  await expect(heading).toHaveCSS("outline-style", "none");
   await expect(next).not.toBeFocused();
   const status = page.getByRole("status").filter({ hasText: "Chính xác. Bạn đã trả lời đúng." });
   await expect(status).toHaveAttribute("aria-live", "polite");
@@ -31,6 +32,8 @@ test("keyboard Enter focuses the incorrect result and Tab reaches the next actio
   const heading = page.getByRole("heading", { name: "Chưa chính xác" });
   await expect(heading).toBeFocused();
   await expect(heading).toHaveAttribute("tabindex", "-1");
+  await expect(heading).toHaveCSS("outline-style", "none");
+  await expect(page.locator(".quiz-feedback.is-incorrect")).toHaveCSS("color", "rgb(169, 38, 58)");
   const status = page.getByRole("status").filter({
     hasText: "Chưa chính xác. Hãy xem lại đáp án trước khi tiếp tục.",
   });

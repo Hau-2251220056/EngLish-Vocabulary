@@ -15,8 +15,9 @@ test("Logout pending state deduplicates and successful Logout becomes Guest", as
   await page.goto("/dashboard");
 
   await page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` }).click();
-  await page.getByRole("button", { name: "Đăng xuất" }).click();
-  const pendingLogout = page.getByRole("button", { name: "Đang đăng xuất…" });
+  const accountDropdown = page.locator(".authenticated-account-dropdown");
+  await accountDropdown.getByRole("button", { name: "Đăng xuất" }).click();
+  const pendingLogout = accountDropdown.getByRole("button", { name: "Đang đăng xuất…" });
   await expect(pendingLogout).toBeDisabled();
   await expect(pendingLogout).toHaveAttribute("aria-busy", "true");
   await pendingLogout.dispatchEvent("click");
@@ -35,7 +36,7 @@ test("idempotent Logout success follows the normal success flow", async ({ page 
   });
   await page.goto("/dashboard");
   await page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` }).click();
-  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  await page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất" }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
 
@@ -51,12 +52,13 @@ test("Logout failure preserves identity and hides raw details", async ({ page })
   });
   await page.goto("/dashboard");
   await page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` }).click();
-  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  const accountDropdown = page.locator(".authenticated-account-dropdown");
+  await accountDropdown.getByRole("button", { name: "Đăng xuất" }).click();
 
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.locator(".authenticated-account-identity")).toContainText(publicUser.display_name);
-  await expect(page.getByRole("button", { name: "Đăng xuất" })).toBeEnabled();
-  await expect(page.locator(".authenticated-account-dropdown").getByRole("alert")).toContainText(
+  await expect(accountDropdown.getByRole("button", { name: "Đăng xuất" })).toBeEnabled();
+  await expect(accountDropdown.getByRole("alert")).toContainText(
     "Không thể đăng xuất lúc này. Vui lòng thử lại.",
   );
   await expect(page.getByText("raw persistence detail")).toHaveCount(0);

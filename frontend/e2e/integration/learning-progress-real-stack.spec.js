@@ -236,7 +236,6 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
       contentScrollTop: content.scrollTop,
       sidebarTopDelta: after.top - before.top,
       sidebarBottomDelta: after.bottom - before.bottom,
-      sidebarAccountVisible: Boolean(sidebar.querySelector(".authenticated-sidebar-account")),
     };
   });
   expect(desktop.bodyOverflow).toBeLessThanOrEqual(1);
@@ -244,7 +243,9 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
   expect(desktop.contentScrollTop).toBeGreaterThan(0);
   expect(Math.abs(desktop.sidebarTopDelta)).toBeLessThanOrEqual(1);
   expect(Math.abs(desktop.sidebarBottomDelta)).toBeLessThanOrEqual(1);
-  expect(desktop.sidebarAccountVisible).toBe(true);
+  const desktopSidebar = page.getByRole("complementary", { name: "Điều hướng chính" });
+  await expect(desktopSidebar.getByText(accounts.learner.display_name, { exact: true })).toBeVisible();
+  await expect(desktopSidebar.getByRole("button", { name: "Đăng xuất" })).toBeVisible();
 
   await page.setViewportSize({ width: 375, height: 812 });
   const drawerButton = page.getByRole("button", { name: "Mở điều hướng" });

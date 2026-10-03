@@ -147,16 +147,17 @@ test("production Quiz page contains both prompts, protected flow and approved co
   assert.match(source, /questions\.find\(\(question\) => question\.vocabulary_id === result\.vocabulary_id\)/);
 });
 
-test("Quiz CSS provides responsive touch targets and reduced motion", async () => {
-  const css = await readFile(new URL("../src/quiz/quiz-page.css", import.meta.url), "utf8");
-  assert.match(css, /min-height:\s*44px/);
-  assert.match(css, /@media \(max-width:\s*640px\)/);
-  assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.match(css, /width:\s*min\(100%,\s*860px\)/);
-  assert.match(css, /quiz-feedback-underline/);
-  assert.match(css, /border-bottom:\s*4px solid currentColor/);
-  assert.match(css, /li\.is-missing \.quiz-feedback-character/);
-  assert.match(css, /flex-wrap:\s*wrap/);
+test("Quiz Tailwind presentation provides responsive touch targets and reduced motion", async () => {
+  const source = await readFile(new URL("../src/quiz/quiz-foundation-page.jsx", import.meta.url), "utf8");
+  assert.equal(source.includes('import "./quiz-page.css"'), false);
+  assert.match(source, /min-h-11/);
+  assert.match(source, /max-sm:/);
+  assert.match(source, /motion-reduce:/);
+  assert.match(source, /max-w-\[860px\]/);
+  assert.match(source, /quiz-feedback-underline/);
+  assert.match(source, /border-b-4 border-current/);
+  assert.match(source, /item\.state === "correct"/);
+  assert.match(source, /flex-wrap/);
 });
 
 function apiError(code, kind, status) {

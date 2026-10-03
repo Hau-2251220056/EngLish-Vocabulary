@@ -16,6 +16,73 @@ const longNameUser = Object.freeze({
   display_name: "Learner with an intentionally very long display name for responsive coverage",
 });
 
+test("desktop Login and Register panels slide in both directions", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthApiMock(page);
+  await page.goto("/login");
+
+  const shell = page.locator('[data-mode="login"]');
+  const panels = page.locator(".auth-moving-panel");
+  const initialBounds = await shell.boundingBox();
+  const loginSubmit = page.getByRole("button", { name: "Đăng nhập", exact: true });
+  const loginEye = page.getByRole("button", { name: "Hiện mật khẩu" });
+  const loginEyebrow = page.getByText("Chào mừng trở lại", { exact: true });
+  const registerModeSwitch = page.getByRole("button", { name: "Tạo tài khoản", exact: true });
+  const loginEmail = page.getByLabel("Email");
+  const loginPassword = page.getByLabel("Mật khẩu", { exact: true });
+  await expect(loginSubmit).toHaveCSS("background-color", "rgb(76, 162, 230)");
+  await expect(loginEyebrow).toHaveCSS("color", "rgb(76, 162, 230)");
+  await expect(registerModeSwitch).toHaveCSS("color", "rgb(76, 162, 230)");
+  await loginEmail.focus();
+  await expect(loginEmail).toHaveCSS("border-color", "rgb(76, 162, 230)");
+  await expect(loginEmail).toHaveCSS("box-shadow", /rgba\(76, 162, 230, 0\.2\)/);
+  await loginPassword.focus();
+  await expect(loginPassword).toHaveCSS("border-color", "rgb(76, 162, 230)");
+  await loginEye.hover();
+  await expect(loginEye).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(loginEye).toHaveCSS("color", "rgb(76, 162, 230)");
+  await expect(loginEyebrow).toHaveCSS("font-size", "14px");
+  await expect(loginEyebrow).toHaveCSS("font-weight", "600");
+  await expect(loginEyebrow).toHaveCSS("text-transform", "uppercase");
+  await expect(panels.first()).toHaveCSS("transition-property", /translate/);
+  await page.evaluate(() => {
+    window.__authTransitionRuns = [];
+    document.querySelectorAll(".auth-moving-panel").forEach((panel) => {
+      panel.addEventListener("transitionrun", (event) => window.__authTransitionRuns.push(event.propertyName));
+    });
+  });
+
+  await registerModeSwitch.click();
+  await expect(page).toHaveURL(/\/register$/);
+  await expect.poll(() => page.evaluate(() => window.__authTransitionRuns)).toContain("translate");
+  const registerSubmit = page.getByRole("button", { name: "Tạo tài khoản", exact: true });
+  const registerEyes = page.getByRole("button", { name: "Hiện mật khẩu" });
+  const registerEyebrow = page.locator("p").filter({ hasText: /^Tạo tài khoản$/ });
+  const registerDisplayName = page.getByLabel("Tên hiển thị");
+  const registerConfirmPassword = page.getByLabel("Xác nhận mật khẩu");
+  const loginModeSwitch = page.getByRole("button", { name: "Đăng nhập", exact: true });
+  await expect(registerSubmit).toHaveCSS("background-color", "rgb(76, 162, 230)");
+  await expect(registerEyebrow).toHaveCSS("color", "rgb(76, 162, 230)");
+  await expect(loginModeSwitch).toHaveCSS("color", "rgb(76, 162, 230)");
+  await registerDisplayName.focus();
+  await expect(registerDisplayName).toHaveCSS("border-color", "rgb(76, 162, 230)");
+  await registerConfirmPassword.focus();
+  await expect(registerConfirmPassword).toHaveCSS("border-color", "rgb(76, 162, 230)");
+  await expect(registerEyes).toHaveCount(2);
+  await registerEyes.first().hover();
+  await expect(registerEyes.first()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(registerEyebrow).toHaveCSS("font-size", "14px");
+  await expect(registerEyebrow).toHaveCSS("font-weight", "600");
+  await expect(page.locator('[data-mode="register"]')).toHaveCSS("overflow", "hidden");
+  expect(await page.locator('[data-mode="register"]').boundingBox()).toEqual(initialBounds);
+
+  await page.evaluate(() => { window.__authTransitionRuns = []; });
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => page.evaluate(() => window.__authTransitionRuns)).toContain("translate");
+  expect(await page.locator('[data-mode="login"]').boundingBox()).toEqual(initialBounds);
+});
+
 for (const viewport of viewports) {
   test(`${viewport.name} ${viewport.width}x${viewport.height} keeps critical Auth UI usable`, async ({
     page,
@@ -55,8 +122,8 @@ for (const viewport of viewports) {
     await expectWithinViewport(page, ".authenticated-avatar-trigger");
     await expectWithinViewport(page, ".dashboard-page");
 
-    const logout = page.getByRole("button", { name: "Đăng xuất", exact: true });
     await page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` }).click();
+    const logout = page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất", exact: true });
     await expect(logout).toBeVisible();
     await expect(logout).toBeEnabled();
     await expectWithinViewport(page, ".authenticated-logout-button");

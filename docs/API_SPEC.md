@@ -600,7 +600,9 @@ Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `w
 
 USER create/update accepts only `name`, optional `description` and optional complete `items` collection. `topic_id`, `owner_id` and `is_public` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order.
 
-Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so the Set editor can authorize private editing without inferring identity from spelling. Public System Set detail retains its existing minimum Item projection and does not expose `source`.
+Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so Set Detail can authorize private editing without inferring identity from spelling. Each Item also exposes the read-only display projection `primary_meaning: { part_of_speech, meaning_vi, example: { example_en, example_vi } | null } | null`. The projection selects the first Meaning ordered by `created_at ASC, id ASC`, then the first Example of that Meaning in the same deterministic order. It does not CEFR-rank, fall back to another record, or generate missing data. Public System and ADMIN Set detail retain their existing Item projections and do not expose this USER-only field.
+
+Personal Set Detail membership management reuses the existing complete `items` PATCH contract. Adding an existing exact `vocabulary_id` submits the current authoritative order followed by that ID; removing submits the remaining IDs in their existing relative order. Removing membership never deletes Vocabulary or Learning Progress. V1 intentionally retains last-write-wins behavior across concurrent tabs and adds no granular membership or version endpoint.
 
 #### ADMIN System Set Routes
 

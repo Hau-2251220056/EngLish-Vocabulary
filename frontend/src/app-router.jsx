@@ -20,6 +20,7 @@ import { TopicListPage } from "./topics/topic-list-page.jsx";
 import { AdminVocabularyRoute } from "./vocabulary/admin-vocabulary-route.jsx";
 import { AdminVocabularySetsPage } from "./vocabulary-sets/admin-vocabulary-sets-page.jsx";
 import { MyVocabularySetsPage } from "./vocabulary-sets/my-vocabulary-sets-page.jsx";
+import { MyVocabularySetDetailPage } from "./vocabulary-sets/my-vocabulary-set-detail-page.jsx";
 import {
   PublicVocabularySetDetailPage,
   PublicVocabularySetDiscoveryPage,
@@ -52,7 +53,7 @@ export function AppRouter() {
               <Route path="/quiz/vocabulary-sets/:setId" element={<QuizFoundationPage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />
               <Route path="/my/vocabulary-sets" element={<MyVocabularySetsPage />} />
-              <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetsPage />} />
+              <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetDetailPage />} />
             </Route>
             <Route element={<AdminRoute />}>
               <Route path="/admin/topics" element={<AdminTopicPage />} />

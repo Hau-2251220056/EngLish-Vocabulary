@@ -92,7 +92,7 @@ test("USER completes ordered public VI_TO_ENGLISH through authoritative Progress
   await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeFocused();
 
   const beforeRestart = await progressSnapshot(learnerRecord.id);
-  await page.getByRole("button", { name: "Làm lại Quiz" }).click();
+  await page.getByRole("button", { name: "Bắt đầu lại" }).click();
   await expect(page.getByRole("heading", { name: "quyển sách kiểm thử" })).toBeFocused();
   expect(await progressSnapshot(learnerRecord.id)).toEqual(beforeRestart);
 });
@@ -168,7 +168,7 @@ test("Guest, ADMIN, foreign private access and read-only navigation create no Pr
   await page.goto(`/quiz/vocabulary-sets/${systemSet.id}?type=VI_TO_ENGLISH`);
   await expect(page.getByRole("heading", { name: "quyển sách kiểm thử" })).toBeVisible();
   await page.getByRole("button", { name: "Quay lại" }).first().click();
-  await expect(page.getByRole("heading", { name: "Chọn loại Quiz" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${systemSet.id}$`));
   expect(await progressSnapshot(learnerRecord.id)).toEqual(before);
 });
 

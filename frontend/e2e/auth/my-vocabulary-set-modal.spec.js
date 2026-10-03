@@ -6,8 +6,8 @@ const aggregate = {
   ...summary,
   topic_id: null,
   items: [
-    { id: "item-1", vocabulary_id: "vocabulary-1", position: 1, word: "airport", phonetic: null, source: "CANONICAL" },
-    { id: "item-2", vocabulary_id: "vocabulary-2", position: 2, word: "ticket", phonetic: null, source: "CANONICAL" },
+    { id: "item-1", vocabulary_id: "vocabulary-1", position: 1, word: "airport", phonetic: null, source: "CANONICAL", primary_meaning: null },
+    { id: "item-2", vocabulary_id: "vocabulary-2", position: 2, word: "ticket", phonetic: null, source: "CANONICAL", primary_meaning: null },
   ],
 };
 
@@ -113,9 +113,10 @@ test("Escape, backdrop, and close button dismiss safely and restore trigger focu
 test("edit modal sends metadata only and remains within the mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const calls = await installMySets(page, { list: [summary] });
-  await page.goto(`/my/vocabulary-sets/${summary.id}`);
-  await expect(page.getByRole("heading", { level: 2, name: summary.name })).toBeVisible();
-  await page.getByRole("button", { name: "Chỉnh sửa" }).click();
+  await page.goto("/my/vocabulary-sets");
+  const card = page.getByRole("listitem").filter({ hasText: summary.name });
+  await card.getByRole("button", { name: `Quản lý ${summary.name}` }).click();
+  await card.getByRole("menuitem", { name: "Chỉnh sửa" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Chỉnh sửa bộ từ" });
   await expect(dialog.getByLabel("Tên bộ từ")).toHaveValue(summary.name);
@@ -131,4 +132,23 @@ test("edit modal sends metadata only and remains within the mobile viewport", as
   expect(update.body).toEqual({ name: "Du lịch nâng cao", description: summary.description });
   expect(update.body).not.toHaveProperty("topic_id");
   expect(update.body).not.toHaveProperty("items");
+});
+
+test("card management menu keeps delete failure recoverable and retry removes the Set", async ({ page }) => {
+  let attempts = 0;
+  await installMySets(page, { list: [summary], mutation: async (call) => {
+    if (call.method === "DELETE") { attempts += 1; return attempts === 1 ? responses.error(500, "INTERNAL_SERVER_ERROR", "hidden") : { status: 204, body: "" }; }
+    return { status: 200, json: { success: true, data: aggregate } };
+  } });
+  await page.goto("/my/vocabulary-sets");
+  const card = page.getByRole("listitem").filter({ hasText: summary.name });
+  const trigger = card.getByRole("button", { name: `Quản lý ${summary.name}` });
+  await trigger.click(); await card.getByRole("menuitem", { name: "Xóa bộ từ" }).click();
+  const dialog = page.getByRole("dialog", { name: "Xóa bộ từ?" });
+  await dialog.getByRole("button", { name: "Xác nhận xóa" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Không thể xóa bộ từ");
+  await dialog.getByRole("button", { name: "Hủy" }).click(); await expect(trigger).toBeFocused();
+  await trigger.click(); await card.getByRole("menuitem", { name: "Xóa bộ từ" }).click();
+  await dialog.getByRole("button", { name: "Xác nhận xóa" }).click();
+  await expect(dialog).toHaveCount(0); await expect(card).toHaveCount(0);
 });

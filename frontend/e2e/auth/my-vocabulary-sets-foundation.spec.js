@@ -22,9 +22,10 @@ test("renders authoritative Set summaries, safe actions, search and client sorti
   await expect(list).toContainText("Travel English");
   await expect(list).toContainText("8 từ vựng");
   await expect(list).toContainText("Từ vựng cho những chuyến đi.");
-  await expect(list.getByRole("link", { name: "Học", exact: true })).toHaveCount(2);
-  await expect(list.getByRole("listitem").filter({ hasText: "Bộ từ mới" }).getByRole("link", { name: "Học", exact: true })).toHaveCount(0);
-  await expect(list.getByRole("link", { name: "Xem chi tiết Travel English" })).toHaveAttribute("href", "/my/vocabulary-sets/set-travel");
+  await expect(list.getByRole("link", { name: "Xem", exact: true })).toHaveCount(3);
+  await expect(list.getByRole("listitem").filter({ hasText: "Bộ từ mới" }).getByRole("link", { name: "Xem", exact: true })).toHaveAttribute("href", "/my/vocabulary-sets/set-empty");
+  await expect(list.getByRole("link", { name: /Chi tiết/i })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: /Quản lý/ })).toHaveCount(3);
 
   const search = page.getByRole("searchbox", { name: "Tìm bộ từ" });
   await search.fill("công sở");

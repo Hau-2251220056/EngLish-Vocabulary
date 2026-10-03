@@ -7,9 +7,21 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await page.goto("/quiz/vocabulary-sets/set-flow");
     await selectType(page, "Tiếng Việt → Tiếng Anh");
 
-    await expect(page.getByRole("heading", { name: "quyển sách" })).toBeVisible();
+    await expect(page.locator(".authenticated-header")).toHaveCount(0);
+    await expect(page.locator(".authenticated-sidebar")).toHaveCount(0);
+    await expect(page.locator(".learning-focus-shell")).toBeVisible();
+    await expect(page.locator(".quiz-toolbar")).toContainText("Quiz browser review");
+    const promptHeading = page.getByRole("heading", { name: "quyển sách" });
+    await expect(promptHeading).toBeVisible();
+    await expect(promptHeading).toHaveCSS("outline-style", "none");
+    await expect(page.locator(".quiz-eyebrow")).toHaveCSS("color", "rgb(76, 162, 230)");
+    await expect(page.locator(".quiz-progress-track > span")).toHaveCSS("background-color", "rgb(76, 162, 230)");
+    await expect(page.getByRole("button", { name: "Kiểm tra đáp án" })).toHaveCSS("background-color", "rgb(76, 162, 230)");
     await submitText(page, "book");
-    await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
+    const correctHeading = page.getByRole("heading", { name: "Chính xác" });
+    await expect(correctHeading).toBeVisible();
+    await expect(correctHeading).toHaveCSS("outline-style", "none");
+    await expect(page.locator(".quiz-feedback.is-correct")).toHaveCSS("color", "rgb(8, 112, 63)");
     await page.getByRole("button", { name: "Câu tiếp theo" }).click();
     await expect(page.getByRole("heading", { name: "du lịch" })).toBeVisible();
     await submitText(page, "wrong");
@@ -19,7 +31,7 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await expect(page.getByText("2", { exact: true })).toHaveCount(1);
     await expect(page.getByText("1", { exact: true })).toHaveCount(2);
     const firstRun = calls.questions[0].runId;
-    await page.getByRole("button", { name: "Làm lại Quiz" }).click();
+    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
     await expect(page.getByRole("heading", { name: "quyển sách" })).toBeVisible();
     expect(calls.questions.at(-1).runId).not.toBe(firstRun);
     expect(calls.answers.map(({ vocabulary_id }) => vocabulary_id)).toEqual(["word-book", "word-travel"]);
@@ -30,6 +42,10 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await page.goto("/quiz/vocabulary-sets/set-flow");
     await selectType(page, "Sắp xếp từ tiếng Anh");
 
+    await expect(page.locator(".authenticated-header")).toHaveCount(0);
+    await expect(page.locator(".authenticated-sidebar")).toHaveCount(0);
+    await expect(page.locator(".learning-focus-shell")).toBeVisible();
+    await expect(page.locator(".quiz-toolbar")).toContainText("Quiz browser review");
     const pool = page.getByRole("group", { name: "Các ký tự có thể chọn" });
     await expect(pool.getByRole("button")).toHaveText(["o", "b", "k", "o"]);
     await pool.getByRole("button", { name: /Chọn ký tự b/ }).press("Enter");
@@ -44,6 +60,8 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await expect(page.getByLabel("Ký tự cố định -")).toBeVisible();
     await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
     expect(calls.answers[0].answer).toBe("bo-ok");
+    await expect(page.getByRole("heading", { name: "Chưa chính xác", exact: true })).toHaveCSS("outline-style", "none");
+    await expect(page.locator(".quiz-feedback.is-incorrect")).toHaveCSS("color", "rgb(169, 38, 58)");
     await page.getByRole("button", { name: "Câu tiếp theo" }).click();
 
     await expect(page.getByText(/không thể đảo thành một thứ tự khác/)).toBeVisible();
@@ -52,32 +70,39 @@ test.describe("Quiz V1 mocked browser flow", () => {
     expect(calls.answers[1].answer).toBe("a");
   });
 
-  test("UI and browser Back preserve the Set -> selection -> active hierarchy without mutations", async ({ page }) => {
+  test("Quiz Back always returns to the current public or owned Set Detail without mutations", async ({ page }) => {
     const calls = await installQuizApiMock(page);
     await page.goto("/quiz/vocabulary-sets/set-flow");
     await selectType(page, "Tiếng Việt → Tiếng Anh");
     await page.getByRole("button", { name: "Quay lại" }).first().click();
-    await expect(page.getByRole("heading", { name: "Chọn loại Quiz" })).toBeVisible();
+    await expect(page).toHaveURL(/\/vocabulary-sets\/set-flow$/);
+
+    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.evaluate(() => window.history.replaceState({
+      ...window.history.state,
+      usr: { returnTo: "/my/vocabulary-sets/set-flow", setName: "Owned review set" },
+    }, ""));
+    await page.reload();
     await selectType(page, "Sắp xếp từ tiếng Anh");
-    await page.goBack();
-    await expect(page.getByRole("heading", { name: "Chọn loại Quiz" })).toBeVisible();
     await page.getByRole("button", { name: "Quay lại" }).click();
-    await expect(page).toHaveURL(/\/my\/vocabulary-sets$/);
+    await expect(page).toHaveURL(/\/my\/vocabulary-sets\/set-flow$/);
     expect(calls.answers).toHaveLength(0);
     expect(calls.learningEvents).toHaveLength(0);
   });
 
-  test("deep-linked active Quiz falls back safely to type selection", async ({ page }) => {
+  test("deep-linked active Quiz Back falls back to the current public Set Detail", async ({ page }) => {
     await installQuizApiMock(page);
     await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
     await page.getByRole("button", { name: "Quay lại" }).first().click();
-    await expect(page).toHaveURL(/\/quiz\/vocabulary-sets\/set-flow$/);
-    await expect(page.getByRole("heading", { name: "Chọn loại Quiz" })).toBeVisible();
+    await expect(page).toHaveURL(/\/vocabulary-sets\/set-flow$/);
   });
 
   test("reload restores accepted transient progress without persisting answers or history", async ({ page }) => {
     const calls = await installQuizApiMock(page);
     await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
+    await expect(page.locator(".authenticated-header")).toHaveCount(0);
+    await expect(page.locator(".authenticated-sidebar")).toHaveCount(0);
+    await expect(page.locator(".quiz-toolbar")).toContainText("Quiz browser review");
     await submitText(page, "book");
     await page.getByRole("button", { name: "Câu tiếp theo" }).click();
     await page.reload();
@@ -98,6 +123,8 @@ test.describe("Quiz V1 mocked browser flow", () => {
     });
     await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
     await expect(page.getByRole("status")).toContainText("Đang chuẩn bị Quiz");
+    await expect(page.locator(".quiz-loading-state .quiz-spinner")).toHaveCount(0);
+    await expect(page.locator(".quiz-loading-state > div > span")).toHaveCount(3);
     resolveFirst(failure(500, "QUIZ_REQUEST_FAILED"));
     await expect(page.getByRole("alert")).toContainText("Không thể tải Quiz");
     await page.getByRole("button", { name: "Thử lại" }).click();
@@ -107,6 +134,29 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await installQuizApiMock(page, { onQuestions: () => failure(409, "QUIZ_SET_EMPTY") });
     await page.goto("/quiz/vocabulary-sets/empty?type=VI_TO_ENGLISH");
     await expect(page.getByRole("heading", { name: "Bộ từ chưa sẵn sàng" })).toBeVisible();
+  });
+
+  test("restart dialog is centered in the viewport and keeps USER primary accents", async ({ page }) => {
+    await installQuizApiMock(page);
+    await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
+    await page.getByLabel("Câu trả lời bằng tiếng Anh").fill("book");
+
+    const trigger = page.getByRole("button", { name: "Bắt đầu lại" });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Bắt đầu lại Quiz?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCSS("position", "fixed");
+    const [box, viewport] = await Promise.all([
+      dialog.boundingBox(),
+      page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+    ]);
+    expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+    await expect(dialog.locator("svg").first()).toHaveCSS("color", "rgb(76, 162, 230)");
+    await expect(dialog.getByRole("button", { name: "Bắt đầu lại" })).toHaveCSS("background-color", "rgb(76, 162, 230)");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 
   test("pending blocks duplicate submit and uncertain retry reuses the identical body", async ({ page }) => {
@@ -192,6 +242,9 @@ for (const viewport of [
     });
     await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
     await expect(page.getByRole("heading", { name: longMeaning })).toBeVisible();
+    await expect(page.locator(".authenticated-header")).toHaveCount(0);
+    await expect(page.locator(".authenticated-sidebar")).toHaveCount(0);
+    await expect(page.locator(".quiz-toolbar")).toContainText("Quiz browser review");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflow).toBe(false);
     const submitBox = await page.getByRole("button", { name: "Kiểm tra đáp án" }).boundingBox();
