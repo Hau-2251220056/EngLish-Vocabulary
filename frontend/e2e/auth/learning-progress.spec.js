@@ -190,6 +190,7 @@ function success(data) {
 
 function populatedPage({ page = 1, totalPages = 2, items } = {}) {
   return {
+    evaluated_at: "2026-09-24T12:00:00.000Z",
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: items ?? [
       progressItem("achieve", "LEARNED", 5),
@@ -202,6 +203,7 @@ function populatedPage({ page = 1, totalPages = 2, items } = {}) {
 
 function emptyPage() {
   return {
+    evaluated_at: "2026-09-24T12:00:00.000Z",
     summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
     items: [],
     pagination: { page: 1, page_size: 20, total_items: 0, total_pages: 0 },
@@ -211,6 +213,7 @@ function emptyPage() {
 
 function filteredEmptyPage() {
   return {
+    evaluated_at: "2026-09-24T12:00:00.000Z",
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: [],
     pagination: { page: 1, page_size: 20, total_items: 0, total_pages: 0 },
@@ -220,6 +223,7 @@ function filteredEmptyPage() {
 
 function outOfRangePage() {
   return {
+    evaluated_at: "2026-09-24T12:00:00.000Z",
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: [],
     pagination: { page: 8, page_size: 20, total_items: 25, total_pages: 3 },
@@ -228,11 +232,15 @@ function outOfRangePage() {
 }
 
 function progressItem(word, status, reviewCount, lastReviewedAt = "2026-09-24T00:00:00.000Z") {
+  const schedule = status === "LEARNING"
+    ? { interval_days: null, next_review_at: null }
+    : { interval_days: 3, next_review_at: "2026-09-27T00:00:00.000Z" };
   return {
     vocabulary: { id: `vocabulary-${word}`, word, phonetic: `/${word}/` },
     status,
     review_count: reviewCount,
     last_reviewed_at: lastReviewedAt,
+    ...schedule,
   };
 }
 

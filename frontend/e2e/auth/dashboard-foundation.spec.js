@@ -246,6 +246,7 @@ function progressResponse(summary) {
     json: {
       success: true,
       data: {
+        evaluated_at: "2026-09-24T12:00:00.000Z",
         summary,
         items: [],
         pagination: { page: 1, page_size: 1, total_items: summary.total_started, total_pages: summary.total_started ? summary.total_started : 0 },

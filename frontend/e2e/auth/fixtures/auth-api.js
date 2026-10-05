@@ -52,6 +52,7 @@ export async function installAuthApiMock(page, handlers = {}) {
       json: {
         success: true,
         data: {
+          evaluated_at: "2026-09-24T12:00:00.000Z",
           summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
           items: [],
           pagination: { page: 1, page_size: 1, total_items: 0, total_pages: 0 },
