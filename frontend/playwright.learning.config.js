@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import process from "node:process";
 
-const backendPort = 5007;
-const frontendPort = 4181;
+const backendPort = 5012;
+const frontendPort = 4184;
 
 export default defineConfig({
   testDir: "./e2e/integration",

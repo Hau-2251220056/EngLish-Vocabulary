@@ -16,18 +16,23 @@ let topic;
 let adminCookie;
 let ownerCookie;
 let otherCookie;
+const FIXED_NOW = new Date("2026-10-04T03:15:00.000Z");
+const TEST_PREFIX = `lrn-${randomUUID().slice(0, 8)}`;
 
 before(async () => {
   database = await createTestDatabase();
   prisma = database.prisma;
-  http = await startHttpTestServer(createApp({ prisma }));
+  http = await startHttpTestServer(createApp({
+    prisma,
+    learningNow: () => new Date(FIXED_NOW),
+  }));
 });
 
 beforeEach(async () => {
-  await database.reset();
-  admin = await createUserFixture(prisma, { role: "ADMIN" });
-  owner = await createUserFixture(prisma, { role: "USER" });
-  otherUser = await createUserFixture(prisma, { role: "USER" });
+  await cleanupLearningSuiteFixtures();
+  admin = await createUserFixture(prisma, { email: `${TEST_PREFIX}-admin@example.test`, role: "ADMIN" });
+  owner = await createUserFixture(prisma, { email: `${TEST_PREFIX}-owner@example.test`, role: "USER" });
+  otherUser = await createUserFixture(prisma, { email: `${TEST_PREFIX}-other@example.test`, role: "USER" });
   const adminSession = await createSessionFixture(prisma, admin.id);
   const ownerSession = await createSessionFixture(prisma, owner.id);
   const otherSession = await createSessionFixture(prisma, otherUser.id);
@@ -35,17 +40,17 @@ beforeEach(async () => {
   ownerCookie = `session_id=${ownerSession.rawToken}`;
   otherCookie = `session_id=${otherSession.rawToken}`;
   topic = await prisma.tOPIC.create({
-    data: { name: `Learning test topic ${randomUUID()}` },
+    data: { name: `${TEST_PREFIX} topic` },
   });
 });
 
 afterEach(async () => {
-  await database.reset();
+  await cleanupLearningSuiteFixtures();
 });
 
 after(async () => {
   try {
-    if (database) await database.reset();
+    if (prisma) await cleanupLearningSuiteFixtures();
   } finally {
     try {
       if (http) await http.close();
@@ -107,6 +112,25 @@ test("database enforces Learning Progress identity, checks and external delete b
     await prisma.lEARNING_PROGRESS.count({ where: { id: progress.id } }),
     1,
   );
+});
+
+test("Learning suite cleanup preserves an unrelated authenticated TEST user", async () => {
+  const sentinel = await createUserFixture(prisma, {
+    email: `manual-session-sentinel-${randomUUID()}@example.test`,
+  });
+  const sentinelSession = await createSessionFixture(prisma, sentinel.id);
+
+  try {
+    await cleanupLearningSuiteFixtures();
+    assert.equal(
+      await prisma.aUTH_SESSION.count({ where: { id: sentinelSession.session.id } }),
+      1,
+    );
+    assert.equal(await prisma.uSER.count({ where: { id: sentinel.id } }), 1);
+  } finally {
+    await prisma.aUTH_SESSION.deleteMany({ where: { user_id: sentinel.id } });
+    await prisma.uSER.deleteMany({ where: { id: sentinel.id } });
+  }
 });
 
 test("learning Set access is USER-only and conceals inaccessible private Sets", async () => {
@@ -171,7 +195,7 @@ test("learning payload is ordered, complete, deterministic and read-only with co
     where: { user_id: owner.id },
   });
 
-  const response = await http.request(`/api/learning/sets/${set.id}`, {
+  const response = await http.request(`/api/learning/sets/${set.id}?mode=NORMAL`, {
     cookie: ownerCookie,
   });
   assert.equal(response.status, 200, response.text);
@@ -183,6 +207,11 @@ test("learning payload is ordered, complete, deterministic and read-only with co
   );
   assert.deepEqual(response.json.data.cards[0].progress, {
     status: "NEW",
+    stored_status: null,
+    effective_status: "NEW",
+    stage: 0,
+    interval_days: null,
+    next_review_at: null,
     review_count: 0,
     revision: 0,
     last_reviewed_at: null,
@@ -190,7 +219,8 @@ test("learning payload is ordered, complete, deterministic and read-only with co
   assert.equal(response.json.data.cards[1].progress.status, "LEARNED");
   assert.equal(response.json.data.cards[1].progress.review_count, 3);
   assert.equal(response.json.data.cards[1].progress.revision, 3);
-  assert.equal(Object.hasOwn(response.json.data.cards[1].progress, "next_review_at"), false);
+  assert.equal(response.json.data.mode, "NORMAL");
+  assert.equal(response.json.data.total_items, 2);
   assert.deepEqual(
     response.json.data.cards[1].meanings.map(({ meaning_vi }) => meaning_vi),
     ["early meaning", "late meaning"],
@@ -207,7 +237,7 @@ test("learning payload is ordered, complete, deterministic and read-only with co
 });
 
 test("Personal Vocabulary keeps exact same-spelling identities, shared progress and edited content", async () => {
-  const sharedWord = `book-${randomUUID()}`;
+  const sharedWord = `${TEST_PREFIX}-book-${randomUUID()}`;
   const canonical = await prisma.vOCABULARY.create({ data: { word: sharedWord, pronunciation_url: "https://example.test/canonical-book.mp3", meanings: { create: { part_of_speech: "noun", meaning_vi: "canonical meaning", cefr_level: "A1" } } } });
   const privateOne = await prisma.vOCABULARY.create({ data: { owner_id: owner.id, word: sharedWord, pronunciation_url: null, meanings: { create: [
     { part_of_speech: "verb", meaning_vi: "private booking meaning", cefr_level: "A2" },
@@ -232,16 +262,16 @@ test("Personal Vocabulary keeps exact same-spelling identities, shared progress 
   );
 
   for (const vocabulary of [canonical, privateOne, privateTwo]) {
-    assertProgress(await postEvent(ownerCookie, eventBody({ setId: setA.id, vocabularyId: vocabulary.id, outcome: "REMEMBERED" })), { status: "LEARNED", reviewCount: 1, revision: 1 });
+    assertProgress(await postEvent(ownerCookie, eventBody({ setId: setA.id, vocabularyId: vocabulary.id, rating: "GOOD" })), { status: "LEARNED", reviewCount: 1, revision: 1 });
   }
   assert.equal(await prisma.lEARNING_PROGRESS.count({ where: { user_id: owner.id } }), 3);
-  const reused = await http.request(`/api/learning/sets/${setB.id}`, { cookie: ownerCookie });
+  const reused = await http.request(`/api/learning/sets/${setB.id}?mode=NORMAL`, { cookie: ownerCookie });
   assert.equal(reused.json.data.cards[0].id, privateOne.id);
   assert.equal(reused.json.data.cards[0].progress.revision, 1);
 
   await prisma.vOCABULARY_SET_ITEM.delete({ where: { vocabulary_set_id_vocabulary_id: { vocabulary_set_id: setA.id, vocabulary_id: privateOne.id } } });
   await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: "reserve" } });
-  const afterEdit = await http.request(`/api/learning/sets/${setB.id}`, { cookie: ownerCookie });
+  const afterEdit = await http.request(`/api/learning/sets/${setB.id}?mode=NORMAL`, { cookie: ownerCookie });
   assert.equal(afterEdit.json.data.cards[0].id, privateOne.id);
   assert.equal(afterEdit.json.data.cards[0].word, "reserve");
   assert.equal(afterEdit.json.data.cards[0].progress.revision, 1);
@@ -265,7 +295,172 @@ test("learning payload validation and empty Set failures use approved safe error
     400,
     "VALIDATION_ERROR",
   );
-  assert.equal(await prisma.lEARNING_PROGRESS.count(), 0);
+  assert.equal(await testProgressCount(), 0);
+});
+
+test("SRS and NORMAL modes validate, order eligibility and remain read-only", async () => {
+  const fresh = await createVocabulary("mode-new");
+  const future = await createVocabulary("mode-future");
+  const due = await createVocabulary("mode-due");
+  const legacy = await createVocabulary("mode-legacy");
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: [fresh.id, future.id, due.id, legacy.id],
+  });
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: future.id,
+    status: "LEARNED",
+    intervalDays: 7,
+    nextReviewAt: new Date(FIXED_NOW.getTime() + 60_000),
+  });
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: due.id,
+    status: "LEARNED",
+    intervalDays: 3,
+    nextReviewAt: new Date(FIXED_NOW),
+  });
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: legacy.id,
+    status: "LEARNED",
+    intervalDays: 2,
+    nextReviewAt: null,
+  });
+  const before = await prisma.lEARNING_PROGRESS.findMany({ orderBy: { id: "asc" } });
+
+  for (const suffix of ["", "?mode=SRS"]) {
+    const response = await http.request(`/api/learning/sets/${set.id}${suffix}`, {
+      cookie: ownerCookie,
+    });
+    assert.equal(response.status, 200, response.text);
+    assert.equal(response.json.data.mode, "SRS");
+    assert.equal(response.json.data.evaluated_at, FIXED_NOW.toISOString());
+    assert.equal(response.json.data.total_items, 4);
+    assert.equal(response.json.data.eligible_count, 3);
+    assert.equal(
+      response.json.data.next_review_at,
+      new Date(FIXED_NOW.getTime() + 60_000).toISOString(),
+    );
+    assert.deepEqual(
+      response.json.data.cards.map((card) => card.id),
+      [due.id, legacy.id, fresh.id],
+    );
+    assert.deepEqual(
+      response.json.data.cards.map((card) => [
+        card.progress.stored_status,
+        card.progress.effective_status,
+        card.progress.stage,
+      ]),
+      [
+        ["LEARNED", "NEEDS_REVIEW", 2],
+        ["LEARNED", "LEARNED", 0],
+        [null, "NEW", 0],
+      ],
+    );
+    assert.equal(
+      response.json.data.cards.every((card) => card.rating_previews),
+      true,
+    );
+  }
+
+  const normal = await http.request(`/api/learning/sets/${set.id}?mode=NORMAL`, {
+    cookie: ownerCookie,
+  });
+  assert.equal(normal.status, 200, normal.text);
+  assert.equal(normal.json.data.mode, "NORMAL");
+  assert.equal(normal.json.data.total_items, 4);
+  assert.deepEqual(
+    normal.json.data.cards.map((card) => card.id),
+    [fresh.id, future.id, due.id, legacy.id],
+  );
+  assert.equal(
+    normal.json.data.cards.some((card) => Object.hasOwn(card, "rating_previews")),
+    false,
+  );
+  assert.deepEqual(
+    await prisma.lEARNING_PROGRESS.findMany({ orderBy: { id: "asc" } }),
+    before,
+  );
+
+  for (const query of ["mode=", "mode=normal", "mode=UNKNOWN", "mode=SRS&mode=NORMAL", "extra=1"]) {
+    assertError(
+      await http.request(`/api/learning/sets/${set.id}?${query}`, { cookie: ownerCookie }),
+      400,
+      "VALIDATION_ERROR",
+    );
+  }
+});
+
+test("SRS reads expose the authoritative full rating-preview matrix", async () => {
+  const vocabularies = await Promise.all(
+    [0, 1, 2, 3, 4, 5].map((stage) => createVocabulary(`preview-stage-${stage}`)),
+  );
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: vocabularies.map(({ id }) => id),
+  });
+  const intervals = [null, 1, 3, 7, 14, 30];
+  for (let stage = 1; stage <= 5; stage += 1) {
+    await createProgress({
+      userId: owner.id,
+      vocabularyId: vocabularies[stage].id,
+      status: "LEARNED",
+      intervalDays: intervals[stage],
+      nextReviewAt: new Date(FIXED_NOW),
+    });
+  }
+
+  const response = await http.request(`/api/learning/sets/${set.id}?mode=SRS`, {
+    cookie: ownerCookie,
+  });
+  assert.equal(response.status, 200, response.text);
+  const expectedPassingIntervals = [
+    [1, 3, 7],
+    [1, 3, 7],
+    [3, 7, 14],
+    [7, 14, 30],
+    [14, 30, 30],
+    [30, 30, 30],
+  ];
+  for (let stage = 0; stage <= 5; stage += 1) {
+    const card = response.json.data.cards.find(({ id }) => id === vocabularies[stage].id);
+    assert.deepEqual(card.rating_previews, {
+      AGAIN: { kind: "SESSION_REQUEUE", interval_days: null },
+      HARD: { kind: "SCHEDULED", interval_days: expectedPassingIntervals[stage][0] },
+      GOOD: { kind: "SCHEDULED", interval_days: expectedPassingIntervals[stage][1] },
+      EASY: { kind: "SCHEDULED", interval_days: expectedPassingIntervals[stage][2] },
+    });
+  }
+});
+
+test("non-empty Sets with no eligible SRS cards return an up-to-date snapshot", async () => {
+  const vocabulary = await createVocabulary("up-to-date");
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: [vocabulary.id],
+  });
+  const nextReviewAt = new Date(FIXED_NOW.getTime() + 3 * 24 * 60 * 60 * 1000);
+  await createProgress({
+    userId: owner.id,
+    vocabularyId: vocabulary.id,
+    status: "LEARNED",
+    intervalDays: 3,
+    nextReviewAt,
+  });
+
+  const response = await http.request(`/api/learning/sets/${set.id}`, {
+    cookie: ownerCookie,
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.total_items, 1);
+  assert.equal(response.json.data.eligible_count, 0);
+  assert.deepEqual(response.json.data.cards, []);
+  assert.equal(response.json.data.next_review_at, nextReviewAt.toISOString());
 });
 
 test("progress view is USER-only, isolated, minimal, compatible and read-only", async () => {
@@ -344,7 +539,9 @@ test("progress view is USER-only, isolated, minimal, compatible and read-only", 
     );
     for (const item of response.json.data.items) {
       assert.deepEqual(Object.keys(item).sort(), [
+        "interval_days",
         "last_reviewed_at",
+        "next_review_at",
         "review_count",
         "status",
         "vocabulary",
@@ -358,7 +555,6 @@ test("progress view is USER-only, isolated, minimal, compatible and read-only", 
       for (const excluded of [
         "created_at",
         "last_event_id",
-        "next_review_at",
         "revision",
         "user_id",
       ]) {
@@ -520,7 +716,79 @@ test("progress view rejects malformed, repeated, unknown and unsupported queries
       "VALIDATION_ERROR",
     );
   }
-  assert.equal(await prisma.lEARNING_PROGRESS.count(), 0);
+  assert.equal(await testProgressCount(), 0);
+});
+
+test("progress summary, filters and items share one derived due boundary", async () => {
+  const [learning, due, future, persistedReview, legacy] = await Promise.all(
+    ["learning", "due", "future", "persisted-review", "legacy"].map((name) =>
+      createVocabulary(`derived-${name}`),
+    ),
+  );
+  await Promise.all([
+    createProgress({ userId: owner.id, vocabularyId: learning.id, status: "LEARNING" }),
+    createProgress({
+      userId: owner.id,
+      vocabularyId: due.id,
+      status: "LEARNED",
+      intervalDays: 1,
+      nextReviewAt: new Date(FIXED_NOW),
+    }),
+    createProgress({
+      userId: owner.id,
+      vocabularyId: future.id,
+      status: "LEARNED",
+      intervalDays: 1,
+      nextReviewAt: new Date(FIXED_NOW.getTime() + 1),
+    }),
+    createProgress({
+      userId: owner.id,
+      vocabularyId: persistedReview.id,
+      status: "NEEDS_REVIEW",
+      intervalDays: 7,
+    }),
+    createProgress({
+      userId: owner.id,
+      vocabularyId: legacy.id,
+      status: "LEARNED",
+      intervalDays: 2,
+    }),
+  ]);
+  const before = await prisma.lEARNING_PROGRESS.findMany({ orderBy: { id: "asc" } });
+
+  const all = await http.request("/api/learning/progress?page=1&page_size=20", {
+    cookie: ownerCookie,
+  });
+  assert.equal(all.status, 200, all.text);
+  assert.equal(all.json.data.evaluated_at, FIXED_NOW.toISOString());
+  assert.deepEqual(all.json.data.summary, {
+    total_started: 5,
+    learning: 1,
+    learned: 2,
+    needs_review: 2,
+  });
+  const statusById = Object.fromEntries(
+    all.json.data.items.map((item) => [item.vocabulary.id, item.status]),
+  );
+  assert.equal(statusById[due.id], "NEEDS_REVIEW");
+  assert.equal(statusById[future.id], "LEARNED");
+  assert.equal(statusById[legacy.id], "LEARNED");
+
+  const review = await http.request(
+    "/api/learning/progress?page=1&page_size=20&status=NEEDS_REVIEW",
+    { cookie: ownerCookie },
+  );
+  assert.equal(review.status, 200, review.text);
+  assert.equal(review.json.data.pagination.total_items, 2);
+  assert.deepEqual(
+    new Set(review.json.data.items.map((item) => item.vocabulary.id)),
+    new Set([due.id, persistedReview.id]),
+  );
+  assert.ok(review.json.data.items.every((item) => item.status === "NEEDS_REVIEW"));
+  assert.deepEqual(
+    await prisma.lEARNING_PROGRESS.findMany({ orderBy: { id: "asc" } }),
+    before,
+  );
 });
 
 test("event API enforces authentication and exact approved input", async () => {
@@ -533,7 +801,7 @@ test("event API enforces authentication and exact approved input", async () => {
   const valid = eventBody({
     setId: set.id,
     vocabularyId: vocabulary.id,
-    outcome: "REMEMBERED",
+    rating: "GOOD",
   });
   assertError(
     await http.request("/api/learning/events", { method: "POST", json: valid }),
@@ -546,19 +814,90 @@ test("event API enforces authentication and exact approved input", async () => {
     "FORBIDDEN",
   );
   for (const invalid of [
-    { ...valid, outcome: "KNOWN" },
+    { ...valid, rating: "KNOWN" },
     { ...valid, expected_revision: -1 },
     { ...valid, expected_revision: 0.5 },
     { ...valid, event_id: "invalid" },
     { ...valid, user_id: owner.id },
-    { ...valid, outcome: undefined },
+    { ...valid, rating: undefined },
+    { ...valid, outcome: "REMEMBERED", rating: undefined },
   ]) {
     assertError(await postEvent(ownerCookie, invalid), 400, "VALIDATION_ERROR");
   }
-  assert.equal(await prisma.lEARNING_PROGRESS.count(), 0);
+  assert.equal(await testProgressCount(), 0);
 });
 
-test("meaningful outcomes transition progress once with retry and stale revision protection", async () => {
+test("all four ratings persist authoritative scheduler fields", async () => {
+  const vocabularies = await Promise.all(
+    ["again", "hard", "good", "easy"].map((name) => createVocabulary(`rating-${name}`)),
+  );
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: vocabularies.map(({ id }) => id),
+  });
+  const expectations = [
+    ["AGAIN", "LEARNING", 0, null, FIXED_NOW],
+    ["HARD", "LEARNED", 1, 1, new Date(FIXED_NOW.getTime() + 86_400_000)],
+    ["GOOD", "LEARNED", 2, 3, new Date(FIXED_NOW.getTime() + 3 * 86_400_000)],
+    ["EASY", "LEARNED", 3, 7, new Date(FIXED_NOW.getTime() + 7 * 86_400_000)],
+  ];
+
+  for (let index = 0; index < expectations.length; index += 1) {
+    const [rating, status, stage, intervalDays, nextReviewAt] = expectations[index];
+    const response = await postEvent(ownerCookie, eventBody({
+      setId: set.id,
+      vocabularyId: vocabularies[index].id,
+      rating,
+    }));
+    assertProgress(response, { status, reviewCount: 1, revision: 1 });
+    assert.equal(response.json.data.vocabulary_id, vocabularies[index].id);
+    assert.equal(response.json.data.stage, stage);
+    assert.equal(response.json.data.interval_days, intervalDays);
+    assert.equal(response.json.data.next_review_at, nextReviewAt.toISOString());
+    const persisted = await findProgress(owner.id, vocabularies[index].id);
+    assert.equal(persisted.status, status);
+    assert.equal(persisted.interval_days, intervalDays);
+    assert.equal(persisted.next_review_at.toISOString(), nextReviewAt.toISOString());
+    assert.equal(persisted.last_reviewed_at.toISOString(), FIXED_NOW.toISOString());
+    assert.equal(persisted.ease_factor, null);
+  }
+});
+
+test("future scheduled progress rejects a new event but current-event retry remains idempotent", async () => {
+  const vocabulary = await createVocabulary("future-conflict");
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: [vocabulary.id],
+  });
+  const accepted = eventBody({
+    setId: set.id,
+    vocabularyId: vocabulary.id,
+    rating: "GOOD",
+  });
+  const first = await postEvent(ownerCookie, accepted);
+  assert.equal(first.status, 200, first.text);
+  const before = await findProgress(owner.id, vocabulary.id);
+
+  const retry = await postEvent(ownerCookie, { ...accepted, rating: "EASY" });
+  assert.equal(retry.status, 200, retry.text);
+  assert.deepEqual(retry.json.data, first.json.data);
+  assert.deepEqual(await findProgress(owner.id, vocabulary.id), before);
+
+  assertError(
+    await postEvent(ownerCookie, {
+      ...accepted,
+      event_id: randomUUID(),
+      expected_revision: 1,
+    }),
+    409,
+    "LEARNING_PROGRESS_CHANGED",
+  );
+  assert.deepEqual(await findProgress(owner.id, vocabulary.id), before);
+});
+
+test("meaningful ratings transition progress once with retry and stale revision protection", async () => {
   const vocabulary = await createVocabulary("transitions");
   const set = await createSet({
     ownerId: admin.id,
@@ -568,10 +907,10 @@ test("meaningful outcomes transition progress once with retry and stale revision
   const first = eventBody({
     setId: set.id,
     vocabularyId: vocabulary.id,
-    outcome: "REMEMBERED",
+    rating: "AGAIN",
   });
   let response = await postEvent(ownerCookie, first);
-  assertProgress(response, { status: "LEARNED", reviewCount: 1, revision: 1 });
+  assertProgress(response, { status: "LEARNING", reviewCount: 1, revision: 1 });
   const firstResult = response.json.data;
   response = await postEvent(ownerCookie, first);
   assert.deepEqual(response.json.data, firstResult);
@@ -581,14 +920,17 @@ test("meaningful outcomes transition progress once with retry and stale revision
     409,
     "LEARNING_PROGRESS_CHANGED",
   );
+  response = await postEvent(ownerCookie, { ...first, rating: "EASY" });
+  assert.deepEqual(response.json.data, firstResult);
+
   const second = {
     ...first,
     event_id: randomUUID(),
     expected_revision: 1,
-    outcome: "STUDY_AGAIN",
+    rating: "GOOD",
   };
   response = await postEvent(ownerCookie, second);
-  assertProgress(response, { status: "LEARNING", reviewCount: 2, revision: 2 });
+  assertProgress(response, { status: "LEARNED", reviewCount: 2, revision: 2 });
   assertError(await postEvent(ownerCookie, first), 409, "LEARNING_PROGRESS_CHANGED");
 
   const persisted = await prisma.lEARNING_PROGRESS.findUniqueOrThrow({
@@ -600,9 +942,66 @@ test("meaningful outcomes transition progress once with retry and stale revision
     },
   });
   assert.equal(persisted.last_event_id, second.event_id);
-  assert.equal(persisted.next_review_at, null);
-  assert.equal(persisted.interval_days, null);
+  assert.equal(persisted.next_review_at.toISOString(), "2026-10-07T03:15:00.000Z");
+  assert.equal(persisted.interval_days, 3);
   assert.equal(persisted.ease_factor, null);
+});
+
+test("AGAIN stays immediately eligible until a later passing rating resolves it", async () => {
+  const vocabulary = await createVocabulary("again-lifecycle");
+  const set = await createSet({
+    ownerId: admin.id,
+    isPublic: true,
+    vocabularyIds: [vocabulary.id],
+  });
+  const again = eventBody({
+    setId: set.id,
+    vocabularyId: vocabulary.id,
+    rating: "AGAIN",
+  });
+
+  let response = await postEvent(ownerCookie, again);
+  assertProgress(response, { status: "LEARNING", reviewCount: 1, revision: 1 });
+  let persisted = await findProgress(owner.id, vocabulary.id);
+  assert.equal(persisted.status, "LEARNING");
+  assert.equal(persisted.interval_days, null);
+  assert.equal(persisted.next_review_at.toISOString(), FIXED_NOW.toISOString());
+  assert.equal(persisted.last_reviewed_at.toISOString(), FIXED_NOW.toISOString());
+  assert.equal(persisted.last_event_id, again.event_id);
+
+  response = await http.request(`/api/learning/sets/${set.id}?mode=SRS`, {
+    cookie: ownerCookie,
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.eligible_count, 1);
+  assert.equal(response.json.data.cards[0].id, vocabulary.id);
+  assert.equal(response.json.data.cards[0].progress.status, "LEARNING");
+  assert.equal(response.json.data.cards[0].progress.revision, 1);
+
+  const good = eventBody({
+    setId: set.id,
+    vocabularyId: vocabulary.id,
+    expectedRevision: 1,
+    rating: "GOOD",
+  });
+  response = await postEvent(ownerCookie, good);
+  assertProgress(response, { status: "LEARNED", reviewCount: 2, revision: 2 });
+  persisted = await findProgress(owner.id, vocabulary.id);
+  assert.equal(persisted.status, "LEARNED");
+  assert.equal(persisted.interval_days, 3);
+  assert.equal(
+    persisted.next_review_at.toISOString(),
+    "2026-10-07T03:15:00.000Z",
+  );
+  assert.equal(persisted.last_reviewed_at.toISOString(), FIXED_NOW.toISOString());
+  assert.equal(persisted.last_event_id, good.event_id);
+
+  response = await http.request(`/api/learning/sets/${set.id}?mode=SRS`, {
+    cookie: ownerCookie,
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.eligible_count, 0);
+  assert.deepEqual(response.json.data.cards, []);
 });
 
 test("events enforce private ownership, current membership and per-USER isolation transactionally", async () => {
@@ -615,10 +1014,10 @@ test("events enforce private ownership, current membership and per-USER isolatio
   const body = eventBody({
     setId: set.id,
     vocabularyId: vocabulary.id,
-    outcome: "REMEMBERED",
+    rating: "GOOD",
   });
   assertError(await postEvent(otherCookie, body), 404, "LEARNING_SET_NOT_FOUND");
-  assert.equal(await prisma.lEARNING_PROGRESS.count(), 0);
+  assert.equal(await testProgressCount(), 0);
   assert.equal((await postEvent(ownerCookie, body)).status, 200);
   assert.equal(
     await prisma.lEARNING_PROGRESS.count({ where: { user_id: otherUser.id } }),
@@ -667,7 +1066,7 @@ test("concurrent first events preserve idempotency and optimistic concurrency", 
   const same = eventBody({
     setId: set.id,
     vocabularyId: sameVocabulary.id,
-    outcome: "REMEMBERED",
+    rating: "GOOD",
   });
   const sameResponses = await Promise.all([
     postEvent(ownerCookie, same),
@@ -683,7 +1082,7 @@ test("concurrent first events preserve idempotency and optimistic concurrency", 
       eventId,
       setId: set.id,
       vocabularyId: differentVocabulary.id,
-      outcome: "STUDY_AGAIN",
+      rating: "AGAIN",
     }),
   );
   const differentResponses = await Promise.all(
@@ -751,10 +1150,80 @@ test("unexpected Learning failures use the final safe 500 contract", async () =>
   }
 });
 
+async function cleanupLearningSuiteFixtures() {
+  const users = await prisma.uSER.findMany({
+    where: { email: { startsWith: TEST_PREFIX } },
+    select: { id: true },
+  });
+  const userIds = users.map(({ id }) => id);
+  const sets = await prisma.vOCABULARY_SET.findMany({
+    where: {
+      OR: [
+        { name: { startsWith: TEST_PREFIX } },
+        ...(userIds.length > 0 ? [{ owner_id: { in: userIds } }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const setIds = sets.map(({ id }) => id);
+  const vocabularies = await prisma.vOCABULARY.findMany({
+    where: {
+      OR: [
+        { word: { startsWith: TEST_PREFIX } },
+        ...(userIds.length > 0 ? [{ owner_id: { in: userIds } }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const vocabularyIds = vocabularies.map(({ id }) => id);
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.pRIVATE_VOCABULARY_CREATE_OPERATION.deleteMany({
+      where: {
+        OR: [
+          ...(userIds.length > 0 ? [{ owner_id: { in: userIds } }] : []),
+          ...(setIds.length > 0 ? [{ vocabulary_set_id: { in: setIds } }] : []),
+          ...(vocabularyIds.length > 0 ? [{ vocabulary_id: { in: vocabularyIds } }] : []),
+        ],
+      },
+    });
+    await transaction.lEARNING_PROGRESS.deleteMany({
+      where: {
+        OR: [
+          ...(userIds.length > 0 ? [{ user_id: { in: userIds } }] : []),
+          ...(vocabularyIds.length > 0 ? [{ vocabulary_id: { in: vocabularyIds } }] : []),
+        ],
+      },
+    });
+    if (userIds.length > 0) {
+      await transaction.aUTH_SESSION.deleteMany({ where: { user_id: { in: userIds } } });
+    }
+    if (setIds.length > 0) {
+      await transaction.vOCABULARY_SET_ITEM.deleteMany({ where: { vocabulary_set_id: { in: setIds } } });
+      await transaction.vOCABULARY_SET.deleteMany({ where: { id: { in: setIds } } });
+    }
+    if (vocabularyIds.length > 0) {
+      await transaction.vOCABULARY.deleteMany({ where: { id: { in: vocabularyIds } } });
+    }
+    await transaction.tOPIC.deleteMany({
+      where: { name: { startsWith: TEST_PREFIX }, vocabulary_sets: { none: {} } },
+    });
+    if (userIds.length > 0) {
+      await transaction.uSER.deleteMany({ where: { id: { in: userIds } } });
+    }
+  }, { maxWait: 30_000, timeout: 120_000 });
+}
+
+function testProgressCount() {
+  return prisma.lEARNING_PROGRESS.count({
+    where: { user_id: { in: [admin.id, owner.id, otherUser.id] } },
+  });
+}
+
 async function createVocabulary(prefix, { nested = false } = {}) {
   const vocabulary = await prisma.vOCABULARY.create({
     data: {
-      word: `learning-${prefix}-${randomUUID()}`,
+      word: `${TEST_PREFIX}-${prefix}-${randomUUID()}`,
       phonetic: "/test/",
       pronunciation_url: "https://example.test/audio.mp3",
     },
@@ -803,7 +1272,7 @@ function createSet({ ownerId, isPublic, vocabularyIds }) {
     data: {
       owner_id: ownerId,
       topic_id: isPublic ? topic.id : null,
-      name: `Learning Set ${randomUUID()}`,
+      name: `${TEST_PREFIX} set ${randomUUID()}`,
       is_public: isPublic,
       items: {
         create: vocabularyIds.map((vocabularyId, index) => ({
@@ -820,14 +1289,14 @@ function eventBody({
   setId,
   vocabularyId,
   expectedRevision = 0,
-  outcome,
+  rating,
 }) {
   return {
     event_id: eventId,
     set_id: setId,
     vocabulary_id: vocabularyId,
     expected_revision: expectedRevision,
-    outcome,
+    rating,
   };
 }
 
@@ -859,6 +1328,8 @@ function createProgress({
   revision = 1,
   lastReviewedAt,
   createdAt,
+  intervalDays,
+  nextReviewAt,
 }) {
   return prisma.lEARNING_PROGRESS.create({
     data: {
@@ -869,6 +1340,8 @@ function createProgress({
       review_count: reviewCount,
       revision,
       last_reviewed_at: lastReviewedAt,
+      ...(intervalDays !== undefined ? { interval_days: intervalDays } : {}),
+      ...(nextReviewAt !== undefined ? { next_review_at: nextReviewAt } : {}),
       ...(createdAt ? { created_at: createdAt } : {}),
     },
   });

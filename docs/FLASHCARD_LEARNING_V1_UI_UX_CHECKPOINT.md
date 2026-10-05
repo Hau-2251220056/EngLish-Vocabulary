@@ -6,6 +6,8 @@
 
 **Implementation authorized by this checkpoint:** `TASK-052 ONLY`
 
+> Historical checkpoint: its two-outcome controls and no-SRS boundary were superseded by the HUMAN-approved SRS V1 SPEC/PLAN/TASK and the active contract in `docs/UI_UX_SPEC.md`. Retain this file as Flashcard V1 design history, not as the active rating contract.
+
 ## 1. Visual Direction
 
 The learning route remains inside the existing authentication and `UserRoute` boundary, but `AuthenticatedShell` renders a dedicated full-viewport Focus Mode there: the normal authenticated Header, Sidebar and Footer are absent only while learning. Other authenticated routes retain the normal shell unchanged. The Focus Mode follows the approved ELVocab baseline: clean light surfaces, primary `#3B5BDB`, Plus Jakarta Sans, rounded cards, restrained shadows and restrained animation. It does not introduce a generic Learning dashboard.

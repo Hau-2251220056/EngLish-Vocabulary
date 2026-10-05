@@ -18,6 +18,7 @@ export function createLearningController({ learningService }) {
         const learningSet = await learningService.getLearningSet(
           req.user.id,
           req.params.setId,
+          req.query,
         );
         res.status(200).json({ success: true, data: learningSet });
       } catch (error) {

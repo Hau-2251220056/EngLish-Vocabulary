@@ -703,26 +703,30 @@ Comment owner hoặc Admin.
 
 21. Learning / Flashcard
 
-### 21.0 Flashcard / Learning V1 Active Contract
+### 21.0 Flashcard / Learning + SRS V1 Active Contract
 
-The active V1 contract supersedes the generic numeric-ID and review/gamification drafts later in sections 21–25. All identifiers are UUID strings. Both endpoints require an authenticated `USER`; Guest receives the existing `401 AUTHENTICATION_FAILED`, and authenticated `ADMIN` receives the existing `403 FORBIDDEN`.
+The active SRS V1 contract supersedes the original two-outcome Flashcard contract and the generic numeric-ID and review/gamification drafts later in sections 21–25. All identifiers are UUID strings. Both endpoints require an authenticated `USER`; Guest receives the existing `401 AUTHENTICATION_FAILED`, and authenticated `ADMIN` receives the existing `403 FORBIDDEN`.
 
 #### `GET /api/learning/sets/:setId`
 
-The requested Set must be either a public System Set or a private Set owned by the current USER. Inaccessible private Sets use the not-found boundary. An accessible empty Set returns `409 LEARNING_SET_EMPTY`.
+The requested Set must be either a public System Set or a private Set owned by the current USER. Inaccessible private Sets use the not-found boundary. An accessible empty Set returns `409 LEARNING_SET_EMPTY`. The optional exact `mode` query defaults to `SRS`; supported values are `SRS` and `NORMAL`.
 
-The response uses `{ "success": true, "data": ... }` and contains Set ID/name, a stable `topic` value (`TopicSummary | null`), and cards in exact Set Item `position` order. Topicless Personal Sets return `topic: null`; categorized System and legacy Personal Sets return the Topic summary. Each card contains the approved Vocabulary metadata, all Meanings and their Examples in deterministic order, plus only the current USER's public progress projection:
+The response uses `{ "success": true, "data": ... }` and contains Set ID/name, a stable `topic` value (`TopicSummary | null`), `mode`, and mode-specific cards. `NORMAL` returns every Set Item in exact `position` order and is read-only. `SRS` returns a fixed snapshot of eligible NEW, LEARNING, legacy-compatible or due cards, evaluated at one backend-owned `evaluated_at`, together with total/eligible counts and nullable nearest future due time. Each card contains the approved Vocabulary aggregate and current USER progress projection; SRS cards additionally contain authoritative `rating_previews`.
 
 ```json
 {
   "status": "NEW",
+  "stored_status": null,
+  "stage": 0,
+  "interval_days": null,
+  "next_review_at": null,
   "review_count": 0,
   "revision": 0,
   "last_reviewed_at": null
 }
 ```
 
-`NEW` means no persisted progress row; this read must not create one. It returns no private owner internals, event identifier, SRS scheduling fields, XP or reward data.
+`NEW` means no persisted progress row; reads never create or update one. Responses expose no private owner internals, `last_event_id`, XP or reward data.
 
 #### `POST /api/learning/events`
 
@@ -734,17 +738,17 @@ The exact request body is:
   "set_id": "uuid",
   "vocabulary_id": "uuid",
   "expected_revision": 0,
-  "outcome": "REMEMBERED"
+  "rating": "GOOD"
 }
 ```
 
-Only `REMEMBERED` and `STUDY_AGAIN` are allowed. The backend derives the USER, revalidates Set access and current Set membership, and atomically maps `REMEMBERED -> LEARNED` or `STUDY_AGAIN -> LEARNING`. Each accepted meaningful assessment increments `review_count` and `revision` once and sets backend-owned `last_reviewed_at`/`last_event_id`; it does not calculate SRS fields or rewards.
+Only `AGAIN`, `HARD`, `GOOD` and `EASY` are allowed. Former `outcome`, `REMEMBERED` and `STUDY_AGAIN` payloads are rejected. The backend derives the USER, revalidates Set access/current exact membership, applies the authoritative deterministic scheduler, and atomically writes status, interval, due/review timestamps, `review_count`, `revision` and `last_event_id`. `AGAIN` resets to immediately-due stage 0/`LEARNING`; passing ratings persist `LEARNED` on the 1/3/7/14/30-day ladder. NORMAL mode never calls this endpoint.
 
 An immediate retry using the current `last_event_id` is idempotent and returns unchanged progress. A delayed/reordered different event with a stale revision returns `409 LEARNING_PROGRESS_CHANGED`. V1 has no event-history/ledger table and does not promise arbitrary historical replay idempotency.
 
 Known safe errors are `400 VALIDATION_ERROR`, `404 LEARNING_SET_NOT_FOUND`, `409 LEARNING_SET_EMPTY`, `409 LEARNING_SET_ITEM_CHANGED`, `409 LEARNING_PROGRESS_CHANGED`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
 
-Reveal, navigation, audio playback, reload, restart and client-run completion are not meaningful backend events and must not create/update progress.
+Reveal, NORMAL navigation, audio playback, reload, restart and client-run completion are not meaningful backend events and must not create/update progress.
 
 ### 21.0.1 Learning Progress View V1 Active Read Contract
 
@@ -756,9 +760,28 @@ The success envelope contains an unfiltered current-USER summary (`total_started
 
 Records are ordered by `last_reviewed_at` descending with nulls last, then progress `created_at` descending and progress `id` ascending. A positive out-of-range page succeeds with an empty item collection and truthful metadata.
 
-Conceptual `NEW` is excluded because it has no persisted row and V1 defines no global eligible Vocabulary universe. Existing `NEEDS_REVIEW` rows may be counted, filtered and displayed, but this endpoint creates no review eligibility, due queue, SRS transition or scheduling behavior. Reads never create or mutate progress and expose no Meaning/Example, Set/Topic membership, revision/event ID, SRS field or other USER's data.
+Conceptual `NEW` is excluded because it has no persisted row and V1 defines no global eligible Vocabulary universe. Summary, filters and items derive effective due state at one backend `evaluated_at`: learned schedules with `next_review_at <= evaluated_at` appear as `NEEDS_REVIEW`, future schedules remain `LEARNED`, and immediately-due stage-0 rows remain `LEARNING`. Reads never create or mutate progress and expose no Meaning/Example, Set/Topic membership, revision/event ID or other USER's data.
 
 Unexpected failures use the existing safe `500 INTERNAL_SERVER_ERROR` contract. This endpoint does not change `GET /api/learning/sets/:setId` or `POST /api/learning/events`.
+
+### 21.0.2 SRS V1 Rating Preview Extension
+
+This section gives the detailed rating-preview matrix for the active contract above. `GET /api/learning/sets/:setId?mode=SRS` evaluates eligibility and all rating previews at the response's single backend-owned `evaluated_at`. Each eligible card includes:
+
+```json
+{
+  "rating_previews": {
+    "AGAIN": { "kind": "SESSION_REQUEUE", "interval_days": null },
+    "HARD": { "kind": "SCHEDULED", "interval_days": 1 },
+    "GOOD": { "kind": "SCHEDULED", "interval_days": 3 },
+    "EASY": { "kind": "SCHEDULED", "interval_days": 7 }
+  }
+}
+```
+
+`HARD`, `GOOD` and `EASY` preview values are calculated by the same pure deterministic scheduler used by `POST /api/learning/events`; they are not frontend estimates. For stages `0` through `5`, the respective `(HARD, GOOD, EASY)` interval-day matrix is `(1,3,7)`, `(1,3,7)`, `(3,7,14)`, `(7,14,30)`, `(14,30,30)`, and `(30,30,30)`. The 30-day cap applies. `AGAIN` is an immediate unresolved same-session requeue and therefore intentionally has no future interval.
+
+`GET /api/learning/sets/:setId?mode=NORMAL` does not expose `rating_previews`. Rating mutation semantics, eligibility, idempotency and the no-schema-change persistence contract remain unchanged.
 
 Flashcard là learning activity.
 

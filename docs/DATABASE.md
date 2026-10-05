@@ -689,9 +689,9 @@ LEARNING
 LEARNED
 NEEDS_REVIEW
 
-Flashcard / Learning V1 persists only `LEARNING`, `LEARNED` and the future-compatible `NEEDS_REVIEW` value. `NEW` is conceptual and is represented by the absence of a `LEARNING_PROGRESS` row. V1 writes `LEARNING` for `STUDY_AGAIN` and `LEARNED` for `REMEMBERED`; it does not write `NEEDS_REVIEW` or calculate an SRS schedule.
+SRS V1 persists only `LEARNING`, `LEARNED` and the legacy-compatible `NEEDS_REVIEW` value. `NEW` is conceptual and is represented by the absence of a `LEARNING_PROGRESS` row. `AGAIN` writes `LEARNING` with `interval_days = null` and `next_review_at = last_reviewed_at` so it is due immediately. `HARD`, `GOOD` and `EASY` write `LEARNED` with exact integer-day schedules on the 1/3/7/14/30-day ladder. Effective due state is derived at read time using `next_review_at <= evaluated_at`; reads do not rewrite stored status.
 
-`review_count` is the count of successful meaningful learning/review assessments for the Vocabulary, not an SRS-only counter. Both approved V1 outcomes increment it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. V1 adds no event history or ledger table.
+`review_count` is the count of accepted meaningful ratings for the Vocabulary, not an SRS-only history ledger. Every newly accepted rating increments it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. SRS V1 adds no event history, Learning Session or ledger table, and leaves `ease_factor` unused.
 NEW
 
 User chưa có hoạt động học đối với Vocabulary.

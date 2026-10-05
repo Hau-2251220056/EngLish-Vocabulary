@@ -1519,13 +1519,11 @@ input {
     #fff;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  overscroll-behavior: contain;
 }
 
 .learning-card-back {
   transform: rotateY(180deg);
   background: linear-gradient(145deg, #fff, #f7fafc);
-  scrollbar-gutter: stable;
 }
 
 .learning-card[aria-hidden="true"] {

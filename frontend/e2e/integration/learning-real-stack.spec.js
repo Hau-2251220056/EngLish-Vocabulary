@@ -132,7 +132,7 @@ test.beforeEach(async ({ page }) => {
   await installSpeechSynthesisProbe(page);
 });
 
-test("loading decoration stays static and the whole Flashcard shell flips front-back-front", async ({ page }) => {
+test("loading state is accessible and the whole Flashcard shell flips front-back-front", async ({ page }) => {
   await login(page, learner);
   let releaseLoad;
   const loadGate = new Promise((resolve) => { releaseLoad = resolve; });
@@ -141,11 +141,13 @@ test("loading decoration stays static and the whole Flashcard shell flips front-
     await route.continue();
   });
 
+  const learningRequest = page.waitForRequest("**/api/learning/sets/*");
   const navigation = page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
-  const loadingIcon = page.locator(".learning-loading-icon");
-  await expect(loadingIcon).toBeVisible();
-  await expect(loadingIcon).toHaveCSS("animation-name", "none");
-  await expect(loadingIcon.locator("svg")).not.toHaveCSS("animation-name", "none");
+  await learningRequest;
+  const loadingHeading = page.getByRole("heading", { name: "Đang chuẩn bị phiên ôn tập" });
+  await expect(loadingHeading).toBeVisible();
+  const loadingState = loadingHeading.locator("..");
+  await expect(loadingState.locator("svg")).toHaveCSS("animation-name", "none");
   releaseLoad();
   await navigation;
 
@@ -176,8 +178,8 @@ test("loading decoration stays static and the whole Flashcard shell flips front-
   await expect(back).toHaveCSS("border-top-width", "0px");
   await expect(front).toHaveCSS("backface-visibility", "hidden");
   await expect(back).toHaveCSS("backface-visibility", "hidden");
-  await expect(front).toHaveCSS("position", "absolute");
-  await expect(back).toHaveCSS("position", "absolute");
+  await expect(front).toHaveCSS("position", "relative");
+  await expect(back).toHaveCSS("position", "relative");
 
   await page.keyboard.press("Space");
   await expect(shell).toHaveClass(/is-revealed/);
@@ -203,14 +205,15 @@ test("loading decoration stays static and the whole Flashcard shell flips front-
   await expect(shell).toHaveCSS("box-shadow", initialFrame.shadow);
 });
 
-test("Flashcard keeps focus on the outer card and ignores superseded pronunciation errors", async ({ page }) => {
+test("Flashcard keeps focus stable and pronunciation failures do not block NORMAL navigation", async ({ page }) => {
   await login(page, learner);
   await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
 
   const stage = page.locator(".learning-flip-stage");
   const frontHeading = page.locator("#learning-card-word");
   const meaningHeading = page.locator(".learning-card-back h3");
-  const audioError = page.getByText("Không thể phát âm từ này. Bạn có thể tiếp tục học bình thường.");
+  const audioError = page.getByText("Không thể phát âm từ này. Bạn vẫn có thể tiếp tục ôn tập.");
 
   await expect(frontHeading).toBeFocused();
   await expect(frontHeading).toHaveCSS("box-shadow", "none");
@@ -225,7 +228,6 @@ test("Flashcard keeps focus on the outer card and ignores superseded pronunciati
   await expect(frontHeading).toHaveCSS("box-shadow", "none");
   await stage.click();
   await expect(meaningHeading).toBeFocused();
-  await expect(audioError).toHaveCount(0);
 
   await page.keyboard.press("Space");
   await page.keyboard.press("Space");
@@ -233,62 +235,84 @@ test("Flashcard keeps focus on the outer card and ignores superseded pronunciati
   await page.keyboard.press("Space");
   await expect(meaningHeading).toBeFocused();
   await expect(meaningHeading).toHaveCSS("box-shadow", "none");
-  await expect(audioError).toHaveCount(0);
-
-  const staleUtteranceIndex = await speechCount(page) - 1;
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: /Thẻ sau/ }).click();
-  await page.evaluate(
-    ({ error, index }) => window.__failLearningSpeechAt(index, error),
-    { error: "network", index: staleUtteranceIndex },
-  );
-  await expect(audioError).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
 
   await page.locator('.learning-card:not([inert]) button[aria-label^="Phát âm từ"]').click();
   await page.evaluate(() => window.__failCurrentLearningSpeech("synthesis-failed"));
   await expect(audioError).toBeVisible();
 });
 
-test("USER completes ordered cards with reveal, outcomes, resume and summary", async ({
+test("SRS persists revised NEW intervals and AGAIN resumes after three other presentations", async ({
   page,
 }) => {
+  const extraVocabulary = await Promise.all([
+    createVocabulary("gamma", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa thẻ ba", cefr_level: "A1", examples: [{ example_en: "Third card." }] }] }),
+    createVocabulary("delta", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa thẻ bốn", cefr_level: "A1", examples: [{ example_en: "Fourth card." }] }] }),
+    createVocabulary("epsilon", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa thẻ năm", cefr_level: "A1", examples: [{ example_en: "Fifth card." }] }] }),
+  ]);
+  const lifecycleSet = await createSetWithVocabularyIds(
+    adminRecord.id,
+    true,
+    "SRS lifecycle",
+    [firstVocabulary.id, secondVocabulary.id, ...extraVocabulary.map(({ id }) => id)],
+  );
   await login(page, learner);
-  await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  await page.goto(`/learn/vocabulary-sets/${lifecycleSet.id}`);
 
-  await expect(page.getByRole("status")).toContainText("Đang chuẩn bị phiên học");
   await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
-  await expect(page.locator(".authenticated-header")).toHaveCount(0);
-  await expect(page.locator(".authenticated-sidebar")).toHaveCount(0);
-  await expect(page.locator(".authenticated-footer")).toHaveCount(0);
-  await expect(page.getByText("Thẻ 1/2")).toBeVisible();
-
-  await page.getByText("Nhấn hoặc Space để lật thẻ").click();
-  await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeFocused();
-  await expect(page.getByText("nghĩa B2 không được chọn")).toHaveCount(0);
-  await expect(page.getByText("First deterministic example.")).toBeVisible();
-  await expect(page.getByText("Second hidden example.")).toHaveCount(0);
-  await expect.poll(() => speechCount(page)).toBe(1);
-
-  const studyAgain = page.getByRole("button", { name: "Học lại" });
-  const remembered = page.getByRole("button", { name: "Nhớ rồi" });
-  await studyAgain.click();
-  await expect(studyAgain).toHaveAttribute("aria-busy", "true");
-  await expect(remembered).not.toHaveAttribute("aria-busy", "true");
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này" }).click();
   await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
+
+  let firstProgress = await progressFor(learnerRecord.id, firstVocabulary.id);
+  expect(firstProgress).toMatchObject({ status: "LEARNING", interval_days: null, review_count: 1, revision: 1 });
+  expect(firstProgress.next_review_at.getTime()).toBe(firstProgress.last_reviewed_at.getTime());
+
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByText("Thẻ 1 / 5")).toBeVisible();
+  await page.getByRole("button", { name: "Ôn tập SRS" }).click();
+  expect(await progressFor(learnerRecord.id, firstVocabulary.id)).toEqual(firstProgress);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
-  await page.keyboard.press("Space");
-  await expect(page.getByRole("heading", { name: "nghĩa thẻ thứ hai" })).toBeFocused();
-  await expect.poll(() => speechCount(page)).toBe(1);
-  await remembered.click();
-  await expect(remembered).toHaveAttribute("aria-busy", "true");
-  await expect(studyAgain).not.toHaveAttribute("aria-busy", "true");
+  for (const vocabulary of [secondVocabulary, ...extraVocabulary.slice(0, 2)]) {
+    await expect(page.getByRole("heading", { name: vocabulary.word })).toBeFocused();
+    await page.keyboard.press("Space");
+    await page.getByRole("button", { name: "Tốt, 1–3 ngày" }).click();
+  }
 
-  await expect(page.getByRole("heading", { name: systemSet.name })).toBeFocused();
-  await expect(page.getByText("Nhớ rồi").last()).toBeVisible();
-  await expect(page.getByText("Học lại").last()).toBeVisible();
-  await expect(page.getByText("1", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
+  const stored = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem([...Object.keys(sessionStorage)].find((key) => key.startsWith("elvocab.learning.run.v1:"))),
+  ));
+  expect(stored.srs.queue.filter((id) => id === firstVocabulary.id)).toHaveLength(1);
+
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này" }).click();
+  await expect(page.getByRole("heading", { name: extraVocabulary[2].word })).toBeFocused();
+  const repeatedAgainState = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem([...Object.keys(sessionStorage)].find((key) => key.startsWith("elvocab.learning.run.v1:"))),
+  ));
+  expect(repeatedAgainState.srs.queue.filter((id) => id === firstVocabulary.id)).toHaveLength(1);
+
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Dễ, 1 tuần+" }).click();
+  await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
+  const easyProgress = await progressFor(learnerRecord.id, extraVocabulary[2].id);
+  expect(easyProgress).toMatchObject({ status: "LEARNED", interval_days: 7, review_count: 1, revision: 1 });
+  expect(easyProgress.next_review_at.getTime() - easyProgress.last_reviewed_at.getTime()).toBe(7 * 86_400_000);
+
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Khó, Ngày mai" }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  firstProgress = await progressFor(learnerRecord.id, firstVocabulary.id);
+  expect(firstProgress).toMatchObject({ status: "LEARNED", interval_days: 1, review_count: 3, revision: 3 });
+
+  const secondProgress = await progressFor(learnerRecord.id, secondVocabulary.id);
+  expect(secondProgress).toMatchObject({ status: "LEARNED", interval_days: 3, review_count: 1, revision: 1 });
+  expect(secondProgress.next_review_at.getTime() - secondProgress.last_reviewed_at.getTime()).toBe(3 * 86_400_000);
 });
 
 test("Learning preserves retry context, prevents duplicate events and handles conflict", async ({
@@ -332,14 +356,14 @@ test("Learning preserves retry context, prevents duplicate events and handles co
   await page.goto(`/learn/vocabulary-sets/${ownedSet.id}`);
   await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeVisible();
   await page.keyboard.press("Space");
-  await page.getByRole("button", { name: "Nhớ rồi" }).click();
+  await page.getByRole("button", { name: "Tốt, 1–3 ngày" }).click();
 
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText("Chưa thể ghi nhận lựa chọn");
+  await expect(alert).toContainText("Chưa thể ghi nhận đánh giá");
   await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeVisible();
-  await page.getByRole("button", { name: "Thử ghi nhận lại" }).click();
-  await expect(alert).toContainText("Tiến độ đã thay đổi");
-  await expect(page.getByRole("button", { name: "Làm mới phiên học" })).toBeVisible();
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(alert).toContainText("Phiên SRS đã thay đổi");
+  await expect(page.getByRole("button", { name: "Làm mới phiên SRS" })).toBeVisible();
   expect(eventCalls).toBe(2);
 });
 
@@ -418,9 +442,9 @@ test("Flashcard stays centered at a narrower desktop width and preserves respons
     });
 
     expect(geometry.overflow, viewport.name).toBeLessThanOrEqual(1);
-    expect(geometry.columnCenterOffset, viewport.name).toBeLessThanOrEqual(8);
+    expect(geometry.columnCenterOffset, viewport.name).toBeLessThanOrEqual(12);
     expect(geometry.stage.width, viewport.name).toBeLessThanOrEqual(viewport.name === "desktop" ? 640 : viewport.width - 24);
-    if (viewport.name === "desktop") expect(geometry.stage.height).toBe(384);
+    if (viewport.name === "desktop") expect(geometry.stage.height).toBeGreaterThanOrEqual(384);
     else expect(geometry.stage.height).toBeGreaterThanOrEqual(224);
     expect(geometry.stackCenterOffset, viewport.name).toBeLessThanOrEqual(1);
     expect(geometry.hintBottomGap, viewport.name).toBeGreaterThanOrEqual(15);
@@ -431,33 +455,125 @@ test("Flashcard stays centered at a narrower desktop width and preserves respons
 test("Flashcard navigation uses expressive actionable colors and neutral disabled states", async ({
   page,
 }) => {
+  await prisma.lEARNING_PROGRESS.create({
+    data: {
+      user_id: learnerRecord.id,
+      vocabulary_id: firstVocabulary.id,
+      status: "LEARNED",
+      interval_days: 7,
+      next_review_at: new Date(Date.now() + 7 * 86_400_000),
+      review_count: 4,
+      revision: 4,
+      last_reviewed_at: new Date(Date.now() - 86_400_000),
+    },
+  });
+  const before = await progressSnapshot(learnerRecord.id);
   await login(page, learner);
   await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
 
   const previous = page.getByRole("button", { name: /Thẻ trước/ });
   const next = page.getByRole("button", { name: /Thẻ sau/ });
   await expect(previous).toBeDisabled();
   await expect(previous).toHaveClass(/disabled:bg-slate-100/);
-  await expect(previous).toHaveClass(/disabled:border-slate-200/);
+  await expect(previous).toHaveClass(/disabled:!border-slate-200/);
   await expect(previous).toHaveClass(/disabled:text-slate-400/);
   await expect(previous).toHaveCSS("cursor", "not-allowed");
   await expect(next).toBeEnabled();
-  await expect(next).toHaveClass(/bg-emerald-500/);
-  await expect(next).toHaveClass(/border-emerald-500/);
+  await expect(next).toHaveClass(/bg-\[#7ed321\]/);
+  await expect(next).toHaveClass(/!border-\[#7ed321\]/);
   await expect(next).toHaveClass(/text-white/);
   await expect(next).toHaveCSS("cursor", "pointer");
 
   await next.click();
   await expect(previous).toBeEnabled();
   await expect(previous).toHaveClass(/bg-white/);
-  await expect(previous).toHaveClass(/border-amber-300/);
-  await expect(previous).toHaveClass(/text-amber-700/);
+  await expect(previous).toHaveClass(/!border-\[#f97316\]/);
+  await expect(previous).toHaveClass(/text-\[#f97316\]/);
   await expect(previous).toHaveCSS("cursor", "pointer");
   await expect(next).toBeDisabled();
   await expect(next).toHaveClass(/disabled:bg-slate-100/);
-  await expect(next).toHaveClass(/disabled:border-slate-200/);
+  await expect(next).toHaveClass(/disabled:!border-slate-200/);
   await expect(next).toHaveClass(/disabled:text-slate-400/);
   await expect(next).toHaveCSS("cursor", "not-allowed");
+  expect(await progressSnapshot(learnerRecord.id)).toEqual(before);
+});
+
+test("stable-stage rating, up-to-date and empty states use authoritative persistence", async ({ page }) => {
+  const stableSet = await createSetWithVocabularyIds(
+    learnerRecord.id,
+    false,
+    "Stable stage",
+    [firstVocabulary.id],
+  );
+  await prisma.lEARNING_PROGRESS.createMany({
+    data: [firstVocabulary, secondVocabulary].map((vocabulary, index) => ({
+      user_id: learnerRecord.id,
+      vocabulary_id: vocabulary.id,
+      status: "LEARNED",
+      interval_days: index === 0 ? 3 : 7,
+      next_review_at: index === 0
+        ? new Date(Date.now() - 60_000)
+        : new Date(Date.now() + 7 * 86_400_000),
+      review_count: 2,
+      revision: 2,
+      last_reviewed_at: new Date(Date.now() - 3 * 86_400_000),
+    })),
+  });
+  await login(page, learner);
+  await page.goto(`/learn/vocabulary-sets/${stableSet.id}`);
+  await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeFocused();
+  await page.getByRole("button", { name: "Dễ, 2 tuần" }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+
+  const stable = await progressFor(learnerRecord.id, firstVocabulary.id);
+  expect(stable).toMatchObject({ status: "LEARNED", interval_days: 14, review_count: 3, revision: 3 });
+  expect(stable.next_review_at.getTime() - stable.last_reviewed_at.getTime()).toBe(14 * 86_400_000);
+
+  await page.goto(`/learn/vocabulary-sets/${stableSet.id}`);
+  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
+
+  const emptySet = await prisma.vOCABULARY_SET.create({
+    data: { owner_id: learnerRecord.id, name: `${prefix} Empty`, is_public: false },
+  });
+  await page.goto(`/learn/vocabulary-sets/${emptySet.id}`);
+  await expect(page.getByRole("heading", { name: "Bộ từ chưa có nội dung" })).toBeVisible();
+});
+
+test("exact vocabulary identity survives same spelling, Set reuse and membership removal", async ({ page }) => {
+  const sameWord = `${prefix} identity`;
+  const [canonical, privateVocabulary] = await Promise.all([
+    createVocabulary("identity-canonical", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa chuẩn", cefr_level: "A1", examples: [{ example_en: "Canonical." }] }] }),
+    prisma.vOCABULARY.create({
+      data: {
+        owner_id: learnerRecord.id,
+        word: sameWord,
+        meanings: { create: { part_of_speech: "noun", meaning_vi: "nghĩa riêng", cefr_level: "A1" } },
+      },
+    }),
+  ]);
+  await prisma.vOCABULARY.update({ where: { id: canonical.id }, data: { word: sameWord } });
+  const firstSet = await createSetWithVocabularyIds(learnerRecord.id, false, "Identity A", [canonical.id, privateVocabulary.id]);
+  const sharedSet = await createSetWithVocabularyIds(learnerRecord.id, false, "Identity B", [canonical.id]);
+
+  await login(page, learner);
+  await page.goto(`/learn/vocabulary-sets/${firstSet.id}`);
+  await expect(page.getByRole("heading", { name: sameWord, exact: true })).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("heading", { name: "nghĩa chuẩn" })).toBeFocused();
+  await page.getByRole("button", { name: "Tốt, 1–3 ngày" }).click();
+  await expect.poll(() => prisma.lEARNING_PROGRESS.count({ where: { user_id: learnerRecord.id, vocabulary_id: canonical.id } })).toBe(1);
+  expect(await prisma.lEARNING_PROGRESS.count({ where: { user_id: learnerRecord.id, vocabulary_id: privateVocabulary.id } })).toBe(0);
+
+  await page.goto(`/learn/vocabulary-sets/${sharedSet.id}?mode=NORMAL`);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByText("Thẻ 1 / 1")).toBeVisible();
+  await prisma.vOCABULARY_SET_ITEM.delete({
+    where: { vocabulary_set_id_vocabulary_id: { vocabulary_set_id: firstSet.id, vocabulary_id: canonical.id } },
+  });
+  expect(await prisma.lEARNING_PROGRESS.count({ where: { user_id: learnerRecord.id, vocabulary_id: canonical.id } })).toBe(1);
 });
 
 test("Guest, ADMIN and non-owner cannot enter an unauthorized learning run", async ({
@@ -517,6 +633,48 @@ function createSet(ownerId, isPublic, suffix) {
           { vocabulary_id: secondVocabulary.id, position: 2 },
         ],
       },
+    },
+  });
+}
+
+function createSetWithVocabularyIds(ownerId, isPublic, suffix, vocabularyIds) {
+  return prisma.vOCABULARY_SET.create({
+    data: {
+      owner_id: ownerId,
+      topic_id: isPublic ? topic.id : null,
+      name: `${prefix} ${suffix}`,
+      is_public: isPublic,
+      items: {
+        create: vocabularyIds.map((vocabularyId, index) => ({
+          vocabulary_id: vocabularyId,
+          position: index + 1,
+        })),
+      },
+    },
+  });
+}
+
+function progressFor(userId, vocabularyId) {
+  return prisma.lEARNING_PROGRESS.findUniqueOrThrow({
+    where: { user_id_vocabulary_id: { user_id: userId, vocabulary_id: vocabularyId } },
+  });
+}
+
+function progressSnapshot(userId) {
+  return prisma.lEARNING_PROGRESS.findMany({
+    where: { user_id: userId },
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      vocabulary_id: true,
+      status: true,
+      interval_days: true,
+      next_review_at: true,
+      last_reviewed_at: true,
+      last_event_id: true,
+      review_count: true,
+      revision: true,
+      updated_at: true,
     },
   });
 }

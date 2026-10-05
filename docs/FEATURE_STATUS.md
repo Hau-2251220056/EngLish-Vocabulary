@@ -509,7 +509,7 @@ Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
 Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
-Spaced Repetition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Spaced Repetition	DONE	✓	✓	✓	✓	✓	✓
 Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Continue Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -526,7 +526,7 @@ LEARNED
 ↓
 NEEDS_REVIEW
 
-Flashcard / Learning V1 is approved and planned as a USER-only ordered Set learning flow with transient client run state and backend-authoritative per-`(user_id, vocabulary_id)` progress. It has no persistent Learning Session/history or event ledger. Both approved meaningful outcomes increment `review_count`; only immediate retry of the current event ID is idempotent, while stale older events are rejected by revision protection.
+Flashcard / Learning with SRS V1 is a USER-only Set learning flow with transient client state and backend-authoritative per-`(user_id, vocabulary_id)` progress. SRS is the default mode; NORMAL preserves read-only all-card traversal. The backend owns the four-rating schedule, and immediate retry of the current event ID is idempotent while stale different events are rejected by revision protection. No persistent Learning Session/history or event ledger is introduced.
 
 ## Flashcard / Learning V1 Closure
 
@@ -556,9 +556,40 @@ Status: DONE
 
 ### Deferred / Non-blocking
 
-- Spaced Repetition, Words to Review, Topic Learning Progress and Continue Learning remain `TODO`. V1 preserves nullable future-compatible scheduling fields but defines no SRS algorithm, service, queue or due-date behavior.
+- Spaced Repetition was delivered as the separately approved SRS V1 extension described below. Words to Review, Topic Learning Progress and Continue Learning remain `TODO`.
 - Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community and AI remain outside this DONE boundary.
 - Guarded remote TEST DB latency was separately diagnosed as database/network round-trip dominated. It is a non-blocking performance observation and no optimization was included in this closure.
+
+## SRS V1 Closure
+
+Status: DONE
+
+### Workflow Status
+
+- Approved SPEC, PLAN and TASK are synchronized with the final 1/3/7-day NEW timing revision.
+- TASK-090 through TASK-106 and revision tasks TASK-105A through TASK-105D are complete; all mandatory HUMAN checkpoints through TASK-106 were approved.
+- Formal TEST: PASS. Formal REVIEW: APPROVE. No blocking findings remain.
+- No Prisma schema/migration, package dependency, persistent Learning Session/history or event ledger was added.
+
+### Verified Scope
+
+- Default fixed-snapshot SRS sessions include eligible NEW, LEARNING, legacy-compatible and due items; NORMAL returns all Set items and never mutates scheduling/progress.
+- The backend-authoritative deterministic ladder is stage 0 then 1/3/7/14/30 days. NEW `HARD`/`GOOD`/`EASY` schedule 1/3/7 days; `AGAIN` resets to immediately-due stage 0 and remains unresolved in-session.
+- Backend-provided rating previews map to **Trong phiên này**, **Ngày mai**, **1–3 ngày**, **1 tuần+**, **2 tuần**, and **30 ngày** without frontend scheduler duplication.
+- Duplicate/retried events cannot advance scheduling twice. Exact-ID queue state preserves at most one pending occurrence; `AGAIN` reappears after three other presentations when possible, otherwise at queue end.
+- Existing Flashcard 3D/pronunciation/focus shell, NORMAL Previous/Next, responsive/accessibility behavior, derived Learning Progress due state, Set access and USER-only authorization are preserved.
+
+### Formal Evidence
+
+- Pure scheduler: 5/5 PASS; guarded backend Learning integration: 20/20 PASS; focused frontend Learning unit tests: 20/20 PASS; mocked Flashcard Playwright: 22/22 PASS.
+- Dedicated real stack: Learning 10/10, Learning Progress 5/5, Authentication/Quiz 5/5, Dashboard 2/2, public Set Detail 3/3 and USER Set Detail 2/2 PASS.
+- Production build, full/touched-file ESLint and `git diff --check` PASS. TEST cleanup preserved unrelated/manual users and sessions.
+
+### Deferred / Non-blocking
+
+- Words-to-Review/Dashboard review summaries, Topic progress, Continue Learning, persistent history/session analytics, FSRS/SM-2, gamification and pronunciation expansion remain outside SRS V1.
+- `ease_factor` remains unused. The 30-day interval cap remains intentional.
+- Configured development database migration parity remains `NOT VERIFIED — Supabase/Prisma schema-engine error`; dedicated `.env.test` migration parity passed with 7 migrations and none pending. No main database mutation was performed.
 
 ## Learning Progress View V1
 

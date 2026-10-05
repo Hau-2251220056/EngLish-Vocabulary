@@ -42,7 +42,7 @@ import { createLearningService } from "./services/learning-service.js";
 import { createQuizService } from "./services/quiz-service.js";
 import * as passwordSecurity from "./utils/password-security.js";
 
-export function createApp({ prisma }) {
+export function createApp({ prisma, learningNow }) {
   if (!prisma) {
     throw new TypeError("A Prisma client is required to create the application.");
   }
@@ -109,7 +109,10 @@ export function createApp({ prisma }) {
     authenticationMiddleware,
   });
   const learningRepository = createLearningRepository(prisma);
-  const learningService = createLearningService({ learningRepository });
+  const learningService = createLearningService({
+    learningRepository,
+    ...(learningNow ? { now: learningNow } : {}),
+  });
   const learningController = createLearningController({ learningService });
   const learningRouter = createLearningRouter({
     learningController,

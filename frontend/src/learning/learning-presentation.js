@@ -22,14 +22,6 @@ export function selectPrimaryMeaning(meanings = []) {
   return selected;
 }
 
-export function nextUnassessedCardId(cards, assessments, currentIndex) {
-  for (let offset = 1; offset <= cards.length; offset += 1) {
-    const card = cards[(currentIndex + offset) % cards.length];
-    if (card && !assessments[card.id]) return card.id;
-  }
-  return null;
-}
-
 export function isKeyboardShortcutSafe(target) {
   if (typeof Element === "undefined") return true;
   if (!(target instanceof Element)) return true;
@@ -66,10 +58,10 @@ export function revealWithPronunciation(reveal, playPronunciation) {
   }
 }
 
-export function pendingLearningOutcome(eventState, attempt) {
-  return eventState === "pending" ? attempt?.outcome ?? null : null;
+export function pendingLearningRating(eventState, attempt) {
+  return eventState === "pending" ? attempt?.rating ?? null : null;
 }
 
-export function isLearningOutcomePending(eventState, attempt, outcome) {
-  return pendingLearningOutcome(eventState, attempt) === outcome;
+export function isLearningRatingPending(eventState, attempt, rating) {
+  return pendingLearningRating(eventState, attempt) === rating;
 }

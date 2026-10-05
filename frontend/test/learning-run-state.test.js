@@ -1,111 +1,135 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  assessLearningCard,
-  clearLearningRunState,
-  clearLearningRunStateNamespace,
-  createLearningRunState,
-  loadLearningRunState,
-  reconcileLearningRunState,
-  restartLearningRun,
-  saveLearningRunState,
-  selectLearningCard,
-  summarizeLearningRun,
+  applySrsRating, clearLearningRunStateNamespace, createLearningRunState,
+  currentSrsVocabularyId, loadLearningRunState, reconcileLearningRunState,
+  restartNormalRun, restartSrsRun, saveLearningRunState, selectLearningMode,
+  selectNormalCard, summarizeLearningRun,
 } from "../src/learning/learning-run-state.js";
 
-const cards = Object.freeze([{ id: "word-1" }, { id: "word-2" }]);
+const srsPayload = payload("SRS", ["one", "two", "three", "four", "five"]);
+const normalPayload = payload("NORMAL", ["one", "two", "three", "four", "five"]);
 
-test("run state round-trips in a USER/Set-scoped Learning namespace", () => {
+test("v1 two-outcome and corrupt state fail closed into fresh v2 SRS state", () => {
+  const legacy = { version: 1, user_id: "u", set_id: "s", assessments: { one: "REMEMBERED" } };
+  const fresh = reconcileLearningRunState(legacy, "u", "s", srsPayload);
+  assert.equal(fresh.version, 2);
+  assert.equal(fresh.active_mode, "SRS");
+  assert.deepEqual(fresh.srs.queue, ["one", "two", "three", "four", "five"]);
+  assert.deepEqual(reconcileLearningRunState({ version: 2 }, "u", "s", srsPayload), fresh);
+});
+
+test("AGAIN requeues after three presentations and never leaves duplicates", () => {
+  let state = createLearningRunState("u", "s", srsPayload);
+  state = applySrsRating(state, "one", "AGAIN", { revision: 1 });
+  assert.deepEqual(state.srs.queue, ["two", "three", "four", "one", "five"]);
+  state = applySrsRating(state, "two", "GOOD", { revision: 1 });
+  state = applySrsRating(state, "three", "GOOD", { revision: 1 });
+  state = applySrsRating(state, "four", "GOOD", { revision: 1 });
+  assert.equal(currentSrsVocabularyId(state), "one");
+  assert.deepEqual(state.srs.queue, ["one", "five"]);
+  state = applySrsRating(state, "one", "AGAIN", { revision: 2 });
+  assert.equal(state.srs.queue.filter((id) => id === "one").length, 1);
+});
+
+test("AGAIN uses tail for zero to two remaining cards", () => {
+  for (const ids of [["one"], ["one", "two"], ["one", "two", "three"]]) {
+    let state = createLearningRunState("u", "s", payload("SRS", ids));
+    state = applySrsRating(state, "one", "AGAIN", {});
+    assert.equal(state.srs.queue.at(-1), "one");
+  }
+});
+
+test("fixed denominator, passing completion and exact-ID reconciliation are stable", () => {
+  let state = createLearningRunState("u", "s", payload("SRS", ["same-a", "same-b"]));
+  state = applySrsRating(state, "same-a", "GOOD", {});
+  assert.deepEqual(summarizeLearningRun(state), { total: 2, completed_count: 1, presentation_count: 1, completed: false });
+  state = reconcileLearningRunState(state, "u", "s", payload("SRS", ["same-b", "newly-due"]));
+  assert.deepEqual(state.srs.initial_ids, ["same-a", "same-b"]);
+  assert.deepEqual(state.srs.queue, ["same-b"]);
+  state = applySrsRating(state, "same-b", "EASY", {});
+  assert.equal(summarizeLearningRun(state).completed, true);
+});
+
+test("a settled snapshot yields to a fresh backend snapshot instead of staying falsely complete", () => {
+  let completed = createLearningRunState("u", "s", payload("SRS", ["one"]));
+  completed = applySrsRating(completed, "one", "GOOD", { revision: 1 });
+  assert.equal(summarizeLearningRun(completed).completed, true);
+
+  const dueAgain = reconcileLearningRunState(
+    completed,
+    "u",
+    "s",
+    payload("SRS", ["one", "newly-eligible"]),
+  );
+  assert.deepEqual(dueAgain.srs.initial_ids, ["one", "newly-eligible"]);
+  assert.deepEqual(dueAgain.srs.queue, ["one", "newly-eligible"]);
+  assert.deepEqual(dueAgain.srs.passed_ids, []);
+  assert.equal(summarizeLearningRun(dueAgain).completed, false);
+
+  const formerlyUpToDate = createLearningRunState("u", "s", payload("SRS", []));
+  const firstDueSnapshot = reconcileLearningRunState(
+    formerlyUpToDate,
+    "u",
+    "s",
+    payload("SRS", ["one"]),
+  );
+  assert.deepEqual(firstDueSnapshot.srs.queue, ["one"]);
+});
+
+test("an unresolved AGAIN survives v2 storage reconciliation and never counts complete", () => {
   const storage = createStorage();
-  const state = createLearningRunState("user/1", "set/1", cards);
+  let state = createLearningRunState("u", "s", payload("SRS", ["one", "two"]));
+  state = applySrsRating(state, "one", "AGAIN", { revision: 1 });
+  assert.deepEqual(state.srs.queue, ["two", "one"]);
+  assert.deepEqual(summarizeLearningRun(state), {
+    total: 2,
+    completed_count: 0,
+    presentation_count: 1,
+    completed: false,
+  });
   saveLearningRunState(storage, state);
 
-  assert.deepEqual(loadLearningRunState(storage, "user/1", "set/1"), state);
-  assert.equal(loadLearningRunState(storage, "user-2", "set/1"), null);
-  assert.equal([...storage.keys()][0].startsWith("elvocab.learning.run.v1:"), true);
-
-  clearLearningRunState(storage, "user/1", "set/1");
-  assert.equal(loadLearningRunState(storage, "user/1", "set/1"), null);
+  const resumed = reconcileLearningRunState(
+    loadLearningRunState(storage, "u", "s"),
+    "u",
+    "s",
+    payload("SRS", ["one", "two"]),
+  );
+  assert.deepEqual(resumed.srs.queue, ["two", "one"]);
+  assert.equal(resumed.srs.queue.filter((id) => id === "one").length, 1);
+  assert.equal(summarizeLearningRun(resumed).completed, false);
 });
 
-test("fresh payload reconciliation retains only valid cursor and assessments", () => {
-  const reconciled = reconcileLearningRunState(
-    {
-      version: 1,
-      user_id: "user-1",
-      set_id: "set-1",
-      current_vocabulary_id: "removed-word",
-      assessments: {
-        "word-1": "REMEMBERED",
-        "removed-word": "STUDY_AGAIN",
-        "word-2": "INVALID",
-      },
-    },
-    "user-1",
-    "set-1",
-    cards,
-  );
-
-  assert.equal(reconciled.current_vocabulary_id, "word-1");
-  assert.deepEqual(reconciled.assessments, { "word-1": "REMEMBERED" });
-  assert.deepEqual(
-    reconcileLearningRunState({ version: 1 }, "user-1", "set-1", cards),
-    createLearningRunState("user-1", "set-1", cards),
-  );
-});
-
-test("current-card, assessment, completion and restart semantics remain client-only", () => {
-  let state = createLearningRunState("user-1", "set-1", cards);
-  state = selectLearningCard(state, "word-2", cards);
-  state = assessLearningCard(state, "word-1", "REMEMBERED", cards);
-  state = assessLearningCard(state, "word-2", "STUDY_AGAIN", cards);
-
-  assert.equal(state.current_vocabulary_id, "word-2");
-  assert.deepEqual(summarizeLearningRun(state, cards), {
-    total: 2,
-    assessed: 2,
-    remembered: 1,
-    study_again: 1,
-    completed: true,
-  });
-  assert.deepEqual(
-    restartLearningRun(state, cards),
-    createLearningRunState("user-1", "set-1", cards),
-  );
-});
-
-test("namespace cleanup removes only Learning-owned run state", () => {
+test("mode switch, NORMAL cursor, restarts and storage resume remain isolated", () => {
   const storage = createStorage();
-  storage.setItem("unrelated.session.key", "keep");
-  saveLearningRunState(
-    storage,
-    createLearningRunState("user-1", "set-1", cards),
-  );
-  saveLearningRunState(
-    storage,
-    createLearningRunState("user-2", "set-2", cards),
-  );
+  let state = createLearningRunState("u", "s", srsPayload, normalPayload.cards);
+  state = applySrsRating(state, "one", "AGAIN", {});
+  state = selectLearningMode(state, "NORMAL");
+  state = selectNormalCard(state, "three", normalPayload.cards);
+  saveLearningRunState(storage, state);
+  assert.deepEqual(loadLearningRunState(storage, "u", "s"), state);
+  state = restartNormalRun(state, normalPayload.cards);
+  assert.equal(state.normal.current_vocabulary_id, "one");
+  state = selectLearningMode(state, "SRS");
+  assert.equal(currentSrsVocabularyId(state), "two");
+  state = restartSrsRun(state, payload("SRS", ["five"]));
+  assert.deepEqual(state.srs.queue, ["five"]);
+});
 
+test("namespace cleanup preserves unrelated session keys", () => {
+  const storage = createStorage();
+  storage.setItem("unrelated", "keep");
+  saveLearningRunState(storage, createLearningRunState("u", "s", srsPayload));
   clearLearningRunStateNamespace(storage);
-
-  assert.equal(storage.getItem("unrelated.session.key"), "keep");
+  assert.equal(storage.getItem("unrelated"), "keep");
   assert.equal(storage.length, 1);
 });
 
-test("corrupt stored JSON fails closed", () => {
-  const storage = createStorage();
-  storage.setItem("elvocab.learning.run.v1:user:set", "{");
-  assert.equal(loadLearningRunState(storage, "user", "set"), null);
-});
-
+function payload(mode, ids) {
+  return { mode, evaluated_at: "2026-10-04T00:00:00.000Z", cards: ids.map((id) => ({ id })) };
+}
 function createStorage() {
   const values = new Map();
-  return {
-    get length() { return values.size; },
-    getItem(key) { return values.has(key) ? values.get(key) : null; },
-    key(index) { return [...values.keys()][index] ?? null; },
-    removeItem(key) { values.delete(key); },
-    setItem(key, value) { values.set(key, String(value)); },
-    keys() { return values.keys(); },
-  };
+  return { get length() { return values.size; }, getItem(key) { return values.get(key) ?? null; }, key(index) { return [...values.keys()][index] ?? null; }, removeItem(key) { values.delete(key); }, setItem(key, value) { values.set(key, String(value)); } };
 }

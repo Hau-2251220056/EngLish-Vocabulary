@@ -54,6 +54,9 @@ export function createLearningRepository(prisma) {
                       review_count: true,
                       revision: true,
                       last_reviewed_at: true,
+                      last_event_id: true,
+                      interval_days: true,
+                      next_review_at: true,
                     },
                   },
                 },
@@ -98,29 +101,28 @@ export function createLearningRepository(prisma) {
       });
     },
 
-    summarizeProgress(userId) {
-      return prisma.lEARNING_PROGRESS.groupBy({
-        by: ["status"],
-        where: { user_id: userId },
-        _count: { _all: true },
-      });
+    async summarizeProgress(userId, evaluatedAt) {
+      const statuses = ["LEARNING", "LEARNED", "NEEDS_REVIEW"];
+      const counts = await Promise.all(
+        statuses.map((status) => prisma.lEARNING_PROGRESS.count({
+          where: effectiveProgressWhere(userId, status, evaluatedAt),
+        })),
+      );
+      return statuses.map((status, index) => ({
+        status,
+        _count: { _all: counts[index] },
+      }));
     },
 
-    countProgress(userId, status) {
+    countProgress(userId, status, evaluatedAt) {
       return prisma.lEARNING_PROGRESS.count({
-        where: {
-          user_id: userId,
-          ...(status ? { status } : {}),
-        },
+        where: effectiveProgressWhere(userId, status, evaluatedAt),
       });
     },
 
-    listProgress(userId, { status, skip, take }) {
+    listProgress(userId, { status, skip, take, evaluatedAt }) {
       return prisma.lEARNING_PROGRESS.findMany({
-        where: {
-          user_id: userId,
-          ...(status ? { status } : {}),
-        },
+        where: effectiveProgressWhere(userId, status, evaluatedAt),
         orderBy: [
           { last_reviewed_at: { sort: "desc", nulls: "last" } },
           { created_at: "desc" },
@@ -132,6 +134,8 @@ export function createLearningRepository(prisma) {
           status: true,
           review_count: true,
           last_reviewed_at: true,
+          interval_days: true,
+          next_review_at: true,
           vocabulary: {
             select: {
               id: true,
@@ -187,5 +191,38 @@ function progressSelect() {
     revision: true,
     last_reviewed_at: true,
     last_event_id: true,
+    interval_days: true,
+    next_review_at: true,
+  };
+}
+
+const LADDER_INTERVALS = [1, 3, 7, 14, 30];
+
+function effectiveProgressWhere(userId, status, evaluatedAt) {
+  const base = { user_id: userId };
+  if (!status) return base;
+  if (status === "LEARNING") return { ...base, status: "LEARNING" };
+  if (status === "NEEDS_REVIEW") {
+    return {
+      ...base,
+      OR: [
+        { status: "NEEDS_REVIEW" },
+        {
+          status: "LEARNED",
+          interval_days: { in: LADDER_INTERVALS },
+          next_review_at: { lte: evaluatedAt },
+        },
+      ],
+    };
+  }
+  return {
+    ...base,
+    status: "LEARNED",
+    OR: [
+      { interval_days: null },
+      { interval_days: { notIn: LADDER_INTERVALS } },
+      { next_review_at: null },
+      { next_review_at: { gt: evaluatedAt } },
+    ],
   };
 }

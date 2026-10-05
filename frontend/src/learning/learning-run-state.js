@@ -1,68 +1,143 @@
 const STORAGE_PREFIX = "elvocab.learning.run.v1:";
-const OUTCOMES = new Set(["REMEMBERED", "STUDY_AGAIN"]);
+const VERSION = 2;
+const MODES = new Set(["SRS", "NORMAL"]);
 
-export function createLearningRunState(userId, setId, cards) {
-  const currentVocabularyId = firstCardId(cards);
+export function createLearningRunState(userId, setId, srsPayload = null, normalCards = []) {
+  const srsIds = uniqueIds(srsPayload?.cards ?? []);
   return {
-    version: 1,
+    version: VERSION,
     user_id: userId,
     set_id: setId,
-    current_vocabulary_id: currentVocabularyId,
-    assessments: {},
+    active_mode: "SRS",
+    srs: {
+      snapshot_at: srsPayload?.evaluated_at ?? null,
+      initial_ids: srsIds,
+      queue: [...srsIds],
+      passed_ids: [],
+      presentation_count: 0,
+      retry_context: null,
+    },
+    normal: { current_vocabulary_id: firstCardId(normalCards) },
   };
 }
 
-export function reconcileLearningRunState(stored, userId, setId, cards) {
-  const fresh = createLearningRunState(userId, setId, cards);
+export function reconcileLearningRunState(stored, userId, setId, payload) {
+  const fresh = createLearningRunState(
+    userId,
+    setId,
+    payload.mode === "SRS" ? payload : null,
+    payload.mode === "NORMAL" ? payload.cards : [],
+  );
   if (!isStoredState(stored, userId, setId)) return fresh;
 
-  const cardIds = new Set(cards.map((card) => card.id));
-  const assessments = {};
-  for (const [vocabularyId, outcome] of Object.entries(stored.assessments)) {
-    if (cardIds.has(vocabularyId) && OUTCOMES.has(outcome)) {
-      assessments[vocabularyId] = outcome;
+  if (payload.mode === "SRS") {
+    if (isSettledSrsSnapshot(stored.srs)) {
+      return {
+        ...fresh,
+        active_mode: stored.active_mode,
+        normal: stored.normal,
+      };
     }
+    const eligibleIds = new Set(uniqueIds(payload.cards));
+    const passed = stored.srs.passed_ids.filter((id) => stored.srs.initial_ids.includes(id));
+    const queue = uniqueStrings(stored.srs.queue).filter((id) => eligibleIds.has(id));
+    const initial = uniqueStrings([...passed, ...queue]);
+    return {
+      ...stored,
+      srs: {
+        ...stored.srs,
+        snapshot_at: stored.srs.snapshot_at ?? payload.evaluated_at,
+        initial_ids: initial.length > 0 ? initial : uniqueIds(payload.cards),
+        queue: initial.length > 0 ? queue : uniqueIds(payload.cards),
+        passed_ids: passed,
+        retry_context: sanitizeRetry(stored.srs.retry_context, queue[0]),
+      },
+    };
   }
 
+  const ids = new Set(uniqueIds(payload.cards));
   return {
-    ...fresh,
-    current_vocabulary_id: cardIds.has(stored.current_vocabulary_id)
-      ? stored.current_vocabulary_id
-      : fresh.current_vocabulary_id,
-    assessments,
+    ...stored,
+    normal: {
+      current_vocabulary_id: ids.has(stored.normal.current_vocabulary_id)
+        ? stored.normal.current_vocabulary_id
+        : firstCardId(payload.cards),
+    },
   };
 }
 
-export function assessLearningCard(state, vocabularyId, outcome, cards) {
-  if (!OUTCOMES.has(outcome) || !cards.some((card) => card.id === vocabularyId)) {
-    return state;
+export function selectLearningMode(state, mode) {
+  return MODES.has(mode) ? { ...state, active_mode: mode } : state;
+}
+
+export function applySrsRating(state, vocabularyId, rating, authoritativeProgress) {
+  if (state.active_mode !== "SRS" || state.srs.queue[0] !== vocabularyId) return state;
+  let queue = state.srs.queue.filter((id) => id !== vocabularyId);
+  let passedIds = state.srs.passed_ids.filter((id) => id !== vocabularyId);
+  if (rating === "AGAIN") {
+    queue.splice(Math.min(3, queue.length), 0, vocabularyId);
+  } else {
+    passedIds = uniqueStrings([...passedIds, vocabularyId]);
   }
   return {
     ...state,
-    assessments: { ...state.assessments, [vocabularyId]: outcome },
+    srs: {
+      ...state.srs,
+      queue,
+      passed_ids: passedIds,
+      presentation_count: state.srs.presentation_count + 1,
+      retry_context: null,
+      last_progress: authoritativeProgress,
+    },
   };
 }
 
-export function selectLearningCard(state, vocabularyId, cards) {
+export function setSrsRetryContext(state, context) {
+  return { ...state, srs: { ...state.srs, retry_context: context } };
+}
+
+export function selectNormalCard(state, vocabularyId, cards) {
   if (!cards.some((card) => card.id === vocabularyId)) return state;
-  return { ...state, current_vocabulary_id: vocabularyId };
+  return { ...state, normal: { current_vocabulary_id: vocabularyId } };
 }
 
-export function restartLearningRun(state, cards) {
-  return createLearningRunState(state.user_id, state.set_id, cards);
-}
-
-export function summarizeLearningRun(state, cards) {
-  const outcomes = cards
-    .map((card) => state.assessments[card.id])
-    .filter((outcome) => OUTCOMES.has(outcome));
+export function restartSrsRun(state, payload) {
+  const ids = uniqueIds(payload.cards);
   return {
-    total: cards.length,
-    assessed: outcomes.length,
-    remembered: outcomes.filter((outcome) => outcome === "REMEMBERED").length,
-    study_again: outcomes.filter((outcome) => outcome === "STUDY_AGAIN").length,
-    completed: cards.length > 0 && outcomes.length === cards.length,
+    ...state,
+    active_mode: "SRS",
+    srs: {
+      snapshot_at: payload.evaluated_at,
+      initial_ids: ids,
+      queue: [...ids],
+      passed_ids: [],
+      presentation_count: 0,
+      retry_context: null,
+    },
   };
+}
+
+export function restartNormalRun(state, cards) {
+  return {
+    ...state,
+    normal: { current_vocabulary_id: firstCardId(cards) },
+  };
+}
+
+export function summarizeLearningRun(state) {
+  const total = state.srs.initial_ids.length;
+  const completedCount = state.srs.passed_ids.filter((id) =>
+    state.srs.initial_ids.includes(id)).length;
+  return {
+    total,
+    completed_count: completedCount,
+    presentation_count: state.srs.presentation_count,
+    completed: total > 0 && completedCount === total && state.srs.queue.length === 0,
+  };
+}
+
+export function currentSrsVocabularyId(state) {
+  return state?.srs.queue[0] ?? null;
 }
 
 export function loadLearningRunState(storage, userId, setId) {
@@ -84,11 +159,7 @@ export function saveLearningRunState(storage, state) {
 }
 
 export function clearLearningRunState(storage, userId, setId) {
-  try {
-    storage.removeItem(storageKey(userId, setId));
-  } catch {
-    // Storage denial must not break logout/session invalidation handling.
-  }
+  try { storage.removeItem(storageKey(userId, setId)); } catch { /* safe denial */ }
 }
 
 export function clearLearningRunStateNamespace(storage) {
@@ -99,29 +170,46 @@ export function clearLearningRunStateNamespace(storage) {
       if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
     }
     keys.forEach((key) => storage.removeItem(key));
-  } catch {
-    // Storage denial must not break the shared authentication UI.
-  }
+  } catch { /* safe denial */ }
 }
 
 function storageKey(userId, setId) {
   return `${STORAGE_PREFIX}${encodeURIComponent(userId)}:${encodeURIComponent(setId)}`;
 }
 
-function firstCardId(cards) {
-  return cards[0]?.id ?? null;
+function firstCardId(cards) { return cards[0]?.id ?? null; }
+function uniqueIds(cards) { return uniqueStrings(cards.map((card) => card.id)); }
+function uniqueStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === "string"))];
+}
+function sanitizeRetry(value, currentId) {
+  return value && value.vocabulary_id === currentId ? value : null;
 }
 
 function isStoredState(value, userId, setId) {
   return Boolean(
-    value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      value.version === 1 &&
-      value.user_id === userId &&
-      value.set_id === setId &&
-      typeof value.assessments === "object" &&
-      value.assessments !== null &&
-      !Array.isArray(value.assessments),
+    value && typeof value === "object" && !Array.isArray(value)
+    && value.version === VERSION && value.user_id === userId && value.set_id === setId
+    && MODES.has(value.active_mode) && isSrsState(value.srs) && isNormalState(value.normal),
   );
+}
+
+function isSrsState(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && (value.snapshot_at === null || typeof value.snapshot_at === "string")
+    && Array.isArray(value.initial_ids) && Array.isArray(value.queue)
+    && Array.isArray(value.passed_ids) && Number.isSafeInteger(value.presentation_count)
+    && value.presentation_count >= 0;
+}
+
+function isNormalState(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && (value.current_vocabulary_id === null || typeof value.current_vocabulary_id === "string");
+}
+
+function isSettledSrsSnapshot(srs) {
+  if (srs.queue.length > 0) return false;
+  if (srs.initial_ids.length === 0) return true;
+  const passedIds = new Set(srs.passed_ids);
+  return srs.initial_ids.every((id) => passedIds.has(id));
 }

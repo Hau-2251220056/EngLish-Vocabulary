@@ -3,9 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   isKeyboardShortcutSafe,
-  isLearningOutcomePending,
-  nextUnassessedCardId,
-  pendingLearningOutcome,
+  isLearningRatingPending,
+  pendingLearningRating,
   resolveFlashcardInteraction,
   revealWithPronunciation,
   selectEnglishSpeechVoice,
@@ -28,19 +27,6 @@ test("primary Meaning uses lowest CEFR and preserves deterministic order for tie
   assert.equal(selectPrimaryMeaning([]), null);
 });
 
-test("next card selection skips assessed cards in ordered circular traversal", () => {
-  const cards = [{ id: "one" }, { id: "two" }, { id: "three" }];
-  assert.equal(nextUnassessedCardId(cards, { two: "REMEMBERED" }, 0), "three");
-  assert.equal(
-    nextUnassessedCardId(
-      cards,
-      { one: "REMEMBERED", two: "STUDY_AGAIN", three: "REMEMBERED" },
-      1,
-    ),
-    null,
-  );
-});
-
 test("same-spelling cards retain exact identities and selected Meaning POS/text", () => {
   const cards = [
     { id: "canonical-book", word: "book", meanings: [{ id: "c", cefr_level: "A1", part_of_speech: "noun", meaning_vi: "canonical meaning" }] },
@@ -49,7 +35,6 @@ test("same-spelling cards retain exact identities and selected Meaning POS/text"
       { id: "p-a2", cefr_level: "A2", part_of_speech: "verb", meaning_vi: "private booking meaning" },
     ] },
   ];
-  assert.equal(nextUnassessedCardId(cards, { "canonical-book": "REMEMBERED" }, 0), "private-book");
   const selected = selectPrimaryMeaning(cards[1].meanings);
   assert.deepEqual({ id: selected.id, part_of_speech: selected.part_of_speech, meaning_vi: selected.meaning_vi }, {
     id: "p-a2", part_of_speech: "verb", meaning_vi: "private booking meaning",
@@ -78,17 +63,12 @@ test("Learning audio keeps card URL priority and exact-word native TTS fallback"
   assert.doesNotMatch(source, /find\([^\n]*\.word|filter\([^\n]*\.word/);
 });
 
-test("pending visual belongs only to the submitted learning outcome", () => {
-  const studyAgain = { outcome: "STUDY_AGAIN" };
-  assert.equal(pendingLearningOutcome("pending", studyAgain), "STUDY_AGAIN");
-  assert.equal(isLearningOutcomePending("pending", studyAgain, "STUDY_AGAIN"), true);
-  assert.equal(isLearningOutcomePending("pending", studyAgain, "REMEMBERED"), false);
-
-  const remembered = { outcome: "REMEMBERED" };
-  assert.equal(pendingLearningOutcome("pending", remembered), "REMEMBERED");
-  assert.equal(isLearningOutcomePending("pending", remembered, "REMEMBERED"), true);
-  assert.equal(isLearningOutcomePending("pending", remembered, "STUDY_AGAIN"), false);
-  assert.equal(pendingLearningOutcome("error", { outcome: "REMEMBERED" }), null);
+test("pending visual belongs only to the submitted SRS rating", () => {
+  const attempt = { rating: "AGAIN" };
+  assert.equal(pendingLearningRating("pending", attempt), "AGAIN");
+  assert.equal(isLearningRatingPending("pending", attempt, "AGAIN"), true);
+  assert.equal(isLearningRatingPending("pending", attempt, "GOOD"), false);
+  assert.equal(pendingLearningRating("error", attempt), null);
 });
 
 test("Front card click and safe Space reveal with pronunciation; Back only flips", () => {
