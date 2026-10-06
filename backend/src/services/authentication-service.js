@@ -118,14 +118,14 @@ export function createAuthenticationService({
         throw invalidCredentialsError();
       }
 
-      const session = await authSessionRepository.findBySessionIdentifierHash(
+      const session = await authSessionRepository.findWithUserBySessionIdentifierHash(
         hashSessionToken(sessionToken),
       );
       if (!session || isExpired(session)) {
         throw invalidCredentialsError();
       }
 
-      const user = await userRepository.findById(session.user_id);
+      const user = session.user;
       if (!user || !user.is_active) {
         throw invalidCredentialsError();
       }

@@ -7,6 +7,14 @@ const AUTH_SESSION_SELECT = {
   expires_at: true,
 };
 
+const AUTHENTICATED_USER_SELECT = {
+  id: true,
+  email: true,
+  display_name: true,
+  role: true,
+  is_active: true,
+};
+
 export function createAuthSessionRepository(prisma) {
   return {
     createSession({ user_id, session_identifier_hash, expires_at }) {
@@ -20,6 +28,16 @@ export function createAuthSessionRepository(prisma) {
       return prisma.aUTH_SESSION.findUnique({
         where: { session_identifier_hash },
         select: AUTH_SESSION_SELECT,
+      });
+    },
+
+    findWithUserBySessionIdentifierHash(session_identifier_hash) {
+      return prisma.aUTH_SESSION.findUnique({
+        where: { session_identifier_hash },
+        select: {
+          expires_at: true,
+          user: { select: AUTHENTICATED_USER_SELECT },
+        },
       });
     },
 

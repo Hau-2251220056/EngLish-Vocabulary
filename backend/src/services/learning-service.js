@@ -92,11 +92,13 @@ export function createLearningService({ learningRepository, now = () => new Date
       const query = validateProgressQuery(input);
       const evaluatedAt = captureNow(now);
       const skip = (query.page - 1) * query.page_size;
-      const { summaryRows, totalItems, items } =
+      const { summaryProgress, filteredTotal, items } =
         await learningRepository.withConsistentRead(async (repository) => {
-          const [summaryRows, totalItems, items] = await Promise.all([
-            repository.summarizeProgress(userId, evaluatedAt),
-            repository.countProgress(userId, query.status, evaluatedAt),
+          const [summaryProgress, filteredTotal, items] = await Promise.all([
+            repository.listProgressForSummary(userId),
+            query.status
+              ? repository.countProgress(userId, query.status, evaluatedAt)
+              : Promise.resolve(null),
             repository.listProgress(userId, {
               status: query.status,
               evaluatedAt,
@@ -104,11 +106,13 @@ export function createLearningService({ learningRepository, now = () => new Date
               take: query.page_size,
             }),
           ]);
-          return { summaryRows, totalItems, items };
+          return { summaryProgress, filteredTotal, items };
         });
+      const summary = toProgressSummary(summaryProgress, evaluatedAt);
+      const totalItems = filteredTotal ?? summary.total_started;
       return {
         evaluated_at: evaluatedAt,
-        summary: toProgressSummary(summaryRows),
+        summary,
         items: items.map((item) => toProgressListItem(item, evaluatedAt)),
         pagination: {
           page: query.page,
@@ -332,9 +336,11 @@ function parsePositiveInteger(value) {
   return parsed;
 }
 
-function toProgressSummary(rows) {
+function toProgressSummary(rows, evaluatedAt) {
   const counts = { LEARNING: 0, LEARNED: 0, NEEDS_REVIEW: 0 };
-  for (const row of rows) counts[row.status] = row._count._all;
+  for (const row of rows) {
+    counts[evaluateProgress(row, evaluatedAt).effective_status] += 1;
+  }
   return {
     total_started: counts.LEARNING + counts.LEARNED + counts.NEEDS_REVIEW,
     learning: counts.LEARNING,

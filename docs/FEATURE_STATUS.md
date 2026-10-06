@@ -949,6 +949,43 @@ Status: DONE
 - HUMAN final closure approval is recorded and CI Foundation is `DONE`.
 - CD, deployment, Main/Preview/Production migrations, Docker, coverage thresholds and unrelated automation remain deferred.
 
+4.16 Performance
+
+| Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
+|---|---|---|---|---|---|---|---|
+| App Loading & Runtime Baseline V1 | DONE | ✅ HUMAN APPROVED | ✅ HUMAN APPROVED | ✅ HUMAN APPROVED | COMPLETE | PASS | APPROVE |
+
+## Performance V1 — App Loading & Runtime Baseline
+
+Status: DONE — IMPLEMENTATION, TEST, AND FORMAL REVIEW COMPLETE; READY FOR HUMAN CLOSURE/COMMIT APPROVAL
+
+### Scope Boundary
+
+- Performance V1 is an audit-first, targeted-optimization workflow over representative existing ELVocab flows.
+- A reproducible BEFORE baseline and HUMAN checkpoint are required before selecting or implementing optimizations.
+- The existing production bundle-size advisory and remote TEST DB/Supabase latency observations are investigation signals, not proof of an application defect.
+- No schema/index, API behavior, dependency, cache, broad refactor, product redesign, or deferred feature is authorized at this stage.
+- TASK-109 through TASK-113 implemented a test/dev-only measurement harness on dedicated ports `4186`/`5012`. Production application behavior and dependencies are unchanged.
+- Harness smoke verification passed against the guarded `.env.test` path with 7 migrations current, read-only query observation, scrubbed ignored artifacts, and unchanged unrelated TEST USER/session counts. These smoke values are not a Performance V1 baseline.
+- HUMAN approved the TASK-109–113 harness checkpoint and authorized TASK-114–120.
+- The earlier preflight blocker was diagnosed as an unsafe direct Prisma CLI env-loading path. HUMAN accepted the diagnosis; the authoritative run used only guarded TEST configuration.
+- TASK-114–120 passed on 2026-10-06: 7/7 serial scenarios, one excluded warm-up and five complete measured samples per condition, with unrelated TEST users/sessions preserved at `5→5` and `8→8`.
+- The authoritative measurements and ranked proposals are recorded in `docs/performance/PERFORMANCE_V1_BASELINE.md`. No optimization candidate is authorized until HUMAN baseline review selects an exact scope and target.
+- HUMAN approved the baseline and selected candidates 1–3. TASK-121 materially reduced Dashboard Progress query work and readiness without changing its contract; focused backend/browser verification passed.
+- TASK-122 uses the HUMAN-approved Prisma 6.19.3 PostgreSQL relation-join capability only on the Learning Set/SRS read. Six ordered relation queries became one joined query per read; BF-05 first-card/full-sequence medians improved from `2,998/8,505 ms` to `1,987/5,504 ms`, with required Learning/SRS regressions green.
+- TASK-123 conservatively consolidated authenticated identity validation from two sequential remote reads to one joined session/user query. TASK-125 restored the original post-read expiry boundary while keeping the one-query result. `/api/auth/me` remained one query; Auth unit, real-stack, and focused BF-02 checks passed without cookie/session/API changes.
+- HUMAN approved retaining the broader Prisma 6.19.3 generated relation-join behavior. The affected nested relation paths passed proportional real-stack ownership, ordering, visibility, mutation, SRS/NORMAL, Quiz, and Auth regression; no query required containment.
+- TASK-124 completed a fresh authoritative AFTER run after that approval. Dashboard, authenticated restore, Owned Set Detail, BF-05, and BF-06 retained material median improvements despite documented remote TEST variance. Full evidence is in `docs/performance/PERFORMANCE_V1_AFTER.md`.
+- TASK-125 formal review is APPROVE. The final focused Auth suite passed `16/16`, real-stack Auth `2/2`, and BF-02 retained one warm-up plus five measured samples per condition with cleanup preserving unrelated TEST users/sessions `5→5` / `8→8`.
+
+### Related Documentation
+
+- SPEC: `docs/specs/PERFORMANCE_V1_SPEC.md` — HUMAN APPROVED on 2026-10-05.
+- PLAN: `docs/plans/PERFORMANCE_V1_PLAN.md` — HUMAN APPROVED on 2026-10-05.
+- BASELINE: `docs/performance/PERFORMANCE_V1_BASELINE.md` — HUMAN APPROVED; candidates 1–3 selected, bundle work deferred.
+- AFTER: `docs/performance/PERFORMANCE_V1_AFTER.md` — authoritative TASK-124 comparison accepted; TASK-125 closure verification recorded.
+- TASK: `docs/tasks/PERFORMANCE_V1_TASK.md` — TASK-109–TASK-125 complete; formal TEST PASS and REVIEW APPROVE.
+
 5. Feature Detail Records
 
 When a feature reaches IN_PROGRESS, IMPLEMENTED, TESTED, or DONE, additional information may be recorded below.

@@ -3,6 +3,7 @@ export function createLearningRepository(prisma) {
   return {
     findAccessibleSetForUser(setId, userId) {
       return prisma.vOCABULARY_SET.findFirst({
+        relationLoadStrategy: "join",
         where: {
           id: setId,
           OR: [
@@ -101,17 +102,15 @@ export function createLearningRepository(prisma) {
       });
     },
 
-    async summarizeProgress(userId, evaluatedAt) {
-      const statuses = ["LEARNING", "LEARNED", "NEEDS_REVIEW"];
-      const counts = await Promise.all(
-        statuses.map((status) => prisma.lEARNING_PROGRESS.count({
-          where: effectiveProgressWhere(userId, status, evaluatedAt),
-        })),
-      );
-      return statuses.map((status, index) => ({
-        status,
-        _count: { _all: counts[index] },
-      }));
+    listProgressForSummary(userId) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: { user_id: userId },
+        select: {
+          status: true,
+          interval_days: true,
+          next_review_at: true,
+        },
+      });
     },
 
     countProgress(userId, status, evaluatedAt) {

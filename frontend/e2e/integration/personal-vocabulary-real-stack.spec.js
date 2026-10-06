@@ -8,6 +8,7 @@ configureTestEnvironment({ requireReset: true });
 const prisma = new PrismaClient();
 const run = randomUUID();
 const prefix = `PV-E2E-${run}`;
+const sharedWord = `book${run.replaceAll("-", "")}`;
 const domain = `${run}.pv.integration.test`;
 const password = `Safe-${randomUUID()}`;
 const accounts = {
@@ -28,10 +29,10 @@ test.beforeAll(async () => {
   [owner, outsider, admin] = await Promise.all(Object.values(accounts).map((data) => prisma.uSER.create({ data: { ...data, password_hash } })));
   ids.users.push(owner.id, outsider.id, admin.id);
   const topic = await prisma.tOPIC.create({ data: { name: `${prefix} Topic` } }); ids.topic = topic.id;
-  canonical = await word(null, "book", "noun", "canonical book");
-  privateOne = await word(owner.id, "book", "verb", "private booking");
-  privateTwo = await word(owner.id, "book", "noun", "private volume");
-  const foreign = await word(outsider.id, "book", "adjective", "foreign hidden");
+  canonical = await word(null, sharedWord, "noun", "canonical book");
+  privateOne = await word(owner.id, sharedWord, "verb", "private booking");
+  privateTwo = await word(owner.id, sharedWord, "noun", "private volume");
+  const foreign = await word(outsider.id, sharedWord, "adjective", "foreign hidden");
   setA = await set(owner.id, false, "Set A", [canonical.id, privateOne.id, privateTwo.id]);
   setB = await set(owner.id, false, "Set B", [privateOne.id]);
   learningSet = await set(owner.id, false, "Learning", [privateOne.id]);
@@ -101,7 +102,7 @@ test("private edit, membership removal and picker reuse preserve identity and Pr
 
 test("same-word identities remain distinct and cross-user search/direct IDs are concealed", async ({ page }) => {
   await login(page, accounts.owner);
-  const ownerSearch = await page.evaluate(() => fetch("/api/vocabulary-set-picker?query=book").then((response) => response.json()));
+  const ownerSearch = await page.evaluate((word) => fetch(`/api/vocabulary-set-picker?query=${encodeURIComponent(word)}`).then((response) => response.json()), sharedWord);
   expect(ownerSearch.data.map(({ id }) => id)).toEqual(expect.arrayContaining([canonical.id, privateTwo.id]));
   expect(ownerSearch.data).toContainEqual(expect.objectContaining({ id: canonical.id, source: "CANONICAL" }));
   expect(ownerSearch.data).toContainEqual(expect.objectContaining({ id: privateTwo.id, source: "PRIVATE" }));
@@ -125,12 +126,12 @@ test("Set Detail keeps an empty Set manageable and appends the selected exact id
 
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
   const dialog = page.getByRole("dialog", { name: "Thêm từ vựng" });
-  await dialog.getByRole("searchbox", { name: "Tìm từ vựng" }).fill("book");
+  await dialog.getByRole("searchbox", { name: "Tìm từ vựng" }).fill(sharedWord);
   await dialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
   const canonicalResult = dialog.getByRole("listitem").filter({ hasText: "Từ hệ thống" });
   await canonicalResult.getByRole("button", { name: "Thêm", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("cell", { name: "book", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: sharedWord, exact: true })).toBeVisible();
   await expect.poll(() => prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: detailSet.id }, select: { vocabulary_id: true, position: true } })).toEqual([{ vocabulary_id: canonical.id, position: 1 }]);
 });
 
@@ -171,18 +172,18 @@ test("Flashcard renders exact private content/POS and speaks the exact private w
 });
 
 test("both Quiz modes retain exact private identities, selected meaning and POS", async ({ page }) => {
-  await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: "book" } });
+  await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: sharedWord } });
   await login(page, accounts.owner);
   const viResponse = page.waitForResponse((r) => r.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && r.status() === 200);
   await page.goto(`/quiz/vocabulary-sets/${quizSet.id}?type=VI_TO_ENGLISH`);
   const vi = await (await viResponse).json(); expect(vi.data.questions.map((q) => q.vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
   await expect(page.getByRole("heading", { name: "private booking" })).toBeVisible(); await expect(page.getByText("verb", { exact: true })).toBeVisible();
-  await page.getByLabel("Câu trả lời bằng tiếng Anh").fill("book"); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+  await page.getByLabel("Câu trả lời bằng tiếng Anh").fill(sharedWord); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
   await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
   const unResponse = page.waitForResponse((r) => r.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && r.status() === 200);
   await page.goto(`/quiz/vocabulary-sets/${quizSet.id}?type=UNSCRAMBLE_WORD`);
   const un = await (await unResponse).json(); expect(un.data.questions.map((q) => q.vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
-  expect(un.data.questions[0].prompt.tiles.map((tile) => tile.character).sort()).toEqual([..."book"].sort());
+  expect(un.data.questions[0].prompt.tiles.map((tile) => tile.character).sort()).toEqual([...sharedWord].sort());
   await expect(page.getByRole("heading", { name: "private booking" })).toBeVisible(); await expect(page.getByText("verb", { exact: true })).toBeVisible();
 });
 

@@ -77,7 +77,10 @@ test("@topic Guest reads real Topic metadata and searches client-side", async ({
   await expect(page.locator("#topic-list-title")).toBeVisible();
   await expect(page.getByText(describedTopic.name)).toBeVisible();
   await expect(page.getByText(nullableTopic.name)).toBeVisible();
-  await expect(page.getByText("Chưa có mô tả cho chủ đề này.")).toBeVisible();
+  await expect(
+    page.getByRole("article").filter({ hasText: nullableTopic.name })
+      .getByText("Chưa có mô tả cho chủ đề này."),
+  ).toBeVisible();
   await expect(page.locator("#topic-search")).toHaveAccessibleName("Tìm kiếm chủ đề");
   const initialRequestCount = topicRequests.length;
 

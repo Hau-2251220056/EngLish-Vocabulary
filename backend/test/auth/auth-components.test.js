@@ -3,6 +3,7 @@ import test from "node:test";
 import { createAuthenticationController } from "../../src/controllers/auth-controller.js";
 import { createAuthenticationMiddleware } from "../../src/middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "../../src/middleware/role-authorization-middleware.js";
+import { createAuthSessionRepository } from "../../src/repositories/auth-session-repository.js";
 import { createAuthenticationService } from "../../src/services/authentication-service.js";
 
 const PUBLIC_USER = Object.freeze({
@@ -71,11 +72,71 @@ test("service propagates unexpected repository errors unchanged", async () => {
 
 test("missing persisted user is rejected for an otherwise valid session", async () => {
   const service = createAuthenticationService({
-    userRepository: { findById: async () => null },
+    userRepository: {},
     authSessionRepository: {
-      findBySessionIdentifierHash: async () => ({
-        user_id: "missing-user",
+      findWithUserBySessionIdentifierHash: async () => ({
         expires_at: new Date(Date.now() + 60_000),
+        user: null,
+      }),
+    },
+    passwordSecurity: {},
+  });
+
+  await assert.rejects(
+    service.getCurrentUser("session-token"),
+    (error) => error?.code === "AUTHENTICATION_FAILED",
+  );
+});
+
+test("current-user lookup preserves post-read expiry and active-user checks with one repository call", async () => {
+  const calls = [];
+  const service = createAuthenticationService({
+    userRepository: {},
+    authSessionRepository: {
+      findWithUserBySessionIdentifierHash: async (sessionHash) => {
+        calls.push(sessionHash);
+        return {
+          expires_at: new Date(Date.now() + 60_000),
+          user: { ...PUBLIC_USER, is_active: true },
+        };
+      },
+    },
+    passwordSecurity: {},
+  });
+
+  assert.deepEqual(await service.getCurrentUser("session-token"), PUBLIC_USER);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /^[a-f0-9]{64}$/);
+});
+
+test("current-user repository lookup returns expiry and user in one relation query", async () => {
+  const queries = [];
+  const repository = createAuthSessionRepository({
+    aUTH_SESSION: {
+      findUnique: async (query) => {
+        queries.push(query);
+        return null;
+      },
+    },
+  });
+
+  await repository.findWithUserBySessionIdentifierHash("hashed-session");
+
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0].where, {
+    session_identifier_hash: "hashed-session",
+  });
+  assert.equal(queries[0].select.expires_at, true);
+  assert.equal(queries[0].select.user.select.is_active, true);
+});
+
+test("current-user lookup rejects a session that expired before the repository returned", async () => {
+  const service = createAuthenticationService({
+    userRepository: {},
+    authSessionRepository: {
+      findWithUserBySessionIdentifierHash: async () => ({
+        expires_at: new Date(Date.now() - 1),
+        user: { ...PUBLIC_USER, is_active: true },
       }),
     },
     passwordSecurity: {},
