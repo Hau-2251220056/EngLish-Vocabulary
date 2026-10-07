@@ -30,13 +30,21 @@ test("Set entry actions expose Quiz only for non-empty accessible Sets", async (
     new URL("../src/vocabulary-sets/my-vocabulary-set-detail-page.jsx", import.meta.url),
     "utf8",
   );
+  const learningActionsSource = await readFile(
+    new URL("../src/vocabulary-sets/set-detail-primitives.jsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(publicSource, /items\.length > 0[\s\S]*\/quiz\/vocabulary-sets\/\$\{set\.id\}/);
+  assert.match(
+    publicSource,
+    /user\?\.role === "USER"[\s\S]*<SetLearningActions enabled=\{items\.length > 0\} returnTo=\{`\/vocabulary-sets\/\$\{set\.id\}`\} setId=\{set\.id\} setName=\{set\.name\}/,
+  );
   assert.match(
     ownedDetailSource,
-    /enabled=\{items\.length > 0\}[\s\S]*\/quiz\/vocabulary-sets\/\$\{setId\}/,
+    /<SetLearningActions enabled=\{items\.length > 0\} returnTo=\{detailPath\} setId=\{setId\} setName=\{detail\.name\}/,
   );
-  assert.match(ownedDetailSource, /enabled \? <Link[\s\S]*aria-disabled="true"/);
+  assert.match(learningActionsSource, /to=\{`\/quiz\/vocabulary-sets\/\$\{setId\}`\} state=\{\{ returnTo, setName \}\}/);
+  assert.match(learningActionsSource, /enabled \? <Link[\s\S]*aria-disabled="true"/);
   assert.equal(publicSource.includes("/api/learning/events"), false);
   assert.equal(ownedDetailSource.includes("/api/learning/events"), false);
 });
