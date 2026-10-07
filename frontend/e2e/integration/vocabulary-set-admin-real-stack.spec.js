@@ -45,7 +45,8 @@ test.afterAll(async () => {
 test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page }) => {
   await login(page, admin.email);
   await page.getByRole("link", { name: "Quản lý bộ từ" }).click();
-  await expect(page.getByRole("heading", { name: "Chưa có bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Quản lý bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Tạo bộ từ" }).click();
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Tên bộ từ là bắt buộc" })).toBeVisible();
@@ -76,7 +77,8 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
   await page.getByRole("button", { name: "Xóa bộ từ" }).click();
   await expect(page.getByRole("dialog", { name: "Xóa bộ từ hệ thống?" })).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();
-  await expect(page.getByRole("heading", { name: "Chưa có bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
+  await expect.poll(() => prisma.vOCABULARY_SET.count({ where: { name: `${prefix} System` } })).toBe(0);
 });
 
 test("USER cannot access or navigate to ADMIN System Set management", async ({ page }) => {
@@ -108,7 +110,8 @@ test("ADMIN management exposes loading, safe error retry, keyboard, and responsi
   await expect(page.getByRole("alert")).toContainText("Không thể tải bộ từ hệ thống");
   failInitialLoad = false;
   await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.getByRole("heading", { name: "Chưa có bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Quản lý bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
   await page.unroute("**/api/admin/vocabulary-sets");
 
   await page.setViewportSize({ width: 375, height: 812 });

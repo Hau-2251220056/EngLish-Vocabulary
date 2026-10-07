@@ -278,13 +278,19 @@ for (const viewport of [
     if (viewport.width <= 900) {
       await drawerToggle.click();
       await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByRole("link", { name: "Trang chủ" })).toBeFocused();
     } else {
       await expect(drawerToggle).toBeHidden();
     }
     const topicLink = page.getByRole("link", { name: "Quản lý chủ đề" });
     await focusWithKeyboard(page, topicLink);
     await expect(topicLink).toBeFocused();
-    await expect(topicLink).toHaveCSS("box-shadow", /rgb/);
+    await expect.poll(() => topicLink.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    await expect.poll(() => topicLink.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return style.boxShadow !== "none"
+        || (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0);
+    })).toBe(true);
     await topicLink.click();
     await expect(page).toHaveURL(/\/admin\/topics$/);
     await expect(page.getByRole("heading", { name: "Quản lý chủ đề" })).toBeVisible();

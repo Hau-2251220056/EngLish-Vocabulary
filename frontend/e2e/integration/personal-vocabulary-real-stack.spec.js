@@ -138,7 +138,7 @@ test("Set Detail keeps an empty Set manageable and appends the selected exact id
 test("System Set rejects private ID while its private copy accepts owner-private content", async ({ page }) => {
   await login(page, accounts.owner);
   const copiedResponse = page.waitForResponse((response) => response.url().includes(`/api/vocabulary-sets/${systemSet.id}/copy`) && response.status() === 201);
-  await page.goto(`/vocabulary-sets/${systemSet.id}`); await page.getByRole("button", { name: "Sao chép bộ từ" }).click();
+  await page.goto(`/vocabulary-sets/${systemSet.id}`); await page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" }).click();
   const copiedPayload = await (await copiedResponse).json(); const copiedId = copiedPayload.data.id; ids.sets.push(copiedId);
   const copiedItems = await prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: copiedId } });
   expect(copiedItems.map(({ vocabulary_id }) => vocabulary_id)).toEqual([canonical.id]);
