@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, BookOpen, LoaderCircle, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Bookmark, LoaderCircle, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
+import { SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
 
 export function PublicVocabularySetDiscoveryPage() {
   const { topicId } = useParams();
@@ -134,45 +135,34 @@ function PublicVocabularySetDetailContent({ setId }) {
   }
 
   return (
-    <section className="public-topic-content" aria-label="Chi tiết bộ từ hệ thống">
-      <Link className="public-topic-back-link" to={set ? `/topics/${set.topic_id}/vocabulary-sets` : "/topics"}>
+    <section className="set-detail-page mx-auto w-full max-w-[76rem] p-[clamp(1rem,3vw,2.5rem)] text-[var(--text-primary)] max-[480px]:p-4" aria-label="Chi tiết bộ từ hệ thống">
+      <Link className="set-detail-back inline-flex min-h-11 items-center gap-[0.45rem] font-semibold text-[#5b6478] no-underline transition-[color,transform] duration-150 hover:-translate-x-0.5 hover:text-[var(--accent-primary-hover)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:w-[1.1rem]" to={set ? `/topics/${set.topic_id}/vocabulary-sets` : "/topics"}>
         <ArrowLeft className="size-4" aria-hidden="true" />
-        {set ? "Các bộ từ cùng chủ đề" : "Tất cả chủ đề"}
+        {set ? "Các bộ từ cùng chủ đề" : "Khám phá bộ từ"}
       </Link>
       {status === "loading" ? <PublicState status message="Đang tải bộ từ…" /> : null}
       {status === "not-found" ? <PublicState role="alert" title="Không tìm thấy bộ từ" message="Bộ từ này không tồn tại hoặc không còn công khai." action={<Link to="/topics">Quay lại danh sách chủ đề</Link>} /> : null}
       {status === "error" ? <PublicState role="alert" title="Không thể tải bộ từ" message="Vui lòng kiểm tra kết nối và thử lại." action={<button type="button" onClick={retry}>Thử lại</button>} /> : null}
       {status === "success" && set ? (
-        <article className="public-topic-detail-card public-vocabulary-set-detail-card">
-          <p className="public-topic-eyebrow">Bộ từ hệ thống</p>
-          <h1 id="vocabulary-set-detail-title">{set.name}</h1>
-          <p className="public-topic-detail-description">{set.description || "Chưa có mô tả cho bộ từ này."}</p>
-          <dl className="public-topic-metadata">
-            <div><dt><BookOpen className="size-4" aria-hidden="true" />Số từ</dt><dd>{items.length} từ vựng</dd></div>
-            <div><dt>Chủ đề</dt><dd><Link to={`/topics/${set.topic_id}/vocabulary-sets`}>Xem các bộ từ cùng chủ đề</Link></dd></div>
-          </dl>
-          <section className="public-vocabulary-set-items" aria-labelledby="vocabulary-set-items-title">
-            <div className="public-vocabulary-set-items-heading"><h2 id="vocabulary-set-items-title">Danh sách từ vựng</h2><p>{items.length} từ theo thứ tự của bộ từ</p></div>
-            {items.length > 0 ? <ol aria-labelledby="vocabulary-set-items-title">{items.map((item) => <li key={item.id} value={item.position}><span className="public-vocabulary-set-item-word">{item.word}</span>{item.phonetic ? <span className="public-vocabulary-set-item-phonetic">{item.phonetic}</span> : null}</li>)}</ol> : <p className="public-vocabulary-set-items-empty">Bộ từ này hiện chưa có từ vựng.</p>}
+        <article className="public-vocabulary-set-detail">
+          <p className="public-topic-eyebrow !text-slate-500">Bộ từ hệ thống</p>
+          <header className="set-detail-header mt-[0.15rem] flex items-start justify-between gap-6 max-[800px]:flex-col max-[800px]:items-stretch">
+            <div className="min-w-0">
+              <h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]" id="vocabulary-set-detail-title">{set.name}</h1>
+              <p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{set.description || "Chưa có mô tả cho bộ từ này."}</p>
+              <Link className="mt-2 inline-flex text-sm font-semibold text-[var(--accent-primary)] no-underline focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" to={`/topics/${set.topic_id}/vocabulary-sets`}>Xem các bộ từ cùng chủ đề</Link>
+            </div>
+            {!isAuthenticated ? <Link className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[0.7rem] border border-[var(--accent-primary)] bg-white px-3 py-[0.55rem] text-sm font-semibold text-[var(--accent-primary)] no-underline hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] max-[800px]:min-h-11 max-[800px]:w-full" to="/login">Đăng nhập để học và lưu</Link> : null}
+            {user?.role === "USER" ? <button type="button" className="inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[0.7rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-sm font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] hover:text-[var(--accent-primary)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] max-[800px]:min-h-11 max-[800px]:w-full" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}><Bookmark className="size-4" aria-hidden="true" />{copyState === "pending" ? "Đang lưu…" : "Lưu vào Bộ từ của tôi"}</button> : null}
+          </header>
+          {copyError ? <p className="mb-0 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{copyError}</p> : null}
+
+          {user?.role === "USER" ? <SetLearningActions enabled={items.length > 0} returnTo={`/vocabulary-sets/${set.id}`} setId={set.id} setName={set.name} /> : null}
+
+          <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="vocabulary-set-items-title">
+            <div className="set-detail-section-heading flex items-center justify-between gap-4"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="vocabulary-set-items-title">Từ vựng trong bộ ({items.length})</h2></div>
+            {items.length > 0 ? <SetVocabularyPreviewTable items={items} /> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard và Quiz.</p></div>}
           </section>
-          {!isAuthenticated ? (
-            <aside className="public-vocabulary-set-auth-prompt" aria-label="Học và sao chép bộ từ">
-              <h2>Muốn lưu bộ từ này?</h2>
-              <p>Đăng nhập để có thể sao chép bộ từ hệ thống vào Bộ từ của tôi.</p>
-              <Link to="/login">Đăng nhập</Link>
-            </aside>
-          ) : null}
-          {user?.role === "USER" ? (
-            <aside className="public-vocabulary-set-auth-prompt" aria-label="Sao chép bộ từ">
-              {items.length > 0 ? <><Link to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}` }}>Học bộ từ</Link><Link to={`/quiz/vocabulary-sets/${set.id}`} state={{ returnTo: `/vocabulary-sets/${set.id}`, setName: set.name }}>Làm Quiz</Link></> : null}
-              <h2>Lưu vào Bộ từ của tôi</h2>
-              <p>Bạn sẽ nhận một bản sao riêng tư, có thể tự chỉnh sửa sau đó.</p>
-              {copyError ? <p role="alert">{copyError}</p> : null}
-              <button type="button" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}>
-                {copyState === "pending" ? "Đang sao chép…" : "Sao chép bộ từ"}
-              </button>
-            </aside>
-          ) : null}
         </article>
       ) : null}
     </section>

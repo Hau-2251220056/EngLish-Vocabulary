@@ -4,11 +4,17 @@ import { PERFORMANCE_PORTS, PERFORMANCE_RUN_POLICY } from "./performance/perform
 
 export default defineConfig({
   testDir: "./e2e/performance",
-  testMatch: process.env.PERFORMANCE_FULL_BASELINE === "true" ? "baseline.spec.js" : "harness-smoke.spec.js",
+  testMatch: process.env.DISCOVERY_COMPOSITION_CHECK === "true"
+    ? "discovery-composition.spec.js"
+    : process.env.PERFORMANCE_FULL_BASELINE === "true"
+      ? "baseline.spec.js"
+      : "harness-smoke.spec.js",
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: process.env.PERFORMANCE_FULL_BASELINE === "true" ? 900_000 : 60_000,
+  timeout: process.env.PERFORMANCE_FULL_BASELINE === "true" || process.env.DISCOVERY_COMPOSITION_CHECK === "true"
+    ? 900_000
+    : 60_000,
   expect: { timeout: 15_000 },
   use: {
     actionTimeout: 20_000,

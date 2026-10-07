@@ -70,23 +70,28 @@ test("Guest discovers System Sets by Topic, searches locally, and opens ordered 
   await page.getByRole("link", { name: "Xem bộ từ" }).click();
 
   await expect(page.getByRole("heading", { name: publicSet.name })).toBeVisible();
-  const orderedItems = page.getByRole("list", { name: "Danh sách từ vựng" });
+  const orderedItems = page.getByRole("table");
   await expect(orderedItems).toContainText(`${fixturePrefix} passport`);
   await expect(orderedItems).toContainText(`${fixturePrefix} airport`);
-  await expect(orderedItems.locator("li").first()).toContainText(`${fixturePrefix} passport`);
-  await expect(orderedItems.locator("li").nth(1)).toContainText(`${fixturePrefix} airport`);
-  await expect(page.getByRole("complementary", { name: "Sao chép bộ từ" }).getByRole("link", { name: "Đăng nhập" })).toHaveAttribute("href", "/login");
+  await expect(orderedItems.locator("tbody tr").first()).toContainText(`${fixturePrefix} passport`);
+  await expect(orderedItems.locator("tbody tr").nth(1)).toContainText(`${fixturePrefix} airport`);
+  await expect(page.getByRole("link", { name: "Đăng nhập để học và lưu" })).toHaveAttribute("href", "/login");
   await expect(page.getByText(/Meaning|CEFR|Ví dụ/i)).toHaveCount(0);
 });
 
 test("Public System Set routes provide accessible loading, error/retry, and not-found states", async ({ page }) => {
   let releaseLoading;
+  const loadingRelease = new Promise((resolve) => { releaseLoading = resolve; });
+  let markListRequested;
+  const listRequested = new Promise((resolve) => { markListRequested = resolve; });
   await page.route(`**/api/topics/${topic.id}/vocabulary-sets`, async (route) => {
-    await new Promise((resolve) => { releaseLoading = resolve; });
+    markListRequested();
+    await loadingRelease;
     await route.fulfill({ status: 200, json: { success: true, data: [] } });
   });
   const navigation = page.goto(`/topics/${topic.id}/vocabulary-sets`);
   await expect(page.getByRole("status")).toBeVisible();
+  await listRequested;
   releaseLoading();
   await navigation;
   await expect(page.getByRole("heading", { name: "Chưa có bộ từ" })).toBeVisible();

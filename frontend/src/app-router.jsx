@@ -14,7 +14,7 @@ import { LearningProgressPage } from "./learning-progress/learning-progress-page
 import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
 import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
-import { PublicTopicLayout } from "./topics/public-topic-layout.jsx";
+import { DiscoveryRouteLayout } from "./topics/discovery-route-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
 import { TopicListPage } from "./topics/topic-list-page.jsx";
 import { AdminVocabularyRoute } from "./vocabulary/admin-vocabulary-route.jsx";
@@ -33,7 +33,7 @@ export function AppRouter() {
       <QuizSessionStorageObserver />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route element={<PublicTopicLayout />}>
+        <Route element={<DiscoveryRouteLayout />}>
           <Route path="/topics" element={<TopicListPage />} />
           <Route path="/topics/:topicId" element={<TopicDetailPage />} />
           <Route path="/topics/:topicId/vocabulary-sets" element={<PublicVocabularySetDiscoveryPage />} />

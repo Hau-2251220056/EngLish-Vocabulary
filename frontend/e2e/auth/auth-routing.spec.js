@@ -50,6 +50,7 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
   });
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
   await page.goto("/dashboard");
 
   await expect(page.locator(".authenticated-sidebar-name")).toHaveText(publicUser.display_name);
@@ -71,7 +72,8 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
     .locator('a[href="/topics"]')
     .click();
   await expect(page).toHaveURL(/\/topics$/);
-  await expect(page.getByRole("heading", { name: "Chủ đề tiếng Anh" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chưa có bộ từ để khám phá" })).toBeVisible();
 });
 
 test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {

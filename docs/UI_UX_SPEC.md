@@ -419,7 +419,7 @@ Link to Login
 Validation messages
 9.4 Public Vocabulary Sets — Legacy Draft (superseded for V1)
 
-The remaining legacy content in sections 9.4–9.5 is retained as future-product context only. The active Vocabulary Set V1 public behavior is defined in section 11.5 and excludes public User Sets, Community sharing, pagination and learning actions.
+The remaining legacy content in sections 9.4–9.5 is retained as future-product context only. The active Vocabulary Set V1 public behavior is defined in section 11.5. Discovery V1 is defined in `docs/specs/DISCOVERY_V1_SPEC.md` and is limited to public System Sets using existing Topic-scoped contracts; this legacy text does not authorize public User Sets, Community sharing, creator/social attribution, server-side pagination or server-side search. Its approved client-side pagination is limited to nine filtered Sets per page. Learning, Quiz and copy entry remain governed by their later approved contracts.
 
 Purpose:
 
@@ -928,7 +928,19 @@ Guest and authenticated visitors can open dedicated Topic-scoped System Set disc
 
 - Discovery shows public System Set summaries for one Topic, client-side Set-name search, loading, empty, safe error and not-found states.
 - Detail shows Set/Topic metadata and ordered Item selection metadata only: Vocabulary word and optional phonetic, never Meaning, Example or CEFR data.
-- An authenticated USER sees Copy and, after Flashcard / Learning V1 is implemented, its approved learning entry. A Guest receives a route to authenticate and cannot start learning while unauthenticated.
+- An authenticated USER sees optional Copy plus the existing direct Flashcard and Quiz entries for an eligible non-empty public Set. A Guest receives a route to authenticate and cannot start authenticated learning while unauthenticated.
+
+#### Discovery V1 — Set-first catalog
+
+`/topics` is the Set-first **Khám phá bộ từ** landing for public System Sets. It composes the complete catalog from `GET /api/topics` plus concurrent Topic-scoped Set reads, withholds partial results on any required failure, and enables presentation controls only after complete readiness. Authenticated USER and ADMIN actors remain inside the App Shell; Guest browsing remains public; ADMIN is browse-only.
+
+The compact page begins with a visual **Bộ từ nổi bật** preview followed by a wider mini filter sidebar and the normal catalog. The preview has no production ranking/curation contract and is not represented as popularity or recommendation data. The sidebar provides Set name/description search, exact single-Topic radio filtering, result count and reset. Search/filter is client-side, makes no new request and provides no sorting, server-side search or server-side pagination.
+
+The normal catalog uses three compact columns where width permits and nine Sets per client-side page (normally three rows on desktop). Pagination occurs after search/filter, excludes featured previews, resets to page 1 when controls change, clamps safely and makes no page request. Cards use a compact deterministic cover treatment because no per-Set cover field exists; Topic badge overlays the cover, title/count share one row, description clamps to two lines, and left-aligned **Lưu**/**Xem** text actions use Lucide icons. Violet-heavy treatment is not used.
+
+A successful USER copy navigates to the independent private copy and records best-effort current-tab **Đã lưu** feedback without disabling later intentional copies. That session hint may survive a same-tab reload, but the current API exposes no source-copy relationship, so a fresh session/reload cannot derive authoritative account-level saved-source recognition. Public Set Detail matches the Personal Set Detail visual family while remaining read-only: USER may enter Flashcard or Quiz directly without copying and may save independently; Guest receives login prompting; ADMIN receives no learner or ownership CRUD controls.
+
+Discovery preserves labelled native controls, keyboard/focus behavior, live states and no horizontal overflow at `375`, `390`, `768`, `820`, `1366` and `1536`. Community-shared USER Sets, creator/social attribution, sorting, CEFR Set filtering, real cover storage, production featured ranking, server-side global search/pagination and authoritative persistent saved-source recognition remain deferred.
 
 #### USER My Sets and Editor
 

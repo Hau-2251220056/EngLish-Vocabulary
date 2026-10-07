@@ -100,7 +100,11 @@ test("USER creates and metadata-edits a topicless Set without changing ordered m
 test("USER copies a public System Set into an independent private Set", async ({ page }) => {
   await login(page);
   await page.goto(`/vocabulary-sets/${sourceSet.id}`);
-  await page.getByRole("button", { name: "Sao chép bộ từ" }).click();
+  const learningActions = page.getByRole("region", { name: "Bắt đầu học" });
+  await expect(learningActions.getByRole("link", { name: /Thẻ ghi nhớ/ })).toHaveAttribute("href", `/learn/vocabulary-sets/${sourceSet.id}`);
+  await expect(learningActions.getByRole("link", { name: /Quiz/ })).toHaveAttribute("href", `/quiz/vocabulary-sets/${sourceSet.id}`);
+  await expect(page.getByRole("button", { name: /Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" }).click();
   await expect(page).toHaveURL(/\/my\/vocabulary-sets\//);
   await expect(page.getByRole("heading", { name: sourceSet.name })).toBeVisible();
   await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(2);

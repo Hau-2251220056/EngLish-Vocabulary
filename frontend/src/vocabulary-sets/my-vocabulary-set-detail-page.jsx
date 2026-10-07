@@ -1,10 +1,11 @@
-import { ArrowLeft, BookOpen, CircleAlert, FileQuestion, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, CircleAlert, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { vocabularyService } from "../services/vocabulary-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { AddVocabularyModal } from "./add-vocabulary-modal.jsx";
 import { PrivateVocabularyEditor } from "./private-vocabulary-editor.jsx";
+import { SetLearningActions } from "./set-detail-primitives.jsx";
 
 const DETAIL_PRIMARY_BUTTON_CLASSES = "inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-[0.4rem] rounded-[0.7rem] border-0 bg-[var(--accent-primary)] px-3 py-[0.55rem] text-sm font-semibold text-white shadow-[0_4px_12px_rgb(76_162_230/16%)] transition-[transform,box-shadow,background-color] duration-150 hover:-translate-y-px hover:bg-[var(--accent-primary-hover)] hover:shadow-[0_6px_16px_rgb(76_162_230/20%)] active:translate-y-0 active:bg-[var(--accent-primary-pressed)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transform-none motion-reduce:transition-none max-[800px]:min-h-11 max-[800px]:w-full";
 
@@ -127,13 +128,7 @@ export function MyVocabularySetDetailPage() {
       </header>
       {feedback ? <p className={`set-detail-feedback mb-0 mt-4 rounded-xl px-4 py-3 text-sm font-normal ${feedback.type === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.text}</p> : null}
 
-      <section className="set-detail-learning mt-4" aria-labelledby="set-detail-learning-title">
-        <h2 className="sr-only" id="set-detail-learning-title">Bắt đầu học</h2>
-        <div className="set-detail-learning-grid mt-[0.85rem] grid grid-cols-[repeat(2,minmax(10.5rem,13rem))] gap-[0.85rem] max-[800px]:grid-cols-2 max-[480px]:gap-[0.6rem]">
-          <LearningCard enabled={items.length > 0} icon={BookOpen} title="Thẻ ghi nhớ" description="Ôn từ vựng theo từng thẻ." to={`/learn/vocabulary-sets/${setId}`} state={{ returnTo: detailPath }} />
-          <LearningCard enabled={items.length > 0} icon={FileQuestion} title="Quiz" description="Kiểm tra kiến thức với bài Quiz." to={`/quiz/vocabulary-sets/${setId}`} state={{ returnTo: detailPath, setName: detail.name }} />
-        </div>
-      </section>
+      <SetLearningActions enabled={items.length > 0} returnTo={detailPath} setId={setId} setName={detail.name} />
 
       <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="set-detail-vocabulary-title">
         <div className="set-detail-section-heading flex items-center justify-between gap-4 max-[800px]:flex-col max-[800px]:items-stretch"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="set-detail-vocabulary-title">Từ vựng trong bộ ({items.length})</h2><button type="button" className={`my-vocabulary-sets-primary ${DETAIL_PRIMARY_BUTTON_CLASSES}`} onClick={() => setAddOpen(true)}><Plus aria-hidden="true" />Thêm từ vựng</button></div>
@@ -146,12 +141,6 @@ export function MyVocabularySetDetailPage() {
       {removeTarget ? <RemoveMembershipDialog item={removeTarget} pending={pending === `remove-${removeTarget.vocabulary_id}`} onCancel={cancelRemove} onConfirm={confirmRemove} /> : null}
     </main>
   );
-}
-
-function LearningCard({ description, enabled, icon: Icon, state, title, to }) {
-  const classes = `set-detail-learning-card grid min-h-[8.25rem] content-center justify-items-center gap-[0.35rem] rounded-2xl border bg-white p-4 text-center no-underline shadow-none transition-[border-color,box-shadow,transform] duration-150 first:border-[#cfe7f8] first:[&_.set-detail-learning-icon]:bg-[var(--accent-primary-soft)] first:[&_.set-detail-learning-icon]:text-[var(--accent-primary-pressed)] [&:nth-child(2)]:border-[#e6def8] [&:nth-child(2)_.set-detail-learning-icon]:bg-[var(--accent-violet-soft)] [&:nth-child(2)_.set-detail-learning-icon]:text-[var(--accent-violet)] max-[480px]:min-h-[7.75rem] max-[480px]:px-2 max-[480px]:py-[0.7rem] motion-reduce:transform-none motion-reduce:transition-none ${enabled ? "cursor-pointer hover:-translate-y-0.5 first:hover:border-[#9ccff2] [&:nth-child(2):hover]:border-[#cbbbec] hover:shadow-[0_8px_20px_rgb(30_41_59/7%)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" : "is-disabled !border-[var(--border-soft)] !bg-[var(--bg-subtle)] text-slate-500 shadow-none"}`;
-  const content = <><span className="set-detail-learning-icon grid size-11 shrink-0 place-items-center rounded-full [&_svg]:w-6"><Icon aria-hidden="true" /></span><h3 className="m-0 text-[0.96rem] font-semibold">{title}</h3><p className="m-0 text-[0.83rem] font-normal leading-[1.35] text-slate-500 max-[480px]:hidden">{description}</p>{!enabled ? <small className="mt-[0.1rem] block text-[0.76rem] font-extrabold text-orange-800">Thêm từ vựng để bắt đầu</small> : null}</>;
-  return enabled ? <Link className={classes} to={to} state={state}>{content}</Link> : <div className={classes} aria-disabled="true">{content}</div>;
 }
 
 function VocabularyTable({ items, onEdit, onRemove, pending, registerEditControl, registerRemoveControl }) {

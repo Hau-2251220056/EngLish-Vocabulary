@@ -1,11 +1,8 @@
-import { BookOpen, LayoutDashboard, LogIn } from "lucide-react";
-import { Link, Outlet } from "react-router-dom";
-import { useAuthentication } from "../auth/use-authentication.js";
+import { BookOpen, LogIn } from "lucide-react";
+import { Link, Outlet, useLocation } from "react-router-dom";
 
 export function PublicTopicLayout() {
-  const { isAuthenticated, user } = useAuthentication();
-  const displayName = user?.display_name ?? "";
-  const defaultAvatar = displayName.trim().charAt(0).toUpperCase() || "E";
+  const { pathname } = useLocation();
 
   return (
     <div className="public-topic-app">
@@ -17,31 +14,14 @@ export function PublicTopicLayout() {
           <span>ELVocab</span>
         </Link>
         <nav aria-label="Điều hướng công khai">
-          {isAuthenticated ? (
-            <Link
-              className="public-topic-header-link public-topic-account-link"
-              to="/dashboard"
-              aria-label={`Đến Dashboard của ${displayName}`}
-            >
-              <span className="public-topic-avatar" aria-hidden="true">
-                {defaultAvatar}
-              </span>
-              <span className="public-topic-account-name">{displayName}</span>
-              <LayoutDashboard className="size-4" aria-hidden="true" />
-              <span>Dashboard</span>
-            </Link>
-          ) : (
-            <Link className="public-topic-header-link" to="/login">
-              <LogIn className="size-4" aria-hidden="true" />
-              Đăng nhập
-            </Link>
-          )}
+          <Link className="public-topic-header-link" to="/login">
+            <LogIn className="size-4" aria-hidden="true" />
+            Đăng nhập
+          </Link>
         </nav>
       </header>
       <main className="public-topic-main">
-        <div className="public-topic-heading-mark" aria-hidden="true">
-          <BookOpen className="size-6" />
-        </div>
+        {pathname !== "/topics" ? <div className="public-topic-heading-mark" aria-hidden="true"><BookOpen className="size-6" /></div> : null}
         <Outlet />
       </main>
       <footer className="public-topic-footer">© 2026 ELVocab</footer>

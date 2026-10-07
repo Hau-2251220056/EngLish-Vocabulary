@@ -959,6 +959,14 @@ Public System discovery/detail routes are separate from completed Topic metadata
 
 Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remain outside this contract revision.
 
+### 14.2 Discovery V1 Client Composition
+
+Discovery V1 keeps the existing backend/API/data architecture. The `/topics` frontend first reads `GET /api/topics`, then starts the required `GET /api/topics/:topicId/vocabulary-sets` reads concurrently and publishes only after every request succeeds. For `T` Topics the catalog request model remains `1 + T`; no sequential Topic waterfall, global catalog endpoint, schema change, server-side search or server-side pagination is introduced. The measured current-dataset composition was HUMAN accepted for V1.
+
+After complete readiness, frontend presentation state applies name/description search, exact single-Topic filtering and nine-item client-side pagination in that order. Featured visual previews are excluded from page size. Filter/page changes do not access the backend. The adaptive route boundary retains public Guest access and uses the existing `AuthenticatedShell` for USER/ADMIN; ADMIN remains browse-only. Copy, public visibility, Learning and Quiz authorization remain backend-authoritative.
+
+The visual featured section has no dedicated production ranking contract, and deterministic covers do not represent persisted Set images. Current-session saved feedback is a best-effort frontend hint that may survive a same-tab reload; the API does not expose authoritative fresh-session/account source-copy recognition. Future Set-level CEFR metadata/filtering and Set cover-image storage are planned follow-up contract work, not Discovery V1 architecture.
+
 15. Community Architecture
 
 Community là một domain riêng.

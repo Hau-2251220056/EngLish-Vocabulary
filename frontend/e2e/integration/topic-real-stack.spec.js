@@ -23,6 +23,8 @@ const admin = {
 };
 let describedTopic;
 let nullableTopic;
+let describedSet;
+let nullableSet;
 
 test.describe.configure({ mode: "serial" });
 
@@ -47,10 +49,18 @@ test.beforeAll(async () => {
   nullableTopic = await prisma.tOPIC.create({
     data: { name: `${fixturePrefix} Nature`, description: null },
   });
+  const owner = await prisma.uSER.findUniqueOrThrow({ where: { email: admin.email } });
+  describedSet = await prisma.vOCABULARY_SET.create({
+    data: { topic_id: describedTopic.id, owner_id: owner.id, name: `${fixturePrefix} Travel essentials`, description: "Vocabulary for a real browser journey", is_public: true },
+  });
+  nullableSet = await prisma.vOCABULARY_SET.create({
+    data: { topic_id: nullableTopic.id, owner_id: owner.id, name: `${fixturePrefix} Nature basics`, description: null, is_public: true },
+  });
 });
 
 test.afterAll(async () => {
   try {
+    await prisma.vOCABULARY_SET.deleteMany({ where: { name: { startsWith: fixturePrefix } } });
     await prisma.tOPIC.deleteMany({ where: { name: { startsWith: fixturePrefix } } });
     const accounts = await prisma.uSER.findMany({
       where: { email: { endsWith: `@${fixtureDomain}` } },
@@ -66,7 +76,7 @@ test.afterAll(async () => {
   }
 });
 
-test("@topic Guest reads real Topic metadata and searches client-side", async ({ page }) => {
+test("@topic Guest reads the real Set-first catalog and searches client-side", async ({ page }) => {
   const topicRequests = [];
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === "/api/topics") topicRequests.push(request.url());
@@ -75,22 +85,22 @@ test("@topic Guest reads real Topic metadata and searches client-side", async ({
   await page.goto("/topics");
   await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveAttribute("href", "/login");
   await expect(page.locator("#topic-list-title")).toBeVisible();
-  await expect(page.getByText(describedTopic.name)).toBeVisible();
-  await expect(page.getByText(nullableTopic.name)).toBeVisible();
+  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(page.getByRole("heading", { name: nullableSet.name })).toBeVisible();
   await expect(
-    page.getByRole("article").filter({ hasText: nullableTopic.name })
-      .getByText("Chưa có mô tả cho chủ đề này."),
+    page.getByRole("article").filter({ hasText: nullableSet.name })
+      .getByText("Chưa có mô tả cho bộ từ này."),
   ).toBeVisible();
-  await expect(page.locator("#topic-search")).toHaveAccessibleName("Tìm kiếm chủ đề");
+  await expect(page.locator("#discovery-search")).toHaveAccessibleName("Tìm kiếm bộ từ");
   const initialRequestCount = topicRequests.length;
 
-  await page.locator("#topic-search").fill("real browser journey");
-  await expect(page.getByText(describedTopic.name)).toBeVisible();
-  await expect(page.getByText(nullableTopic.name)).toBeHidden();
+  await page.locator("#discovery-search").fill("real browser journey");
+  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(page.getByRole("heading", { name: nullableSet.name })).toHaveCount(0);
   expect(topicRequests).toHaveLength(initialRequestCount);
 
-  await page.locator("#topic-search").fill("no matching topic value");
-  await expect(page.getByRole("heading", { name: "Không tìm thấy chủ đề phù hợp" })).toBeVisible();
+  await page.locator("#discovery-search").fill("no matching set value");
+  await expect(page.getByRole("heading", { name: "Không tìm thấy bộ từ phù hợp" })).toBeVisible();
   expect(topicRequests).toHaveLength(initialRequestCount);
 
   await page.goto(`/topics/${describedTopic.id}`);
@@ -102,16 +112,21 @@ test("@topic Guest reads real Topic metadata and searches client-side", async ({
 });
 
 test("@topic public loading, empty, error/retry and not-found states are safe", async ({ page }) => {
-  let resolveList;
+  let releaseList;
+  const listRelease = new Promise((resolve) => { releaseList = resolve; });
+  let markListRequested;
+  const listRequested = new Promise((resolve) => { markListRequested = resolve; });
   await page.route("**/api/topics", async (route) => {
-    await new Promise((resolve) => { resolveList = resolve; });
+    markListRequested();
+    await listRelease;
     await route.fulfill({ status: 200, json: { success: true, data: [] } });
   });
   const navigation = page.goto("/topics");
   await expect(page.getByRole("status")).toBeVisible();
-  resolveList();
+  await listRequested;
+  releaseList();
   await navigation;
-  await expect(page.getByRole("heading", { name: "Chưa có chủ đề" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chưa có bộ từ để khám phá" })).toBeVisible();
   await page.unroute("**/api/topics");
 
   let attempts = 0;
@@ -126,7 +141,7 @@ test("@topic public loading, empty, error/retry and not-found states are safe", 
   await page.reload();
   await expect(page.getByRole("alert")).toBeVisible();
   await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.getByText(describedTopic.name)).toBeVisible();
+  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
   await page.unroute("**/api/topics");
 
   await page.goto(`/topics/${randomUUID()}`);
@@ -139,12 +154,11 @@ test("@topic USER reaches public Topics but not ADMIN management", async ({ page
   await expect(page.getByRole("link", { name: "Quản lý chủ đề" })).toHaveCount(0);
 
   await page.goto("/topics");
-  await expect(page.getByText(describedTopic.name)).toBeVisible();
+  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
   await expect(page).toHaveURL(/\/topics$/);
   await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveCount(0);
-  const dashboardLink = page.getByRole("link", { name: `Đến Dashboard của ${user.displayName}` });
-  await expect(dashboardLink).toHaveAttribute("href", "/dashboard");
-  await expect(page.locator(".public-topic-avatar")).toHaveText("T");
+  await expect(page.locator(".authenticated-app")).toBeVisible();
+  const dashboardLink = page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Trang chủ" });
   await dashboardLink.click();
   await expect(page).toHaveURL(/\/dashboard$/);
 
@@ -173,8 +187,7 @@ test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semant
   await login(page, admin);
   await page.goto(`/topics/${nullableTopic.id}`);
   await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: `Đến Dashboard của ${admin.displayName}` })).toHaveAttribute("href", "/dashboard");
-  await expect(page.locator(".public-topic-avatar")).toHaveText("T");
+  await expect(page.locator(".authenticated-app")).toBeVisible();
   await expect(page.getByRole("heading", { name: nullableTopic.name })).toBeVisible();
   await expect(page.getByText("Chưa có mô tả cho chủ đề này.")).toBeVisible();
   await page.goto("/dashboard");

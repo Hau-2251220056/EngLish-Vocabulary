@@ -352,6 +352,7 @@ test("mobile drawer closes on route selection and backdrop click", async ({ page
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
   });
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
   await page.goto("/dashboard");
 
   const toggle = page.locator(".authenticated-drawer-toggle");
@@ -361,7 +362,8 @@ test("mobile drawer closes on route selection and backdrop click", async ({ page
     .getByRole("link", { name: "Khám phá bộ từ" })
     .click();
   await expect(page).toHaveURL(/\/topics$/);
-  await expect(toggle).toHaveCount(0);
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
   await page.goto("/dashboard");
   const restoredToggle = page.locator(".authenticated-drawer-toggle");
