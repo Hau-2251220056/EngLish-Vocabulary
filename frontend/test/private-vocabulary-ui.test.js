@@ -58,4 +58,7 @@ test("edit dialog warns about shared identity without claiming a Set count or ex
   assert.match(source, /<dialog ref=\{dialogRef\}/);
   assert.match(source, /private-vocabulary-embedded/);
   assert.match(source, /disabled=\{pending\}/);
+  assert.doesNotMatch(source, />CEFR|CEFR </);
+  assert.match(source, /Ngữ cảnh/);
+  assert.match(source, /Thêm ví dụ/);
 });

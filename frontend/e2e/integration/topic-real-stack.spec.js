@@ -96,7 +96,10 @@ test("@topic Guest reads the real Set-first catalog and searches client-side", a
 
   await page.locator("#discovery-search").fill("real browser journey");
   await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
-  await expect(page.getByRole("heading", { name: nullableSet.name })).toHaveCount(0);
+  await expect(
+    page.getByRole("list", { name: "Danh sách bộ từ hệ thống" })
+      .getByRole("heading", { name: nullableSet.name }),
+  ).toHaveCount(0);
   expect(topicRequests).toHaveLength(initialRequestCount);
 
   await page.locator("#discovery-search").fill("no matching set value");

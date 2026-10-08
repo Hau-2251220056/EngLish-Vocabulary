@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filterDiscoveryCatalog, loadDiscoveryCatalog, paginateDiscoveryCatalog } from "../src/topics/discovery-catalog.js";
+import {
+  filterDiscoveryCatalog,
+  loadDiscoveryCatalog,
+  paginateDiscoveryCatalog,
+  selectDiscoveryFeaturedSets,
+} from "../src/topics/discovery-catalog.js";
 
 const TOPICS = Object.freeze([
   { id: "topic-1", name: "Travel", description: "Travel words" },
@@ -91,15 +96,30 @@ test("an empty Topic list completes without Set requests", async () => {
 
 test("filters completed catalog by trimmed name or description and exact Topic identity", () => {
   const sets = [
-    { id: "set-1", name: "Airport Basics", description: "Travel essentials", topic: { id: "topic-1" } },
-    { id: "set-2", name: "Office", description: "Daily WORK", topic: { id: "topic-2" } },
-    { id: "set-3", name: "Hotel", description: null, topic: { id: "topic-1" } },
+    { id: "set-1", name: "Airport Basics", description: "Travel essentials", cefr_level: "A1", topic: { id: "topic-1" } },
+    { id: "set-2", name: "Office", description: "Daily WORK", cefr_level: "B1", topic: { id: "topic-2" } },
+    { id: "set-3", name: "Hotel", description: null, cefr_level: null, topic: { id: "topic-1" } },
   ];
 
   assert.deepEqual(filterDiscoveryCatalog(sets, { query: "  essentials ", topicId: "" }).map(({ id }) => id), ["set-1"]);
   assert.deepEqual(filterDiscoveryCatalog(sets, { query: "work", topicId: "topic-2" }).map(({ id }) => id), ["set-2"]);
   assert.deepEqual(filterDiscoveryCatalog(sets, { query: "office", topicId: "topic-1" }), []);
   assert.deepEqual(filterDiscoveryCatalog(sets, { query: "", topicId: "topic-1" }).map(({ id }) => id), ["set-1", "set-3"]);
+  assert.deepEqual(filterDiscoveryCatalog(sets, { cefrLevel: "A1", query: "", topicId: "" }).map(({ id }) => id), ["set-1"]);
+  assert.deepEqual(filterDiscoveryCatalog(sets, { cefrLevel: "B1", query: "work", topicId: "topic-2" }).map(({ id }) => id), ["set-2"]);
+  assert.deepEqual(filterDiscoveryCatalog(sets, { cefrLevel: "A1", query: "", topicId: "topic-2" }), []);
+  assert.deepEqual(filterDiscoveryCatalog(sets, { cefrLevel: "C1", query: "", topicId: "" }), []);
+});
+
+test("selects at most the first three catalog Sets as Featured without marker or environment rules", () => {
+  const ordinarySets = Array.from({ length: 5 }, (_, index) => ({
+    id: `set-${index + 1}`,
+    name: `Ordinary catalog Set ${index + 1}`,
+  }));
+
+  assert.deepEqual(selectDiscoveryFeaturedSets(ordinarySets), ordinarySets.slice(0, 3));
+  assert.deepEqual(selectDiscoveryFeaturedSets(ordinarySets.slice(0, 2)), ordinarySets.slice(0, 2));
+  assert.deepEqual(selectDiscoveryFeaturedSets([]), []);
 });
 
 test("paginates filtered catalog at nine items and clamps invalid pages", () => {

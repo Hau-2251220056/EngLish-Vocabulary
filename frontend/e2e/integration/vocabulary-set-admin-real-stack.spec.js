@@ -55,11 +55,22 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
 
   await page.locator("#my-set-name").fill(`${prefix} System`);
   await page.locator("#my-set-topic").selectOption(topic.id);
-  const picker = page.getByRole("group", { name: "Thêm từ vựng" });
+  await page.getByRole("combobox", { name: /CEFR/ }).selectOption("B1");
+  const pickerTrigger = page.getByRole("button", { name: "Thêm từ vựng" });
+  await expect(page.getByRole("searchbox", { name: "Từ khóa" })).toHaveCount(0);
+  await pickerTrigger.click();
+  let picker = page.getByRole("dialog", { name: "Thêm từ vựng" });
   await picker.getByRole("searchbox", { name: "Từ khóa" }).fill(prefix);
   await picker.getByRole("button", { name: "Tìm từ" }).click();
   await picker.getByRole("button", { name: "Thêm", exact: true }).first().click();
-  await picker.getByRole("button", { name: "Thêm", exact: true }).first().click();
+  await expect(picker).toHaveCount(0);
+  await expect(pickerTrigger).toBeFocused();
+  await pickerTrigger.click();
+  picker = page.getByRole("dialog", { name: "Thêm từ vựng" });
+  await picker.getByRole("searchbox", { name: "Từ khóa" }).fill(prefix);
+  await picker.getByRole("button", { name: "Tìm từ" }).click();
+  await expect(picker.getByRole("button", { name: "Đã thêm" })).toBeDisabled();
+  await picker.getByRole("button", { name: "Thêm", exact: true }).click();
   const orderedEditor = page.getByRole("group", { name: "Danh sách từ vựng theo thứ tự" });
   await orderedEditor.getByRole("button", { name: new RegExp(`Đưa ${prefix} beta lên`) }).click();
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
@@ -68,6 +79,7 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
   await expect(page.locator(".my-vocabulary-set-detail ol li").first()).toContainText(`${prefix} beta`);
   const persisted = await prisma.vOCABULARY_SET.findFirst({ where: { name: `${prefix} System` }, include: { items: { orderBy: { position: "asc" }, include: { vocabulary: true } } } });
   expect(persisted?.is_public).toBe(true);
+  expect(persisted?.cefr_level).toBe("B1");
   expect(persisted?.items.map(({ vocabulary }) => vocabulary.word)).toEqual([`${prefix} beta`, `${prefix} alpha`]);
 
   await page.getByRole("button", { name: "Chỉnh sửa" }).click();

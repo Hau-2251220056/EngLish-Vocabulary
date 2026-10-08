@@ -581,7 +581,7 @@ All Vocabulary Set identifiers are UUID strings. Success responses use `{ "succe
 | `GET /api/topics/:topicId/vocabulary-sets` | Guest/User/ADMIN | `200` | Unpaginated public System Set summaries for one Topic. |
 | `GET /api/vocabulary-sets/:setId` | Guest/User/ADMIN | `200` | Complete public System Set with ordered minimum Item metadata. |
 
-Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `word`, nullable `phonetic`, `position` and `created_at`. It returns no private User Set data, Vocabulary Meaning/Example/CEFR aggregate, learning state or access to a Vocabulary catalog.
+Set summaries/details include nullable Set-level `cefr_level` (`A1`–`C1`) and nullable `cover_image_url`. Public detail Items contain only `id`, `vocabulary_id`, `word`, nullable `phonetic`, `position` and `created_at`; Set-level CEFR is not Vocabulary/Meaning CEFR. Responses never expose `cover_storage_key`, provider credentials or object-key ownership data. Public detail returns no private User Set data, Vocabulary Meaning/Example/CEFR aggregate, learning state or access to a Vocabulary catalog.
 
 #### Scoped Authenticated Vocabulary Picker
 
@@ -597,8 +597,11 @@ Public detail returns Set metadata and Items with only `id`, `vocabulary_id`, `w
 | `PATCH /api/my/vocabulary-sets/:setId` | owner USER | `200` |
 | `DELETE /api/my/vocabulary-sets/:setId` | owner USER | `204` |
 | `POST /api/vocabulary-sets/:systemSetId/copy` | USER | `201` |
+| `POST /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
+| `DELETE /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
+| `POST /api/my/vocabulary-sets/:setId/cover/cleanup` | owner USER | `200` |
 
-USER create/update accepts only `name`, optional `description` and optional complete `items` collection. `topic_id`, `owner_id` and `is_public` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order.
+USER create/update accepts `name`, optional `description`, optional nullable Set `cefr_level`, optional nullable external HTTPS `cover_image_url`, and optional complete `items` collection. `topic_id`, `owner_id`, `is_public`, and client-supplied `cover_storage_key` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order; external covers copy the URL, while managed covers are copied to a new destination Set-owned object.
 
 Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so Set Detail can authorize private editing without inferring identity from spelling. Each Item also exposes the read-only display projection `primary_meaning: { part_of_speech, meaning_vi, example: { example_en, example_vi } | null } | null`. The projection selects the first Meaning ordered by `created_at ASC, id ASC`, then the first Example of that Meaning in the same deterministic order. It does not CEFR-rank, fall back to another record, or generate missing data. Public System and ADMIN Set detail retain their existing Item projections and do not expose this USER-only field.
 
@@ -613,8 +616,15 @@ Personal Set Detail membership management reuses the existing complete `items` P
 | `GET /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
 | `PATCH /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
 | `DELETE /api/admin/vocabulary-sets/:setId` | ADMIN | `204` |
+| `POST /api/admin/vocabulary-sets/:setId/cover` | ADMIN | `200` |
+| `DELETE /api/admin/vocabulary-sets/:setId/cover` | ADMIN | `200` |
+| `POST /api/admin/vocabulary-sets/:setId/cover/cleanup` | ADMIN | `200` |
 
-ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, and one-or-more valid Items. PATCH accepts Topic reassignment but rejects clearing Topic; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
+ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, Set `cefr_level` (`A1`–`C1`), and one-or-more valid Items; `cover_image_url` is optional. PATCH accepts Topic reassignment but rejects clearing Topic or CEFR; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
+
+Cover upload uses single-file `multipart/form-data` field `cover`. JPEG, PNG and WebP input is signature-validated, limited to 5 MiB and 4096×4096, auto-oriented, resized without enlargement to a longest edge of at most 1600 px, stripped of unnecessary metadata, and stored as WebP quality 82. Processing is bounded to 2 concurrent jobs plus 8 queued jobs with a 15-second deadline. External cover URLs must be HTTPS and are rendered directly; the backend does not fetch or optimize them.
+
+Successful upload/remove/cleanup returns the current safe Set representation and `meta.storage_cleanup` (`complete` or `retry_required`). Metadata mutation remains authoritative if deletion of a superseded object fails; the exact Set-scoped cleanup route is the retry path. Create/upload/copy persistence failures compensate by removing only the exact newly created managed object. Delete fails safely before database deletion if managed-object cleanup cannot complete. Storage keys are server-generated, Set-scoped, never accepted from clients, and never serialized.
 
 Known errors are `400 VALIDATION_ERROR`, `404 VOCABULARY_SET_NOT_FOUND`, `404 TOPIC_NOT_FOUND`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_ALREADY_IN_SET`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
 

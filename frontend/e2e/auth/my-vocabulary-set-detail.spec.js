@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import { installAuthApiMock, publicUser, responses } from "./fixtures/auth-api.js";
 
 const setId = "set-detail";
 const populated = {
   id: setId, name: "Du lịch", description: "Từ vựng cần thiết cho chuyến đi",
+  cefr_level: "A2", cover_image_url: "https://covers.example.test/personal.webp",
   items: [
     { id: "item-1", vocabulary_id: "canonical-1", position: 1, word: "airport", phonetic: "/ˈeəpɔːt/", source: "CANONICAL", primary_meaning: { part_of_speech: "noun", meaning_vi: "sân bay", example: { example_en: "We arrived at the international airport very early in the morning before our long connecting flight departed.", example_vi: "Chúng tôi đến sân bay quốc tế từ rất sớm trước chuyến bay nối chuyến dài." } } },
     { id: "item-2", vocabulary_id: "private-1", position: 2, word: "book", phonetic: null, source: "PRIVATE", primary_meaning: null },
@@ -14,6 +16,8 @@ function deferred() { let resolve; const promise = new Promise((next) => { resol
 
 async function install(page, initial = populated, options = {}) {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("https://covers.example.test/personal.webp", (route) => route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") }));
+  await page.route("https://covers.example.test/broken.webp", (route) => route.fulfill({ status: 404, body: "" }));
   let detail = structuredClone(initial);
   const calls = [];
   let detailFailures = options.detailFailures ?? 0;
@@ -81,7 +85,9 @@ test("renders the owner learning hub, projection, and source-based actions", asy
   await expect(page.getByRole("link", { name: /Quiz/ })).toHaveAttribute("href", `/quiz/vocabulary-sets/${setId}`);
   await expect(page.getByRole("columnheader")).toHaveText(["Từ vựng", "Phiên âm", "Từ loại", "Nghĩa", "Ví dụ", "Thao tác"]);
   await expect(page.getByRole("heading", { level: 2, name: "Từ vựng trong bộ (2)" })).toBeVisible();
-  await expect(page.getByText(populated.description, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(populated.description, { exact: true })).toBeVisible();
+  await expect(page.getByText("A2", { exact: true })).toBeVisible();
+  await expect(page.locator(".set-detail-header").locator('[data-cover-state]')).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "sân bay", exact: true })).toBeVisible();
   const canonicalRow = page.getByRole("row", { name: /airport/ });
   const canonicalEdit = canonicalRow.getByRole("button", { name: "Chỉ từ của bạn mới có thể chỉnh sửa" }); await expect(canonicalEdit).toBeVisible(); await expect(canonicalEdit).toBeDisabled(); await expect(canonicalRow.getByRole("button", { name: "Gỡ airport khỏi bộ" })).toBeEnabled();
@@ -117,6 +123,14 @@ test("empty Set keeps real activities disabled and vocabulary management availab
   await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
   await expect(page.getByRole("dialog", { name: "Thêm từ vựng" })).toBeVisible();
+});
+
+test("legacy and broken Personal detail metadata omits the cover while preserving detail behavior", async ({ page }) => {
+  await install(page, { ...populated, cefr_level: null, cover_image_url: "https://covers.example.test/broken.webp" });
+  await page.goto(`/my/vocabulary-sets/${setId}`);
+  await expect(page.locator(".set-detail-header").locator('[data-cover-state]')).toHaveCount(0);
+  await expect(page.locator(".set-detail-header .set-cefr-badge")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ/ })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
 });
 
 test("search modal normalizes phrases, validates meaningful input, and keeps inline actions accessible", async ({ page }) => {
@@ -160,6 +174,7 @@ test("create step keeps one named dialog and restores focus within and outside t
   expect(Math.abs(topActions.backCenter - topActions.closeCenter)).toBeLessThanOrEqual(1);
   expect(Math.abs(topActions.wordTop - topActions.phoneticTop)).toBeLessThanOrEqual(1);
   await expect(dialog.getByText("Phiên âm", { exact: false }).filter({ hasText: "(không bắt buộc)" })).toBeVisible();
+  await expect(dialog.getByText("CEFR", { exact: true })).toHaveCount(0);
   await expect(dialog.locator("textarea").first()).toHaveCSS("resize", "none");
   const controlGeometry = await dialog.evaluate((element) => ({
     input: element.querySelector("#private-vocabulary-word").getBoundingClientRect(),

@@ -4,6 +4,9 @@ const SET_SUMMARY_SELECT = {
   topic_id: true,
   name: true,
   description: true,
+  cefr_level: true,
+  cover_image_url: true,
+  cover_storage_key: true,
   is_public: true,
   created_at: true,
   updated_at: true,
@@ -15,6 +18,9 @@ const SET_DETAIL_SELECT = {
   topic_id: true,
   name: true,
   description: true,
+  cefr_level: true,
+  cover_image_url: true,
+  cover_storage_key: true,
   is_public: true,
   created_at: true,
   updated_at: true,
@@ -266,6 +272,14 @@ export function createVocabularySetRepository(prisma) {
       return prisma.vOCABULARY_SET.update({
         where: { id },
         data,
+        select: { id: true },
+      });
+    },
+
+    updateCoverMetadata(id, { cover_image_url, cover_storage_key }) {
+      return prisma.vOCABULARY_SET.update({
+        where: { id },
+        data: { cover_image_url, cover_storage_key },
         select: { id: true },
       });
     },

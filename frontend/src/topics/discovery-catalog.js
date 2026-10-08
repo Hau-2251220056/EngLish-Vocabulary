@@ -21,15 +21,20 @@ export async function loadDiscoveryCatalog({
   };
 }
 
-export function filterDiscoveryCatalog(sets, { query, topicId }) {
+export function filterDiscoveryCatalog(sets, { cefrLevel = "", query, topicId }) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return sets.filter((set) => {
     if (topicId && set.topic.id !== topicId) return false;
+    if (cefrLevel && set.cefr_level !== cefrLevel) return false;
     if (!normalizedQuery) return true;
     return [set.name, set.description]
       .filter((value) => typeof value === "string")
       .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
   });
+}
+
+export function selectDiscoveryFeaturedSets(sets) {
+  return sets.slice(0, 3);
 }
 
 export function paginateDiscoveryCatalog(sets, page, pageSize = 9) {

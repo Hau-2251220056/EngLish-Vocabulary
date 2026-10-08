@@ -469,16 +469,28 @@ Status: DONE — TASK-141 formal TEST PASS, REVIEW APPROVE and HUMAN closure app
 
 - `/topics` is the Set-first public System Set catalog. The frontend composes existing Topic and Topic-scoped Set APIs with concurrent requests (`1 + T`), publishes atomically, and performs client-side name/description search plus exact single-Topic filtering only after complete readiness.
 - Authenticated USER remains inside the App Shell, Guest browsing remains public, and ADMIN remains browse-only. Public Set Detail is read-only, visually aligned with Personal Set Detail, and lets USER enter Flashcard or Quiz without copying; Save remains optional.
-- The compact catalog provides a manual-preview **Bộ từ nổi bật** visual section, wider filter rail, responsive three-column cards where space permits, and nine normal Sets per client-side page. Featured previews do not consume page slots; filter changes reset to page 1 and page changes make no request.
+- The compact catalog provides a production-visible **Bộ từ nổi bật** section using the first 3 complete-catalog Sets in deterministic source order, a wider filter rail, responsive three-column cards where space permits, and nine normal Sets per client-side page. Featured selection remains independent of filters and does not consume page slots; filter changes reset to page 1 and page changes make no request.
 - Cards provide deterministic cover visuals, overlaid Topic labels, aligned title/count, two-line descriptions, accessible Lucide actions and best-effort current-session saved feedback. Copy still creates a fresh independent private Set and repeated copies remain allowed.
 - TASK-129 composition evidence was HUMAN accepted. Final evidence includes Discovery/Vocabulary Set unit and service `12/12`, Discovery/Auth/App Shell mocked browser `35/35`, Learning/Quiz/Personal Set Detail regression `51/51`, guarded real-stack `14/14`, all approved responsive widths, full frontend lint, production build and diff checks.
 - TASK-141 formal TEST result is **PASS** and formal REVIEW verdict is **APPROVE**, with no remaining CRITICAL, HIGH, MEDIUM or LOW findings. Guarded TEST DB isolation preserved unrelated users/sessions at `5 → 5` / `8 → 8` and left no run-owned `E2E-` Topic, Set or user fixture.
 
 ### Deferred / Non-blocking
 
-- Community-shared USER Sets, creator/social attribution, sorting, server-side global search/pagination, production featured/curated ranking, authoritative account-level saved-source recognition and Set-level CEFR filtering are not implemented.
-- The repository has no real per-Set cover-image field/storage contract; deterministic local presentation is used. Set-level CEFR metadata/filtering and Set cover-image support are planned future follow-up work requiring their own approved contracts.
-- No backend, API, schema, migration, dependency, ownership, visibility, Learning, Quiz or copy semantic change was introduced.
+- Community-shared USER Sets, creator/social attribution, sorting, server-side global search/pagination, authoritative featured/curated ranking, and account-level saved-source recognition are not implemented.
+- Discovery V1 originally shipped without per-Set CEFR/cover persistence; the separately completed Vocabulary Set Metadata Refactor below now supplies those capabilities.
+- Discovery V1 itself introduced no backend, API, schema, migration, dependency, ownership, visibility, Learning, Quiz or copy semantic change.
+
+## Vocabulary Set Metadata Refactor
+
+Status: DONE — TASK-165 formal TEST PASS and HUMAN approved; TASK-166 formal REVIEW APPROVE. Pending separate HUMAN authorization for commit/push/integration.
+
+- Added the forward-only nullable Set metadata migration: `cefr_level` (`A1`–`C1`), `cover_image_url`, and internal `cover_storage_key`, with no inference, default, historical backfill, blob/`bytea`, or rewrite of legacy null rows.
+- Extended existing System/Personal Set contracts and forms. ADMIN System Sets require Set CEFR; USER Personal CEFR remains optional. External covers accept HTTPS only. API responses expose safe Set CEFR/display URL and never expose managed keys or credentials.
+- Uploaded JPEG/PNG/WebP covers use bounded backend validation and Sharp optimization to WebP quality 82, longest edge at most 1600 px. One public-read Supabase bucket is backend-write/delete-only; lifecycle compensation, exact cleanup retry, managed copy and Set-owned key enforcement are implemented.
+- TEST Storage fails closed on dedicated `TEST_SUPABASE_*` configuration and never falls back to ordinary Storage identity. Real-provider verification uses only exact run-owned TEST objects and no bucket-wide cleanup.
+- My Sets/Discovery cards render persisted covers with deterministic broken/missing fallback. Detail headers intentionally omit cover duplication. Discovery provides client-side Set CEFR filtering and retains nine normal Sets per page plus the independent first-three Featured section.
+- TASK-163 visual corrections are HUMAN approved. TASK-164 documentation reconciliation, TASK-165 formal TEST, and TASK-166 formal REVIEW are complete with no BLOCKER, MUST FIX, or SHOULD FIX findings.
+- Approved deferred items are account-level saved-source recognition, authoritative Featured ranking, real-cover curation/content-policy improvements, broader ADMIN redesign/polish, and select/dropdown UI polish. Automatic Set CEFR inference, Set-level C2/ranges, image crop/editor/generation, remote-image proxying, Community/recommendations/ranking, and bulk import remain outside the approved V1 scope.
 
 ## Set Detail V1
 

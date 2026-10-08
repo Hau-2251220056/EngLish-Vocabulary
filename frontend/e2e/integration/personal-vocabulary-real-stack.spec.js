@@ -143,7 +143,7 @@ test("System Set rejects private ID while its private copy accepts owner-private
   const copiedItems = await prisma.vOCABULARY_SET_ITEM.findMany({ where: { vocabulary_set_id: copiedId } });
   expect(copiedItems.map(({ vocabulary_id }) => vocabulary_id)).toEqual([canonical.id]);
   await login(page, accounts.admin);
-  const systemAttempt = await page.evaluate(async ({ setId, topicId, privateId }) => fetch(`/api/admin/vocabulary-sets/${setId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic_id: topicId, name: "System", description: null, items: [{ vocabulary_id: privateId }] }) }).then(async (r) => ({ status: r.status, body: await r.json() })), { setId: systemSet.id, topicId: ids.topic, privateId: privateTwo.id });
+  const systemAttempt = await page.evaluate(async ({ setId, topicId, cefrLevel, privateId }) => fetch(`/api/admin/vocabulary-sets/${setId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic_id: topicId, name: "System", description: null, cefr_level: cefrLevel, items: [{ vocabulary_id: privateId }] }) }).then(async (r) => ({ status: r.status, body: await r.json() })), { setId: systemSet.id, topicId: ids.topic, cefrLevel: systemSet.cefr_level, privateId: privateTwo.id });
   expect(systemAttempt.status).toBe(404);
   await login(page, accounts.owner);
   await replaceItems(page, copiedId, [canonical.id, privateTwo.id]);
@@ -198,4 +198,4 @@ async function replaceItems(page, setId, vocabularyIds) {
   expect(result.status).toBe(200);
 }
 async function word(ownerId, value, part, meaning) { const record = await prisma.vOCABULARY.create({ data: { owner_id: ownerId, word: value, meanings: { create: { part_of_speech: part, meaning_vi: meaning, cefr_level: "A1" } } } }); ids.vocabulary.push(record.id); return record; }
-async function set(ownerId, isPublic, suffix, vocabularyIds) { const record = await prisma.vOCABULARY_SET.create({ data: { owner_id: ownerId, topic_id: isPublic ? ids.topic : null, name: `${prefix} ${suffix}`, is_public: isPublic, items: { create: vocabularyIds.map((vocabulary_id, index) => ({ vocabulary_id, position: index + 1 })) } } }); ids.sets.push(record.id); return record; }
+async function set(ownerId, isPublic, suffix, vocabularyIds) { const record = await prisma.vOCABULARY_SET.create({ data: { owner_id: ownerId, topic_id: isPublic ? ids.topic : null, name: `${prefix} ${suffix}`, cefr_level: isPublic ? "A1" : null, is_public: isPublic, items: { create: vocabularyIds.map((vocabulary_id, index) => ({ vocabulary_id, position: index + 1 })) } } }); ids.sets.push(record.id); return record; }

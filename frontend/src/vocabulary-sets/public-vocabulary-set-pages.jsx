@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
+import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "./set-metadata-presentation.jsx";
+import { useSavedVocabularySetSession } from "./saved-vocabulary-set-session.js";
 
 export function PublicVocabularySetDiscoveryPage() {
   const { topicId } = useParams();
@@ -71,8 +73,9 @@ function PublicVocabularySetDiscoveryContent({ topicId }) {
           {visibleSets.map((set) => (
             <li key={set.id}>
               <article className="public-topic-card public-vocabulary-set-card">
+                <SetCover alt="" className="relative mb-3 flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[var(--accent-primary-soft)] text-[var(--accent-primary-pressed)] [&>svg]:size-8" coverImageUrl={set.cover_image_url} fallback={<DefaultSetCoverArtwork />} imageClassName="size-full object-cover" />
                 <p className="public-vocabulary-set-card-label">Bộ từ hệ thống</p>
-                <h2>{set.name}</h2>
+                <div className="flex items-start justify-between gap-2"><h2>{set.name}</h2><SetCefrBadge cefrLevel={set.cefr_level} /></div>
                 <p>{set.description || "Chưa có mô tả cho bộ từ này."}</p>
                 <span className="public-vocabulary-set-count">{set.item_count} từ vựng</span>
                 <Link to={`/vocabulary-sets/${set.id}`}>Xem bộ từ <ArrowRight className="size-4" aria-hidden="true" /></Link>
@@ -98,6 +101,8 @@ function PublicVocabularySetDetailContent({ setId }) {
   const [reloadToken, setReloadToken] = useState(0);
   const [copyState, setCopyState] = useState("idle");
   const [copyError, setCopyError] = useState(null);
+  const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
+  const isSaved = savedSetIds.has(setId);
 
   useEffect(() => {
     let current = true;
@@ -122,13 +127,15 @@ function PublicVocabularySetDetailContent({ setId }) {
   }
 
   async function copySet() {
-    if (copyState === "pending" || !set) return;
+    if (!set || !beginCopy(set.id)) return;
     setCopyState("pending");
     setCopyError(null);
     try {
       const copied = await vocabularySetService.copySystemSet(set.id);
+      completeCopy(set.id);
       navigate(`/my/vocabulary-sets/${copied.id}`);
     } catch {
+      failCopy(set.id);
       setCopyError("Không thể sao chép bộ từ. Vui lòng thử lại.");
       setCopyState("idle");
     }
@@ -136,7 +143,7 @@ function PublicVocabularySetDetailContent({ setId }) {
 
   return (
     <section className="set-detail-page mx-auto w-full max-w-[76rem] p-[clamp(1rem,3vw,2.5rem)] text-[var(--text-primary)] max-[480px]:p-4" aria-label="Chi tiết bộ từ hệ thống">
-      <Link className="set-detail-back inline-flex min-h-11 items-center gap-[0.45rem] font-semibold text-[#5b6478] no-underline transition-[color,transform] duration-150 hover:-translate-x-0.5 hover:text-[var(--accent-primary-hover)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:w-[1.1rem]" to={set ? `/topics/${set.topic_id}/vocabulary-sets` : "/topics"}>
+      <Link className="set-detail-back inline-flex min-h-11 items-center gap-[0.45rem] font-semibold text-[#5b6478] no-underline transition-[color,transform] duration-150 hover:-translate-x-0.5 hover:text-[var(--accent-primary-hover)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:w-[1.1rem]" to={set ? `/topics?topic=${encodeURIComponent(set.topic_id)}` : "/topics"}>
         <ArrowLeft className="size-4" aria-hidden="true" />
         {set ? "Các bộ từ cùng chủ đề" : "Khám phá bộ từ"}
       </Link>
@@ -147,13 +154,16 @@ function PublicVocabularySetDetailContent({ setId }) {
         <article className="public-vocabulary-set-detail">
           <p className="public-topic-eyebrow !text-slate-500">Bộ từ hệ thống</p>
           <header className="set-detail-header mt-[0.15rem] flex items-start justify-between gap-6 max-[800px]:flex-col max-[800px]:items-stretch">
-            <div className="min-w-0">
-              <h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]" id="vocabulary-set-detail-title">{set.name}</h1>
-              <p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{set.description || "Chưa có mô tả cho bộ từ này."}</p>
-              <Link className="mt-2 inline-flex text-sm font-semibold text-[var(--accent-primary)] no-underline focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" to={`/topics/${set.topic_id}/vocabulary-sets`}>Xem các bộ từ cùng chủ đề</Link>
+            <div className="min-w-0 flex-1">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2"><h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]" id="vocabulary-set-detail-title">{set.name}</h1><SetCefrBadge cefrLevel={set.cefr_level} /></div>
+                <p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{set.description || "Chưa có mô tả cho bộ từ này."}</p>
+                <Link className="mt-2 inline-flex text-sm font-semibold text-[var(--accent-primary)] no-underline focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" to={`/topics?topic=${encodeURIComponent(set.topic_id)}`}>Xem các bộ từ cùng chủ đề</Link>
+              </div>
             </div>
             {!isAuthenticated ? <Link className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[0.7rem] border border-[var(--accent-primary)] bg-white px-3 py-[0.55rem] text-sm font-semibold text-[var(--accent-primary)] no-underline hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] max-[800px]:min-h-11 max-[800px]:w-full" to="/login">Đăng nhập để học và lưu</Link> : null}
-            {user?.role === "USER" ? <button type="button" className="inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[0.7rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-sm font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] hover:text-[var(--accent-primary)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] max-[800px]:min-h-11 max-[800px]:w-full" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}><Bookmark className="size-4" aria-hidden="true" />{copyState === "pending" ? "Đang lưu…" : "Lưu vào Bộ từ của tôi"}</button> : null}
+            {user?.role === "USER" && isSaved ? <span className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-[0.7rem] bg-emerald-50 px-3 py-[0.55rem] text-sm font-semibold text-emerald-700 max-[800px]:min-h-11 max-[800px]:w-full" role="status"><Bookmark className="size-4" fill="currentColor" aria-hidden="true" />Đã lưu</span> : null}
+            {user?.role === "USER" && !isSaved ? <button type="button" className="inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[0.7rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-sm font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] hover:text-[var(--accent-primary)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] max-[800px]:min-h-11 max-[800px]:w-full" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}><Bookmark className="size-4" aria-hidden="true" />{copyState === "pending" ? "Đang lưu…" : copyError ? "Thử lưu lại" : "Lưu vào Bộ từ của tôi"}</button> : null}
           </header>
           {copyError ? <p className="mb-0 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{copyError}</p> : null}
 

@@ -6,7 +6,6 @@ import {
   validatePrivateVocabulary,
 } from "./private-vocabulary-form-model.js";
 
-const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const PARTS_OF_SPEECH = [
   ["noun", "Noun"], ["verb", "Verb"], ["adjective", "Adjective"],
   ["adverb", "Adverb"], ["pronoun", "Pronoun"], ["preposition", "Preposition"],
@@ -113,10 +112,10 @@ export function PrivateVocabularyEditor({ embedded = false, error, initialValue,
                   <div className="grid gap-[0.2rem]"><label className={LABEL_CLASSES}>Loại từ<select className={`${FIELD_CLASSES} cursor-pointer`} value={meaning.part_of_speech} onChange={(event) => updateMeaning(meaningIndex, "part_of_speech", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`part-${meaningIndex}`])}><option value="">Chọn loại từ</option>{meaning.part_of_speech && !PARTS_OF_SPEECH.some(([value]) => value === meaning.part_of_speech) ? <option value={meaning.part_of_speech}>{meaning.part_of_speech}</option> : null}{PARTS_OF_SPEECH.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>{errors[`part-${meaningIndex}`] ? <FieldError message={errors[`part-${meaningIndex}`]} /> : null}</div>
                   <div className="grid gap-[0.2rem]"><label className={LABEL_CLASSES}>Nghĩa tiếng Việt<textarea className={TEXTAREA_CLASSES} value={meaning.meaning_vi} onChange={(event) => updateMeaning(meaningIndex, "meaning_vi", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`meaning-${meaningIndex}`])} /></label>{errors[`meaning-${meaningIndex}`] ? <FieldError message={errors[`meaning-${meaningIndex}`]} /> : null}</div>
                   <label className={LABEL_CLASSES}><span className={OPTIONAL_LABEL_CLASSES}>Ngữ cảnh <span>(không bắt buộc)</span></span><textarea className={TEXTAREA_CLASSES} value={meaning.context} onChange={(event) => updateMeaning(meaningIndex, "context", event.target.value)} disabled={pending} /></label>
-                  <label className={LABEL_CLASSES}><span className={OPTIONAL_LABEL_CLASSES}>CEFR <span>(không bắt buộc)</span></span><select className={`${FIELD_CLASSES} cursor-pointer`} value={meaning.cefr_level} onChange={(event) => updateMeaning(meaningIndex, "cefr_level", event.target.value)} disabled={pending}><option value="">Chưa chọn</option>{CEFR_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
+                  <div className="flex h-full items-end justify-end max-[700px]:justify-start"><button className={BUTTON_CLASSES} type="button" onClick={() => addExample(meaningIndex)} disabled={pending}><Plus aria-hidden="true" />Thêm ví dụ</button></div>
                 </div>
                 <div className="mt-2 border-t border-slate-200 pt-[0.45rem]">
-                  <div className="flex items-center justify-between gap-4"><h3 className="m-0 text-[0.82rem] font-semibold">Ví dụ</h3><button className={BUTTON_CLASSES} type="button" onClick={() => addExample(meaningIndex)} disabled={pending}><Plus aria-hidden="true" />Thêm ví dụ</button></div>
+                  <h3 className="m-0 text-[0.82rem] font-semibold">Ví dụ</h3>
                   {meaning.examples.map((example, exampleIndex) => (
                     <div className="mt-[0.4rem] grid grid-cols-[1fr_1fr_auto] items-end gap-[0.4rem] max-[700px]:grid-cols-1" key={example.id ?? `example-${exampleIndex}`}>
                       <label className={LABEL_CLASSES}>Ví dụ tiếng Anh<textarea className={TEXTAREA_CLASSES} value={example.example_en} onChange={(event) => updateExample(meaningIndex, exampleIndex, "example_en", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`example-${meaningIndex}-${exampleIndex}`])} />{errors[`example-${meaningIndex}-${exampleIndex}`] ? <span className="text-[0.85rem] font-semibold! text-red-700!">{errors[`example-${meaningIndex}-${exampleIndex}`]}</span> : null}</label>

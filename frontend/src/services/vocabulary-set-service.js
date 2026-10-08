@@ -27,6 +27,9 @@ export function createVocabularySetService(client = httpClient) {
     async getMySet(setId) { return getPrivateAggregate(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
     async createMySet(input) { return mutateAggregate(client, "post", MY_SETS_ENDPOINT, input); },
     async updateMySet(setId, input) { return mutateAggregate(client, "patch", itemEndpoint(MY_SETS_ENDPOINT, setId), input); },
+    async uploadMySetCover(setId, file) { return uploadCover(client, `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover`, file); },
+    async removeMySetCover(setId) { return coverMutation(client, "delete", `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover`); },
+    async cleanupMySetCover(setId) { return coverMutation(client, "post", `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover/cleanup`); },
     async deleteMySet(setId) { return deleteSet(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
     async copySystemSet(setId) {
       return mutateAggregate(client, "post", `${itemEndpoint(PUBLIC_ENDPOINT, setId)}/copy`);
@@ -51,6 +54,9 @@ export function createVocabularySetService(client = httpClient) {
     async getAdminSystemSet(setId) { return getAggregate(client, itemEndpoint(ADMIN_ENDPOINT, setId)); },
     async createAdminSystemSet(input) { return mutateAggregate(client, "post", ADMIN_ENDPOINT, input); },
     async updateAdminSystemSet(setId, input) { return mutateAggregate(client, "patch", itemEndpoint(ADMIN_ENDPOINT, setId), input); },
+    async uploadAdminSystemSetCover(setId, file) { return uploadCover(client, `${itemEndpoint(ADMIN_ENDPOINT, setId)}/cover`, file); },
+    async removeAdminSystemSetCover(setId) { return coverMutation(client, "delete", `${itemEndpoint(ADMIN_ENDPOINT, setId)}/cover`); },
+    async cleanupAdminSystemSetCover(setId) { return coverMutation(client, "post", `${itemEndpoint(ADMIN_ENDPOINT, setId)}/cover/cleanup`); },
     async deleteAdminSystemSet(setId) { return deleteSet(client, itemEndpoint(ADMIN_ENDPOINT, setId)); },
   };
 }
@@ -74,8 +80,34 @@ async function getPrivateAggregate(client, url) {
 }
 
 async function mutateAggregate(client, method, url, input) {
-  try { return requireAggregate((await client[method](url, input)).data?.data); }
+  try {
+    const response = await client[method](url, input);
+    return withMutationMeta(requireAggregate(response.data?.data), response.data?.meta);
+  }
   catch (error) { throw mapVocabularySetError(error); }
+}
+
+async function uploadCover(client, url, file) {
+  const formData = new FormData();
+  formData.append("cover", file);
+  try {
+    const response = await client.post(url, formData);
+    return withMutationMeta(requireAggregate(response.data?.data), response.data?.meta);
+  } catch (error) { throw mapVocabularySetError(error); }
+}
+
+async function coverMutation(client, method, url) {
+  try {
+    const response = await client[method](url);
+    return withMutationMeta(requireAggregate(response.data?.data), response.data?.meta);
+  } catch (error) { throw mapVocabularySetError(error); }
+}
+
+function withMutationMeta(aggregate, meta) {
+  return {
+    ...aggregate,
+    storage_cleanup: meta?.storage_cleanup === "retry_required" ? "retry_required" : "complete",
+  };
 }
 
 async function deleteSet(client, url) {

@@ -1,25 +1,36 @@
 import { Bookmark, BookOpen, ChevronRight, LoaderCircle, RotateCcw, Search, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
-import { filterDiscoveryCatalog, loadDiscoveryCatalog, paginateDiscoveryCatalog } from "./discovery-catalog.js";
+import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
+import { useSavedVocabularySetSession } from "../vocabulary-sets/saved-vocabulary-set-session.js";
+import { filterDiscoveryCatalog, loadDiscoveryCatalog, paginateDiscoveryCatalog, selectDiscoveryFeaturedSets } from "./discovery-catalog.js";
 
 const DESCRIPTION_FALLBACK = "Chưa có mô tả cho bộ từ này.";
-const MANUAL_REVIEW_PREFIX = "E2E-DISCOVERY-MANUAL-";
-const SAVED_SETS_KEY = "elvocab.discovery.saved-set-ids.v1";
 
 export function TopicListPage() {
   const { isAuthenticated, user } = useAuthentication();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [catalog, setCatalog] = useState({ topics: [], sets: [] });
   const [query, setQuery] = useState("");
-  const [topicId, setTopicId] = useState("");
+  const [topicId, setTopicId] = useState(() => searchParams.get("topic") ?? "");
+  const [cefrLevel, setCefrLevel] = useState("");
   const [status, setStatus] = useState("loading");
   const [reloadToken, setReloadToken] = useState(0);
   const [copyBySet, setCopyBySet] = useState({});
-  const [savedSetIds, setSavedSetIds] = useState(readSessionSavedSetIds);
+  const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    function syncTopicFromHistory() {
+      setTopicId(new URLSearchParams(window.location.search).get("topic") ?? "");
+      setPage(1);
+    }
+    window.addEventListener("popstate", syncTopicFromHistory);
+    return () => window.removeEventListener("popstate", syncTopicFromHistory);
+  }, []);
 
   useEffect(() => {
     let current = true;
@@ -37,14 +48,12 @@ export function TopicListPage() {
   }, [reloadToken]);
 
   const visibleSets = useMemo(
-    () => filterDiscoveryCatalog(catalog.sets, { query, topicId }),
-    [catalog.sets, query, topicId],
+    () => filterDiscoveryCatalog(catalog.sets, { cefrLevel, query, topicId }),
+    [catalog.sets, cefrLevel, query, topicId],
   );
-  const hasFilters = query.length > 0 || topicId.length > 0;
+  const hasFilters = query.length > 0 || topicId.length > 0 || cefrLevel.length > 0;
   const featuredSets = useMemo(
-    () => import.meta.env.DEV
-      ? catalog.sets.filter((set) => [set.name, set.description].some((value) => value?.includes(MANUAL_REVIEW_PREFIX))).slice(0, 3)
-      : [],
+    () => selectDiscoveryFeaturedSets(catalog.sets),
     [catalog.sets],
   );
   const featuredSetIds = useMemo(() => new Set(featuredSets.map((set) => set.id)), [featuredSets]);
@@ -61,22 +70,28 @@ export function TopicListPage() {
 
   function clearFilters() {
     setQuery("");
-    setTopicId("");
+    setCefrLevel("");
+    updateTopicFilter("");
+  }
+
+  function updateTopicFilter(nextTopicId) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTopicId) nextParams.set("topic", nextTopicId);
+    else nextParams.delete("topic");
+    setTopicId(nextTopicId);
+    setSearchParams(nextParams, { replace: true });
     setPage(1);
   }
 
   async function copySet(set) {
-    if (copyBySet[set.id]?.status === "pending") return;
+    if (!beginCopy(set.id)) return;
     setCopyBySet((current) => ({ ...current, [set.id]: { status: "pending", error: null } }));
     try {
       const copied = await vocabularySetService.copySystemSet(set.id);
-      setSavedSetIds((current) => {
-        const next = new Set(current).add(set.id);
-        writeSessionSavedSetIds(next);
-        return next;
-      });
+      completeCopy(set.id);
       navigate(`/my/vocabulary-sets/${copied.id}`);
     } catch {
+      failCopy(set.id);
       setCopyBySet((current) => ({
         ...current,
         [set.id]: { status: "idle", error: "Không thể lưu bộ từ. Vui lòng thử lại." },
@@ -103,7 +118,10 @@ export function TopicListPage() {
         <div className="discovery-catalog-layout">
           <aside className="discovery-filter-sidebar" aria-label="Tìm kiếm và lọc bộ từ">
           <div className="public-topic-search discovery-search">
-            <label htmlFor="discovery-search">Tìm kiếm bộ từ</label>
+            <div className="discovery-search-heading">
+              <label htmlFor="discovery-search">Tìm kiếm bộ từ</label>
+              <button type="button" className="discovery-clear-button" onClick={clearFilters} disabled={!hasFilters}><RotateCcw className="size-3.5" aria-hidden="true" />Xóa bộ lọc</button>
+            </div>
             <div className="public-topic-search-control">
               <Search className="size-5" aria-hidden="true" />
               <input id="discovery-search" type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Nhập tên hoặc mô tả bộ từ" autoComplete="off" />
@@ -111,12 +129,19 @@ export function TopicListPage() {
           </div>
           <fieldset className="discovery-topic-filter">
             <legend>Chủ đề</legend>
-            <label><input type="radio" name="discovery-topic" value="" checked={topicId === ""} onChange={(event) => { setTopicId(event.target.value); setPage(1); }} /><span>Tất cả chủ đề</span></label>
-            {catalog.topics.map((topic) => <label key={topic.id}><input type="radio" name="discovery-topic" value={topic.id} checked={topicId === topic.id} onChange={(event) => { setTopicId(event.target.value); setPage(1); }} /><span>{topic.name}</span></label>)}
+            <div className="discovery-topic-options">
+              <label><input type="radio" name="discovery-topic" value="" checked={topicId === ""} onChange={(event) => updateTopicFilter(event.target.value)} /><span>Tất cả chủ đề</span></label>
+              {catalog.topics.map((topic) => <label key={topic.id}><input type="radio" name="discovery-topic" value={topic.id} checked={topicId === topic.id} onChange={(event) => updateTopicFilter(event.target.value)} /><span>{topic.name}</span></label>)}
+            </div>
           </fieldset>
+          <label className="discovery-cefr-filter grid gap-2 text-sm font-semibold text-slate-700" htmlFor="discovery-cefr-filter">Trình độ CEFR
+            <select className="min-h-11 w-full cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 font-[inherit] font-medium text-slate-700 outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-focus)]" id="discovery-cefr-filter" value={cefrLevel} onChange={(event) => { setCefrLevel(event.target.value); setPage(1); }}>
+              <option value="">Tất cả mức độ</option>
+              {["A1", "A2", "B1", "B2", "C1"].map((level) => <option key={level} value={level}>{level}</option>)}
+            </select>
+          </label>
           <div className="discovery-results-row">
             <p className="public-topic-result-count" aria-live="polite">{normalVisibleSets.length} bộ từ phù hợp</p>
-            {hasFilters ? <button type="button" className="discovery-clear-button" onClick={clearFilters}><RotateCcw className="size-3.5" aria-hidden="true" />Xóa bộ lọc</button> : null}
           </div>
           </aside>
           <div className="discovery-catalog-results">
@@ -142,43 +167,25 @@ function DiscoverySetCard({ copyState, featured = false, isAuthenticated, isSave
   const topicTone = getTopicTone(set.topic.id || set.topic.name);
   return (
     <article className={`public-topic-card public-vocabulary-set-card discovery-set-card${featured ? " is-featured" : ""}`}>
-      <div className={`discovery-card-cover discovery-card-cover--${topicTone}`} aria-hidden="true">
-        <BookOpen />
-        <span className="discovery-cover-orbit" />
+      <SetCover alt="" className={`discovery-card-cover discovery-card-cover--${topicTone} relative`} coverImageUrl={set.cover_image_url} fallback={<><DefaultSetCoverArtwork /><span className="discovery-cover-orbit" /></>} imageClassName="absolute inset-0 size-full object-cover">
         <span className="discovery-topic-badge">{set.topic.name}</span>
-      </div>
+      </SetCover>
       <div className="discovery-card-body">
         <div className="discovery-card-title-row">
           <h2>{set.name}</h2>
-          <span className="public-vocabulary-set-count"><BookOpen className="size-4" aria-hidden="true" />{set.item_count} từ</span>
+          <div className="flex shrink-0 items-center gap-2"><SetCefrBadge cefrLevel={set.cefr_level} /><span className="public-vocabulary-set-count"><BookOpen className="size-4" aria-hidden="true" />{set.item_count} từ</span></div>
         </div>
         <p>{set.description || DESCRIPTION_FALLBACK}</p>
         {copyState?.error ? <p className="discovery-copy-error" role="alert">{copyState.error}</p> : null}
         <div className="discovery-card-actions">
           {!isAuthenticated ? <Link className="discovery-save-action" to="/login"><Bookmark className="size-4" aria-hidden="true" />Đăng nhập để lưu</Link> : null}
-          {role === "USER" ? <button className={isSaved ? "is-saved" : undefined} type="button" onClick={onCopy} disabled={isPending} aria-busy={isPending}><Bookmark className="size-4" fill={isSaved ? "currentColor" : "none"} aria-hidden="true" />{isPending ? "Đang lưu…" : copyState?.error ? "Thử lưu lại" : isSaved ? "Đã lưu" : "Lưu"}</button> : null}
+          {role === "USER" && isSaved ? <span className="is-saved inline-flex min-h-9 items-center gap-[0.3rem] rounded-[0.55rem] px-[0.52rem] py-1.5 text-[0.8rem] font-bold" role="status"><Bookmark className="size-4" fill="currentColor" aria-hidden="true" />Đã lưu</span> : null}
+          {role === "USER" && !isSaved ? <button type="button" onClick={onCopy} disabled={isPending} aria-busy={isPending}><Bookmark className="size-4" aria-hidden="true" />{isPending ? "Đang lưu…" : copyState?.error ? "Thử lưu lại" : "Lưu"}</button> : null}
           <Link className="discovery-view-action" to={`/vocabulary-sets/${set.id}`}>Xem <ChevronRight className="size-4" aria-hidden="true" /></Link>
         </div>
       </div>
     </article>
   );
-}
-
-function readSessionSavedSetIds() {
-  try {
-    const value = JSON.parse(window.sessionStorage.getItem(SAVED_SETS_KEY) || "[]");
-    return new Set(Array.isArray(value) ? value.filter((item) => typeof item === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function writeSessionSavedSetIds(savedSetIds) {
-  try {
-    window.sessionStorage.setItem(SAVED_SETS_KEY, JSON.stringify([...savedSetIds]));
-  } catch {
-    // Session feedback is best-effort and never affects the authoritative copy result.
-  }
 }
 
 function getTopicTone(topicIdentity) {

@@ -100,6 +100,9 @@ model VOCABULARY_SET {
   owner_id                             String                                @db.Uuid
   name                                 String                                @db.VarChar(100)
   description                          String?                               @db.VarChar(500)
+  cefr_level                           String?                               @db.Text
+  cover_image_url                      String?                               @db.VarChar(2048)
+  cover_storage_key                    String?                               @db.VarChar(512)
   is_public                            Boolean
   created_at                           DateTime                              @default(now())
   updated_at                           DateTime                              @updatedAt

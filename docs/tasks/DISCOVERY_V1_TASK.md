@@ -376,6 +376,7 @@ Add the approved complete-dataset client-side search/filter behavior.
 - Clearing search restores Sets within the selected Topic.
 - Selecting all Topics preserves the current search across Topics.
 - The filtered normal catalog is sliced client-side at 9 Sets per page; search/Topic changes reset to page 1, invalid pages clamp safely, featured previews are excluded and page navigation makes no API request.
+- The mini-sidebar remains stable with many Topics: only its native single-select radio options region scrolls, while search, Topic heading, CEFR and result count remain outside that region. The always-rendered reset action is disabled only at the all-default state and clears search, Topic, CEFR and pagination without a request.
 
 ### Verification
 
@@ -805,7 +806,7 @@ NEXT ALLOWED ACTION: AUTHORIZED COMMIT, FEATURE PUSH AND FF-ONLY INTEGRATION TO 
 
 ## 10. TASK-140 Documentation/Status Evidence (2026-10-06)
 
-- SPEC, PLAN and TASK now record the final HUMAN-approved catalog: current-API atomic `1 + T` composition, exact Topic filtering, nine-item client pagination, manual-preview featured limitation, compact cards, session-local saved feedback and unchanged copy/Learning/Quiz/public-read contracts.
+- SPEC, PLAN and TASK now record the final HUMAN-approved catalog: current-API atomic `1 + T` composition, exact Topic filtering, nine-item client pagination, deterministic first-three Featured presentation, compact cards, session-local saved feedback and unchanged copy/Learning/Quiz/public-read contracts.
 - `UI_UX_SPEC.md` now defines the active Set-first landing, adaptive actor shells, mini filter rail, responsive catalog/detail behavior and accessibility boundary. `ARCHITECTURE.md` records concurrent frontend composition and explicitly excludes backend/API/schema redesign.
 - At the TASK-140 checkpoint, `FEATURE_STATUS.md` correctly retained `IN_PROGRESS` while TASK-141 was pending. TASK-141 evidence below now supersedes that checkpoint state with formal TEST PASS, REVIEW APPROVE and `DONE` status pending HUMAN closure approval before commit/push.
 - Deferred items are explicit: Community/creator-social discovery, sorting, server-side pagination/global search, production featured ranking, per-Set cover storage, authoritative account-level saved-source recognition and Set-level CEFR metadata/filtering. Set covers and CEFR are future follow-up work, not TASK-140 implementation.
@@ -816,7 +817,7 @@ NEXT ALLOWED ACTION: AUTHORIZED COMMIT, FEATURE PUSH AND FF-ONLY INTEGRATION TO 
 - Discovery/Vocabulary Set unit and service regression passed `12/12`. Mocked Discovery plus Auth/App Shell regression passed `35/35` across Guest, USER, ADMIN and widths `375`, `390`, `768`, `820`, `1366`, `1536`.
 - Existing Learning, Quiz and Personal Set Detail mocked regression passed `51/51`. The expected mocked-suite Vite proxy `ECONNREFUSED` noise did not fail or bypass any assertion.
 - Guarded focused real-stack regression passed `14/14`: Topic/Discovery `9/9`, public Set `3/3`, and USER Set/copy `2/2`. Two legacy loading-state tests received test-only shared release gates after formal verification exposed per-request resolver races; no production behavior changed.
-- Requirement traceability found and corrected one in-scope catalog projection defect: manual-preview Featured Sets are now removed from the normal filtered/paginated collection and cannot consume any of its nine page slots. Focused Discovery/Auth routing rerun passed `18/18`. Review also removed the obsolete authenticated branch from the Guest-only `PublicTopicLayout`; the adaptive parent remains the single authenticated-shell authority.
+- Requirement traceability found and corrected one in-scope catalog projection defect: Featured Sets are removed from the normal filtered/paginated collection and cannot consume any of its nine page slots. The later HUMAN-approved TASK-163 amendment makes this a production-visible deterministic section using the first 3 complete-catalog Sets in source order, without test markers or ranking semantics. Focused Discovery/Auth routing rerun passed `18/18`. Review also removed the obsolete authenticated branch from the Guest-only `PublicTopicLayout`; the adaptive parent remains the single authenticated-shell authority.
 - TEST DB isolation passed: unrelated users/sessions remained `5 → 5` / `8 → 8`; post-run run-owned `E2E-` Topics, Sets and users were all `0`.
 - Full frontend ESLint and production build passed. The build retained only the known non-blocking chunk-size advisory. Documentation consistency, scoped secret/debug/artifact checks and `git diff --check` passed.
 - Formal TEST verdict: **PASS**. Formal REVIEW verdict: **APPROVE**. Findings remaining by severity: CRITICAL `0`, HIGH `0`, MEDIUM `0`, LOW `0`.

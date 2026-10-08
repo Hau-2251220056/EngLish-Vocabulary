@@ -48,8 +48,8 @@ export function createVocabularySetController({ vocabularySetService }) {
 
     async updateSystem(req, res, next) {
       try {
-        const set = await vocabularySetService.updateSystemSet(req.params.setId, req.body);
-        res.status(200).json({ success: true, data: set });
+        const result = await vocabularySetService.updateSystemSet(req.params.setId, req.body);
+        sendMutationResult(res, result);
       } catch (error) {
         handleKnownVocabularySetError(error, res, next);
       }
@@ -87,8 +87,8 @@ export function createVocabularySetController({ vocabularySetService }) {
 
     async updatePrivate(req, res, next) {
       try {
-        const set = await vocabularySetService.updatePrivateSet(req.user.id, req.params.setId, req.body);
-        res.status(200).json({ success: true, data: set });
+        const result = await vocabularySetService.updatePrivateSet(req.user.id, req.params.setId, req.body);
+        sendMutationResult(res, result);
       } catch (error) { handleKnownVocabularySetError(error, res, next); }
     },
 
@@ -103,6 +103,48 @@ export function createVocabularySetController({ vocabularySetService }) {
       try {
         const set = await vocabularySetService.copySystemSet(req.user.id, req.params.setId);
         res.status(201).json({ success: true, data: set });
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async uploadSystemCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.uploadSystemCover(req.params.setId, req.file);
+        sendCoverResult(res, result);
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async removeSystemCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.removeSystemCover(req.params.setId);
+        sendCoverResult(res, result);
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async cleanupSystemCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.cleanupSystemCover(req.params.setId);
+        sendCoverResult(res, result);
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async uploadPrivateCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.uploadPrivateCover(req.user.id, req.params.setId, req.file);
+        sendCoverResult(res, result);
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async removePrivateCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.removePrivateCover(req.user.id, req.params.setId);
+        sendCoverResult(res, result);
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
+
+    async cleanupPrivateCover(req, res, next) {
+      try {
+        const result = await vocabularySetService.cleanupPrivateCover(req.user.id, req.params.setId);
+        sendCoverResult(res, result);
       } catch (error) { handleKnownVocabularySetError(error, res, next); }
     },
 
@@ -138,8 +180,34 @@ function handleKnownVocabularySetError(error, res, next) {
     VOCABULARY_NOT_FOUND: 404,
     VOCABULARY_ALREADY_IN_SET: 409,
     PRIVATE_VOCABULARY_OPERATION_CONFLICT: 409,
+    COVER_FILE_TOO_LARGE: 413,
+    UNSUPPORTED_COVER_MEDIA_TYPE: 415,
+    COVER_PROCESSING_BUSY: 503,
+    COVER_PROCESSING_TIMEOUT: 503,
+    COVER_PROCESSING_UNAVAILABLE: 503,
+    COVER_STORAGE_UNAVAILABLE: 503,
+    COVER_STORAGE_FAILED: 502,
+    COVER_STORAGE_CLEANUP_FAILED: 502,
   };
   const status = statusByCode[error?.code];
   if (!status) return next(error);
-  res.status(status).json({ success: false, error: { code: error.code, message: error.message } });
+  const payload = { code: error.code, message: error.message };
+  if (error.details?.orphan_set_id) payload.details = { orphan_set_id: error.details.orphan_set_id };
+  res.status(status).json({ success: false, error: payload });
+}
+
+function sendMutationResult(res, result) {
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    meta: { storage_cleanup: result.storage_cleanup },
+  });
+}
+
+function sendCoverResult(res, result) {
+  res.status(200).json({
+    success: true,
+    data: result.data,
+    meta: { storage_cleanup: result.storage_cleanup },
+  });
 }

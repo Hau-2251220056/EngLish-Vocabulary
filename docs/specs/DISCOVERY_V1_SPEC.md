@@ -107,16 +107,16 @@ No new role is introduced.
 - Changing either control updates visible cards without another search-specific API request.
 - Search/filter state is page-local; Discovery V1 does not require URL query persistence or cross-session persistence.
 - No sorting control is added. Results preserve deterministic source order: Topic API order, then the Set order returned for each Topic.
-- After complete load and client-side search/Topic filtering, the normal catalog is paginated client-side at exactly 9 Sets per page. Featured preview cards are excluded from this count.
+- After complete load, the first 3 public System Sets in deterministic source order form the Featured section independently of search/Topic filtering. Those IDs are removed before the remaining normal catalog is filtered and paginated client-side at exactly 9 Sets per page.
 - Search or Topic changes reset pagination to page 1; the active page is clamped to the filtered result's valid range. Page changes issue no API request.
 
 ## 7. Set Card Contract
 
 ### Final catalog presentation amendment
 
-- The visible content begins with a compact **Bộ từ nổi bật** visual preview, then a wider mini filter sidebar and normal catalog. No dedicated production featured/ranking contract exists; the preview must not claim popularity or recommendation semantics.
-- The filter sidebar uses labelled search and exact single-Topic radio controls. Normal desktop targets three columns and nine normal Sets per page (three rows where width permits); responsive layouts fall back without horizontal overflow.
-- Featured previews are excluded from pagination. Search/Topic changes reset page 1, valid-page clamping is mandatory and page navigation is frontend-only.
+- The visible content begins with a compact **Bộ từ nổi bật** visual preview, then a wider mini filter sidebar and normal catalog. V1 renders the first 3 Sets from the complete loaded catalog in existing source order in every environment. This temporary deterministic selection is not an authoritative ranking and must not claim popularity or recommendation semantics.
+- The filter sidebar uses labelled search and exact single-Topic radio controls. Search, Topic heading, CEFR and result count remain fixed within the panel while only a viewport-bounded Topic-options region scrolls when needed. **Xóa bộ lọc** is always present beside the search heading and is disabled only while search, Topic and CEFR are all at their defaults. Normal desktop targets three columns and nine normal Sets per page (three rows where width permits); responsive layouts fall back without horizontal overflow.
+- Featured IDs are excluded from normal filtering and pagination. The Featured section remains independent of search/Topic controls; search/Topic changes reset normal-catalog page 1, valid-page clamping is mandatory and page navigation is frontend-only.
 - Cards use deterministic local cover presentation because no Set cover field exists: Topic badge overlays the cover, title/count share one row, descriptions clamp to two lines and compact **Lưu**/**Xem** actions align left using Lucide icons.
 - Successful copy may expose best-effort current-session **Đã lưu** feedback but repeated copies remain allowed. The current API provides no authoritative account-level source-copy recognition.
 
@@ -234,7 +234,7 @@ Cards use the same visual family as **Bộ từ của tôi**, but ownership-spec
 - **AC-27:** Search/filter controls operate only after all required responses for the current catalog load have completed successfully.
 - **AC-28:** Failure of any required Topic-scoped Set request produces the Discovery error/retry state and never an apparently complete partial catalog.
 - **AC-29:** Materially poor readiness, excessive requests or unacceptable current-dataset scaling triggers the mandatory HUMAN STOP before any global endpoint, server-side pagination, server-side search/filter or API response change.
-- **AC-30:** The filtered normal catalog shows at most 9 Sets per client-side page with working `Trước`/`Sau` controls, valid reset/clamping and no page-change request; featured previews do not consume catalog-page slots.
+- **AC-30:** After complete load, at most the first 3 source-ordered Sets render as Featured in every environment. Their IDs do not consume normal-catalog slots; the filtered normal catalog shows at most 9 Sets per client-side page with working `Trước`/`Sau` controls, valid reset/clamping and no page-change request.
 
 ## 15. Edge Cases
 

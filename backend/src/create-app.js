@@ -40,9 +40,11 @@ import { createVocabularyService } from "./services/vocabulary-service.js";
 import { createVocabularySetService } from "./services/vocabulary-set-service.js";
 import { createLearningService } from "./services/learning-service.js";
 import { createQuizService } from "./services/quiz-service.js";
+import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
+import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
 
-export function createApp({ prisma, learningNow }) {
+export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor }) {
   if (!prisma) {
     throw new TypeError("A Prisma client is required to create the application.");
   }
@@ -85,7 +87,11 @@ export function createApp({ prisma, learningNow }) {
     adminAuthorizationMiddleware,
   });
   const vocabularySetRepository = createVocabularySetRepository(prisma);
-  const vocabularySetService = createVocabularySetService({ vocabularySetRepository });
+  const vocabularySetService = createVocabularySetService({
+    vocabularySetRepository,
+    coverStorage: coverStorage ?? createVocabularySetCoverStorage(),
+    coverImageProcessor: coverImageProcessor ?? createVocabularySetCoverImageProcessor(),
+  });
   const vocabularySetController = createVocabularySetController({ vocabularySetService });
   const publicVocabularySetRouter = createPublicVocabularySetRouter({ vocabularySetController });
   const adminVocabularySetRouter = createAdminVocabularySetRouter({

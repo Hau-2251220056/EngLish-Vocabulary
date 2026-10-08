@@ -44,6 +44,32 @@ export function redactDatabaseUrl(value) {
   return "<redacted-test-database-url>";
 }
 
+export function configureTestStorageEnvironment() {
+  if (process.env.NODE_ENV !== "test") {
+    throw new TestEnvironmentError("NODE_ENV must be set to test.");
+  }
+  const mappings = [
+    ["TEST_SUPABASE_URL", "SUPABASE_URL"],
+    ["TEST_SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+    ["TEST_SUPABASE_VOCABULARY_SET_COVERS_BUCKET", "SUPABASE_VOCABULARY_SET_COVERS_BUCKET"],
+    ["TEST_SUPABASE_STORAGE_NAMESPACE", "SUPABASE_STORAGE_NAMESPACE"],
+  ];
+  const mapped = {};
+  for (const [testName, runtimeName] of mappings) {
+    const value = process.env[testName];
+    if (typeof value !== "string" || value.trim().length === 0 || (process.env[runtimeName] && process.env[runtimeName] === value)) {
+      throw new TestEnvironmentError(`${testName} must reference dedicated TEST Storage.`);
+    }
+    mapped[runtimeName] = value;
+  }
+  if (!mapped.SUPABASE_VOCABULARY_SET_COVERS_BUCKET.toLowerCase().includes("test")
+    || !mapped.SUPABASE_STORAGE_NAMESPACE.toLowerCase().includes("test")) {
+    throw new TestEnvironmentError("TEST Storage bucket and namespace must be explicitly test-scoped.");
+  }
+  Object.assign(process.env, mapped);
+  return Object.freeze(mapped);
+}
+
 export class TestEnvironmentError extends Error {
   constructor(message) {
     super(message);

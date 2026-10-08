@@ -14,7 +14,7 @@ The implementation will preserve all existing backend, database, API, visibility
 
 The first implementation checkpoint will record catalog request count, readiness timing and Topic-count scaling. If the current `1 + T` API composition is materially unsuitable for the current dataset, work stops for HUMAN review before any endpoint, server-side pagination, server search/filter or response-contract proposal.
 
-The final HUMAN-approved presentation uses a compact manual-preview featured row, a wider search/exact-Topic filter rail, three-column normal catalog where width permits, and nine filtered Sets per client-side page. Featured previews do not consume page slots. Cards use deterministic local covers because no image contract exists, and saved feedback is current-session presentation rather than authoritative source-copy data. Set-level CEFR filtering and real Set cover storage remain future follow-up work.
+The final HUMAN-approved presentation uses a compact Featured row containing the first 3 Sets from the complete catalog in existing source order in every environment, a wider search/exact-Topic filter rail, three-column normal catalog where width permits, and nine filtered Sets per client-side page. Featured selection is independent of filters, carries no ranking semantics, makes no extra request, and does not consume normal page slots. Cards use deterministic local covers because no image contract exists, and saved feedback is current-session presentation rather than authoritative source-copy data. Set-level CEFR filtering and real Set cover storage remain future follow-up work.
 
 ## 2. Affected Areas
 
@@ -134,13 +134,13 @@ For `T` Topics, the expected catalog-specific request count is `1 + T`. Authenti
 ### Phase C — Search and Topic filter
 
 - Replace the Topic-card-first `/topics` body with an accessible **Khám phá bộ từ** page identity; omit the oversized in-content intro so the visible catalog begins with the compact featured preview, filter rail and Set results.
-- Provide an all-Topics option and one exact Topic selection at a time.
+- Provide an all-Topics option and one exact Topic selection at a time inside a viewport-aware, vertically scrollable options region; keep the surrounding search, heading, CEFR and result summary stable as Topic count grows.
 - Normalize search through trim plus locale-aware lowercase and match Set name/description only.
 - Combine Topic and search predicates with AND semantics.
 - Keep control state page-local; no query-string or session persistence.
 - Preserve source ordering; add no sort control.
-- Reset behavior means clearing search restores all Sets within the selected Topic, while selecting all Topics preserves the current search across Topics.
-- Paginate the filtered in-memory result at 9 normal Sets per page. Reset to page 1 on search/Topic changes, clamp to a valid page, exclude featured previews from the count and issue no page-change request.
+- Keep the reset action permanently mounted beside the search heading. Disable it only when search, Topic and CEFR are all default; otherwise it clears all three controls and returns normal pagination to page 1 without a request.
+- Select the first 3 Sets from the complete source-ordered catalog as Featured before filtering. Keep that section independent of search/Topic controls, remove those IDs from the normal collection, then paginate the filtered remainder at 9 Sets per page. Reset to page 1 on search/Topic changes, clamp to a valid page and issue no page-change request.
 
 ### Phase D — Discovery Set cards
 

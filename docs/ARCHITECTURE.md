@@ -959,13 +959,19 @@ Public System discovery/detail routes are separate from completed Topic metadata
 
 Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remain outside this contract revision.
 
+### 14.1.1 Set metadata and cover-storage boundary
+
+`VOCABULARY_SET` carries nullable Set-level CEFR and cover metadata. PostgreSQL stores only `cefr_level`, `cover_image_url`, and the internal `cover_storage_key`; uploaded image bytes live in one public-read Supabase Storage bucket. All writes, copies, exact deletes and Set-scoped cleanup are backend-only through the Set service and storage adapter. The frontend receives only the display URL and never receives Supabase credentials or managed keys.
+
+Managed keys are generated as `<environment-namespace>/vocabulary-sets/<set-id>/<unique-object>.webp` with `upsert: false`. The storage adapter rejects foreign namespaces and cross-Set keys. A bounded backend image processor validates JPEG/PNG/WebP signatures and dimensions before emitting the optimized WebP. Mutation orchestration owns compensation: a new uncommitted object is removed on database failure, replacement/removal exposes a scoped retry signal if stale-object cleanup fails, and Set deletion does not remove database state when managed cleanup fails.
+
 ### 14.2 Discovery V1 Client Composition
 
 Discovery V1 keeps the existing backend/API/data architecture. The `/topics` frontend first reads `GET /api/topics`, then starts the required `GET /api/topics/:topicId/vocabulary-sets` reads concurrently and publishes only after every request succeeds. For `T` Topics the catalog request model remains `1 + T`; no sequential Topic waterfall, global catalog endpoint, schema change, server-side search or server-side pagination is introduced. The measured current-dataset composition was HUMAN accepted for V1.
 
 After complete readiness, frontend presentation state applies name/description search, exact single-Topic filtering and nine-item client-side pagination in that order. Featured visual previews are excluded from page size. Filter/page changes do not access the backend. The adaptive route boundary retains public Guest access and uses the existing `AuthenticatedShell` for USER/ADMIN; ADMIN remains browse-only. Copy, public visibility, Learning and Quiz authorization remain backend-authoritative.
 
-The visual featured section has no dedicated production ranking contract, and deterministic covers do not represent persisted Set images. Current-session saved feedback is a best-effort frontend hint that may survive a same-tab reload; the API does not expose authoritative fresh-session/account source-copy recognition. Future Set-level CEFR metadata/filtering and Set cover-image storage are planned follow-up contract work, not Discovery V1 architecture.
+The visual featured section has no dedicated ranking contract and uses the first three complete-catalog Sets in source order. Discovery filters use persisted nullable Set CEFR, and cards render persisted cover URLs with deterministic fallbacks for absent or failed images. Current-session saved feedback is a best-effort frontend hint that may survive a same-tab reload; the API does not expose authoritative fresh-session/account source-copy recognition.
 
 15. Community Architecture
 
@@ -1155,6 +1161,12 @@ Repository SHOULD cung cấp:
 để mô tả các biến môi trường cần thiết mà không chứa giá trị secret thực tế.
 
 Production environment variables phải được cấu hình tại nền tảng deployment tương ứng.
+
+### Vocabulary Set cover environment contract
+
+Vocabulary Set managed covers require backend-only `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_VOCABULARY_SET_COVERS_BUCKET`, and `SUPABASE_STORAGE_NAMESPACE`. The bucket is public-read; write/delete remains service-role-only. There is no private/signed URL mode, frontend Supabase credential, or local-filesystem fallback.
+
+TEST uses only `TEST_SUPABASE_URL`, `TEST_SUPABASE_SERVICE_ROLE_KEY`, `TEST_SUPABASE_VOCABULARY_SET_COVERS_BUCKET`, and `TEST_SUPABASE_STORAGE_NAMESPACE`. All four are required, bucket and namespace must be TEST-identifiable, and the guard rejects missing/blank values or equality with ordinary Storage configuration before provider client creation. TEST never falls back to ordinary variables and cleanup is limited to exact run-owned keys/prefixes; no bucket-wide sweep is allowed.
 
 21. Deployment Architecture
 

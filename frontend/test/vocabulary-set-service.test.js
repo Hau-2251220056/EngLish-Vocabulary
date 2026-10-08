@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VocabularySetApiError, createVocabularySetService } from "../src/services/vocabulary-set-service.js";
+import { initialMetadataValue, validateMetadata } from "../src/vocabulary-sets/vocabulary-set-metadata-state.js";
 
 test("Vocabulary Set service uses only approved public, USER, ADMIN, copy, and picker endpoints", async () => {
   const calls = [];
@@ -43,6 +44,36 @@ test("Vocabulary Set service maps safe API, not-found, operational, and invalid-
   await assert.rejects(createVocabularySetService({ async get() { return { data: { data: {} } }; } }).listAdminSystemSets(), (error) => {
     assert.equal(error.code, "INVALID_VOCABULARY_SET_RESPONSE"); return true;
   });
+});
+
+test("cover mutations use FormData, preserve response cleanup state, and never expose storage credentials", async () => {
+  const calls = [];
+  const client = {
+    async post(url, body) { calls.push(["POST", url, body]); return { data: { data: aggregate, meta: { storage_cleanup: "retry_required" } } }; },
+    async delete(url) { calls.push(["DELETE", url]); return { data: { data: aggregate, meta: { storage_cleanup: "complete" } } }; },
+  };
+  const service = createVocabularySetService(client);
+  const file = new File(["image"], "cover.webp", { type: "image/webp" });
+  const uploaded = await service.uploadMySetCover("set/id", file);
+  assert.equal(calls[0][2] instanceof FormData, true);
+  assert.equal(calls[0][2].get("cover"), file);
+  assert.equal(uploaded.storage_cleanup, "retry_required");
+  assert.equal((await service.removeMySetCover("set/id")).storage_cleanup, "complete");
+  await service.cleanupAdminSystemSetCover("admin/id");
+  assert.deepEqual(calls.slice(1), [
+    ["DELETE", "/api/my/vocabulary-sets/set%2Fid/cover"],
+    ["POST", "/api/admin/vocabulary-sets/admin%2Fid/cover/cleanup", undefined],
+  ]);
+});
+
+test("metadata draft supports legacy nulls and mirrors only safe client hints", () => {
+  assert.deepEqual(initialMetadataValue({ cefr_level: null, cover_image_url: null }), {
+    cefrLevel: "", coverUrl: "", persistedCoverUrl: null, coverUrlDirty: false,
+    isExisting: false, coverFile: null, removeCover: false,
+  });
+  assert.equal(validateMetadata({ cefrLevel: "", coverFile: null, coverUrl: "" }, { requiredCefr: true }), "Hãy chọn trình độ CEFR.");
+  assert.equal(validateMetadata({ cefrLevel: "A1", coverFile: null, coverUrl: "http://example.test/a.png" }, { requiredCefr: true }), "URL ảnh bìa phải sử dụng HTTPS.");
+  assert.equal(validateMetadata({ cefrLevel: "", coverFile: null, coverUrl: "https://example.test/a.png" }, { requiredCefr: false }), null);
 });
 
 test("USER detail validates and preserves deterministic display projection nulls", async () => {

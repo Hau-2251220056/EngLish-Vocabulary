@@ -6,6 +6,7 @@ import { VocabularySetApiError, vocabularySetService } from "../services/vocabul
 import { AddVocabularyModal } from "./add-vocabulary-modal.jsx";
 import { PrivateVocabularyEditor } from "./private-vocabulary-editor.jsx";
 import { SetLearningActions } from "./set-detail-primitives.jsx";
+import { SetCefrBadge } from "./set-metadata-presentation.jsx";
 
 const DETAIL_PRIMARY_BUTTON_CLASSES = "inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-[0.4rem] rounded-[0.7rem] border-0 bg-[var(--accent-primary)] px-3 py-[0.55rem] text-sm font-semibold text-white shadow-[0_4px_12px_rgb(76_162_230/16%)] transition-[transform,box-shadow,background-color] duration-150 hover:-translate-y-px hover:bg-[var(--accent-primary-hover)] hover:shadow-[0_6px_16px_rgb(76_162_230/20%)] active:translate-y-0 active:bg-[var(--accent-primary-pressed)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transform-none motion-reduce:transition-none max-[800px]:min-h-11 max-[800px]:w-full";
 
@@ -124,7 +125,9 @@ export function MyVocabularySetDetailPage() {
     <main className="set-detail-page mx-auto w-full max-w-[76rem] p-[clamp(1rem,3vw,2.5rem)] text-[var(--text-primary)] max-[480px]:p-4">
       <Link className="set-detail-back inline-flex min-h-11 items-center gap-[0.45rem] font-semibold text-[#5b6478] no-underline transition-[color,transform] duration-150 hover:-translate-x-0.5 hover:text-[var(--accent-primary-hover)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:w-[1.1rem]" to="/my/vocabulary-sets"><ArrowLeft aria-hidden="true" />Bộ từ của tôi</Link>
       <header className="set-detail-header mt-[0.15rem] flex items-start justify-between gap-6 max-[800px]:flex-col max-[800px]:items-stretch">
-        <h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]">{detail.name}</h1>
+        <div className="min-w-0">
+          <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]">{detail.name}</h1><SetCefrBadge cefrLevel={detail.cefr_level} /></div><p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{detail.description || "Chưa có mô tả cho bộ từ này."}</p></div>
+        </div>
       </header>
       {feedback ? <p className={`set-detail-feedback mb-0 mt-4 rounded-xl px-4 py-3 text-sm font-normal ${feedback.type === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.text}</p> : null}
 

@@ -635,10 +635,15 @@ TOPIC --RESTRICT--> VOCABULARY_SET --CASCADE--> VOCABULARY_SET_ITEM --RESTRICT--
 - `owner_id`: required UUID foreign key to `USER.id`; derived by Backend, never trusted from client input.
 - `name`: required trimmed non-empty `VARCHAR(100)`.
 - `description`: nullable `VARCHAR(500)`.
+- `cefr_level`: nullable `TEXT`, restricted by `VOCABULARY_SET_cefr_level_check` to `A1`, `A2`, `B1`, `B2`, `C1`, or `NULL`. This is Set-level metadata and is independent of Meaning CEFR (`A1`–`C2`).
+- `cover_image_url`: nullable `VARCHAR(2048)` public display URL.
+- `cover_storage_key`: nullable `VARCHAR(512)` backend-owned managed-object key. `VOCABULARY_SET_cover_pair_check` requires a non-null key to have a non-null URL.
 - `is_public`: required boolean. ADMIN-created System Sets are `true`; USER-created and copied User Sets are `false`.
 - `created_at`, `updated_at`.
 
 There is no Set-type enum. The service enforces that System Sets are ADMIN-created/public and User Sets are USER-owned/private. PostgreSQL enforces `CHECK (NOT is_public OR topic_id IS NOT NULL)`. Every non-null `TOPIC -> VOCABULARY_SET` reference uses `ON DELETE RESTRICT` / no cascade. Existing categorized Personal Sets remain valid legacy rows; new Personal Sets are topicless.
+
+The metadata migration is forward-only and performs no backfill or inference: historical rows with null CEFR and null cover fields remain valid and readable. PostgreSQL stores no uploaded image bytes and has no cover blob/`bytea` column. Managed optimized objects live in Supabase Storage; only their public URL and server-owned key are persisted here. An external HTTPS cover has a URL and null key. API projections never expose `cover_storage_key`.
 
 #### VOCABULARY_SET_ITEM
 
