@@ -18,7 +18,8 @@ test("Quiz route keeps auth guards and reuses the shell Focus Mode branch", asyn
   assert.ok(quizRoute < adminStart);
   assert.match(source, /<QuizSessionStorageObserver \/>/);
   assert.match(shellSource, /"\/quiz\/vocabulary-sets\/"/);
-  assert.match(shellSource, /return <div className="learning-focus-shell"><Outlet \/><\/div>/);
+  assert.match(shellSource, /const isQuiz = location\.pathname\.startsWith\("\/quiz\/vocabulary-sets\/"\)/);
+  assert.match(shellSource, /learning-focus-shell\$\{isQuiz \? " quiz-focus-shell !overflow-y-auto" : ""\}/);
 });
 
 test("Set entry actions expose Quiz only for non-empty accessible Sets", async () => {

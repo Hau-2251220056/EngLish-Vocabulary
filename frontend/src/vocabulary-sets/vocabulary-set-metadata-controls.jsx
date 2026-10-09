@@ -1,5 +1,6 @@
 import { ImagePlus, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { NativeSelect } from "../components/native-select.jsx";
 
 const FIELD_CLASSES = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -39,12 +40,22 @@ export function VocabularySetMetadataControls({ compact = false, idPrefix, legen
   );
 }
 
-export function VocabularySetCefrControl({ idPrefix, required = false, value, onChange, pending = false }) {
+export function VocabularySetCefrControl({ idPrefix, required = false, userPresentation = false, value, onChange, pending = false }) {
+  const options = <>
+    <option value="">{required ? "Chọn trình độ" : "Không chọn"}</option>
+    {["A1", "A2", "B1", "B2", "C1"].map((level) => <option key={level} value={level}>{level}</option>)}
+  </>;
+  const selectProps = {
+    id: `${idPrefix}-cefr`,
+    required,
+    disabled: pending,
+    value: value.cefrLevel,
+    onChange: (event) => onChange({ ...value, cefrLevel: event.target.value }),
+  };
   return <label className="grid gap-1.5 font-semibold text-slate-700" htmlFor={`${idPrefix}-cefr`}>
     Trình độ CEFR {required ? <span aria-hidden="true">*</span> : <span className="font-normal text-slate-500">(không bắt buộc)</span>}
-    <select className={FIELD_CLASSES} id={`${idPrefix}-cefr`} required={required} disabled={pending} value={value.cefrLevel} onChange={(event) => onChange({ ...value, cefrLevel: event.target.value })}>
-      <option value="">{required ? "Chọn trình độ" : "Không chọn"}</option>
-      {["A1", "A2", "B1", "B2", "C1"].map((level) => <option key={level} value={level}>{level}</option>)}
-    </select>
+    {userPresentation
+      ? <NativeSelect {...selectProps}>{options}</NativeSelect>
+      : <select className={FIELD_CLASSES} {...selectProps}>{options}</select>}
   </label>;
 }

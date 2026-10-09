@@ -10,6 +10,7 @@ import {
   Search,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { NativeSelect } from "../components/native-select.jsx";
 import { learningService } from "../services/learning-service.js";
 
 const PAGE_SIZE = 20;
@@ -212,8 +213,9 @@ function ProgressContent({
           {!isFirstUse ? (
             <label className="learning-progress-filter flex items-center gap-[0.65rem] text-[0.88rem] text-[#526078] max-sm:justify-between">
               <span>Trạng thái</span>
-              <select
-                className={`min-h-11 min-w-[150px] rounded-xl border border-[#d8dfeb] bg-white py-0 pl-[0.85rem] pr-[2.3rem] font-[inherit] font-bold text-[#172033] disabled:cursor-not-allowed disabled:opacity-50 max-sm:max-w-[190px] max-sm:flex-1 ${FOCUS_CLASSES}`}
+              <NativeSelect
+                className="min-w-[150px] font-bold text-[#172033] max-sm:max-w-[190px]"
+                wrapperClassName="max-sm:min-w-0 max-sm:flex-1"
                 value={status}
                 onChange={onStatusChange}
                 disabled={isLoading}
@@ -223,7 +225,7 @@ function ProgressContent({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           ) : null}
         </div>

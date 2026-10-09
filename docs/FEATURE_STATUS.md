@@ -955,6 +955,33 @@ Status: DONE
 - No backend, API, database, route, dependency or Authentication architecture change.
 - User Dashboard remains a separate completed feature; the App Layout contract itself is unchanged.
 
+## USER UI Polish Corrective Workstream
+
+Status: DONE
+
+### Workflow Status
+
+- HUMAN-approved SPEC, PLAN and TASK are complete through TASK-182.
+- Formal TEST: PASS. Formal REVIEW: APPROVE. HUMAN closure approval: APPROVED on 2026-10-09.
+- TASK-183 is authorized only for the final commit, push and fast-forward-only `dev` integration recorded in the closure report.
+
+### Verified Boundary
+
+- Quiz uses one route-scoped outer vertical scroll owner while preserving both approved Quiz types and backend-authoritative behavior.
+- Register error states remain content-safe; field errors stay inline and global failures use one responsive, non-focus-stealing Auth notification with keyboard-accessible dismissal and no hidden tab stop.
+- Exactly the five approved USER-facing native selects share the presentation-only native-select primitive; ADMIN controls and native semantics remain unchanged.
+- No backend, API, schema, migration, route, role, dependency, Storage or database behavior changed.
+
+### Verification
+
+- Frontend unit suite: 99/99 PASS; authoritative serial mocked browser matrix: 118/118 PASS.
+- Corrective AuthNotification keyboard regressions: 2/2 PASS; focused Auth forms: 8/8 PASS.
+- Production build, frontend ESLint, `git diff --check`, scope, secret and transient-artifact checks: PASS.
+
+### Deferred / Non-blocking
+
+- A future separately scoped notification-system refactor may evaluate a shared toast library such as React-Toastify. It is not part of this completed workstream.
+
 4.15 Engineering Foundation
 
 | Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |

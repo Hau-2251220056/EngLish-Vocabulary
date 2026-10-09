@@ -62,6 +62,7 @@ test("valid registration locks submission and hands Guest off to Login", async (
   expect(api.callsFor("/api/auth/register")).toHaveLength(1);
 
   pending.resolve(responses.registration());
+  await expect(page.getByRole("status")).toContainText("Tạo tài khoản thành công!");
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("Email")).toHaveValue("LEARNER@EXAMPLE.COM");
   expect(api.callsFor("/api/auth/register")[0].body).toEqual({
@@ -134,7 +135,9 @@ test("Login and Register API failures show only approved safe errors", async ({ 
   await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
   await page.getByLabel("Xác nhận mật khẩu").fill("password");
   await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Email này đã được đăng ký.");
+  await expect(page.getByLabel("Email")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Email này đã được đăng ký.")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("raw registration detail")).toHaveCount(0);
 });
 
@@ -174,6 +177,93 @@ test("backend validation and generic API failures use safe fallback messages", a
   );
   await expect(page.getByText("Raw internal message.")).toHaveCount(0);
 });
+
+test("Register global failures use one dismissible toast without stealing focus", async ({ page }) => {
+  const api = await installAuthApiMock(page, {
+    "/api/auth/register": responses.error(
+      500,
+      "UNEXPECTED_INTERNAL_ERROR",
+      "Raw internal message.",
+      "raw internal detail",
+    ),
+  });
+  await page.goto("/register");
+  await page.getByLabel("Tên hiển thị").fill("Learner");
+  await page.getByLabel("Email").fill("learner@example.com");
+  await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
+  await page.getByLabel("Xác nhận mật khẩu").fill("password");
+
+  const hiddenDismiss = page.locator('button[aria-label="Đóng thông báo"]');
+  const handoff = page.getByRole("button", { name: "Đăng nhập", exact: true });
+  await expect(hiddenDismiss).toHaveCount(0);
+  await handoff.focus();
+  await page.keyboard.press("Tab");
+  await expectKeyboardFocusOutsideHiddenDismiss(page);
+
+  const submit = page.getByRole("button", { name: "Tạo tài khoản", exact: true });
+  await submit.click();
+  const notification = page.getByRole("alert");
+  await expect(notification).toHaveCount(1);
+  await expect(notification).toContainText("Yêu cầu chưa thể hoàn tất. Vui lòng thử lại.");
+  await expect(notification).not.toBeFocused();
+  expect(await notification.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+
+  await submit.click();
+  await expect(notification).toHaveCount(1);
+  expect(api.callsFor("/api/auth/register")).toHaveLength(2);
+
+  const dismiss = page.getByRole("button", { name: "Đóng thông báo" });
+  await handoff.focus();
+  await page.keyboard.press("Tab");
+  await expect(dismiss).toBeFocused();
+  await dismiss.press("Enter");
+  await expect(notification).toHaveCount(0);
+  await expect(hiddenDismiss).toHaveCount(0);
+  await handoff.focus();
+  await page.keyboard.press("Tab");
+  await expectKeyboardFocusOutsideHiddenDismiss(page);
+});
+
+test("Register notification timeout removes its dismiss control from the keyboard sequence", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/register": responses.error(
+      500,
+      "UNEXPECTED_INTERNAL_ERROR",
+      "Raw internal message.",
+      "raw internal detail",
+    ),
+  });
+  await page.goto("/register");
+  await page.getByLabel("Tên hiển thị").fill("Learner");
+  await page.getByLabel("Email").fill("learner@example.com");
+  await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
+  await page.getByLabel("Xác nhận mật khẩu").fill("password");
+  await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
+
+  const notification = page.getByRole("alert");
+  const dismiss = page.locator('button[aria-label="Đóng thông báo"]');
+  await expect(notification).toBeVisible();
+  await expect(dismiss).toHaveCount(1);
+  await expect(dismiss).toHaveCount(0, { timeout: 8_000 });
+
+  const handoff = page.getByRole("button", { name: "Đăng nhập", exact: true });
+  await handoff.focus();
+  await page.keyboard.press("Tab");
+  await expectKeyboardFocusOutsideHiddenDismiss(page);
+});
+
+async function expectKeyboardFocusOutsideHiddenDismiss(page) {
+  const focusState = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      dismiss: active?.matches('button[aria-label="Đóng thông báo"]') ?? false,
+      rendered: active === document.body
+        || active === document.documentElement
+        || Boolean(active?.getClientRects().length),
+    };
+  });
+  expect(focusState).toEqual({ dismiss: false, rendered: true });
+}
 
 test("network failure produces the approved operational Login error", async ({ page }) => {
   await installAuthApiMock(page, {

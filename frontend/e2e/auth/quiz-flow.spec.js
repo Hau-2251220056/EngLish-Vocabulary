@@ -136,6 +136,44 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await expect(page.getByRole("heading", { name: "Bộ từ chưa sẵn sàng" })).toBeVisible();
   });
 
+  test("load error remains compact, centered and clipping-safe on desktop and mobile", async ({ page }) => {
+    await installQuizApiMock(page, {
+      onQuestions: () => failure(500, "QUIZ_REQUEST_FAILED"),
+    });
+
+    for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
+
+      const alert = page.getByRole("alert");
+      await expect(alert).toContainText("Không thể tải Quiz");
+      await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Quay lại" }).last()).toBeVisible();
+
+      const geometry = await page.evaluate(() => {
+        const cardBox = document.querySelector(".quiz-state-card").getBoundingClientRect();
+        const iconBox = document.querySelector(".quiz-state-icon").getBoundingClientRect();
+        const quiz = document.querySelector(".quiz-page");
+        return {
+          cardHeight: cardBox.height,
+          cardWidth: cardBox.width,
+          centerDelta: Math.abs(iconBox.x + iconBox.width / 2 - (cardBox.x + cardBox.width / 2)),
+          documentWidth: document.documentElement.scrollWidth,
+          quizOverflowY: getComputedStyle(quiz).overflowY,
+          viewportWidth: innerWidth,
+        };
+      });
+      expect(geometry.cardWidth).toBeLessThanOrEqual(512);
+      expect(geometry.cardHeight).toBeLessThan(360);
+      expect(geometry.centerDelta).toBeLessThanOrEqual(1);
+      expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+      expect(["auto", "scroll"]).not.toContain(geometry.quizOverflowY);
+    }
+
+    await page.getByRole("button", { name: "Quay lại" }).last().click();
+    await expect(page).toHaveURL(/\/vocabulary-sets\/set-flow$/);
+  });
+
   test("restart dialog is centered in the viewport and keeps USER primary accents", async ({ page }) => {
     await installQuizApiMock(page);
     await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
@@ -214,6 +252,73 @@ test.describe("Quiz V1 mocked browser flow", () => {
     await expect(page.getByLabel(/Ký tự 3: thiếu o/)).toHaveText("_");
   });
 
+  test("ordinary desktop feedback keeps the continue action in the viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await installQuizApiMock(page);
+    await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
+
+    await submitText(page, "wrong");
+    await expect(page.getByRole("heading", { name: "Chưa chính xác" })).toBeVisible();
+    await expectActionInsideViewport(page, "Câu tiếp theo");
+
+    await page.getByRole("button", { name: "Câu tiếp theo" }).click();
+    await submitText(page, "travel");
+    await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
+    await expectActionInsideViewport(page, "Xem kết quả");
+  });
+
+  for (const viewport of [
+    { name: "mobile-375", width: 375, height: 812 },
+    { name: "mobile-390", width: 390, height: 844 },
+    { name: "tablet-768", width: 768, height: 1024 },
+    { name: "tablet-820", width: 820, height: 1180 },
+    { name: "desktop-1366", width: 1366, height: 768 },
+  ]) {
+    test(`expanded feedback uses only the outer Quiz scroller at ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      const longMeaning = "Nội dung kiểm tra dài để phản hồi Quiz mở rộng theo luồng trang thay vì tạo một vùng cuộn lồng bên trong giao diện làm bài";
+      await installQuizApiMock(page, {
+        questions: [viQuestion("word-long-feedback", 1, "F".repeat(43), longMeaning, {
+          context: `${longMeaning}. ${longMeaning}.`,
+        })],
+        onAnswer: ({ body }) => success(answerResult(body, {
+          correct_answer: "an-authoritative-answer-with-many-characters",
+          is_correct: false,
+          character_feedback: Array.from({ length: 48 }, (_, position) => ({
+            position,
+            submitted: "x",
+            expected: "y",
+            state: "incorrect",
+          })),
+        })),
+      });
+
+      await page.goto("/quiz/vocabulary-sets/set-flow?type=VI_TO_ENGLISH");
+      await submitText(page, "a deliberately long incorrect learner answer");
+      await expect(page.getByRole("heading", { name: "Chưa chính xác" })).toBeVisible();
+
+      const ownership = await page.evaluate(() => {
+        const quiz = document.querySelector(".quiz-page");
+        const focusShell = document.querySelector(".learning-focus-shell");
+        return {
+          quizOverflowY: getComputedStyle(quiz).overflowY,
+          quizClientHeight: quiz.clientHeight,
+          quizScrollHeight: quiz.scrollHeight,
+          focusShellOverflowY: getComputedStyle(focusShell).overflowY,
+          focusShellClientHeight: focusShell.clientHeight,
+          focusShellScrollHeight: focusShell.scrollHeight,
+        };
+      });
+
+      expect(ownership.quizOverflowY).not.toMatch(/auto|scroll/);
+      expect(ownership.quizScrollHeight).toBe(ownership.quizClientHeight);
+      expect(ownership.focusShellOverflowY).toBe("auto");
+      expect(ownership.focusShellScrollHeight).toBeGreaterThanOrEqual(ownership.focusShellClientHeight);
+      await page.getByRole("button", { name: "Xem kết quả" }).scrollIntoViewIfNeeded();
+      await expect(page.getByRole("button", { name: "Xem kết quả" })).toBeVisible();
+    });
+  }
+
   test("Guest and ADMIN cannot enter the USER-only Quiz flow", async ({ browser }) => {
     for (const access of ["guest", "admin"]) {
       const context = await browser.newContext();
@@ -227,6 +332,17 @@ test.describe("Quiz V1 mocked browser flow", () => {
     }
   });
 });
+
+async function expectActionInsideViewport(page, name) {
+  const action = page.getByRole("button", { name });
+  await expect(action).toBeVisible();
+  const geometry = await action.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { bottom: box.bottom, top: box.top, viewportHeight: innerHeight };
+  });
+  expect(geometry.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewportHeight);
+}
 
 for (const viewport of [
   { name: "desktop", width: 1366, height: 768 },

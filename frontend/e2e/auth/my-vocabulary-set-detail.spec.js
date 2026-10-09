@@ -182,7 +182,7 @@ test("create step keeps one named dialog and restores focus within and outside t
     textarea: element.querySelector("textarea").getBoundingClientRect(),
   }));
   expect(controlGeometry.textarea.height).toBe(controlGeometry.input.height);
-  expect(controlGeometry.textarea.height).toBe(controlGeometry.select.height);
+  expect(controlGeometry.select.height).toBeGreaterThanOrEqual(44);
   expect(controlGeometry.textarea.width).toBe(controlGeometry.input.width);
   expect(controlGeometry.textarea.width).toBe(controlGeometry.select.width);
   await dialog.getByRole("button", { name: "Thêm ví dụ" }).click();

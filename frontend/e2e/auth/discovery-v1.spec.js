@@ -103,12 +103,30 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   await reset.click();
   await expect(page.getByRole("radio", { name: "Tất cả chủ đề" })).toBeChecked();
   await expect(reset).toBeDisabled();
-  await page.getByLabel("Trình độ CEFR").selectOption("B1");
+  const cefrSelect = page.getByLabel("Trình độ CEFR");
+  const cefrWrapper = cefrSelect.locator("..");
+  await expect(cefrSelect).toHaveCSS("appearance", "none");
+  await expect(cefrWrapper.locator("svg")).toHaveAttribute("aria-hidden", "true");
+  await expect(cefrWrapper.locator("svg")).toHaveCSS("pointer-events", "none");
+  const spacing = await cefrWrapper.evaluate((wrapper) => {
+    const select = wrapper.querySelector("select");
+    const icon = wrapper.querySelector("svg");
+    return {
+      iconRight: wrapper.getBoundingClientRect().right - icon.getBoundingClientRect().right,
+      paddingRight: Number.parseFloat(getComputedStyle(select).paddingRight),
+    };
+  });
+  expect(spacing.paddingRight).toBeGreaterThanOrEqual(spacing.iconRight + 16);
+  await cefrSelect.focus();
+  await cefrSelect.press("ArrowDown");
+  await expect(cefrSelect).toHaveValue("A1");
+  expect(api.catalogRequests()).toBe(initialRequests);
+  await cefrSelect.selectOption("B1");
   await expect(reset).toBeEnabled();
   await expect(page.getByText("1 / 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Travel Set 10" })).toBeVisible();
   await reset.click();
-  await expect(page.getByLabel("Trình độ CEFR")).toHaveValue("");
+  await expect(cefrSelect).toHaveValue("");
   await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
   await expect(reset).toBeDisabled();
   expect(api.catalogRequests()).toBe(initialRequests);

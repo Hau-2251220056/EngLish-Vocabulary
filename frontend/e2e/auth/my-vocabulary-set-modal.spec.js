@@ -51,7 +51,11 @@ test("create modal is metadata-only and omits Topic and items", async ({ page })
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("Tên bộ từ")).toBeFocused();
   await expect(dialog.getByLabel("Mô tả (không bắt buộc)")).toBeVisible();
-  await expect(dialog.getByRole("combobox", { name: /Trình độ CEFR/ })).toBeVisible();
+  const cefr = dialog.getByRole("combobox", { name: /Trình độ CEFR/ });
+  await expect(cefr).toBeVisible();
+  await cefr.selectOption("A2");
+  await expect(cefr).toHaveValue("A2");
+  await cefr.selectOption("");
   await expect(dialog.getByRole("searchbox")).toHaveCount(0);
   await expect(dialog.getByText("Danh sách từ vựng theo thứ tự")).toHaveCount(0);
 

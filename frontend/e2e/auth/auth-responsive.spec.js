@@ -6,9 +6,11 @@ import {
 } from "./fixtures/auth-api.js";
 
 const viewports = [
-  { name: "mobile", width: 375, height: 812 },
-  { name: "tablet", width: 768, height: 1024 },
-  { name: "desktop", width: 1366, height: 768 },
+  { name: "mobile-375", width: 375, height: 812 },
+  { name: "mobile-390", width: 390, height: 844 },
+  { name: "tablet-768", width: 768, height: 1024 },
+  { name: "tablet-820", width: 820, height: 1180 },
+  { name: "desktop-1366", width: 1366, height: 768 },
 ];
 
 const longNameUser = Object.freeze({
@@ -74,7 +76,10 @@ test("desktop Login and Register panels slide in both directions", async ({ page
   await expect(registerEyebrow).toHaveCSS("font-size", "14px");
   await expect(registerEyebrow).toHaveCSS("font-weight", "600");
   await expect(page.locator('[data-mode="register"]')).toHaveCSS("overflow", "hidden");
-  expect(await page.locator('[data-mode="register"]').boundingBox()).toEqual(initialBounds);
+  const registerBounds = await page.locator('[data-mode="register"]').boundingBox();
+  expect(registerBounds.x).toBe(initialBounds.x);
+  expect(registerBounds.width).toBe(initialBounds.width);
+  expect(registerBounds.height).toBeGreaterThanOrEqual(initialBounds.height);
 
   await page.evaluate(() => { window.__authTransitionRuns = []; });
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
@@ -82,6 +87,35 @@ test("desktop Login and Register panels slide in both directions", async ({ page
   await expect.poll(() => page.evaluate(() => window.__authTransitionRuns)).toContain("translate");
   expect(await page.locator('[data-mode="login"]').boundingBox()).toEqual(initialBounds);
 });
+
+for (const viewport of viewports) {
+  test(`expanded Register validation and API errors stay inside a content-safe shell on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installAuthApiMock(page, {
+      "/api/auth/register": responses.error(
+        500,
+        "UNEXPECTED_INTERNAL_ERROR",
+        "Raw internal message.",
+        "raw internal detail",
+      ),
+    });
+    await page.goto("/register");
+
+    await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
+    await expect(page.getByText("Vui lòng nhập email.")).toBeVisible();
+    await expectRegisterHandoffContained(page);
+
+    await page.getByLabel("Tên hiển thị").fill("Learner");
+    await page.getByLabel("Email").fill("learner@example.com");
+    await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
+    await page.getByLabel("Xác nhận mật khẩu").fill("password");
+    await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Yêu cầu chưa thể hoàn tất");
+    await expectAuthNotificationAnchoredToViewport(page, viewport);
+    await expectRegisterHandoffContained(page);
+    await expectNoHorizontalOverflow(page);
+  });
+}
 
 for (const viewport of viewports) {
   test(`${viewport.name} ${viewport.width}x${viewport.height} keeps critical Auth UI usable`, async ({
@@ -156,6 +190,66 @@ async function expectNoHorizontalOverflow(page) {
       })),
     )
     .toEqual({ body: 0, document: 0 });
+}
+
+async function expectAuthNotificationAnchoredToViewport(page, viewport) {
+  const notification = page.locator('.auth-notification[aria-hidden="false"]');
+  await expect(notification).toBeVisible();
+  const expectedMargin = viewport.width < 640 ? 16 : 20;
+  await expect.poll(() => notification.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { right: Math.round(innerWidth - box.right), top: Math.round(box.top) };
+  })).toEqual({ right: expectedMargin, top: expectedMargin });
+  const geometry = await notification.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const headingBox = document.querySelector("h1")?.getBoundingClientRect();
+    return {
+      bottom: box.bottom,
+      left: box.left,
+      overlapsHeading: Boolean(headingBox
+        && box.left < headingBox.right
+        && box.right > headingBox.left
+        && box.top < headingBox.bottom
+        && box.bottom > headingBox.top),
+      position: getComputedStyle(element).position,
+      right: innerWidth - box.right,
+      top: box.top,
+      width: box.width,
+    };
+  });
+  expect(geometry.position).toBe("fixed");
+  expect(geometry.top).toBeCloseTo(expectedMargin, 0);
+  expect(geometry.right).toBeCloseTo(expectedMargin, 0);
+  if (viewport.width < 640) expect(geometry.left).toBeCloseTo(16, 0);
+  else expect(geometry.width).toBeLessThanOrEqual(400);
+  expect(geometry.bottom).toBeLessThanOrEqual(viewport.height);
+  expect(geometry.overlapsHeading).toBe(false);
+}
+
+async function expectRegisterHandoffContained(page) {
+  const handoff = page.getByRole("button", { name: "Đăng nhập", exact: true });
+  await handoff.scrollIntoViewIfNeeded();
+  await expect(handoff).toBeVisible();
+  const geometry = await page.evaluate(() => {
+    const shell = document.querySelector('[data-mode="register"]');
+    const panel = shell.querySelectorAll(".auth-moving-panel")[1];
+    const button = [...panel.querySelectorAll("button")].find((candidate) => candidate.textContent.trim() === "Đăng nhập");
+    const shellRect = shell.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    return {
+      buttonBottom: buttonRect.bottom,
+      buttonTop: buttonRect.top,
+      panelClientHeight: panel.clientHeight,
+      panelOverflowY: getComputedStyle(panel).overflowY,
+      panelScrollHeight: panel.scrollHeight,
+      shellBottom: shellRect.bottom,
+      shellTop: shellRect.top,
+    };
+  });
+  expect(geometry.buttonTop).toBeGreaterThanOrEqual(geometry.shellTop - 0.5);
+  expect(geometry.buttonBottom).toBeLessThanOrEqual(geometry.shellBottom + 0.5);
+  expect(geometry.panelOverflowY).not.toMatch(/auto|scroll/);
+  expect(geometry.panelScrollHeight).toBeLessThanOrEqual(geometry.panelClientHeight + 1);
 }
 
 async function expectWithinViewport(page, selector) {

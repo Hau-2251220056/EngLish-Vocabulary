@@ -116,14 +116,16 @@ export function AuthenticatedShell() {
   const displayName = user.display_name;
   const defaultAvatar = displayName.trim().charAt(0).toUpperCase() || "E";
   const drawerIsVisible = !isMobileNavigation || isDrawerOpen;
-  const isFocusLearning = [
-    "/learn/vocabulary-sets/",
-    "/quiz/vocabulary-sets/",
-  ].some((prefix) => location.pathname.startsWith(prefix));
+  const isQuiz = location.pathname.startsWith("/quiz/vocabulary-sets/");
+  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/") || isQuiz;
   const isUser = user.role === "USER";
 
   if (isFocusLearning) {
-    return <div className="learning-focus-shell"><Outlet /></div>;
+    return (
+      <div className={`learning-focus-shell${isQuiz ? " quiz-focus-shell !overflow-y-auto" : ""}`}>
+        <Outlet />
+      </div>
+    );
   }
 
   const brandContent = (

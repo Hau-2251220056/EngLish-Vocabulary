@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { topicService } from "../services/topic-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { ActionMenu } from "../components/action-menu.jsx";
+import { NativeSelect } from "../components/native-select.jsx";
 import { VocabularySetCefrControl, VocabularySetMetadataControls } from "./vocabulary-set-metadata-controls.jsx";
 import { initialMetadataValue, validateMetadata } from "./vocabulary-set-metadata-state.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "./set-metadata-presentation.jsx";
@@ -132,7 +133,7 @@ export function MyVocabularySetsPage() {
           <div><h2 className="m-0 text-[clamp(1.08rem,1.8vw,1.3rem)] font-semibold" id="my-vocabulary-sets-list-title">Danh sách bộ từ</h2>{listState === "ready" && sets.length > 0 ? <p className="mb-0 mt-1 text-[0.85rem] text-slate-500">{sets.length} bộ từ trong thư viện</p> : null}</div>
           <div className="my-vocabulary-sets-controls flex w-full max-w-[39rem] min-w-0 items-center gap-[0.65rem] max-[700px]:max-w-none max-[700px]:flex-col max-[700px]:items-stretch">
             <label className="my-vocabulary-sets-search flex min-h-11 min-w-56 flex-1 items-center gap-2 rounded-[0.8rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-slate-500 transition-[border-color,box-shadow] duration-150 focus-within:border-[var(--accent-primary)] focus-within:shadow-[0_0_0_3px_var(--accent-primary-focus)] max-[700px]:w-full max-[700px]:min-w-0"><span className="sr-only">Tìm bộ từ</span><Search className="size-5" aria-hidden="true" /><input className="w-full min-w-0 border-0 bg-transparent font-[inherit] text-[var(--text-primary)] outline-0" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm bộ từ..." autoComplete="off" /></label>
-            <label className="my-vocabulary-sets-sort flex min-h-11 items-center rounded-[0.8rem] border border-slate-300 bg-white transition-[border-color,box-shadow] duration-150 focus-within:border-[var(--accent-primary)] focus-within:shadow-[0_0_0_3px_var(--accent-primary-focus)]"><span className="sr-only">Sắp xếp bộ từ</span><select className="min-h-[2.65rem] border-0 bg-transparent py-0 pl-3 pr-9 font-[inherit] font-bold text-slate-700 outline-0 max-[700px]:w-full" value={sort} onChange={(event) => setSort(event.target.value)}><option value="server">Mặc định</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option><option value="count-asc">Số từ tăng dần</option><option value="count-desc">Số từ giảm dần</option></select></label>
+            <label className="my-vocabulary-sets-sort min-w-[12rem] max-[700px]:w-full max-[700px]:min-w-0"><span className="sr-only">Sắp xếp bộ từ</span><NativeSelect className="font-bold" value={sort} onChange={(event) => setSort(event.target.value)}><option value="server">Mặc định</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option><option value="count-asc">Số từ tăng dần</option><option value="count-desc">Số từ giảm dần</option></NativeSelect></label>
           </div>
         </div>
         {listState === "loading" ? <MySetSkeleton /> : null}
@@ -207,7 +208,7 @@ export function PersonalVocabularySetModal({ aggregate, error, mode, onCancel, o
           <div className="grid content-start gap-3">
             <label className="grid gap-1.5 font-semibold text-slate-700" htmlFor="personal-set-name">Tên bộ từ<input className={MODAL_FIELD_CLASSES} ref={nameRef} id="personal-set-name" value={values.name} onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))} maxLength={101} disabled={pending} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? "personal-set-name-error" : undefined} /></label>
             {errors.name ? <p id="personal-set-name-error" className={MODAL_ERROR_CLASSES} role="alert">{errors.name}</p> : null}
-            <VocabularySetCefrControl idPrefix="personal-set" value={values.metadata} onChange={(metadata) => setValues((current) => ({ ...current, metadata }))} pending={pending} />
+            <VocabularySetCefrControl idPrefix="personal-set" userPresentation value={values.metadata} onChange={(metadata) => setValues((current) => ({ ...current, metadata }))} pending={pending} />
             <label className="grid gap-1.5 font-semibold text-slate-700 [&_span]:font-normal [&_span]:text-slate-500" htmlFor="personal-set-description">Mô tả <span>(không bắt buộc)</span><textarea className={`${MODAL_FIELD_CLASSES} min-h-24 resize-y`} id="personal-set-description" value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} maxLength={501} rows={3} disabled={pending} aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? "personal-set-description-error" : undefined} /></label>
             {errors.description ? <p id="personal-set-description-error" className={MODAL_ERROR_CLASSES} role="alert">{errors.description}</p> : null}
           </div>

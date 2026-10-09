@@ -2,6 +2,7 @@ import { Bookmark, BookOpen, ChevronRight, LoaderCircle, RotateCcw, Search, Star
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { NativeSelect } from "../components/native-select.jsx";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
 import { useSavedVocabularySetSession } from "../vocabulary-sets/saved-vocabulary-set-session.js";
@@ -135,10 +136,10 @@ export function TopicListPage() {
             </div>
           </fieldset>
           <label className="discovery-cefr-filter grid gap-2 text-sm font-semibold text-slate-700" htmlFor="discovery-cefr-filter">Trình độ CEFR
-            <select className="min-h-11 w-full cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 font-[inherit] font-medium text-slate-700 outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-focus)]" id="discovery-cefr-filter" value={cefrLevel} onChange={(event) => { setCefrLevel(event.target.value); setPage(1); }}>
+            <NativeSelect id="discovery-cefr-filter" value={cefrLevel} onChange={(event) => { setCefrLevel(event.target.value); setPage(1); }}>
               <option value="">Tất cả mức độ</option>
               {["A1", "A2", "B1", "B2", "C1"].map((level) => <option key={level} value={level}>{level}</option>)}
-            </select>
+            </NativeSelect>
           </label>
           <div className="discovery-results-row">
             <p className="public-topic-result-count" aria-live="polite">{normalVisibleSets.length} bộ từ phù hợp</p>
