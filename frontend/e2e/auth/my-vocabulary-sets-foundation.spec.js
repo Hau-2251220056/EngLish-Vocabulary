@@ -48,6 +48,9 @@ test("renders authoritative Set summaries, safe actions, search and client sorti
   await expect(list.getByRole("listitem").filter({ hasText: "Bộ từ mới" }).locator('[data-cover-state="fallback"]')).toBeVisible();
   await expect(list.getByRole("listitem").filter({ hasText: "Office Basics" }).locator('[data-cover-state="fallback"]')).toBeVisible();
 
+  const sortControl = page.getByRole("combobox", { name: "Sắp xếp bộ từ" });
+  await expect(sortControl).toHaveCSS("cursor", "pointer");
+
   const search = page.getByRole("searchbox", { name: "Tìm bộ từ" });
   await search.fill("công sở");
   await expect(list.getByRole("listitem")).toHaveCount(1);
@@ -56,7 +59,7 @@ test("renders authoritative Set summaries, safe actions, search and client sorti
   await expect(page.getByRole("heading", { name: "Không tìm thấy bộ từ phù hợp" })).toBeVisible();
   await page.getByRole("button", { name: "Xóa tìm kiếm" }).click();
 
-  await page.getByRole("combobox", { name: "Sắp xếp bộ từ" }).selectOption("count-asc");
+  await sortControl.selectOption("count-asc");
   await expect(list.getByRole("heading", { level: 3 }).nth(0)).toHaveText("Bộ từ mới");
   await expect(list.getByRole("heading", { level: 3 }).nth(2)).toHaveText("Travel English");
 });
@@ -65,8 +68,14 @@ test("first-use state offers the existing create behavior and Topics route", asy
   await openMySets(page, []);
 
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ nào" })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" })).toHaveAttribute("href", "/topics");
-  await page.getByRole("button", { name: "Tạo bộ từ đầu tiên" }).click();
+  const createButton = page.getByRole("button", { name: "Tạo bộ từ đầu tiên" });
+  const discoveryLink = page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" });
+  await expect(discoveryLink).toHaveAttribute("href", "/topics");
+  await expect(createButton).toHaveCSS("background-color", "rgb(76, 162, 230)");
+  await expect(createButton).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(discoveryLink).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(discoveryLink).toHaveCSS("color", "oklch(0.372 0.044 257.287)");
+  await createButton.click();
   await expect(page.getByRole("dialog", { name: "Tạo bộ từ" })).toBeVisible();
 });
 

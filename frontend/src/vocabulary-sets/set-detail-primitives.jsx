@@ -15,16 +15,18 @@ export function SetLearningActions({ enabled, returnTo, setId, setName }) {
 }
 
 export function SetVocabularyPreviewTable({ items }) {
-  const headingClasses = "h-[4.25rem] border-b border-[#e8edf5] bg-[var(--bg-subtle)] px-[0.9rem] py-[0.45rem] text-left align-middle text-[0.78rem] font-semibold tracking-[0.01em] text-slate-600 max-[800px]:h-[3.75rem] max-[480px]:text-[0.72rem]";
-  const cellClasses = "h-[4.25rem] [overflow-wrap:anywhere] border-b border-[#e8edf5] px-[0.9rem] py-[0.45rem] align-middle font-normal leading-[1.35] text-[#455166] max-[800px]:h-[3.75rem]";
+  const headingClasses = "border-b border-[#e8edf5] bg-[var(--bg-subtle)] px-[0.9rem] py-3 text-left align-middle text-[0.78rem] font-semibold tracking-[0.01em] text-slate-600";
+  const cellClasses = "[overflow-wrap:anywhere] border-b border-[#e8edf5] px-[0.9rem] py-3 align-top font-normal leading-[1.45] text-[#455166]";
   return (
-    <div className="set-detail-table-wrap mt-4 overflow-hidden rounded-[0.8rem] border border-[var(--border-soft)] bg-white shadow-[0_4px_14px_rgb(30_41_59/3%)]">
-      <table className="set-detail-table w-full table-fixed border-separate border-spacing-0 text-[0.82rem] max-[480px]:text-[0.76rem]">
-        <thead><tr><th className={`${headingClasses} w-[55%]`}>Từ vựng</th><th className={headingClasses}>Phiên âm</th></tr></thead>
+    <div className="set-detail-table-wrap mt-4 overflow-x-auto rounded-[0.8rem] border border-[var(--border-soft)] bg-white shadow-[0_4px_14px_rgb(30_41_59/3%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" tabIndex="0" aria-label="Bảng từ vựng, cuộn ngang để xem đầy đủ">
+      <table className="set-detail-table w-full min-w-[52rem] table-fixed border-separate border-spacing-0 text-[0.82rem]">
+        <thead><tr><th className={`${headingClasses} w-[18%]`}>Từ vựng</th><th className={`${headingClasses} w-[25%]`}>Nghĩa</th><th className={`${headingClasses} w-[17%]`}>Phiên âm</th><th className={`${headingClasses} w-[40%]`}>Ví dụ</th></tr></thead>
         <tbody>{items.map((item) => (
           <tr className="transition-colors duration-150 last:[&_td]:border-b-0 hover:bg-[#fafaff] motion-reduce:transition-none" key={item.id}>
             <td className={cellClasses}><strong className="font-semibold text-[var(--text-primary)]">{item.word}</strong></td>
+            <td className={cellClasses}>{item.primary_meaning?.meaning_vi || "—"}</td>
             <td className={cellClasses}>{item.phonetic || "—"}</td>
+            <td className={cellClasses}>{item.primary_meaning?.example?.example_en ? <><span>{item.primary_meaning.example.example_en}</span>{item.primary_meaning.example.example_vi ? <small className="mt-1 block text-[0.75rem] text-slate-500">{item.primary_meaning.example.example_vi}</small> : null}</> : "—"}</td>
           </tr>
         ))}</tbody>
       </table>

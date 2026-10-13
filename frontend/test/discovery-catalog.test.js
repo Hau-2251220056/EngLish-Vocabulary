@@ -120,9 +120,19 @@ test("selects at most the first three catalog Sets as Featured without marker or
   assert.deepEqual(selectDiscoveryFeaturedSets(ordinarySets), ordinarySets.slice(0, 3));
   assert.deepEqual(selectDiscoveryFeaturedSets(ordinarySets.slice(0, 2)), ordinarySets.slice(0, 2));
   assert.deepEqual(selectDiscoveryFeaturedSets([]), []);
+  assert.deepEqual(ordinarySets.map(({ id }) => id), ["set-1", "set-2", "set-3", "set-4", "set-5"]);
 });
 
 test("paginates filtered catalog at nine items and clamps invalid pages", () => {
+  for (const total of [8, 9, 10]) {
+    const catalog = Array.from({ length: total }, (_, index) => ({ id: `catalog-${index + 1}` }));
+    const firstPage = paginateDiscoveryCatalog(catalog, 1);
+    assert.equal(firstPage.items.length, Math.min(total, 9));
+    assert.equal(firstPage.totalPages, total > 9 ? 2 : 1);
+    assert.deepEqual(firstPage.items, catalog.slice(0, 9));
+    if (total === 10) assert.deepEqual(paginateDiscoveryCatalog(catalog, 2).items, catalog.slice(9));
+  }
+
   const sets = Array.from({ length: 20 }, (_, index) => ({ id: `set-${index + 1}` }));
   assert.deepEqual(paginateDiscoveryCatalog(sets, 1), { currentPage: 1, items: sets.slice(0, 9), totalPages: 3 });
   assert.deepEqual(paginateDiscoveryCatalog(sets, 2), { currentPage: 2, items: sets.slice(9, 18), totalPages: 3 });

@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
+import { paginateSetDetailItems } from "./set-detail-pagination.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "./set-metadata-presentation.jsx";
 import { useSavedVocabularySetSession } from "./saved-vocabulary-set-session.js";
 
@@ -101,6 +102,7 @@ function PublicVocabularySetDetailContent({ setId }) {
   const [reloadToken, setReloadToken] = useState(0);
   const [copyState, setCopyState] = useState("idle");
   const [copyError, setCopyError] = useState(null);
+  const [itemsPage, setItemsPage] = useState(1);
   const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
   const isSaved = savedSetIds.has(setId);
 
@@ -120,6 +122,7 @@ function PublicVocabularySetDetailContent({ setId }) {
   }, [reloadToken, setId]);
 
   const items = useMemo(() => (set?.items ? [...set.items].sort((left, right) => left.position - right.position) : []), [set]);
+  const itemPagination = useMemo(() => paginateSetDetailItems(items, itemsPage), [items, itemsPage]);
 
   function retry() {
     setStatus("loading");
@@ -171,7 +174,7 @@ function PublicVocabularySetDetailContent({ setId }) {
 
           <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="vocabulary-set-items-title">
             <div className="set-detail-section-heading flex items-center justify-between gap-4"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="vocabulary-set-items-title">Từ vựng trong bộ ({items.length})</h2></div>
-            {items.length > 0 ? <SetVocabularyPreviewTable items={items} /> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
+            {items.length > 0 ? <><SetVocabularyPreviewTable items={itemPagination.items} /><div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-3 text-sm text-slate-600"><p className="m-0 font-semibold" aria-live="polite">{itemPagination.start}–{itemPagination.end} / {itemPagination.totalItems} từ</p>{itemPagination.totalPages > 1 ? <nav className="flex items-center gap-2" aria-label="Phân trang từ vựng"><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.max(1, value - 1))} disabled={itemPagination.currentPage === 1}>Trước</button><span aria-current="page" className="min-w-16 text-center font-semibold">Trang {itemPagination.currentPage} / {itemPagination.totalPages}</span><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.min(itemPagination.totalPages, value + 1))} disabled={itemPagination.currentPage === itemPagination.totalPages}>Sau</button></nav> : null}</div></> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
           </section>
         </article>
       ) : null}

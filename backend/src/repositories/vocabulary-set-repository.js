@@ -31,7 +31,26 @@ const SET_DETAIL_SELECT = {
       vocabulary_id: true,
       position: true,
       created_at: true,
-      vocabulary: { select: { word: true, phonetic: true, owner_id: true } },
+      vocabulary: {
+        select: {
+          word: true,
+          phonetic: true,
+          owner_id: true,
+          meanings: {
+            orderBy: [{ created_at: "asc" }, { id: "asc" }],
+            take: 1,
+            select: {
+              part_of_speech: true,
+              meaning_vi: true,
+              examples: {
+                orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                take: 1,
+                select: { example_en: true, example_vi: true },
+              },
+            },
+          },
+        },
+      },
     },
   },
 };

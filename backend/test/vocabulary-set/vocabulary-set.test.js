@@ -466,7 +466,7 @@ test("USER private CRUD enforces owner-only private visibility and complete orde
   assert.equal((await http.request(`/api/my/vocabulary-sets/${privateId}`, { method: "DELETE", cookie: ownerCookie })).status, 204);
 });
 
-test("USER owner detail projects the first deterministic Meaning and Example without changing public detail", async () => {
+test("public and USER owner detail project the first deterministic Meaning and Example", async () => {
   const vocabulary = await prisma.vOCABULARY.create({ data: { word: `${fixturePrefix}-projection-${randomUUID()}` } });
   const firstMeaning = await prisma.vOCABULARY_MEANING.create({ data: {
     vocabulary_id: vocabulary.id,
@@ -505,7 +505,11 @@ test("USER owner detail projects the first deterministic Meaning and Example wit
 
   const system = await createSystemSet({ items: [vocabulary.id] });
   response = await http.request(`/api/vocabulary-sets/${system.id}`);
-  assert.equal(Object.hasOwn(response.json.data.items[0], "primary_meaning"), false);
+  assert.deepEqual(response.json.data.items[0].primary_meaning, {
+    part_of_speech: "noun",
+    meaning_vi: "nghĩa đầu tiên",
+    example: { example_en: "First example", example_vi: null },
+  });
 });
 
 test("USER metadata update preserves a legacy Personal Set Topic reference", async () => {

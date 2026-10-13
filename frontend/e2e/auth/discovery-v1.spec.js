@@ -5,6 +5,8 @@ import { installAuthApiMock, publicAdmin, publicUser, responses } from "./fixtur
 const topics = [
   { id: "topic-travel", name: "Du lịch", description: "Từ vựng du lịch" },
   { id: "topic-work", name: "Công việc", description: "Từ vựng công việc" },
+  { id: "topic-food", name: "Ẩm thực", description: "Từ vựng ẩm thực" },
+  { id: "topic-daily", name: "Đời sống", description: "Từ vựng đời sống" },
 ];
 const catalogFeaturedSets = [
   { id: "set-featured-1", name: "Everyday English", description: "Common vocabulary for daily life", cefr_level: "A1", cover_image_url: null, item_count: 15, topic_id: "topic-travel" },
@@ -28,6 +30,12 @@ const sets = {
   "topic-work": [
     { id: "set-office", name: "Văn phòng", description: "Daily work phrases", cefr_level: "B1", cover_image_url: "https://covers.example.test/broken.webp", item_count: 10, topic_id: "topic-work" },
   ],
+  "topic-food": [
+    { id: "set-food", name: "Đồ ăn và thức uống", description: "Từ vựng cho bữa ăn hằng ngày", cefr_level: "A1", cover_image_url: null, item_count: 10, topic_id: "topic-food" },
+  ],
+  "topic-daily": [
+    { id: "set-home", name: "Đồ vật quen thuộc trong ngôi nhà và sinh hoạt gia đình", description: "Những đồ vật quen thuộc trong gia đình với phần mô tả dài để xác nhận nội dung được giới hạn chính xác ở hai dòng mà không làm lệch hàng thao tác.", cefr_level: "A1", cover_image_url: null, item_count: 10, topic_id: "topic-daily" },
+  ],
 };
 
 test("Guest gets a complete Set-first catalog with search, Topic filter and public actions", async ({ page }) => {
@@ -39,11 +47,38 @@ test("Guest gets a complete Set-first catalog with search, Topic filter and publ
   const normalList = page.getByRole("list", { name: "Danh sách bộ từ hệ thống" });
   await expect(page.getByRole("heading", { name: "Bộ từ nổi bật" })).toBeVisible();
   await expect(page.locator(".discovery-featured").getByRole("listitem")).toHaveCount(3);
-  await expect(normalList.getByRole("listitem")).toHaveCount(3);
+  await expect(normalList.getByRole("listitem")).toHaveCount(8);
+  await expect(page.getByText("8 bộ từ phù hợp", { exact: true })).toBeVisible();
+  for (const featuredSet of catalogFeaturedSets) {
+    await expect(normalList.getByRole("heading", { name: featuredSet.name })).toBeVisible();
+  }
   await expect(page.getByRole("button", { name: "Xóa bộ lọc" })).toBeDisabled();
   await expect(page.getByText("Chưa có mô tả cho bộ từ này.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Đăng nhập để lưu" })).toHaveCount(6);
+  await expect(page.getByRole("link", { name: "Đăng nhập để lưu" })).toHaveCount(11);
   await expect(page.getByRole("button", { name: "Lưu" })).toHaveCount(0);
+  const cardGeometry = await normalList.locator(".discovery-set-card").evaluateAll((cards) => cards.map((card) => ({
+    height: Math.round(card.getBoundingClientRect().height),
+    actionOffset: Math.round(card.querySelector(".discovery-card-actions").getBoundingClientRect().top - card.getBoundingClientRect().top),
+  })));
+  expect(new Set(cardGeometry.map(({ height }) => height)).size).toBe(1);
+  expect(new Set(cardGeometry.map(({ actionOffset }) => actionOffset)).size).toBe(1);
+  const regularPresentation = await normalList.getByRole("article").filter({ hasText: "Đồ vật quen thuộc" }).evaluate((card) => {
+    const title = card.querySelector("h2");
+    const description = card.querySelector(".discovery-card-body > p");
+    return {
+      cardMinHeight: getComputedStyle(card).minHeight,
+      descriptionClamped: description.scrollHeight > description.clientHeight,
+      descriptionLineClamp: getComputedStyle(description).webkitLineClamp,
+      titleClamped: title.scrollHeight > title.clientHeight,
+      titleLineClamp: getComputedStyle(title).webkitLineClamp,
+    };
+  });
+  expect(regularPresentation).toEqual({ cardMinHeight: "216px", descriptionClamped: true, descriptionLineClamp: "2", titleClamped: true, titleLineClamp: "2" });
+  const featuredPresentation = await page.locator(".discovery-featured .discovery-set-card").first().evaluate((card) => ({
+    minHeight: getComputedStyle(card).minHeight,
+    position: getComputedStyle(card).position,
+  }));
+  expect(featuredPresentation).toEqual({ minHeight: "184px", position: "relative" });
   const initialCatalogRequests = api.catalogRequests();
 
   await page.getByRole("searchbox", { name: "Tìm kiếm bộ từ" }).fill("  DAILY WORK ");
@@ -54,7 +89,17 @@ test("Guest gets a complete Set-first catalog with search, Topic filter and publ
   await page.getByRole("radio", { name: "Du lịch" }).check();
   await expect(page.getByRole("heading", { name: "Không tìm thấy bộ từ phù hợp" })).toBeVisible();
   await page.getByRole("button", { name: "Xóa bộ lọc" }).click();
-  await expect(normalList.getByRole("listitem")).toHaveCount(3);
+  await expect(normalList.getByRole("listitem")).toHaveCount(8);
+
+  await page.getByRole("radio", { name: "Ẩm thực" }).check();
+  await expect(page.getByText("1 bộ từ phù hợp", { exact: true })).toBeVisible();
+  await expect(normalList.getByRole("heading", { name: "Đồ ăn và thức uống" })).toBeVisible();
+  await page.getByRole("button", { name: "Xóa bộ lọc" }).click();
+
+  await page.getByRole("searchbox", { name: "Tìm kiếm bộ từ" }).fill("Everyday English");
+  await expect(page.getByText("1 bộ từ phù hợp", { exact: true })).toBeVisible();
+  await expect(normalList.getByRole("heading", { name: "Everyday English" })).toBeVisible();
+  await page.getByRole("button", { name: "Xóa bộ lọc" }).click();
 
   await page.getByRole("link", { name: "Xem", exact: true }).first().focus();
   await expect(page.getByRole("link", { name: "Xem", exact: true }).first()).toBeFocused();
@@ -69,8 +114,8 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
     { id: "featured-3", name: "Travel Confidence", description: "Ordinary catalog entry", cefr_level: "B1", cover_image_url: null, item_count: 16, topic_id: "topic-travel" },
   ];
   const travelSets = Array.from({ length: 10 }, (_, index) => ({ id: `travel-${index + 1}`, name: `Travel Set ${index + 1}`, description: `Travel description ${index + 1}`, cefr_level: index === 9 ? "B1" : "A1", cover_image_url: null, item_count: index + 1, topic_id: "topic-travel" }));
-  const workSets = Array.from({ length: 2 }, (_, index) => ({ id: `work-${index + 1}`, name: `Work Set ${index + 1}`, description: `Work description ${index + 1}`, item_count: index + 1, topic_id: "topic-work" }));
-  const api = await installDiscoveryApi(page, { setHandler: (route, topicId) => route.fulfill(ok(topicId === "topic-travel" ? [...featuredSets, ...travelSets] : workSets)) });
+  const workSets = [{ id: "work-1", name: "Work Set 1", description: "Work description 1", item_count: 1, topic_id: "topic-work" }];
+  const api = await installDiscoveryApi(page, { setHandler: (route, topicId) => route.fulfill(ok(topicId === "topic-travel" ? [...featuredSets, ...travelSets] : topicId === "topic-work" ? workSets : [])) });
   await installAuthApiMock(page);
   await page.goto("/topics");
 
@@ -79,15 +124,14 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   await expect(page.locator(".discovery-featured").getByRole("listitem")).toHaveCount(3);
   await expect(page.locator(".discovery-featured").getByRole("heading", { name: featuredSets[0].name })).toBeVisible();
   await expect(page.locator(".discovery-featured").locator('[data-cover-state="persisted"] img')).toHaveAttribute("src", featuredSets[0].cover_image_url);
-  for (const featuredSet of featuredSets) {
-    await expect(list.getByRole("heading", { name: featuredSet.name })).toHaveCount(0);
-  }
+  for (const featuredSet of featuredSets) await expect(list.getByRole("heading", { name: featuredSet.name })).toBeVisible();
   await expect(list.getByRole("listitem")).toHaveCount(9);
   await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("14 bộ từ phù hợp", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Trước" })).toBeDisabled();
   const initialRequests = api.catalogRequests();
   await page.getByRole("button", { name: "Sau" }).click();
-  await expect(list.getByRole("listitem")).toHaveCount(3);
+  await expect(list.getByRole("listitem")).toHaveCount(5);
   await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
   expect(api.catalogRequests()).toBe(initialRequests);
 
@@ -124,6 +168,8 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   await cefrSelect.selectOption("B1");
   await expect(reset).toBeEnabled();
   await expect(page.getByText("1 / 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 bộ từ phù hợp", { exact: true })).toBeVisible();
+  await expect(list.getByRole("heading", { name: "Travel Confidence" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Travel Set 10" })).toBeVisible();
   await reset.click();
   await expect(cefrSelect).toHaveValue("");
@@ -139,7 +185,8 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   await page.getByRole("button", { name: "Sau" }).click();
   await page.getByRole("radio", { name: "Công việc" }).check();
   await expect(page.getByText("1 / 1", { exact: true })).toBeVisible();
-  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(page.getByText("1 bộ từ phù hợp", { exact: true })).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
   expect(api.catalogRequests()).toBe(initialRequests);
 });
 
@@ -181,7 +228,7 @@ test("CEFR composes with Topic and search locally while persisted covers fall ba
     objectFit: getComputedStyle(cover.querySelector("img")).objectFit,
     overflow: getComputedStyle(cover).overflow,
   }));
-  expect(coverGeometry.height).toBeGreaterThanOrEqual(112);
+  expect(coverGeometry.height).toBeGreaterThanOrEqual(96);
   expect(coverGeometry.objectFit).toBe("cover");
   expect(coverGeometry.overflow).toBe("hidden");
   const officeCard = page.getByRole("article").filter({ hasText: "Văn phòng" });
@@ -375,13 +422,58 @@ test("authenticated USER can learn or quiz a public Set without copying and reta
 });
 
 test("Guest public detail stays read-only and prompts login for authenticated actions", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
   await installDiscoveryApi(page);
   await installAuthApiMock(page);
   await page.goto("/vocabulary-sets/set-airport");
   await expect(page.getByRole("heading", { name: "Sân bay cơ bản" })).toBeVisible();
+  const vocabularyTable = page.getByRole("table");
+  await expect(vocabularyTable.getByRole("columnheader")).toHaveText(["Từ vựng", "Nghĩa", "Phiên âm", "Ví dụ"]);
+  await expect(vocabularyTable).toContainText("hộ chiếu");
+  await expect(vocabularyTable).toContainText("Keep your passport safe.");
+  await expect(vocabularyTable).toContainText("Giữ hộ chiếu của bạn an toàn.");
+  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
   await expect(page.getByRole("link", { name: "Đăng nhập để học và lưu" })).toHaveAttribute("href", "/login");
   await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Sao chép|Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
+});
+
+test("Public Detail paginates ten ordered words, keeps controls outside mobile scrolling, and resets for another Set", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const detailItems = (count, prefix) => Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}-item-${index + 1}`,
+    position: index + 1,
+    word: `${prefix} word ${index + 1} with readable wrapping`,
+    phonetic: `/word-${index + 1}/`,
+    primary_meaning: { meaning_vi: `nghĩa ${index + 1}`, example: { example_en: `Example sentence ${index + 1}.`, example_vi: `Câu ví dụ ${index + 1}.` } },
+  }));
+  await installDiscoveryApi(page, { detailHandler: async (route, setId, summary) => {
+    await route.fulfill(ok({ ...summary, items: setId === "set-airport" ? detailItems(11, "airport") : detailItems(1, "hotel") }));
+  } });
+  await installAuthApiMock(page);
+  await page.goto("/vocabulary-sets/set-airport");
+
+  const table = page.getByRole("table");
+  const pagination = page.getByRole("navigation", { name: "Phân trang từ vựng" });
+  await expect(table.getByRole("row")).toHaveCount(11);
+  await expect(page.getByText("1–10 / 11 từ", { exact: true })).toBeVisible();
+  await expect(page.getByText("Trang 1 / 2", { exact: true })).toBeVisible();
+  await expect(pagination.getByRole("button", { name: "Trước" })).toBeDisabled();
+  await expect(page.locator(".set-detail-table-wrap").getByRole("navigation")).toHaveCount(0);
+  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+
+  const next = pagination.getByRole("button", { name: "Sau" });
+  await next.focus();
+  await expect(next).toBeFocused();
+  await next.click();
+  await expect(table.getByRole("row")).toHaveCount(2);
+  await expect(page.getByText("11–11 / 11 từ", { exact: true })).toBeVisible();
+  await expect(page.getByText("Trang 2 / 2", { exact: true })).toBeVisible();
+
+  await page.goto("/vocabulary-sets/set-hotel");
+  await expect(page.getByText("1–1 / 1 từ", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Phân trang từ vựng" })).toHaveCount(0);
+  await expect(table.getByRole("row")).toHaveCount(2);
 });
 
 test("ADMIN browses in App Shell without learner or management actions", async ({ page }) => {
@@ -414,7 +506,7 @@ for (const width of [375, 390, 768, 820, 1366, 1536]) {
   });
 }
 
-async function installDiscoveryApi(page, { copyHandler, setHandler, topicList = topics } = {}) {
+async function installDiscoveryApi(page, { copyHandler, detailHandler, setHandler, topicList = topics } = {}) {
   let catalogRequestCount = 0;
   await page.route("https://covers.example.test/airport.webp", (route) => route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") }));
   await page.route("https://covers.example.test/broken.webp", (route) => route.fulfill({ status: 404, body: "" }));
@@ -435,11 +527,15 @@ async function installDiscoveryApi(page, { copyHandler, setHandler, topicList = 
       await route.fulfill({ status: 404, json: { success: false, error: { code: "VOCABULARY_SET_NOT_FOUND" } } });
       return;
     }
+    if (detailHandler) {
+      await detailHandler(route, setId, summary);
+      return;
+    }
     await route.fulfill(ok({
       ...summary,
       items: [
-        { id: "item-1", position: 1, word: "passport", phonetic: "/ˈpɑːspɔːrt/" },
-        { id: "item-2", position: 2, word: "luggage", phonetic: null },
+        { id: "item-1", position: 1, word: "passport", phonetic: "/ˈpɑːspɔːrt/", primary_meaning: { part_of_speech: "noun", meaning_vi: "hộ chiếu", example: { example_en: "Keep your passport safe.", example_vi: "Giữ hộ chiếu của bạn an toàn." } } },
+        { id: "item-2", position: 2, word: "luggage", phonetic: null, primary_meaning: null },
       ],
     }));
   });

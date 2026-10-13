@@ -57,12 +57,7 @@ export function TopicListPage() {
     () => selectDiscoveryFeaturedSets(catalog.sets),
     [catalog.sets],
   );
-  const featuredSetIds = useMemo(() => new Set(featuredSets.map((set) => set.id)), [featuredSets]);
-  const normalVisibleSets = useMemo(
-    () => visibleSets.filter((set) => !featuredSetIds.has(set.id)),
-    [featuredSetIds, visibleSets],
-  );
-  const pagination = useMemo(() => paginateDiscoveryCatalog(normalVisibleSets, page), [normalVisibleSets, page]);
+  const pagination = useMemo(() => paginateDiscoveryCatalog(visibleSets, page), [visibleSets, page]);
 
   function retry() {
     setStatus("loading");
@@ -142,16 +137,16 @@ export function TopicListPage() {
             </NativeSelect>
           </label>
           <div className="discovery-results-row">
-            <p className="public-topic-result-count" aria-live="polite">{normalVisibleSets.length} bộ từ phù hợp</p>
+            <p className="public-topic-result-count" aria-live="polite">{visibleSets.length} bộ từ phù hợp</p>
           </div>
           </aside>
           <div className="discovery-catalog-results">
-            {normalVisibleSets.length === 0 ? <DiscoveryState title="Không tìm thấy bộ từ phù hợp" message="Hãy thử từ khóa hoặc chủ đề khác, hoặc xóa bộ lọc." /> : (
+            {visibleSets.length === 0 ? <DiscoveryState title="Không tìm thấy bộ từ phù hợp" message="Hãy thử từ khóa hoặc chủ đề khác, hoặc xóa bộ lọc." /> : (
               <ul className="public-topic-grid discovery-set-grid" aria-label="Danh sách bộ từ hệ thống">
                 {pagination.items.map((set) => <li key={set.id}><DiscoverySetCard set={set} role={user?.role ?? null} isAuthenticated={isAuthenticated} isSaved={savedSetIds.has(set.id)} copyState={copyBySet[set.id]} onCopy={() => void copySet(set)} /></li>)}
               </ul>
             )}
-            {normalVisibleSets.length > 0 ? <nav className="discovery-pagination" aria-label="Phân trang bộ từ"><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={pagination.currentPage === 1}>Trước</button><span aria-live="polite">{pagination.currentPage} / {pagination.totalPages}</span><button type="button" onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))} disabled={pagination.currentPage === pagination.totalPages}>Sau</button></nav> : null}
+            {visibleSets.length > 0 ? <nav className="discovery-pagination" aria-label="Phân trang bộ từ"><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={pagination.currentPage === 1}>Trước</button><span aria-live="polite">{pagination.currentPage} / {pagination.totalPages}</span><button type="button" onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))} disabled={pagination.currentPage === pagination.totalPages}>Sau</button></nav> : null}
           </div>
         </div>
       ) : null}

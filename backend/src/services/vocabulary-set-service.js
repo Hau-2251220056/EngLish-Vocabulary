@@ -725,16 +725,16 @@ function toDetail(set) {
       return {
         ...item,
         ...vocabulary,
+        primary_meaning: meaning
+          ? {
+              part_of_speech: meaning.part_of_speech,
+              meaning_vi: meaning.meaning_vi,
+              example: meaning.examples[0] ?? null,
+            }
+          : null,
         ...(!set.is_public
           ? {
               source: owner_id === null ? "CANONICAL" : "PRIVATE",
-              primary_meaning: meaning
-                ? {
-                    part_of_speech: meaning.part_of_speech,
-                    meaning_vi: meaning.meaning_vi,
-                    example: meaning.examples[0] ?? null,
-                  }
-                : null,
             }
           : {}),
       };
