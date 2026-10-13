@@ -125,7 +125,7 @@ test("Guest discovers only public System summaries and full ordered detail", asy
   assert.deepEqual(response.json.data.items.map(({ vocabulary_id, position }) => [vocabulary_id, position]), [
     [secondVocabulary.id, 1], [firstVocabulary.id, 2],
   ]);
-  assert.deepEqual(Object.keys(response.json.data.items[0]).sort(), ["created_at", "id", "phonetic", "position", "vocabulary_id", "word"]);
+  assert.deepEqual(Object.keys(response.json.data.items[0]).sort(), ["created_at", "id", "phonetic", "position", "primary_meaning", "vocabulary_id", "word"]);
 });
 
 test("ADMIN manages complete non-empty System aggregates and USER cannot mutate them", async () => {
