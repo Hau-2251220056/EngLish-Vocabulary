@@ -88,7 +88,7 @@ Guest không thể:
 
 Học và lưu Learning Progress.
 Thực hiện Quiz có lưu kết quả.
-Pronunciation Practice có lưu kết quả.
+Pronunciation Practice V1 không lưu kết quả và không có write API.
 Tạo Vocabulary Set.
 Copy Vocabulary Set.
 Tham gia Community.
@@ -1422,62 +1422,34 @@ Listen Model
     ↓
 Press Microphone
     ↓
-Record User Voice
+Browser captures audio only after explicit User permission/action
     ↓
 Processing
     ↓
-Evaluate
+Recognize transcript and classify conservatively
     ↓
 Result / Feedback
     ↓
 Retry
 49. Pronunciation API
 
-Conceptual endpoint:
+Speaking Practice V1 adds no pronunciation endpoint.
 
-POST /api/pronunciation/evaluate
-Access
+The authenticated USER reuses the existing authorized Learning read:
 
-Authenticated User.
+```http
+GET /api/learning/sets/:setId?mode=NORMAL
+```
 
-Request
+The Backend session identity and existing Set visibility/ownership predicate remain authoritative. `NORMAL` returns every accessible Set Item in server-authored `position` order with exact Vocabulary IDs and words. Public System Sets and owned private Sets are allowed; foreign-private and missing Sets remain concealed by the existing Learning contract.
 
-Có thể bao gồm:
+The frontend must not send an owner ID, audio, transcript, confidence or classification result. Speaking Practice must not call `POST /api/learning/events`.
 
-Vocabulary ID.
-Audio recording.
+50. Speaking Practice V1 Transcript Classification Boundary
 
-Ví dụ conceptual:
+Recognition and classification are transient frontend behavior under the approved browser-native exception. The browser may use remote vendor processing, but ELVocab has no provider HTTP request or provider secret.
 
-multipart/form-data
-
-Exact request/response contract phụ thuộc implementation được chọn trong PLAN.
-
-50. Pronunciation Evaluation
-
-Backend/system có thể trả:
-
-{
-  "success": true,
-  "data": {
-    "score": 82,
-    "is_acceptable": true,
-    "feedback": "Good pronunciation"
-  }
-}
-
-Các metric chính xác:
-
-Score.
-Threshold.
-Audio processing.
-Speech recognition.
-Pronunciation comparison.
-External service/API nếu có.
-
-được quyết định trong PLAN.
-
-Không được tự ý cam kết sử dụng AI hoặc external pronunciation service chỉ vì API tồn tại.
+V1 returns no Backend pronunciation score, threshold, `is_acceptable`, phoneme metric or acoustic comparison. The UI exposes only conservative transcript classifications: primary match, uncertain alternative match, no match and inconclusive.
 
 51. Pronunciation History
 
@@ -1929,14 +1901,14 @@ GET    /api/admin/vocabulary-sets/:setId
 PATCH  /api/admin/vocabulary-sets/:setId
 DELETE /api/admin/vocabulary-sets/:setId
 Learning
-GET    /api/learning/sets/:setId
+GET    /api/learning/sets/:setId?mode=<NORMAL|SRS>
 POST   /api/learning/review
 GET    /api/learning/review
 Quiz
 GET    /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>
 POST   /api/quiz/answers
 Pronunciation
-POST   /api/pronunciation/evaluate
+No Speaking Practice V1 endpoint; reuse the authorized Learning `NORMAL` GET
 Achievement
 GET    /api/achievements
 

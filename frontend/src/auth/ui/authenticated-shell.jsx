@@ -117,12 +117,13 @@ export function AuthenticatedShell() {
   const defaultAvatar = displayName.trim().charAt(0).toUpperCase() || "E";
   const drawerIsVisible = !isMobileNavigation || isDrawerOpen;
   const isQuiz = location.pathname.startsWith("/quiz/vocabulary-sets/");
-  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/") || isQuiz;
+  const isSpeakingPractice = location.pathname.startsWith("/pronunciation/vocabulary-sets/");
+  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/") || isQuiz || isSpeakingPractice;
   const isUser = user.role === "USER";
 
   if (isFocusLearning) {
     return (
-      <div className={`learning-focus-shell${isQuiz ? " quiz-focus-shell !overflow-y-auto" : ""}`}>
+      <div className={`learning-focus-shell${isQuiz ? " quiz-focus-shell !overflow-y-auto" : ""}${isSpeakingPractice ? " speaking-practice-focus-shell !overflow-y-auto" : ""}`}>
         <Outlet />
       </div>
     );

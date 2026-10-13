@@ -151,22 +151,22 @@ test("learning Set access is USER-only and conceals inaccessible private Sets", 
     vocabularyIds: [vocabulary.id],
   });
 
-  assertError(await http.request(`/api/learning/sets/${systemSet.id}`), 401, "AUTHENTICATION_FAILED");
+  assertError(await http.request(`/api/learning/sets/${systemSet.id}?mode=NORMAL`), 401, "AUTHENTICATION_FAILED");
   assertError(
-    await http.request(`/api/learning/sets/${systemSet.id}`, { cookie: adminCookie }),
+    await http.request(`/api/learning/sets/${systemSet.id}?mode=NORMAL`, { cookie: adminCookie }),
     403,
     "FORBIDDEN",
   );
   assert.equal(
-    (await http.request(`/api/learning/sets/${systemSet.id}`, { cookie: ownerCookie })).status,
+    (await http.request(`/api/learning/sets/${systemSet.id}?mode=NORMAL`, { cookie: ownerCookie })).status,
     200,
   );
-  const ownedResponse = await http.request(`/api/learning/sets/${ownedSet.id}`, { cookie: ownerCookie });
+  const ownedResponse = await http.request(`/api/learning/sets/${ownedSet.id}?mode=NORMAL`, { cookie: ownerCookie });
   assert.equal(ownedResponse.status, 200);
   assert.equal(ownedResponse.json.data.topic, null);
   for (const setId of [otherSet.id, randomUUID()]) {
     assertError(
-      await http.request(`/api/learning/sets/${setId}`, { cookie: ownerCookie }),
+      await http.request(`/api/learning/sets/${setId}?mode=NORMAL`, { cookie: ownerCookie }),
       404,
       "LEARNING_SET_NOT_FOUND",
     );
@@ -247,7 +247,8 @@ test("Personal Vocabulary keeps exact same-spelling identities, shared progress 
   const setA = await createSet({ ownerId: owner.id, isPublic: false, vocabularyIds: [privateTwo.id, canonical.id, privateOne.id] });
   const setB = await createSet({ ownerId: owner.id, isPublic: false, vocabularyIds: [privateOne.id] });
 
-  const response = await http.request(`/api/learning/sets/${setA.id}`, { cookie: ownerCookie });
+  const progressCountBeforeRead = await prisma.lEARNING_PROGRESS.count();
+  const response = await http.request(`/api/learning/sets/${setA.id}?mode=NORMAL`, { cookie: ownerCookie });
   assert.equal(response.status, 200, response.text);
   assert.deepEqual(response.json.data.cards.map((card) => [card.id, card.position, card.word]), [
     [privateTwo.id, 1, sharedWord], [canonical.id, 2, sharedWord], [privateOne.id, 3, sharedWord],
@@ -260,6 +261,7 @@ test("Personal Vocabulary keeps exact same-spelling identities, shared progress 
       .sort((left, right) => left[0].localeCompare(right[0])),
     [["noun", "private book meaning"], ["verb", "private booking meaning"]],
   );
+  assert.equal(await prisma.lEARNING_PROGRESS.count(), progressCountBeforeRead);
 
   for (const vocabulary of [canonical, privateOne, privateTwo]) {
     assertProgress(await postEvent(ownerCookie, eventBody({ setId: setA.id, vocabularyId: vocabulary.id, rating: "GOOD" })), { status: "LEARNED", reviewCount: 1, revision: 1 });
@@ -286,7 +288,7 @@ test("learning payload validation and empty Set failures use approved safe error
     vocabularyIds: [],
   });
   assertError(
-    await http.request(`/api/learning/sets/${emptySet.id}`, { cookie: ownerCookie }),
+    await http.request(`/api/learning/sets/${emptySet.id}?mode=NORMAL`, { cookie: ownerCookie }),
     409,
     "LEARNING_SET_EMPTY",
   );

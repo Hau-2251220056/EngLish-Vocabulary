@@ -13,6 +13,7 @@ import { LearningSessionStorageObserver } from "./learning/learning-session-stor
 import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
 import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
+import { SpeakingPracticePage } from "./pronunciation/speaking-practice-page.jsx";
 import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
 import { DiscoveryRouteLayout } from "./topics/discovery-route-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
@@ -51,6 +52,7 @@ export function AppRouter() {
             <Route element={<UserRoute />}>
               <Route path="/learn/vocabulary-sets/:setId" element={<LearningFoundationPage />} />
               <Route path="/quiz/vocabulary-sets/:setId" element={<QuizFoundationPage />} />
+              <Route path="/pronunciation/vocabulary-sets/:setId" element={<SpeakingPracticePage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />
               <Route path="/my/vocabulary-sets" element={<MyVocabularySetsPage />} />
               <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetDetailPage />} />

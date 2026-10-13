@@ -113,7 +113,7 @@ Business logic
 Request validation
 Vocabulary management
 Vocabulary meanings and examples
-Pronunciation-related processing
+Pronunciation metadata and authorized Learning reads; Speaking Practice V1 recognition remains inside the approved browser-native frontend exception
 Learning progress
 Quiz processing
 Spaced Repetition
@@ -409,6 +409,8 @@ adminService
 
 API calls SHOULD NOT được viết trực tiếp trong các UI components nếu có thể tách thành service hoặc hook phù hợp.
 
+The service names above are architectural examples, not a statement that every service exists. Speaking Practice V1 does not create Backend `PronunciationService` or Frontend provider-API `pronunciationService`; it composes the existing Learning service with frontend-only recognition/playback modules.
+
 Frontend service không được chứa business rules quan trọng của hệ thống.
 
 Frontend chỉ thực hiện client-side logic phục vụ UI/UX.
@@ -627,11 +629,11 @@ Business rules MUST NOT được duplicate giữa Frontend và Backend.
 
 Frontend có thể thực hiện validation phục vụ UX, nhưng Backend MUST luôn validate lại dữ liệu quan trọng.
 
-9. Pronunciation Architecture
+9. Speaking Practice V1 Architecture
 
 Pronunciation là một learning module riêng, không phải quiz type.
 
-Luồng cơ bản:
+Luồng V1:
 
 Vocabulary
 
@@ -645,40 +647,60 @@ User listens
 
     ↓
 
-User speaks / records
+Explicit USER Speak action and first-use disclosure
 
     ↓
 
-Pronunciation Evaluation
+Browser-native `SpeechRecognition` / `webkitSpeechRecognition` (`en-US`)
 
     ↓
 
-Pronunciation Result
+Conservative transcript classification and transient feedback
 
-Hệ thống có thể hỗ trợ:
+Frontend composition follows:
 
-Phát âm mẫu.
-Người dùng nghe phát âm mẫu.
-Người dùng tự phát âm.
-Speech recognition.
-Pronunciation evaluation.
+```text
+protected USER route
+  → page session and authorized `NORMAL` Learning GET
+  → integrated Speaking controller
+  → reference playback coordinator + recognition attempt controller
+  → browser adapter
+  → conservative classifier
+  → pure presentation mapping and React UI
+```
 
-Các công nghệ hoặc external providers cụ thể cho pronunciation chưa được cố định trong tài liệu này.
+The aggregate controller owns Set/Vocabulary identity, generation, target changes and mutual exclusion. Reference playback prefers `pronunciation_url`, falls back to English browser `speechSynthesis`, and is cancelled before recognition starts. Recognition cancellation/disposal detaches native handlers and rejects stale callbacks, timers and Promise continuations.
 
-Việc lựa chọn technology/provider phải được xác định trong PLAN và được phê duyệt khi cần thiết.
+`Stop` uses bounded finalization so a delayed final transcript may still settle. An explicitly stopped empty attempt returns to Ready without assessment. `Retry` always requires an explicit User action. Exit, target replacement, hidden-page handling and unmount dispose active recognition/playback; late native callbacks cannot revive a disposed or replaced session.
+
+The four terminal transcript classifications are `PRIMARY_MATCH`, uncertain `ALTERNATIVE_MATCH`, `NO_MATCH` and `INCONCLUSIVE`. They do not represent acoustic accuracy, pronunciation scores or pass/fail.
 
 Model pronunciation information được lưu trong VOCABULARY, ví dụ:
 
 phonetic
 pronunciation_url
 
-User pronunciation attempt không được lưu thành database entity riêng trong v1.
+User pronunciation attempt không được lưu thành database entity riêng trong V1. Audio/transcript/result không được gửi tới ELVocab Backend hoặc persistence; Speaking Practice creates no Learning event or Progress/SRS/XP/Streak/Achievement mutation.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, việc bổ sung entity/table phải được developer phê duyệt trước.
 
-Pronunciation functionality có thể sử dụng external services khi cần.
+The only V1 exception is direct browser-native recognition. Browser-vendor audio processing may be remote. V1 adds no provider HTTP integration, API key, Backend speech processing or audio upload.
+
+Local development uses the existing frontend/backend entry points and a localhost origin. After independently confirming the dedicated TEST database and its fail-closed guards, the guarded local review environment uses Backend port `5000` and Vite on `127.0.0.1:5173`:
+
+```powershell
+cd backend
+node --env-file=.env.test src/main.js
+
+cd ../frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Vite's relative `/api` proxy targets `http://localhost:5000` by default. Do not start the Backend command until `NODE_ENV=test`, required TEST safety flags and a dedicated non-shared TEST database are verified without printing secrets. Automated verification uses deterministic fakes and mocked Chromium; it must never request a real microphone. Real recognition requires deliberate HUMAN operation. Deployed HTTPS Gate R4 remains `PENDING` until the matching deployed Frontend/Backend revision is verified in a secure context.
 
 10. External Services
+
+For Speaking Practice V1, section 9 and the approved browser-native exception govern: Frontend may use `window.SpeechRecognition`/`window.webkitSpeechRecognition` and browser `speechSynthesis`; ELVocab adds no managed speech provider integration. The generic provider pattern below applies only to separately approved future integrations.
 
 Hệ thống có thể tích hợp external services cho các chức năng đã được phê duyệt, ví dụ:
 

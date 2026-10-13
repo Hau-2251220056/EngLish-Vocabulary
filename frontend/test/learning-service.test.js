@@ -57,6 +57,57 @@ test("mode-specific and authoritative response guards reject malformed data", as
   }
 });
 
+test("NORMAL reads preserve server-authored identity, word and order without issuing writes", async () => {
+  const calls = [];
+  const duplicateWordSet = {
+    ...normalSet,
+    total_items: 2,
+    cards: [
+      { ...normalCard, id: "v-private", word: "book", position: 1 },
+      { ...normalCard, id: "v-canonical", word: "book", position: 2 },
+    ],
+  };
+  const service = createLearningService({
+    async get(url, options) {
+      calls.push(["GET", url, options]);
+      return { data: { data: duplicateWordSet } };
+    },
+    async post(url, input) {
+      calls.push(["POST", url, input]);
+      throw new Error("NORMAL reads must not issue a Learning write.");
+    },
+  });
+
+  const result = await service.getLearningSet("set/id", { mode: "NORMAL" });
+
+  assert.deepEqual(
+    result.cards.map(({ id, word, position }) => ({ id, word, position })),
+    [
+      { id: "v-private", word: "book", position: 1 },
+      { id: "v-canonical", word: "book", position: 2 },
+    ],
+  );
+  assert.deepEqual(calls, [
+    ["GET", "/api/learning/sets/set%2Fid", { params: { mode: "NORMAL" } }],
+  ]);
+});
+
+test("NORMAL response validation rejects malformed identity, word, position and total count", async () => {
+  for (const malformedSet of [
+    { ...normalSet, cards: [{ ...normalCard, id: null }] },
+    { ...normalSet, cards: [{ ...normalCard, word: null }] },
+    { ...normalSet, cards: [{ ...normalCard, position: -1 }] },
+    { ...normalSet, total_items: 2 },
+  ]) {
+    await assert.rejects(
+      createLearningService({
+        async get() { return { data: { data: malformedSet } }; },
+      }).getLearningSet("set", { mode: "NORMAL" }),
+      { code: "INVALID_LEARNING_RESPONSE" },
+    );
+  }
+});
+
 test("Learning service maps not-found, conflict and operational failures", async () => {
   await assert.rejects(
     createLearningService({ async get() { throw { response: { status: 404, data: { error: { code: "LEARNING_SET_NOT_FOUND", message: "Missing." } } } }; } }).getLearningSet("missing"),

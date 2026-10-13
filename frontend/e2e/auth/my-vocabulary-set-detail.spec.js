@@ -83,6 +83,7 @@ test("renders the owner learning hub, projection, and source-based actions", asy
   await expect(page.getByRole("heading", { level: 1, name: "Du lịch" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Thẻ ghi nhớ/ })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(page.getByRole("link", { name: /Quiz/ })).toHaveAttribute("href", `/quiz/vocabulary-sets/${setId}`);
+  await expect(page.getByRole("link", { name: /Luyện nói/ })).toHaveAttribute("href", `/pronunciation/vocabulary-sets/${setId}`);
   await expect(page.getByRole("columnheader")).toHaveText(["Từ vựng", "Phiên âm", "Từ loại", "Nghĩa", "Ví dụ", "Thao tác"]);
   await expect(page.getByRole("heading", { level: 2, name: "Từ vựng trong bộ (2)" })).toBeVisible();
   await expect(page.getByText(populated.description, { exact: true })).toBeVisible();
@@ -114,13 +115,12 @@ test("renders the owner learning hub, projection, and source-based actions", asy
   expect(Number(tableGeometry.headingFontWeight)).toBeGreaterThanOrEqual(600);
   await expect(page.getByRole("columnheader").first()).toHaveClass(/text-slate-600/);
   await expect(page.getByRole("button", { name: /phát|audio|speaker/i })).toHaveCount(0);
-  await expect(page.getByText(/Luyện nói/)).toHaveCount(0);
 });
 
 test("empty Set keeps real activities disabled and vocabulary management available", async ({ page }) => {
   await install(page, { ...populated, items: [] }); await page.goto(`/my/vocabulary-sets/${setId}`);
-  await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(2);
-  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz/ })).toHaveCount(0);
+  await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(3);
+  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
   await expect(page.getByRole("dialog", { name: "Thêm từ vựng" })).toBeVisible();
 });

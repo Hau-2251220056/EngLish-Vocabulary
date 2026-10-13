@@ -368,6 +368,7 @@ test("authenticated USER can learn or quiz a public Set without copying and reta
   const learningActions = page.getByRole("region", { name: "Bắt đầu học" });
   await expect(learningActions.getByRole("link", { name: /Thẻ ghi nhớ/ })).toHaveAttribute("href", "/learn/vocabulary-sets/set-airport");
   await expect(learningActions.getByRole("link", { name: /Quiz/ })).toHaveAttribute("href", "/quiz/vocabulary-sets/set-airport");
+  await expect(learningActions.getByRole("link", { name: /Luyện nói/ })).toHaveAttribute("href", "/pronunciation/vocabulary-sets/set-airport");
   await expect(page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" })).toBeVisible();
   await expect(page.getByText("Học trực tiếp từ bộ từ công khai")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
@@ -379,7 +380,7 @@ test("Guest public detail stays read-only and prompts login for authenticated ac
   await page.goto("/vocabulary-sets/set-airport");
   await expect(page.getByRole("heading", { name: "Sân bay cơ bản" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Đăng nhập để học và lưu" })).toHaveAttribute("href", "/login");
-  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Sao chép|Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
 });
 
@@ -391,7 +392,7 @@ test("ADMIN browses in App Shell without learner or management actions", async (
   await expect(page.locator("#topic-list-title")).toBeAttached();
   await expect(page.getByRole("button", { name: /Lưu/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Đăng nhập để lưu" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Học|Quiz/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Học|Quiz|Luyện nói/ })).toHaveCount(0);
 });
 
 for (const width of [375, 390, 768, 820, 1366, 1536]) {

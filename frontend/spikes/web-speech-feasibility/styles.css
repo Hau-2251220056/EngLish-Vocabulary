@@ -1,0 +1,30 @@
+:root { color: #172033; background: #f4f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(58rem, calc(100% - 2rem)); margin: 2rem auto; display: grid; gap: 1rem; }
+header, section, aside { padding: clamp(1rem, 3vw, 2rem); border: 1px solid #dbe3ef; border-radius: 1rem; background: white; box-shadow: 0 0.4rem 1.4rem rgb(24 39 75 / 6%); }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: 0.75rem; font-size: clamp(1.8rem, 5vw, 2.7rem); }
+h2 { font-size: 1.15rem; }
+.eyebrow { color: #6456d9; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+label { display: block; margin-bottom: 0.45rem; font-weight: 700; }
+input { width: 100%; min-height: 2.9rem; padding: 0.65rem 0.8rem; border: 1px solid #aebbd0; border-radius: 0.65rem; font: inherit; }
+input:focus-visible, button:focus-visible, summary:focus-visible { outline: 3px solid #9d92ff; outline-offset: 2px; }
+.privacy-note { margin-top: 1rem; padding: 0.85rem; border-left: 0.25rem solid #6456d9; background: #f4f1ff; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-block: 1rem; }
+button { min-height: 2.75rem; padding: 0.65rem 1rem; border: 0; border-radius: 0.7rem; background: #5b4bd1; color: white; font: inherit; font-weight: 750; cursor: pointer; }
+button.secondary { border: 1px solid #aebbd0; background: white; color: #26324a; }
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+#recognition-error { padding: 0.75rem; border-radius: 0.6rem; background: #fff0f0; color: #a12626; }
+dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+dl div { padding: 0.8rem; border-radius: 0.65rem; background: #f6f8fc; }
+dt { color: #5b667a; font-size: 0.85rem; }
+dd { margin: 0.25rem 0 0; font-weight: 800; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+caption { padding: 0.8rem 0; text-align: left; font-weight: 700; }
+th, td { padding: 0.7rem; border-bottom: 1px solid #dbe3ef; text-align: left; }
+pre { overflow-x: auto; padding: 1rem; border-radius: 0.65rem; background: #172033; color: #eef3ff; }
+code { overflow-wrap: anywhere; }
+@media (max-width: 36rem) { main { margin-block: 1rem; } dl { grid-template-columns: 1fr; } .actions button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }

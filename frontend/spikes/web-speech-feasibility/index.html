@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELVocab — Web Speech API Feasibility</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">ELVocab · Feasibility spike</p>
+        <h1>Thử nghiệm Web Speech API</h1>
+        <p>Harness này chỉ kiểm tra khả năng nhận dạng từ trong Chrome. Confidence là độ tin cậy nhận dạng, <strong>không phải độ chính xác phát âm</strong>.</p>
+      </header>
+
+      <section aria-labelledby="setup-title">
+        <h2 id="setup-title">Từ mục tiêu</h2>
+        <label for="target-word">Chọn hoặc nhập một từ tiếng Anh</label>
+        <input id="target-word" list="word-examples" value="professor" autocomplete="off" />
+        <datalist id="word-examples">
+          <option value="book"></option><option value="teacher"></option>
+          <option value="quiet"></option><option value="professor"></option>
+          <option value="ship"></option><option value="sheep"></option>
+          <option value="cat"></option><option value="apple"></option>
+        </datalist>
+        <p class="privacy-note"><strong>Lưu ý riêng tư:</strong> ELVocab không tải lên hoặc lưu âm thanh trong harness này. Tuy nhiên, trình duyệt có thể gửi âm thanh tới dịch vụ nhận dạng của nhà cung cấp trình duyệt.</p>
+        <p id="capability-status"></p>
+        <div class="actions">
+          <button id="start-listening" type="button">Bắt đầu nghe</button>
+          <button id="stop-listening" type="button" class="secondary">Dừng nghe</button>
+          <button id="retry-listening" type="button" class="secondary">Thử lại</button>
+        </div>
+        <p id="recognition-status" role="status" aria-live="polite"></p>
+        <p id="recognition-error" role="alert" hidden></p>
+      </section>
+
+      <section id="recognition-results" aria-labelledby="results-title" hidden>
+        <h2 id="results-title">Kết quả chẩn đoán</h2>
+        <dl>
+          <div><dt>Transcript chính</dt><dd id="primary-transcript">—</dd></div>
+          <div><dt>Phân loại</dt><dd id="match-classification">—</dd></div>
+        </dl>
+        <div class="table-wrap">
+          <table>
+            <caption>Tất cả phương án nhận dạng được trả về</caption>
+            <thead><tr><th>#</th><th>Transcript nguyên gốc</th><th>Confidence</th></tr></thead>
+            <tbody id="alternatives-body"></tbody>
+          </table>
+        </div>
+        <details>
+          <summary>Xem dữ liệu chẩn đoán</summary>
+          <pre id="raw-result">Chưa có kết quả.</pre>
+        </details>
+      </section>
+
+      <aside>
+        <h2>Cách đọc kết quả</h2>
+        <ul>
+          <li><code>PRIMARY_MATCH</code>: transcript chính khớp chính xác sau chuẩn hóa bảo thủ.</li>
+          <li><code>ALTERNATIVE_MATCH</code>: một phương án phụ khớp.</li>
+          <li><code>NO_MATCH</code>: không phương án nào khớp.</li>
+          <li><code>INCONCLUSIVE</code>: không thể đánh giá lần nhận dạng.</li>
+        </ul>
+        <p>Không có kết quả PASS/FAIL, ngưỡng 50%, stemming, substring hay sửa gần đúng.</p>
+      </aside>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

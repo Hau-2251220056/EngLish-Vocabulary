@@ -543,7 +543,7 @@ The user can press the speaker button to listen to the model pronunciation.
 
 The flashcard should only provide model pronunciation playback.
 
-User voice recording and pronunciation evaluation belong to the separate Pronunciation Practice activity.
+User speech recognition and transient transcript feedback belong to the separate Speaking Practice activity.
 
 Actions:
 
@@ -562,15 +562,14 @@ Allow users to practice pronouncing vocabulary words and receive pronunciation f
 
 The Pronunciation Practice activity is separate from the Flashcard activity.
 
-The activity should display:
+The USER-only Focus Mode activity at `/pronunciation/vocabulary-sets/:setId` displays:
 
 Vocabulary word
 IPA pronunciation
 Model pronunciation button
-Record pronunciation button
-Recording state
-Processing state
-Pronunciation result
+Speak/Stop button
+Starting, listening and finalizing announcements
+Transcript-classification result
 Feedback
 Retry button
 
@@ -584,19 +583,13 @@ Press microphone button
         ↓
 User pronounces the word
         ↓
-System records and analyzes the pronunciation
+Browser recognition supplies transcript candidates
         ↓
-Display pronunciation result and feedback
+Display transcript-classification feedback
         ↓
 Retry if needed
 
-UI states:
-
-Ready
-Recording
-Processing
-Result
-Error / Unsupported
+UI states include Loading, Ready, Disclosure, Unsupported/Insecure Context, Starting, Listening, Finalizing, Result, Inconclusive, Recoverable Error, Inaccessible/Empty, Cancelling and session-only Completed.
 
 Example:
 
@@ -615,9 +608,11 @@ Example:
 │     [ Press to start ]       │
 └──────────────────────────────┘
 
-The exact pronunciation analysis technology and scoring mechanism will be determined during the PLAN phase.
+Ready, Starting, Listening and Finalizing do not show generic visible feedback panels. Starting/Listening/Finalizing retain concise screen-reader-only polite announcements. Listening uses the CSS-only waveform inside the Stop button and respects reduced motion.
 
-The system should not assume a specific AI or external pronunciation service at the UI/UX stage.
+Permission denial displays **Không thể sử dụng microphone** with instructions to enable ELVocab microphone access in browser settings. `audio-capture` uses unavailable-device guidance. Explicit Stop without a usable result returns to Ready without an assessment; spontaneous no-speech and other failures remain visible where recovery is required.
+
+Outcome panels are compact: one Lucide icon, one heading and at most one supporting sentence. `PRIMARY_MATCH` is green, uncertain `ALTERNATIVE_MATCH` amber, `NO_MATCH` red and `INCONCLUSIVE` amber. Copy must not imply acoustic accuracy or pronunciation mastery. Only a safe primary transcript may appear separately; alternatives, confidence and native errors are not displayed.
 
 10.5 Quiz V1 Run
 
@@ -757,7 +752,7 @@ User-created vocabulary sets remain private and are not directly converted to pu
 
 The compact header shows only **← Bộ từ của tôi** and the authoritative Set name. Description, standalone count and Set management actions are not rendered here. Set-level **Chỉnh sửa** and **Xóa bộ từ** live in the shared kebab menu on each My Sets card; the existing metadata modal remains centered and contains only **Tên bộ từ** and **Mô tả**—no Topic or membership controls.
 
-Only real activities are shown as compact learning tiles: **Thẻ ghi nhớ** (Flashcard) and **Quiz**. For non-empty Sets they link to `/learn/vocabulary-sets/:setId` and `/quiz/vocabulary-sets/:setId` and return to Set Detail. For empty Sets both cards remain visible but disabled with **Thêm từ vựng để bắt đầu**; vocabulary management remains usable. No Luyện nói placeholder, audio control, fake progress or analytics is rendered.
+Three real activities are shown as compact learning tiles: **Thẻ ghi nhớ**, **Quiz** and **Luyện nói**. For non-empty Sets they link to `/learn/vocabulary-sets/:setId`, `/quiz/vocabulary-sets/:setId` and `/pronunciation/vocabulary-sets/:setId`, preserving the exact Set ID and validated public/private Set Detail return path. For empty Sets all three cards remain visible but disabled with **Thêm từ vựng để bắt đầu**; vocabulary management remains usable. No fake progress, pronunciation score or analytics is rendered.
 
 The section title is **Từ vựng trong bộ (N)** with its authoritative ordered-item count. The ordered Vocabulary presentation uses desktop columns **Từ vựng / Phiên âm / Từ loại / Nghĩa / Ví dụ / Thao tác** and mobile fields **Từ vựng / Nghĩa / Thao tác**. Missing read-projection data is shown truthfully without fallback. Canonical Vocabulary exposes **Gỡ khỏi bộ**; owner-private Vocabulary exposes **Chỉnh sửa** and **Gỡ khỏi bộ** through the shared kebab-menu pattern. Removal deletes membership only and preserves Vocabulary and Learning Progress. Manual reorder is deferred.
 
@@ -938,7 +933,7 @@ The compact page begins with a visual **Bộ từ nổi bật** preview followed
 
 The normal catalog uses three compact columns where width permits and nine Sets per client-side page (normally three rows on desktop). Featured IDs are removed before normal search/filter and pagination; controls reset page 1, clamping remains safe and page changes make no request. Cards render persisted Set covers when available and use the deterministic Topic fallback when absent or broken; Topic badge overlays the cover, title/count share one row, description clamps to two lines, and left-aligned **Lưu**/**Xem** text actions use Lucide icons. Violet-heavy treatment is not used.
 
-A successful USER copy navigates to the independent private copy and records best-effort current-tab **Đã lưu** feedback without disabling later intentional copies. That session hint may survive a same-tab reload, but the current API exposes no source-copy relationship, so a fresh session/reload cannot derive authoritative account-level saved-source recognition. Public Set Detail matches the Personal Set Detail visual family while remaining read-only: USER may enter Flashcard or Quiz directly without copying and may save independently; Guest receives login prompting; ADMIN receives no learner or ownership CRUD controls.
+A successful USER copy navigates to the independent private copy and records best-effort current-tab **Đã lưu** feedback without disabling later intentional copies. That session hint may survive a same-tab reload, but the current API exposes no source-copy relationship, so a fresh session/reload cannot derive authoritative account-level saved-source recognition. Public Set Detail matches the Personal Set Detail visual family while remaining read-only: authenticated USER may enter Flashcard, Quiz or Speaking Practice directly without copying and may save independently; Guest receives login prompting; ADMIN receives no learner or ownership CRUD controls.
 
 Discovery preserves labelled native controls, keyboard/focus behavior, live states and no horizontal overflow at `375`, `390`, `768`, `820`, `1366` and `1536`. It provides exact client-side Set CEFR filtering over the complete loaded catalog. Community-shared USER Sets, creator/social attribution, sorting, production featured ranking, server-side global search/pagination and authoritative persistent saved-source recognition remain deferred.
 
@@ -1191,23 +1186,20 @@ Its purpose is to let users listen to the model pronunciation.
 The Pronunciation Practice activity provides:
 
 Microphone button
-Recording state
-Processing state
-Pronunciation result
+Listening/finalizing state
+Transcript-classification result
 Feedback
 Retry action
 
 The microphone interaction must be visually distinct from the model pronunciation button.
 
-The UI should clearly communicate:
-
-🔊 Listen to pronunciation
-
-🎙️ Practice pronunciation
+The UI provides separate semantic Listen and Speak/Stop buttons using Lucide icons. On narrow viewports the actions remain vertically ordered with icon-only Ready controls and explicit Vietnamese accessible names; tablet/desktop retains the approved side-by-side labelled layout. Navigation remains separate below the vocabulary card.
 
 The pronunciation feature should not be presented as a third quiz type.
 
-The exact pronunciation analysis technology and scoring mechanism will be determined during the PLAN phase.
+Action legality comes only from the accepted controller snapshot. First Speak shows a concise disclosure that browser-vendor processing may occur locally or remotely; continuing is explicit and does not promise on-device processing. No microphone starts automatically.
+
+Terminal focus, Retry recovery, target-change/completion focus, atomic live announcements, 44px touch targets, visible focus and reduced-motion behavior follow the accepted accessibility contract. Exact real-device support remains evidence-based; responsive source/mock coverage is not a claim of mobile recognition compatibility.
 
 16. Responsive Design
 

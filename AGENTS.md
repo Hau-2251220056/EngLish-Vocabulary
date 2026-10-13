@@ -1035,6 +1035,17 @@ AI-assisted Learning
 
 External service phải được gọi từ Backend.
 
+Quy tắc Backend-only ở trên tiếp tục áp dụng cho mọi tích hợp third-party do application quản lý.
+
+Ngoại lệ hẹp đã được HUMAN phê duyệt cho Speaking Practice V1:
+
+- Speaking Practice V1 có thể gọi trực tiếp browser-native `window.SpeechRecognition` hoặc `window.webkitSpeechRecognition` từ Frontend, đúng theo SPEC/PLAN/TASK đã được phê duyệt của feature này.
+- Speech recognition có thể liên quan đến việc browser vendor xử lý audio từ xa. Không được tuyên bố hoặc ngụ ý rằng audio được bảo đảm chỉ xử lý trên thiết bị.
+- Ngoại lệ này không cho phép ELVocab thêm direct provider HTTP call, provider API key, audio upload, Backend speech processing, audio persistence hoặc pronunciation scoring.
+- Browser compatibility check, microphone permission handling, truthful privacy disclosure, failure recovery và safe cancellation vẫn là yêu cầu bắt buộc.
+- Ngoại lệ này không cho phép external service khác và không mở rộng scope của Speaking Practice V1.
+- Mọi thay đổi architecture sau này vẫn cần HUMAN approval riêng.
+
 Secret keys:
 
 Never expose in Frontend

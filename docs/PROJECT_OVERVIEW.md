@@ -25,7 +25,7 @@ Hệ thống hỗ trợ:
 - Khám phá và lựa chọn Vocabulary Set theo Topic.
 - Học từ mới bằng Flashcard.
 - Nghe phát âm mẫu của từ vựng.
-- Luyện phát âm bằng cách tự nói và nhận đánh giá.
+- Luyện nói bằng browser recognition và nhận feedback phân loại transcript không chấm điểm.
 - Luyện tập từ vựng qua các dạng Quiz.
 - Ôn tập từ vựng theo cơ chế Spaced Repetition.
 - Theo dõi Learning Progress.
@@ -399,68 +399,30 @@ User có thể nghe lại Model Pronunciation nhiều lần.
 
 ## 10.2. Pronunciation Practice
 
-Flow:
+Speaking Practice V1 là activity USER-only theo Vocabulary Set. Activity đọc payload Learning `NORMAL` đã được Backend authorize, giữ nguyên Set Item order và từng Vocabulary ID, rồi cho phép User nghe mẫu, nói, nhận transcript-classification feedback, chuyển từ, Retry, Restart hoặc Exit về Set Detail hợp lệ.
 
-    Display Word
-        ↓
-    Listen Model Pronunciation
-        ↓
-    Press Microphone
-        ↓
-    User Speaks
-        ↓
-    System Records / Analyzes
-        ↓
-    Pronunciation Assessment
-        ↓
-    Result / Feedback
-        ↓
-    Retry
+Microphone chỉ bắt đầu sau hành động **Nói** và disclosure lần đầu. Không có microphone auto-start khi load, đổi từ, Retry page load hoặc Restart.
 
-Các trạng thái chính có thể bao gồm:
+Các trạng thái V1 gồm loading/ready, disclosure, unsupported/insecure context, starting, listening, finalizing, result/inconclusive, recoverable error, inaccessible/empty, cancelling/disposed và completion tạm thời trong session.
 
-- Ready.
-- Recording.
-- Processing.
-- Result.
-- Error.
-- Unsupported.
+## 10.3. Transcript Classification — V1
 
-## 10.3. Pronunciation Assessment
+V1 dùng browser-native `SpeechRecognition`/`webkitSpeechRecognition` với ngôn ngữ `en-US`. Browser hoặc browser vendor có thể xử lý audio từ xa; ELVocab không cam kết on-device processing.
 
-Hệ thống đánh giá phần phát âm của User.
+Transcript được so khớp bảo thủ theo exact normalized word và cho một trong bốn kết quả:
 
-Kết quả có thể bao gồm:
+- `PRIMARY_MATCH`: transcript chính khớp từ mục tiêu.
+- `ALTERNATIVE_MATCH`: từ mục tiêu chỉ xuất hiện trong alternative; đây là kết quả không chắc chắn.
+- `NO_MATCH`: có transcript dùng được nhưng không khớp.
+- `INCONCLUSIVE`: không có đủ dữ liệu dùng được để kết luận.
 
-- Overall score.
-- Accuracy score.
-- Fluency score.
-- Completeness score.
-- Pass/Fail.
-- Feedback.
+Đây không phải acoustic pronunciation assessment. V1 không có percentage, pronunciation score, pass/fail threshold, phoneme analysis, fluency hoặc completeness score.
 
-Công nghệ và phương pháp tính score cụ thể sẽ được quyết định trong PLAN/Technical Design.
+`Stop` là graceful finalization: kết quả cuối đến trễ trong giới hạn vẫn được phân loại. Nếu User chủ động Stop và không có transcript dùng được, UI trở về Ready mà không hiển thị assessment. Permission denial, missing audio-capture device, spontaneous no-speech và service errors vẫn là các failure riêng có recovery phù hợp.
 
-Không được tự ý giả định một dịch vụ hoặc công nghệ cụ thể nếu chưa được phê duyệt.
+## 10.4. Privacy and Persistence — V1
 
-## 10.4. Passing Rule
-
-Business Rule hiện tại:
-
-    score > 50%  → PASS
-    score ≤ 50% → FAIL
-
-Không được tự ý thay đổi ngưỡng này nếu chưa được người phát triển phê duyệt.
-
-## 10.5. Pronunciation History
-
-Nếu được triển khai, hệ thống có thể lưu lịch sử luyện phát âm để:
-
-- Theo dõi tiến bộ.
-- Hiển thị kết quả học tập.
-- Hỗ trợ Learning Progress.
-
-Cấu trúc lưu trữ cụ thể sẽ được quyết định trong Database Design.
+ELVocab Backend không nhận audio hoặc transcript của Speaking Practice V1. Activity không lưu attempt/history/result, không tạo Learning event, không cập nhật Learning Progress, SRS, XP, Level, Streak hoặc Achievement, và không gọi provider HTTP API. Transcript chỉ tồn tại tạm thời trong frontend session để hiển thị feedback an toàn.
 
 ---
 
@@ -576,7 +538,7 @@ Learning Progress có thể bao gồm:
 - Words needing review.
 - Review count.
 - Quiz accuracy.
-- Pronunciation results.
+- Pronunciation results only in a separately approved future persistence scope; Speaking Practice V1 does not contribute them.
 - Learning history.
 - XP.
 - Level.
@@ -1117,7 +1079,7 @@ Ví dụ:
 
 - User chỉ review một từ → có thể cập nhật Learning Progress + SRS + XP + Streak.
 - User làm Quiz → cập nhật Quiz Result + Learning Progress + XP + Streak.
-- User luyện Pronunciation → cập nhật Pronunciation Result + Learning Progress phù hợp + XP + Streak.
+- Speaking Practice V1 → không cập nhật Pronunciation Result, Learning Progress, SRS, XP hoặc Streak.
 
 Frontend không được thực hiện hai learning flows cho cùng một activity nếu điều đó dẫn tới cộng XP hoặc cập nhật progress hai lần.
 
@@ -1163,8 +1125,8 @@ Pronunciation bao gồm:
 
 1. Nghe Model Pronunciation.
 2. User tự phát âm.
-3. Hệ thống đánh giá.
-4. Pass khi score > 50%.
+3. Browser-native speech recognition tạo transcript candidates.
+4. Hệ thống phân loại transcript bảo thủ để đưa feedback không chấm điểm.
 
 Pronunciation Practice là learning activity riêng, không phải Quiz Type.
 
@@ -1229,12 +1191,12 @@ AI Agent PHẢI tuân thủ:
 2. Không tự ý thêm feature mới.
 3. Không tự ý xóa feature đã được xác định.
 4. Không tự ý thay đổi Business Rule.
-5. Không tự ý thay đổi pronunciation passing threshold `> 50%`.
+5. Không tự ý thêm pronunciation score, pass/fail threshold hoặc acoustic assessment vào Speaking Practice V1.
 6. Không tự ý thay đổi XP rules.
 7. Không tự ý thay đổi Level Max = 15.
 8. Không tự ý thay đổi Daily Goal rules.
 9. Không tự ý thay đổi Streak rules.
-10. Không tự ý quyết định công nghệ Pronunciation Assessment nếu chưa có PLAN.
+10. Không tự ý thay đổi browser-native recognition architecture hoặc thêm pronunciation assessment/provider ngoài PLAN đã được phê duyệt.
 11. Không tự ý mở rộng Community.
 12. Không tự ý thêm AI feature.
 13. Không tự ý tạo thêm User Role.

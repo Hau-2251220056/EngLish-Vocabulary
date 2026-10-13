@@ -903,6 +903,8 @@ Không bắt buộc lưu audio của User vào Database.
 Không bắt buộc tạo PRONUNCIATION_ATTEMPT.
 Không tạo các bảng pronunciation riêng nếu chưa có nhu cầu thực tế.
 
+Speaking Practice V1 đã được phê duyệt với boundary read-only rõ ràng: không lưu audio, transcript, classification result hoặc attempt; không tạo `PRONUNCIATION_ATTEMPT`; và không ghi Learning Progress, SRS, XP, Level, Streak hay Achievement. Activity chỉ đọc Vocabulary/Set identity đã được authorize qua Learning `NORMAL`. Mọi persistence hoặc pronunciation scoring sau V1 cần SPEC/PLAN, schema và migration approval riêng.
+
 Nếu pronunciation practice được xác định là một qualifying learning activity, Backend có thể cập nhật LEARNING_PROGRESS, XP và Streak theo business rules đã được phê duyệt.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, phải thiết kế migration và cập nhật tài liệu Database trước khi triển khai.
