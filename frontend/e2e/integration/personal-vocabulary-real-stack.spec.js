@@ -121,8 +121,8 @@ test("Set Detail keeps an empty Set manageable and appends the selected exact id
   await login(page, accounts.owner);
   await page.goto(`/my/vocabulary-sets/${detailSet.id}`);
   await expect(page.getByRole("heading", { level: 1, name: `${prefix} Detail UI` })).toBeVisible();
-  await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(2);
-  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz/ })).toHaveCount(0);
+  await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(3);
+  await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
   const dialog = page.getByRole("dialog", { name: "Thêm từ vựng" });
