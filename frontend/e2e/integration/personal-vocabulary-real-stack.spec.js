@@ -30,6 +30,7 @@ test.beforeAll(async () => {
   ids.users.push(owner.id, outsider.id, admin.id);
   const topic = await prisma.tOPIC.create({ data: { name: `${prefix} Topic` } }); ids.topic = topic.id;
   canonical = await word(null, sharedWord, "noun", "canonical book");
+  await word(null, `${prefix}-quiz-fallback`, "adjective", "canonical fallback");
   privateOne = await word(owner.id, sharedWord, "verb", "private booking");
   privateTwo = await word(owner.id, sharedWord, "noun", "private volume");
   const foreign = await word(outsider.id, sharedWord, "adjective", "foreign hidden");
@@ -174,9 +175,12 @@ test("Flashcard renders exact private content/POS and speaks the exact private w
 test("Multiple Choice Quiz retains ordered private identities, primary meanings and POS", async ({ page }) => {
   await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: sharedWord } });
   await login(page, accounts.owner);
-  const questionsResponse = page.waitForResponse((response) => response.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && response.status() === 200);
+  const questionsResponse = page.waitForResponse((response) => response.url().includes(`/api/quiz/sets/${quizSet.id}/questions`)
+    && response.request().method() === "GET");
   await page.goto(`/quiz/vocabulary-sets/${quizSet.id}`);
-  const payload = await (await questionsResponse).json();
+  const response = await questionsResponse;
+  const payload = await response.json();
+  expect(response.status(), `Quiz questions failed: ${JSON.stringify(payload)}`).toBe(200);
   expect(payload.data.quiz_type).toBe("MULTIPLE_CHOICE");
   expect(payload.data.questions.map(({ vocabulary_id }) => vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
   expect(payload.data.questions.map(({ position }) => position)).toEqual([1, 2]);

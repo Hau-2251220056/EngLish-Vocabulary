@@ -65,7 +65,8 @@ test("choices are opaque, deterministic and responsive without adding distractor
   await page.reload(); expect((await (await reload).json()).data.questions).toEqual(payload.data.questions);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   for (const radio of await page.getByRole("radio").all()) expect((await radio.boundingBox()).height).toBeGreaterThanOrEqual(44);
-  await expect(page.getByRole("progressbar").locator("span")).toHaveCSS("transition-duration", "0s");
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+  await expect(page.getByRole("progressbar").locator("span")).toHaveCSS("transition-property", "none");
   expect(await progressSnapshot(learnerRecord.id)).toEqual([]);
 });
 

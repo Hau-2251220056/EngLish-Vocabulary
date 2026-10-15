@@ -88,6 +88,19 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     }
   });
 
+  test("progress animation follows the reduced-motion preference", async ({ page }) => {
+    await installQuizApiMock(page);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/quiz/vocabulary-sets/set-flow");
+    const progressFill = page.getByRole("progressbar").locator("span");
+    expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(false);
+    await expect(progressFill).toHaveCSS("transition-property", "width");
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await expect(progressFill).toHaveCSS("transition-property", "none");
+  });
+
   test("Guest and ADMIN cannot enter USER Quiz", async ({ browser }) => {
     for (const options of [{ guest: true }, { user: publicAdmin }]) { const context = await browser.newContext(); const page = await context.newPage(); const calls = await installQuizApiMock(page, options); await page.goto("/quiz/vocabulary-sets/set-flow"); await expect(page).toHaveURL(options.guest ? /\/login$/ : /\/dashboard$/); expect(calls.questions).toHaveLength(0); await context.close(); }
   });
