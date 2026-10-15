@@ -154,20 +154,7 @@ Testing must remain aligned with the approved SPEC, PLAN, and TASK.
 
 Do not introduce unrelated test scenarios merely because they are technically possible.
 
-For example:
-
-If the current TASK implements:
-
-VI_TO_ENGLISH quiz
-
-do not require:
-
-MISSING_LETTER quiz
-Pronunciation Practice
-Community
-Achievement
-
-unless those behaviors are affected by the current change or are explicitly included in the approved regression scope.
+For example, if the current TASK changes one Quiz contract, do not require unrelated learning, pronunciation, community, or achievement behavior unless it is affected or explicitly included in regression scope.
 
 Testing should be thorough but proportional.
 
@@ -371,7 +358,7 @@ XP calculation.
 Level calculation.
 Streak calculation.
 Validation logic.
-Character-position comparison.
+Answer-choice generation.
 Integration Tests
 
 Use when multiple modules interact.
@@ -487,9 +474,8 @@ Examples relevant to this project:
 Quiz
 Correct answer.
 Incorrect answer.
-Missing-letter answer.
-Character-position comparison when applicable.
-Score calculation.
+Active answer-input and grading contract.
+Feedback behavior when applicable.
 Quiz completion behavior.
 Vocabulary Sets
 Ownership.
@@ -568,6 +554,19 @@ For a major cross-cutting change, run the broader test suite.
 For a localized change, a targeted regression suite may be sufficient.
 
 Do not run every possible test blindly when targeted verification provides sufficient confidence.
+
+### Legacy / Regression Impact Scan
+
+When a change replaces, removes, or significantly alters an existing feature or contract, scan all affected active repository surfaces, not only the primary feature folder. Check for retired API types and parameters, removed response fields, obsolete routes/navigation, test-referenced CSS selectors, stale mocks/fixtures, dependent callers/shared components, integration and E2E tests, and active documentation.
+
+Classify every match as one of:
+
+- active stale reference requiring correction;
+- intentional negative or rejection coverage;
+- historical documentation explicitly marked superseded;
+- unrelated reference that must remain untouched.
+
+For database-backed integration tests that cannot safely run locally, statically compare their requests, selectors, fixtures, and assertions with the current implementation. Report them as `NOT RUN` until an authorized isolated environment executes them; static compatibility review is not a passing execution result.
 
 Step 14 — Static and Build Verification
 

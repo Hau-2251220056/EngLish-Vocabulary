@@ -552,11 +552,9 @@ Only apply this section when quiz functionality is affected.
 Verify:
 
 answer validation occurs on the backend where required
-case-sensitivity behavior matches the specification
-missing-letter behavior matches the specification
-character-position feedback is consistent with approved behavior
-score behavior is deterministic
-XP behavior is correct
+the active prompt, answer, and grading contract matches the specification
+feedback and completion behavior match the approved UI contract
+question identity and ordering remain deterministic where required
 invalid submissions are handled safely
 repeated submissions do not create unintended rewards
 
@@ -706,6 +704,12 @@ community features
 If regression risk is significant, require additional verification before approval.
 
 Do not demand a full repository-wide regression test for every small change.
+
+### Legacy / Regression Impact Scan
+
+When the change replaces, removes, or significantly alters a feature or contract, verify that affected active surfaces were searched beyond the primary feature folder. Review retired API types/parameters, removed response fields, obsolete routes/navigation, CSS selectors used by tests, stale mocks/fixtures, dependent callers/shared components, integration/E2E coverage, and active documentation.
+
+Distinguish active stale references from intentional rejection tests, explicitly superseded historical documentation, and unrelated references that should remain unchanged. If database-backed integration tests could not safely run locally, require a static compatibility review of their requests, selectors, fixtures, and assertions, and keep execution status `NOT RUN` until guarded CI or another authorized isolated environment runs them.
 
 24. Code Quality Review
 

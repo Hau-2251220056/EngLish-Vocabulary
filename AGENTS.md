@@ -341,6 +341,13 @@ test
 review
 → Review implementation against requirements and project rules
 
+ui-ux-review
+→ Review changed UI flows for interaction, responsive, accessibility and visual-consistency regressions before HUMAN visual approval
+
+UI-changing implementations should run `ui-ux-review` in Focused mode before HUMAN visual approval. Backend-only and documentation-only changes do not require UI/UX Review. Full UI/UX Review requires an explicit HUMAN request.
+
+When a feature or contract is replaced, removed or significantly changed, TEST and REVIEW must complete their Legacy/Regression Impact Scan. UI/UX Review, TEST and REVIEW remain separate workflow stages with separate evidence and verdicts.
+
 AGENTS.md định nghĩa:
 
 Global Rules
@@ -855,22 +862,13 @@ không phải security boundary.
 
 Project hiện tại gồm:
 
-VI_TO_ENGLISH
-MISSING_LETTER
+MULTIPLE_CHOICE
 
 AI Agent không được tự ý thêm quiz type mới nếu chưa được approve.
 
-Per-character feedback:
+Multiple Choice hiển thị từ tiếng Anh và bốn lựa chọn nghĩa tiếng Việt. Backend tạo lựa chọn, giữ kín đáp án trước submission và chấm điểm authoritative theo approved behavior.
 
-Correct character
-→ correct
-
-Incorrect character
-→ incorrect
-
-được tính runtime theo approved behavior.
-
-Không tạo database table riêng chỉ để lưu character feedback nếu không có approved requirement.
+Không tạo database table riêng chỉ để lưu Quiz Session, Quiz Attempt hoặc answer history nếu không có approved requirement.
 
 20. Pronunciation Rules
 
