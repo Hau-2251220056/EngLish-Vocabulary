@@ -85,17 +85,18 @@ test("@topic Guest reads the real Set-first catalog and searches client-side", a
   await page.goto("/topics");
   await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveAttribute("href", "/login");
   await expect(page.locator("#topic-list-title")).toBeVisible();
-  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
-  await expect(page.getByRole("heading", { name: nullableSet.name })).toBeVisible();
+  const catalogList = page.getByRole("list", { name: "Danh sách bộ từ hệ thống" });
+  await expect(catalogList.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(catalogList.getByRole("heading", { name: nullableSet.name })).toBeVisible();
   await expect(
-    page.getByRole("article").filter({ hasText: nullableSet.name })
+    catalogList.getByRole("article").filter({ hasText: nullableSet.name })
       .getByText("Chưa có mô tả cho bộ từ này."),
   ).toBeVisible();
   await expect(page.locator("#discovery-search")).toHaveAccessibleName("Tìm kiếm bộ từ");
   const initialRequestCount = topicRequests.length;
 
   await page.locator("#discovery-search").fill("real browser journey");
-  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(catalogList.getByRole("heading", { name: describedSet.name })).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Danh sách bộ từ hệ thống" })
       .getByRole("heading", { name: nullableSet.name }),
@@ -144,7 +145,10 @@ test("@topic public loading, empty, error/retry and not-found states are safe", 
   await page.reload();
   await expect(page.getByRole("alert")).toBeVisible();
   await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Danh sách bộ từ hệ thống" })
+      .getByRole("heading", { name: describedSet.name }),
+  ).toBeVisible();
   await page.unroute("**/api/topics");
 
   await page.goto(`/topics/${randomUUID()}`);
@@ -157,7 +161,10 @@ test("@topic USER reaches public Topics but not ADMIN management", async ({ page
   await expect(page.getByRole("link", { name: "Quản lý chủ đề" })).toHaveCount(0);
 
   await page.goto("/topics");
-  await expect(page.getByRole("heading", { name: describedSet.name })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Danh sách bộ từ hệ thống" })
+      .getByRole("heading", { name: describedSet.name }),
+  ).toBeVisible();
   await expect(page).toHaveURL(/\/topics$/);
   await expect(page.getByRole("link", { name: "Đăng nhập" })).toHaveCount(0);
   await expect(page.locator(".authenticated-app")).toBeVisible();

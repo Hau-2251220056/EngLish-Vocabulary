@@ -12,6 +12,10 @@ const fixturePrefix = `E2E-Set-${runId}`;
 const fixtureDomain = `${runId}.vocabulary-set.integration.test`;
 const fixturePassphrase = `Safe-${randomUUID()}`;
 const admin = { email: `admin@${fixtureDomain}`, display_name: "System Set Administrator", role: "ADMIN", is_active: true };
+const airportMeaning = "sân bay";
+const airportExample = "We arrived at the airport early.";
+const passportMeaning = "hộ chiếu";
+const passportExample = "Keep your passport safe.";
 let topic;
 let publicSet;
 
@@ -23,8 +27,19 @@ test.beforeAll(async () => {
   const account = await prisma.uSER.create({ data: { ...admin, password_hash } });
   topic = await prisma.tOPIC.create({ data: { name: `${fixturePrefix} Travel`, description: "Public Set topic" } });
   const [firstVocabulary, secondVocabulary] = await Promise.all([
-    prisma.vOCABULARY.create({ data: { word: `${fixturePrefix} airport` } }),
-    prisma.vOCABULARY.create({ data: { word: `${fixturePrefix} passport`, phonetic: "/pɑːspɔːt/" } }),
+    prisma.vOCABULARY.create({
+      data: {
+        word: `${fixturePrefix} airport`,
+        meanings: { create: [{ part_of_speech: "noun", meaning_vi: airportMeaning, examples: { create: [{ example_en: airportExample }] } }] },
+      },
+    }),
+    prisma.vOCABULARY.create({
+      data: {
+        word: `${fixturePrefix} passport`,
+        phonetic: "/pɑːspɔːt/",
+        meanings: { create: [{ part_of_speech: "noun", meaning_vi: passportMeaning, examples: { create: [{ example_en: passportExample }] } }] },
+      },
+    }),
   ]);
   publicSet = await prisma.vOCABULARY_SET.create({
     data: {
@@ -71,12 +86,16 @@ test("Guest discovers System Sets by Topic, searches locally, and opens ordered 
 
   await expect(page.getByRole("heading", { name: publicSet.name })).toBeVisible();
   const orderedItems = page.getByRole("table");
-  await expect(orderedItems).toContainText(`${fixturePrefix} passport`);
-  await expect(orderedItems).toContainText(`${fixturePrefix} airport`);
-  await expect(orderedItems.locator("tbody tr").first()).toContainText(`${fixturePrefix} passport`);
-  await expect(orderedItems.locator("tbody tr").nth(1)).toContainText(`${fixturePrefix} airport`);
+  await expect(orderedItems.getByRole("columnheader")).toHaveText(["Từ vựng", "Nghĩa", "Phiên âm", "Ví dụ"]);
+  await expect(orderedItems.getByRole("row").nth(1).getByRole("cell")).toHaveText([
+    `${fixturePrefix} passport`, passportMeaning, "/pɑːspɔːt/", passportExample,
+  ]);
+  await expect(orderedItems.getByRole("row").nth(2).getByRole("cell")).toHaveText([
+    `${fixturePrefix} airport`, airportMeaning, "—", airportExample,
+  ]);
   await expect(page.getByRole("link", { name: "Đăng nhập để học và lưu" })).toHaveAttribute("href", "/login");
-  await expect(page.getByText(/Meaning|CEFR|Ví dụ/i)).toHaveCount(0);
+  await expect(page.getByText(admin.email, { exact: false })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Sao chép|Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
 });
 
 test("Public System Set routes provide accessible loading, error/retry, and not-found states", async ({ page }) => {
