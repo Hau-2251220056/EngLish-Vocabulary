@@ -171,20 +171,32 @@ test("Flashcard renders exact private content/POS and speaks the exact private w
   await expect.poll(() => page.evaluate(() => window.__spoken)).toEqual(["reserve"]);
 });
 
-test("both Quiz modes retain exact private identities, selected meaning and POS", async ({ page }) => {
+test("Multiple Choice Quiz retains ordered private identities, primary meanings and POS", async ({ page }) => {
   await prisma.vOCABULARY.update({ where: { id: privateOne.id }, data: { word: sharedWord } });
   await login(page, accounts.owner);
-  const viResponse = page.waitForResponse((r) => r.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && r.status() === 200);
-  await page.goto(`/quiz/vocabulary-sets/${quizSet.id}?type=VI_TO_ENGLISH`);
-  const vi = await (await viResponse).json(); expect(vi.data.questions.map((q) => q.vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
-  await expect(page.getByRole("heading", { name: "private booking" })).toBeVisible(); await expect(page.getByText("verb", { exact: true })).toBeVisible();
-  await page.getByLabel("Câu trả lời bằng tiếng Anh").fill(sharedWord); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+  const questionsResponse = page.waitForResponse((response) => response.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && response.status() === 200);
+  await page.goto(`/quiz/vocabulary-sets/${quizSet.id}`);
+  const payload = await (await questionsResponse).json();
+  expect(payload.data.quiz_type).toBe("MULTIPLE_CHOICE");
+  expect(payload.data.questions.map(({ vocabulary_id }) => vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
+  expect(payload.data.questions.map(({ position }) => position)).toEqual([1, 2]);
+  expect(payload.data.questions.map(({ prompt }) => prompt)).toEqual([
+    { word: sharedWord, part_of_speech: "verb" },
+    { word: sharedWord, part_of_speech: "noun" },
+  ]);
+  expect(payload.data.questions[0].choices).toContainEqual(expect.objectContaining({ label: "private booking" }));
+  expect(payload.data.questions[1].choices).toContainEqual(expect.objectContaining({ label: "private volume" }));
+  expect(JSON.stringify(payload.data.questions)).not.toContain("foreign hidden");
+
+  await expect(page.getByRole("heading", { name: sharedWord })).toBeVisible();
+  await expect(page.getByText("verb", { exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: /private booking/ }).check();
+  await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
   await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
-  const unResponse = page.waitForResponse((r) => r.url().includes(`/api/quiz/sets/${quizSet.id}/questions`) && r.status() === 200);
-  await page.goto(`/quiz/vocabulary-sets/${quizSet.id}?type=UNSCRAMBLE_WORD`);
-  const un = await (await unResponse).json(); expect(un.data.questions.map((q) => q.vocabulary_id)).toEqual([privateOne.id, privateTwo.id]);
-  expect(un.data.questions[0].prompt.tiles.map((tile) => tile.character).sort()).toEqual([...sharedWord].sort());
-  await expect(page.getByRole("heading", { name: "private booking" })).toBeVisible(); await expect(page.getByText("verb", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Câu tiếp theo" }).click();
+  await expect(page.getByRole("heading", { name: sharedWord })).toBeVisible();
+  await expect(page.getByText("noun", { exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /private volume/ })).toBeVisible();
 });
 
 async function login(page, account) { await page.context().clearCookies(); await page.goto("/login"); await page.locator("#login-email").fill(account.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/dashboard/); }
