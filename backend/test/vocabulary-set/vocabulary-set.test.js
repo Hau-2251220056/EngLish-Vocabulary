@@ -577,7 +577,11 @@ test("USER atomically adds canonical public words to an owned private Set withou
   assert.equal((await add(secondVocabulary.id, ownerCookie, foreignDestination.id)).status, 404);
   assert.equal((await add(randomUUID())).status, 404);
   assert.equal((await add(secondVocabulary.id, adminCookie)).status, 403);
-  assert.equal((await add(secondVocabulary.id, undefined)).status, 401);
+  response = await http.request(endpoint, {
+    method: "POST",
+    json: { source_set_id: source.id, vocabulary_id: secondVocabulary.id },
+  });
+  assert.equal(response.status, 401);
 });
 
 test("owner-aware picker returns canonical and own-private metadata without foreign-private leakage", async () => {
