@@ -418,7 +418,194 @@ test("authenticated USER can learn or quiz a public Set without copying and reta
   await expect(learningActions.getByRole("link", { name: /Luyện nói/ })).toHaveAttribute("href", "/pronunciation/vocabulary-sets/set-airport");
   await expect(page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" })).toBeVisible();
   await expect(page.getByText("Học trực tiếp từ bộ từ công khai")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Chỉnh sửa|Xóa/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" })).toBeVisible();
+});
+
+test("USER selects a personal destination, confirms once, and receives success feedback", async ({ page }) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const calls = [];
+  await installPublicItemAddApi(page, { calls });
+  await page.goto("/vocabulary-sets/set-airport");
+
+  const trigger = page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Thêm vào bộ từ cá nhân" });
+  await expect(dialog.getByText("passport", { exact: true })).toBeVisible();
+  const confirm = dialog.getByRole("button", { name: "Thêm vào bộ từ" });
+  await expect(confirm).toBeDisabled();
+  await dialog.getByLabel("Bộ từ đích").selectOption("personal-1");
+  await confirm.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("Đã thêm passport vào Du lịch cá nhân.");
+  expect(calls).toEqual([{ setId: "personal-1", body: { source_set_id: "set-airport", vocabulary_id: "vocabulary-passport" } }]);
+  await expect(trigger).toBeFocused();
+});
+
+test("destination dialog contains focus while personal Sets load and after loading fails", async ({ page }) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let rejectSets;
+  const setsResponse = new Promise((resolve) => { rejectSets = resolve; });
+  await installPublicItemAddApi(page, { personalSetsHandler: async (route) => {
+    await setsResponse;
+    await route.fulfill({ status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } });
+  } });
+  await page.goto("/vocabulary-sets/set-airport");
+
+  const trigger = page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Thêm vào bộ từ cá nhân" });
+  const close = dialog.getByRole("button", { name: "Đóng chọn bộ từ" });
+  await expect(dialog).toBeFocused();
+  await expect(dialog.getByRole("status")).toHaveText("Đang tải bộ từ…");
+
+  await trigger.focus();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await trigger.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(close).toBeFocused();
+
+  rejectSets();
+  await expect(dialog.getByRole("alert")).toContainText("Không thể tải danh sách bộ từ.");
+  const retry = dialog.getByRole("button", { name: "Thử lại" });
+  await trigger.focus();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(retry).toBeFocused();
+
+  await close.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test("destination dialog stays compact and viewport-positioned across responsive widths", async ({ page }, testInfo) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const personalSets = Array.from({ length: 40 }, (_, index) => ({
+    id: `personal-${index + 1}`,
+    name: `Bộ từ cá nhân ${index + 1}`,
+    item_count: index,
+  }));
+  await installPublicItemAddApi(page, { personalSets });
+
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/vocabulary-sets/set-airport");
+    const trigger = page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" });
+    await expect(trigger).toHaveCSS("cursor", "pointer");
+    await trigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Thêm vào bộ từ cá nhân" });
+    const overlay = page.getByTestId("add-public-vocabulary-overlay");
+    const destination = dialog.getByLabel("Bộ từ đích");
+    await expect.poll(() => overlay.evaluate((element) => element.parentElement === document.body)).toBe(true);
+    await expect.poll(() => overlay.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left === 0 && rect.top === 0 && rect.width === window.innerWidth && rect.height === window.innerHeight;
+    })).toBe(true);
+    await expect(destination).toHaveValue("");
+    await expect(destination).toHaveCSS("cursor", "pointer");
+    await expect(destination.locator("option")).toHaveCount(41);
+    await expect(destination.locator("option").first()).toHaveText("Chọn bộ từ cá nhân...");
+    const initialConfirm = dialog.getByRole("button", { name: "Thêm vào bộ từ" });
+    await expect(initialConfirm).toBeDisabled();
+    await expect(initialConfirm).toHaveCSS("cursor", "not-allowed");
+    await destination.selectOption("personal-40");
+    await expect(destination).toHaveValue("personal-40");
+    await expect(dialog.getByRole("button", { name: "Thêm vào bộ từ" })).toBeEnabled();
+    await expect.poll(() => dialog.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(450);
+    await expect.poll(() => dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      if (window.innerWidth < 641) return Math.abs(rect.bottom - window.innerHeight) < 2 && rect.left === 0 && rect.right === window.innerWidth;
+      return Math.abs(rect.left + (rect.width / 2) - (window.innerWidth / 2)) < 2
+        && Math.abs(rect.top + (rect.height / 2) - (window.innerHeight / 2)) < 2;
+    })).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    const close = dialog.getByRole("button", { name: "Đóng chọn bộ từ" });
+    const confirm = dialog.getByRole("button", { name: "Thêm vào bộ từ" });
+    const cancel = dialog.getByRole("button", { name: "Hủy" });
+    await expect(destination).toHaveCSS("cursor", "pointer");
+    await expect(close).toHaveCSS("cursor", "pointer");
+    await expect(cancel).toHaveCSS("cursor", "pointer");
+    await expect(confirm).toHaveCSS("cursor", "pointer");
+    await expect(confirm).toHaveCSS("background-color", "rgb(76, 162, 230)");
+    await close.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(confirm).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath(`public-word-dialog-${viewport.width}px.png`) });
+
+    if (viewport.width === 375) await close.click();
+    else if (viewport.width === 768) await overlay.click({ position: { x: 4, y: 4 } });
+    else await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+});
+
+test("duplicate add preserves selection for retry and pending prevents double submission", async ({ page }) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let attempts = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  await installPublicItemAddApi(page, { itemHandler: async (route) => {
+    attempts += 1;
+    if (attempts === 1) return route.fulfill({ status: 409, json: { success: false, error: { code: "VOCABULARY_ALREADY_IN_SET", message: "duplicate" } } });
+    await gate;
+    return route.fulfill({ status: 201, json: { success: true, data: { id: "membership-1", vocabulary_id: "vocabulary-passport", position: 2 } } });
+  } });
+  await page.goto("/vocabulary-sets/set-airport");
+  await page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" }).click();
+  const dialog = page.getByRole("dialog", { name: "Thêm vào bộ từ cá nhân" });
+  const destination = dialog.getByLabel("Bộ từ đích");
+  await destination.selectOption("personal-1");
+  const confirm = dialog.getByRole("button", { name: "Thêm vào bộ từ" });
+  await confirm.click();
+  await expect(dialog.getByRole("alert")).toHaveText("Từ này đã có trong bộ");
+  await expect(destination).toHaveValue("personal-1");
+  await confirm.click();
+  const pendingConfirm = dialog.getByRole("button", { name: "Đang thêm…" });
+  await expect(pendingConfirm).toBeDisabled();
+  await expect(pendingConfirm).toHaveCSS("cursor", "not-allowed");
+  await expect(destination).toHaveCSS("cursor", "not-allowed");
+  await expect(dialog.getByRole("button", { name: "Hủy" })).toHaveCSS("cursor", "not-allowed");
+  await expect(dialog.getByRole("button", { name: "Đóng chọn bộ từ" })).toHaveCSS("cursor", "not-allowed");
+  await pendingConfirm.click({ force: true });
+  expect(attempts).toBe(2);
+  release();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("destination picker handles empty state, Escape focus return, and mobile bounds", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installPublicItemAddApi(page, { personalSets: [] });
+  await page.goto("/vocabulary-sets/set-airport");
+  const trigger = page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Thêm vào bộ từ cá nhân" });
+  const createSetLink = dialog.getByRole("link", { name: "Tạo bộ từ cá nhân" });
+  await expect(createSetLink).toHaveAttribute("href", "/my/vocabulary-sets");
+  await expect(createSetLink).toHaveCSS("cursor", "pointer");
+  await expect.poll(() => dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.left >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight;
+  })).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 test("Guest public detail stays read-only and prompts login for authenticated actions", async ({ page }) => {
@@ -428,11 +615,10 @@ test("Guest public detail stays read-only and prompts login for authenticated ac
   await page.goto("/vocabulary-sets/set-airport");
   await expect(page.getByRole("heading", { name: "Sân bay cơ bản" })).toBeVisible();
   const vocabularyTable = page.getByRole("table");
-  await expect(vocabularyTable.getByRole("columnheader")).toHaveText(["Từ vựng", "Nghĩa", "Phiên âm", "Ví dụ"]);
+  await expect(vocabularyTable.getByRole("columnheader")).toHaveText(["Từ vựng", "Nghĩa"]);
   await expect(vocabularyTable).toContainText("hộ chiếu");
-  await expect(vocabularyTable).toContainText("Keep your passport safe.");
-  await expect(vocabularyTable).toContainText("Giữ hộ chiếu của bạn an toàn.");
-  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await expect(vocabularyTable.getByText("Keep your passport safe.")).toBeHidden();
+  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await expect(page.getByRole("link", { name: "Đăng nhập để học và lưu" })).toHaveAttribute("href", "/login");
   await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Sao chép|Chỉnh sửa|Xóa|Thêm từ/ })).toHaveCount(0);
@@ -460,7 +646,7 @@ test("Public Detail paginates ten ordered words, keeps controls outside mobile s
   await expect(page.getByText("Trang 1 / 2", { exact: true })).toBeVisible();
   await expect(pagination.getByRole("button", { name: "Trước" })).toBeDisabled();
   await expect(page.locator(".set-detail-table-wrap").getByRole("navigation")).toHaveCount(0);
-  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 
   const next = pagination.getByRole("button", { name: "Sau" });
   await next.focus();
@@ -485,6 +671,81 @@ test("ADMIN browses in App Shell without learner or management actions", async (
   await expect(page.getByRole("button", { name: /Lưu/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Đăng nhập để lưu" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Học|Quiz|Luyện nói/ })).toHaveCount(0);
+  await page.goto("/vocabulary-sets/set-airport");
+  await expect(page.getByRole("columnheader")).toHaveText(["Từ vựng", "Nghĩa", "Phiên âm", "Ví dụ"]);
+  await expect(page.getByRole("button", { name: /Thêm .* vào bộ từ cá nhân/ })).toHaveCount(0);
+});
+
+test("Public Detail table responds to content width across supported viewports", async ({ page }, testInfo) => {
+  const longItem = {
+    id: "item-long",
+    vocabulary_id: "vocabulary-long",
+    position: 1,
+    word: "pneumonoultramicroscopicsilicovolcanoconiosis-without-breaks",
+    phonetic: "/ˌnjuːmənəʊltrəˌmaɪkrəˈskɒpɪk/",
+    primary_meaning: {
+      meaning_vi: "Một nghĩa tiếng Việt rất dài để xác nhận nội dung tự ngắt dòng mà không làm vỡ bảng",
+      example: {
+        example_en: "A deliberately long example sentence verifies that content wraps naturally in the expanded table layout.",
+        example_vi: "Câu ví dụ dài xác nhận bảng vẫn đọc được.",
+      },
+    },
+  };
+  await installDiscoveryApi(page, { detailHandler: (route, _setId, summary) => route.fulfill(ok({ ...summary, items: [longItem] })) });
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+
+  const viewports = [
+    [320, 568], [375, 812], [390, 844], [430, 932], [600, 900], [667, 375],
+    [768, 1024], [783, 900], [784, 900], [820, 1180], [900, 430], [1023, 700],
+    [1024, 768], [1280, 800], [1440, 900],
+  ];
+  for (const [width, height] of viewports) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/vocabulary-sets/set-airport");
+    await expectPublicTableLayout(page, { hasActions: true });
+    if ([783, 784, 1023, 1024].includes(width)) {
+      await page.screenshot({ path: testInfo.outputPath(`public-table-${width}x${height}.png`) });
+    }
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/vocabulary-sets/set-airport");
+  const wrapper = page.locator(".public-set-table-wrap");
+  await wrapper.evaluate((element) => { element.style.width = "831px"; });
+  await expectPublicTableLayout(page, { expanded: false, hasActions: true });
+  await page.screenshot({ path: testInfo.outputPath("public-table-container-831px.png") });
+  await wrapper.evaluate((element) => { element.style.width = "836px"; });
+  await expectPublicTableLayout(page, { expanded: true, hasActions: true });
+  await page.screenshot({ path: testInfo.outputPath("public-table-container-836px.png") });
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/vocabulary-sets/set-airport");
+  await page.evaluate(() => { document.body.style.zoom = "200%"; });
+  await expectPublicTableLayout(page, { hasActions: true });
+});
+
+test("Guest responsive table never renders an empty action column", async ({ page }) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page);
+  for (const width of [320, 820, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/vocabulary-sets/set-airport");
+    await expectPublicTableLayout(page, { hasActions: false });
+    await expect(page.getByRole("columnheader", { name: "Thao tác" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Thêm .* vào bộ từ cá nhân/ })).toHaveCount(0);
+  }
+});
+
+test("ADMIN responsive table never renders an empty action column", async ({ page }) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  for (const width of [320, 820, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/vocabulary-sets/set-airport");
+    await expectPublicTableLayout(page, { hasActions: false });
+    await expect(page.getByRole("columnheader").last()).not.toHaveText(/Thao/);
+    await expect(page.locator(".public-set-action-column")).toHaveCount(0);
+  }
 });
 
 for (const width of [375, 390, 768, 820, 1366, 1536]) {
@@ -534,8 +795,8 @@ async function installDiscoveryApi(page, { copyHandler, detailHandler, setHandle
     await route.fulfill(ok({
       ...summary,
       items: [
-        { id: "item-1", position: 1, word: "passport", phonetic: "/ˈpɑːspɔːrt/", primary_meaning: { part_of_speech: "noun", meaning_vi: "hộ chiếu", example: { example_en: "Keep your passport safe.", example_vi: "Giữ hộ chiếu của bạn an toàn." } } },
-        { id: "item-2", position: 2, word: "luggage", phonetic: null, primary_meaning: null },
+        { id: "item-1", vocabulary_id: "vocabulary-passport", position: 1, word: "passport", phonetic: "/ˈpɑːspɔːrt/", primary_meaning: { part_of_speech: "noun", meaning_vi: "hộ chiếu", example: { example_en: "Keep your passport safe.", example_vi: "Giữ hộ chiếu của bạn an toàn." } } },
+        { id: "item-2", vocabulary_id: "vocabulary-luggage", position: 2, word: "luggage", phonetic: null, primary_meaning: null },
       ],
     }));
   });
@@ -547,6 +808,50 @@ async function installDiscoveryApi(page, { copyHandler, detailHandler, setHandle
   return { catalogRequests: () => catalogRequestCount };
 }
 
+async function installPublicItemAddApi(page, { calls = [], itemHandler, personalSets = [{ id: "personal-1", name: "Du lịch cá nhân", item_count: 1 }], personalSetsHandler } = {}) {
+  await page.route(/\/api\/my\/vocabulary-sets$/, (route) => personalSetsHandler ? personalSetsHandler(route) : route.fulfill(ok(personalSets)));
+  await page.route(/\/api\/my\/vocabulary-sets\/[^/]+\/items$/, async (route) => {
+    const setId = decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2));
+    const body = route.request().postDataJSON();
+    calls.push({ setId, body });
+    if (itemHandler) return itemHandler(route);
+    return route.fulfill({ status: 201, json: { success: true, data: { id: "membership-1", vocabulary_id: body.vocabulary_id, position: 2 } } });
+  });
+}
+
 function ok(data) {
   return { status: 200, json: { success: true, data } };
+}
+
+async function expectPublicTableLayout(page, { expanded, hasActions }) {
+  const wrapper = page.locator(".public-set-table-wrap");
+  const table = wrapper.getByRole("table");
+  const contentWidth = await wrapper.evaluate((element) => element.clientWidth);
+  const usesExpandedLayout = expanded ?? contentWidth >= 832;
+  const expectedHeaders = usesExpandedLayout
+    ? ["Từ vựng", "Nghĩa", "Phiên âm", "Ví dụ", ...(hasActions ? ["Thao tác"] : [])]
+    : ["Từ vựng", "Nghĩa", ...(hasActions ? ["Thao tác"] : [])];
+  await expect(table.getByRole("columnheader")).toHaveText(expectedHeaders);
+  await expect.poll(() => wrapper.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await expect.poll(() => page.evaluate(() => ({
+    body: document.body.scrollWidth - document.body.clientWidth,
+    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }))).toEqual({ body: 0, document: 0 });
+
+  const firstWord = table.locator("tbody td").first();
+  await expect.poll(() => firstWord.evaluate((element) => {
+    const text = element.querySelector("strong");
+    return text.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1;
+  })).toBe(true);
+  if (!hasActions) return;
+
+  const action = table.getByRole("button", { name: /Thêm .* vào bộ từ cá nhân/ });
+  const label = action.locator(".public-set-add-label");
+  if (usesExpandedLayout) await expect(label).toBeVisible();
+  else await expect(label).toBeHidden();
+  await expect(action).toHaveCSS("cursor", "pointer");
+  await expect.poll(() => action.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width >= 44 && rect.height >= 44;
+  })).toBe(true);
 }

@@ -14,6 +14,7 @@ const PRIVATE_PATCH_FIELDS = PRIVATE_CREATE_FIELDS;
 const ITEM_FIELDS = new Set(["vocabulary_id"]);
 const PICKER_RESULT_LIMIT = 20;
 const PRIVATE_CREATE_REQUEST_FIELDS = new Set(["operation_id", "vocabulary"]);
+const PUBLIC_ITEM_ADD_FIELDS = new Set(["source_set_id", "vocabulary_id"]);
 
 export class VocabularySetServiceError extends Error {
   constructor(code, message, details = undefined) {
@@ -400,6 +401,32 @@ export function createVocabularySetService({ vocabularySetRepository, coverStora
             return resolvePrivateCreateRetry(existing, ownerId, vocabularySetId, requestFingerprint);
           }
         }
+        throwKnownPersistenceError(error);
+      }
+    },
+
+    async addPublicVocabularyItem(ownerId, vocabularySetId, input) {
+      validateUuid(ownerId);
+      validateUuid(vocabularySetId);
+      validateBody(input);
+      rejectUnsupportedFields(input, PUBLIC_ITEM_ADD_FIELDS);
+      if (!Object.hasOwn(input, "source_set_id") || !Object.hasOwn(input, "vocabulary_id")) {
+        throw validationError();
+      }
+      const sourceSetId = validateUuid(input.source_set_id);
+      const vocabularyId = validateUuid(input.vocabulary_id);
+
+      try {
+        return await vocabularySetRepository.withTransaction(async (repository) => {
+          if (!await repository.lockPrivateSetForOwner(vocabularySetId, ownerId)) {
+            throw vocabularySetNotFoundError();
+          }
+          if (!await repository.findPublicCanonicalMembership(sourceSetId, vocabularyId)) {
+            throw vocabularyNotFoundError();
+          }
+          return repository.appendVocabularyToLockedSet(vocabularySetId, vocabularyId);
+        });
+      } catch (error) {
         throwKnownPersistenceError(error);
       }
     },

@@ -169,6 +169,17 @@ export function createVocabularySetController({ vocabularySetService }) {
         res.status(result.created ? 201 : 200).json({ success: true, data: result.data });
       } catch (error) { handleKnownVocabularySetError(error, res, next); }
     },
+
+    async addPublicVocabularyItem(req, res, next) {
+      try {
+        const membership = await vocabularySetService.addPublicVocabularyItem(
+          req.user.id,
+          req.params.setId,
+          req.body,
+        );
+        res.status(201).json({ success: true, data: membership });
+      } catch (error) { handleKnownVocabularySetError(error, res, next); }
+    },
   };
 }
 

@@ -48,6 +48,7 @@ export function createUserVocabularySetRouter({
     ...middleware,
     vocabularySetController.createPrivateVocabularyAndAdd,
   );
+  router.post("/my/vocabulary-sets/:setId/items", ...middleware, vocabularySetController.addPublicVocabularyItem);
   router.patch("/my/vocabulary-sets/:setId", ...middleware, vocabularySetController.updatePrivate);
   router.delete("/my/vocabulary-sets/:setId", ...middleware, vocabularySetController.deletePrivate);
   router.post("/vocabulary-sets/:setId/copy", ...middleware, vocabularySetController.copySystem);

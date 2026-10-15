@@ -27,6 +27,15 @@ export function createVocabularySetService(client = httpClient) {
     async getMySet(setId) { return getPrivateAggregate(client, itemEndpoint(MY_SETS_ENDPOINT, setId)); },
     async createMySet(input) { return mutateAggregate(client, "post", MY_SETS_ENDPOINT, input); },
     async updateMySet(setId, input) { return mutateAggregate(client, "patch", itemEndpoint(MY_SETS_ENDPOINT, setId), input); },
+    async addPublicVocabularyItem(setId, sourceSetId, vocabularyId) {
+      try {
+        const response = await client.post(`${itemEndpoint(MY_SETS_ENDPOINT, setId)}/items`, {
+          source_set_id: sourceSetId,
+          vocabulary_id: vocabularyId,
+        });
+        return requireMembership(response.data?.data, vocabularyId);
+      } catch (error) { throw mapVocabularySetError(error); }
+    },
     async uploadMySetCover(setId, file) { return uploadCover(client, `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover`, file); },
     async removeMySetCover(setId) { return coverMutation(client, "delete", `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover`); },
     async cleanupMySetCover(setId) { return coverMutation(client, "post", `${itemEndpoint(MY_SETS_ENDPOINT, setId)}/cover/cleanup`); },
@@ -225,12 +234,21 @@ function requirePrivateCreateResult(value) {
   return value;
 }
 
+function requireMembership(value, vocabularyId) {
+  if (
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    typeof value.id !== "string" || value.vocabulary_id !== vocabularyId ||
+    typeof value.position !== "number"
+  ) throw invalidResponseError();
+  return value;
+}
+
 function mapVocabularySetError(error) {
   if (error instanceof VocabularySetApiError) return error;
   const status = error?.response?.status ?? null;
   const responseError = error?.response?.data?.error;
   return new VocabularySetApiError({
-    kind: status === 409 && responseError?.code === "PRIVATE_VOCABULARY_OPERATION_CONFLICT"
+    kind: status === 409 && ["PRIVATE_VOCABULARY_OPERATION_CONFLICT", "VOCABULARY_ALREADY_IN_SET"].includes(responseError?.code)
       ? "conflict"
       : status === 404
         ? "not-found"

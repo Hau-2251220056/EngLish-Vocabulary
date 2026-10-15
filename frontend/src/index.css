@@ -2239,3 +2239,28 @@ input {
     animation: none !important;
   }
 }
+
+/* Public Set Detail responds to its available content width, including sidebar and zoom changes. */
+.public-set-table-wrap {
+  container-type: inline-size;
+  max-width: 100%;
+}
+
+.public-set-table .public-set-word-column { width: 17%; }
+.public-set-table .public-set-meaning-column { width: 23%; }
+.public-set-table .public-set-phonetic-column { width: 15%; }
+.public-set-table .public-set-example-column { width: auto; }
+.public-set-table .public-set-action-column { width: 7rem; }
+
+@container (max-width: 51.999rem) {
+  .public-set-table .public-set-optional-column { display: none; }
+  .public-set-table .public-set-word-column { width: 30%; }
+  .public-set-table .public-set-meaning-column { width: auto; }
+  .public-set-table .public-set-action-column { width: 4.25rem; text-align: center; }
+  .public-set-table th,
+  .public-set-table td { padding-inline: clamp(0.45rem, 2.5cqi, 0.75rem); }
+  .public-set-table .public-set-action-column { padding-inline: 0.35rem; }
+  .public-set-add-action { padding-inline: 0.65rem; }
+  .public-set-add-label { display: none; }
+  .public-set-table-wrap.is-read-only .public-set-word-column { width: 35%; }
+}

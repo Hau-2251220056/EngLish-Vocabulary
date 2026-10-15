@@ -1,7 +1,9 @@
-import { ArrowLeft, ArrowRight, BookOpen, Bookmark, LoaderCircle, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, Bookmark, LoaderCircle, Plus, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { NativeSelect } from "../components/native-select.jsx";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
 import { paginateSetDetailItems } from "./set-detail-pagination.js";
@@ -103,6 +105,8 @@ function PublicVocabularySetDetailContent({ setId }) {
   const [copyState, setCopyState] = useState("idle");
   const [copyError, setCopyError] = useState(null);
   const [itemsPage, setItemsPage] = useState(1);
+  const [addItem, setAddItem] = useState(null);
+  const [addFeedback, setAddFeedback] = useState(null);
   const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
   const isSaved = savedSetIds.has(setId);
 
@@ -144,6 +148,17 @@ function PublicVocabularySetDetailContent({ setId }) {
     }
   }
 
+  function openAdd(item, trigger) {
+    setAddFeedback(null);
+    setAddItem({ item, trigger });
+  }
+
+  function closeAdd() {
+    const trigger = addItem?.trigger;
+    setAddItem(null);
+    requestAnimationFrame(() => { if (trigger?.isConnected) trigger.focus(); });
+  }
+
   return (
     <section className="set-detail-page mx-auto w-full max-w-[76rem] p-[clamp(1rem,3vw,2.5rem)] text-[var(--text-primary)] max-[480px]:p-4" aria-label="Chi tiết bộ từ hệ thống">
       <Link className="set-detail-back inline-flex min-h-11 items-center gap-[0.45rem] font-semibold text-[#5b6478] no-underline transition-[color,transform] duration-150 hover:-translate-x-0.5 hover:text-[var(--accent-primary-hover)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:w-[1.1rem]" to={set ? `/topics?topic=${encodeURIComponent(set.topic_id)}` : "/topics"}>
@@ -169,17 +184,91 @@ function PublicVocabularySetDetailContent({ setId }) {
             {user?.role === "USER" && !isSaved ? <button type="button" className="inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[0.7rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-sm font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] hover:text-[var(--accent-primary)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] max-[800px]:min-h-11 max-[800px]:w-full" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}><Bookmark className="size-4" aria-hidden="true" />{copyState === "pending" ? "Đang lưu…" : copyError ? "Thử lưu lại" : "Lưu vào Bộ từ của tôi"}</button> : null}
           </header>
           {copyError ? <p className="mb-0 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{copyError}</p> : null}
+          {addFeedback ? <p className="mb-0 mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">{addFeedback}</p> : null}
 
           {user?.role === "USER" ? <SetLearningActions enabled={items.length > 0} returnTo={`/vocabulary-sets/${set.id}`} setId={set.id} setName={set.name} /> : null}
 
           <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="vocabulary-set-items-title">
             <div className="set-detail-section-heading flex items-center justify-between gap-4"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="vocabulary-set-items-title">Từ vựng trong bộ ({items.length})</h2></div>
-            {items.length > 0 ? <><SetVocabularyPreviewTable items={itemPagination.items} /><div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-3 text-sm text-slate-600"><p className="m-0 font-semibold" aria-live="polite">{itemPagination.start}–{itemPagination.end} / {itemPagination.totalItems} từ</p>{itemPagination.totalPages > 1 ? <nav className="flex items-center gap-2" aria-label="Phân trang từ vựng"><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.max(1, value - 1))} disabled={itemPagination.currentPage === 1}>Trước</button><span aria-current="page" className="min-w-16 text-center font-semibold">Trang {itemPagination.currentPage} / {itemPagination.totalPages}</span><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.min(itemPagination.totalPages, value + 1))} disabled={itemPagination.currentPage === itemPagination.totalPages}>Sau</button></nav> : null}</div></> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
+            {items.length > 0 ? <><SetVocabularyPreviewTable items={itemPagination.items} renderAction={user?.role === "USER" ? (item) => <button type="button" className="public-set-add-action inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1 rounded-lg border border-[var(--accent-primary)] bg-white px-2.5 text-xs font-semibold text-[var(--accent-primary-pressed)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-label={`Thêm ${item.word} vào bộ từ cá nhân`} onClick={(event) => openAdd(item, event.currentTarget)}><Plus className="size-4 shrink-0" aria-hidden="true" /><span className="public-set-add-label">Thêm</span></button> : undefined} /><div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-3 text-sm text-slate-600"><p className="m-0 font-semibold" aria-live="polite">{itemPagination.start}–{itemPagination.end} / {itemPagination.totalItems} từ</p>{itemPagination.totalPages > 1 ? <nav className="flex items-center gap-2" aria-label="Phân trang từ vựng"><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.max(1, value - 1))} disabled={itemPagination.currentPage === 1}>Trước</button><span aria-current="page" className="min-w-16 text-center font-semibold">Trang {itemPagination.currentPage} / {itemPagination.totalPages}</span><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.min(itemPagination.totalPages, value + 1))} disabled={itemPagination.currentPage === itemPagination.totalPages}>Sau</button></nav> : null}</div></> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
           </section>
+          {addItem ? <AddPublicVocabularyDialog item={addItem.item} sourceSetId={set.id} onClose={closeAdd} onSuccess={(destination) => { setAddFeedback(`Đã thêm ${addItem.item.word} vào ${destination.name}.`); closeAdd(); }} /> : null}
         </article>
       ) : null}
     </section>
   );
+}
+
+function AddPublicVocabularyDialog({ item, onClose, onSuccess, sourceSetId }) {
+  const panelRef = useRef(null);
+  const [sets, setSets] = useState([]);
+  const [state, setState] = useState("loading");
+  const [selectedId, setSelectedId] = useState("");
+  const [error, setError] = useState(null);
+  const pending = state === "submitting";
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    vocabularySetService.listMySets().then(
+      (data) => { if (current) { setSets(data); setState("ready"); } },
+      () => { if (current) setState("error"); },
+    );
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+
+  useEffect(() => {
+    function handleKey(event) {
+      if (event.key === "Escape" && !pending) onClose();
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const controls = [...panelRef.current.querySelectorAll("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled])")];
+      if (controls.length === 0) { event.preventDefault(); panelRef.current.focus(); return; }
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (!panelRef.current.contains(document.activeElement) || document.activeElement === panelRef.current) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose, pending]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!selectedId || pending) return;
+    setState("submitting");
+    setError(null);
+    try {
+      await vocabularySetService.addPublicVocabularyItem(selectedId, sourceSetId, item.vocabulary_id);
+      onSuccess(sets.find((set) => set.id === selectedId));
+    } catch (cause) {
+      setError(cause instanceof VocabularySetApiError && cause.code === "VOCABULARY_ALREADY_IN_SET" ? "Từ này đã có trong bộ" : "Chưa thể thêm từ vựng. Vui lòng thử lại.");
+      setState("ready");
+    }
+  }
+
+  const dialog = <div className="fixed inset-0 z-[100] grid items-end bg-slate-900/40 p-0 min-[641px]:place-items-center min-[641px]:p-4" data-testid="add-public-vocabulary-overlay" role="presentation" style={{ "--accent-primary": "#4ca2e6", "--accent-primary-focus": "rgb(76 162 230 / 32%)", "--accent-primary-pressed": "#237fc4", "--bg-subtle": "#f8fafc" }} onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}><section ref={panelRef} tabIndex="-1" role="dialog" aria-modal="true" aria-labelledby="add-public-vocabulary-title" aria-describedby="add-public-vocabulary-description" className="max-h-[calc(100dvh-1rem)] w-full overflow-auto overscroll-contain rounded-t-2xl bg-white p-5 shadow-[0_24px_60px_rgb(15_23_42/30%)] min-[641px]:max-h-[calc(100dvh-2rem)] min-[641px]:w-[min(30rem,calc(100vw-2rem))] min-[641px]:rounded-2xl min-[641px]:border min-[641px]:border-slate-200">
+    <header className="flex items-start justify-between gap-4"><div><h2 id="add-public-vocabulary-title" className="m-0 text-lg font-semibold">Thêm vào bộ từ cá nhân</h2><p id="add-public-vocabulary-description" className="mb-0 mt-1 text-sm text-slate-600">Chọn bộ từ đích cho <strong>{item.word}</strong>.</p></div><button type="button" aria-label="Đóng chọn bộ từ" className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg border-0 bg-transparent text-slate-600 hover:bg-slate-100 focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed" onClick={onClose} disabled={pending}><X className="size-5" aria-hidden="true" /></button></header>
+    {state === "loading" ? <p className="mt-5 flex items-center gap-2 text-sm text-slate-600" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Đang tải bộ từ…</p> : null}
+    {state === "error" ? <div className="mt-5" role="alert"><p>Không thể tải danh sách bộ từ.</p><button type="button" className="min-h-10 cursor-pointer rounded-lg border border-slate-300 bg-white px-3 font-semibold" onClick={() => { setState("loading"); vocabularySetService.listMySets().then((data) => { setSets(data); setState("ready"); }, () => setState("error")); }}>Thử lại</button></div> : null}
+    {state !== "loading" && state !== "error" && sets.length === 0 ? <div className="mt-5 rounded-xl bg-[var(--bg-subtle)] p-4 text-sm text-slate-600"><p className="mt-0">Bạn chưa có bộ từ cá nhân nào.</p><Link className="cursor-pointer font-semibold text-[var(--accent-primary-pressed)]" to="/my/vocabulary-sets">Tạo bộ từ cá nhân</Link></div> : null}
+    {state !== "loading" && state !== "error" && sets.length > 0 ? <form className="mt-5" onSubmit={submit}><label className="grid gap-2 text-sm font-semibold text-slate-700" htmlFor="destination-set">Bộ từ đích</label><NativeSelect id="destination-set" name="destination-set" className="cursor-pointer disabled:cursor-not-allowed" wrapperClassName="mt-2" value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setError(null); }} disabled={pending}><option value="" disabled>Chọn bộ từ cá nhân...</option>{sets.map((set) => <option key={set.id} value={set.id}>{set.name} — {set.item_count} từ vựng</option>)}</NativeSelect>{error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p> : null}<footer className="mt-5 flex justify-end gap-2 max-[480px]:flex-col-reverse max-[480px]:[&_button]:w-full"><button type="button" className="min-h-11 cursor-pointer rounded-xl border border-slate-300 bg-white px-4 font-semibold text-slate-700 disabled:cursor-not-allowed" onClick={onClose} disabled={pending}>Hủy</button><button type="submit" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border-0 bg-[var(--accent-primary)] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={!selectedId || pending} aria-busy={pending}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{pending ? "Đang thêm…" : "Thêm vào bộ từ"}</button></footer></form> : null}
+  </section></div>;
+
+  return createPortal(dialog, document.body);
 }
 
 function PublicState({ action, message, role, status, title }) {

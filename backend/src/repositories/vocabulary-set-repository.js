@@ -169,6 +169,18 @@ export function createVocabularySetRepository(prisma) {
       });
     },
 
+    findPublicCanonicalMembership(vocabularySetId, vocabularyId) {
+      return prisma.vOCABULARY_SET_ITEM.findFirst({
+        where: {
+          vocabulary_set_id: vocabularySetId,
+          vocabulary_id: vocabularyId,
+          vocabulary_set: { is_public: true, owner: { role: "ADMIN" } },
+          vocabulary: { owner_id: null },
+        },
+        select: { id: true, vocabulary_id: true },
+      });
+    },
+
     searchVocabularyPicker(query, limit, { ownerId, canonicalOnly }) {
       return prisma.vOCABULARY.findMany({
         where: {

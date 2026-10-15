@@ -600,12 +600,15 @@ Set summaries/details include nullable Set-level `cefr_level` (`A1`–`C1`) and 
 | `POST /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
 | `DELETE /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
 | `POST /api/my/vocabulary-sets/:setId/cover/cleanup` | owner USER | `200` |
+| `POST /api/my/vocabulary-sets/:setId/items` | owner USER | `201` |
 
 USER create/update accepts `name`, optional `description`, optional nullable Set `cefr_level`, optional nullable external HTTPS `cover_image_url`, and optional complete `items` collection. `topic_id`, `owner_id`, `is_public`, and client-supplied `cover_storage_key` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order; external covers copy the URL, while managed covers are copied to a new destination Set-owned object.
 
 Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so Set Detail can authorize private editing without inferring identity from spelling. Private, public System and ADMIN Set detail responses expose the same read-only `primary_meaning` display projection described above. It does not CEFR-rank, fall back to another record, or generate missing data; `source` remains private-owner detail metadata only.
 
 Personal Set Detail membership management reuses the existing complete `items` PATCH contract. Adding an existing exact `vocabulary_id` submits the current authoritative order followed by that ID; removing submits the remaining IDs in their existing relative order. Removing membership never deletes Vocabulary or Learning Progress. V1 intentionally retains last-write-wins behavior across concurrent tabs and adds no granular membership or version endpoint.
+
+Public System Set Detail additionally supports an atomic single-item save through `POST /api/my/vocabulary-sets/:setId/items` with `{ source_set_id, vocabulary_id }`. The authenticated USER must own the private destination Set. The source must be a public System Set, and the exact Vocabulary must be canonical and currently belong to that source. The backend locks the destination, appends the original canonical identity at the next position, and never mutates the source Set, Vocabulary or Learning Progress. An exact duplicate returns `409 VOCABULARY_ALREADY_IN_SET`; inaccessible destinations and invalid source membership use safe not-found responses. This granular endpoint is limited to the public-detail save flow; complete Personal Set Detail replacement/reordering retains its existing contract.
 
 #### ADMIN System Set Routes
 
@@ -620,7 +623,7 @@ Personal Set Detail membership management reuses the existing complete `items` P
 | `DELETE /api/admin/vocabulary-sets/:setId/cover` | ADMIN | `200` |
 | `POST /api/admin/vocabulary-sets/:setId/cover/cleanup` | ADMIN | `200` |
 
-ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, Set `cefr_level` (`A1`–`C1`), and one-or-more valid Items; `cover_image_url` is optional. PATCH accepts Topic reassignment but rejects clearing Topic or CEFR; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. There is no granular Set Item route.
+ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, Set `cefr_level` (`A1`–`C1`), and one-or-more valid Items; `cover_image_url` is optional. PATCH accepts Topic reassignment but rejects clearing Topic or CEFR; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. ADMIN System Set editing has no granular Set Item route.
 
 Cover upload uses single-file `multipart/form-data` field `cover`. JPEG, PNG and WebP input is signature-validated, limited to 5 MiB and 4096×4096, auto-oriented, resized without enlargement to a longest edge of at most 1600 px, stripped of unnecessary metadata, and stored as WebP quality 82. Processing is bounded to 2 concurrent jobs plus 8 queued jobs with a 15-second deadline. External cover URLs must be HTTPS and are rendered directly; the backend does not fetch or optimize them.
 

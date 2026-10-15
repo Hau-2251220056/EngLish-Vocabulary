@@ -440,6 +440,7 @@ Edit Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
 Delete Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
 Copy Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Set Discovery	DONE	✓	✓	✓	✓	✓	✓
+Public Word to Personal Set	IN_PROGRESS	✓	✓	✓	✓	⏳	⏳
 
 System vocabulary sets are created and managed by Admin.
 

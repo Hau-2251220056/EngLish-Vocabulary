@@ -15,6 +15,7 @@ test("Vocabulary Set service uses only approved public, USER, ADMIN, copy, and p
   await service.getMySet("set/id");
   await service.createMySet(input);
   await service.updateMySet("set/id", input);
+  await service.addPublicVocabularyItem("set/id", "source/id", "vocabulary/id");
   await service.deleteMySet("set/id");
   await service.copySystemSet("set/id");
   await service.searchVocabularyPicker("book");
@@ -27,7 +28,8 @@ test("Vocabulary Set service uses only approved public, USER, ADMIN, copy, and p
   assert.deepEqual(calls, [
     ["GET", "/api/topics/topic%2Fid/vocabulary-sets", undefined], ["GET", "/api/vocabulary-sets/set%2Fid", undefined],
     ["GET", "/api/my/vocabulary-sets", undefined], ["GET", "/api/my/vocabulary-sets/set%2Fid", undefined],
-    ["POST", "/api/my/vocabulary-sets", input], ["PATCH", "/api/my/vocabulary-sets/set%2Fid", input], ["DELETE", "/api/my/vocabulary-sets/set%2Fid"],
+    ["POST", "/api/my/vocabulary-sets", input], ["PATCH", "/api/my/vocabulary-sets/set%2Fid", input],
+    ["POST", "/api/my/vocabulary-sets/set%2Fid/items", { source_set_id: "source/id", vocabulary_id: "vocabulary/id" }], ["DELETE", "/api/my/vocabulary-sets/set%2Fid"],
     ["POST", "/api/vocabulary-sets/set%2Fid/copy", undefined], ["GET", "/api/vocabulary-set-picker", { params: { query: "book" } }],
     ["GET", "/api/admin/vocabulary-sets", undefined], ["GET", "/api/admin/vocabulary-sets/set%2Fid", undefined],
     ["POST", "/api/admin/vocabulary-sets", input], ["PATCH", "/api/admin/vocabulary-sets/set%2Fid", input], ["DELETE", "/api/admin/vocabulary-sets/set%2Fid"],
@@ -171,7 +173,7 @@ test("create-private-plus-add accepts retry 200 and normalizes operation conflic
 function createClient(calls) {
   return {
     async get(url, options) { calls.push(["GET", url, options]); return { data: { data: url.includes("picker") ? [pickerResult] : url.endsWith("sets") ? [summary] : aggregate } }; },
-    async post(url, body) { calls.push(["POST", url, body]); return { data: { data: aggregate } }; },
+    async post(url, body) { calls.push(["POST", url, body]); return { data: { data: url.endsWith("/items") ? { id: "membership-1", vocabulary_id: body.vocabulary_id, position: 1 } : aggregate } }; },
     async patch(url, body) { calls.push(["PATCH", url, body]); return { data: { data: aggregate } }; },
     async delete(url) { calls.push(["DELETE", url]); },
   };

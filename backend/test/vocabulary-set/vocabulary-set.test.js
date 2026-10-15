@@ -538,6 +538,48 @@ test("USER copy creates independent private Set and leaves System source unchang
   assert.equal(source.json.data.items.length, 2);
 });
 
+test("USER atomically adds canonical public words to an owned private Set without progress writes", async () => {
+  const source = await createSystemSet({ items: [firstVocabulary.id, secondVocabulary.id, thirdVocabulary.id] });
+  const destination = await createPrivateSet();
+  const endpoint = `/api/my/vocabulary-sets/${destination.id}/items`;
+  const add = (vocabularyId, cookie = ownerCookie, sourceSetId = source.id) => http.request(endpoint, {
+    method: "POST", cookie, json: { source_set_id: sourceSetId, vocabulary_id: vocabularyId },
+  });
+  const progressBefore = await prisma.lEARNING_PROGRESS.count();
+
+  let response = await add(firstVocabulary.id);
+  assert.equal(response.status, 201, response.text);
+  assert.equal(response.json.data.vocabulary_id, firstVocabulary.id);
+  assert.equal(response.json.data.position, 1);
+
+  response = await add(firstVocabulary.id);
+  assert.equal(response.status, 409);
+  assert.equal(response.json.error.code, "VOCABULARY_ALREADY_IN_SET");
+
+  const [second, third] = await Promise.all([add(secondVocabulary.id), add(thirdVocabulary.id)]);
+  assert.equal(second.status, 201, second.text);
+  assert.equal(third.status, 201, third.text);
+  const stored = await prisma.vOCABULARY_SET_ITEM.findMany({
+    where: { vocabulary_set_id: destination.id }, orderBy: { position: "asc" },
+  });
+  assert.deepEqual(stored.map(({ position }) => position), [1, 2, 3]);
+  assert.deepEqual(new Set(stored.map(({ vocabulary_id }) => vocabulary_id)), new Set([
+    firstVocabulary.id, secondVocabulary.id, thirdVocabulary.id,
+  ]));
+  assert.equal(await prisma.lEARNING_PROGRESS.count(), progressBefore);
+
+  const foreignDestination = await createPrivateSet();
+  response = await http.request(`/api/my/vocabulary-sets/${foreignDestination.id}/items`, {
+    method: "POST", cookie: otherUserCookie,
+    json: { source_set_id: source.id, vocabulary_id: firstVocabulary.id },
+  });
+  assert.equal(response.status, 404);
+  assert.equal((await add(secondVocabulary.id, ownerCookie, foreignDestination.id)).status, 404);
+  assert.equal((await add(randomUUID())).status, 404);
+  assert.equal((await add(secondVocabulary.id, adminCookie)).status, 403);
+  assert.equal((await add(secondVocabulary.id, undefined)).status, 401);
+});
+
 test("owner-aware picker returns canonical and own-private metadata without foreign-private leakage", async () => {
   const word = `${fixturePrefix}-picker-shared-${randomUUID()}`;
   const canonical = await prisma.vOCABULARY.create({ data: { word, meanings: { create: { part_of_speech: "noun", meaning_vi: "system" } } } });
