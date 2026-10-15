@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ELVocab Runtime Architecture",
+    "output": "docs/diagrams/archify/architecture/elvocab-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Hau-2251220056/EngLish-Vocabulary.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "0198b74fc576c8f82954b060519ae90e8c70c708"
+    },
+    "views": [
+      {
+        "id": "learning-path",
+        "label": "Learning and progress",
+        "focus": ["learner", "react-app", "express-api", "learning-srs", "prisma", "postgres"]
+      },
+      {
+        "id": "speaking-path",
+        "label": "Speaking Practice",
+        "focus": ["learner", "react-app", "speaking-practice", "web-speech", "express-api", "learning-srs"]
+      },
+      {
+        "id": "content-path",
+        "label": "Topics and vocabulary",
+        "focus": ["react-app", "express-api", "content-modules", "prisma", "postgres", "supabase-storage"]
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "learner",
+      "type": "external",
+      "label": "Guest / USER / ADMIN",
+      "sublabel": "Browser actors",
+      "pos": [40, 260],
+      "size": [145, 64],
+      "sources": [
+        { "path": "backend/prisma/schema.prisma", "line": 18, "end_line": 21, "label": "Authenticated roles" },
+        { "path": "frontend/src/app-router.jsx", "line": 36, "end_line": 66, "label": "Route access" }
+      ]
+    },
+    {
+      "id": "react-app",
+      "type": "frontend",
+      "label": "React / Vite Frontend",
+      "sublabel": "Pages, state, API services",
+      "pos": [235, 260],
+      "size": [155, 68],
+      "sources": [
+        { "path": "frontend/src/app-router.jsx", "line": 30, "end_line": 70, "label": "React routes" },
+        { "path": "frontend/package.json", "line": 7, "end_line": 18, "label": "Vite scripts" }
+      ]
+    },
+    {
+      "id": "speaking-practice",
+      "type": "frontend",
+      "label": "Speaking Practice",
+      "sublabel": "Transient transcript feedback",
+      "tag": "Frontend only",
+      "pos": [235, 470],
+      "size": [155, 72],
+      "sources": [
+        { "path": "frontend/src/pronunciation/speaking-practice-page-session.js", "line": 29, "end_line": 80, "label": "NORMAL set load" },
+        { "path": "frontend/src/pronunciation/recognition-classifier.js", "line": 26, "end_line": 78, "label": "Transcript classification" }
+      ]
+    },
+    {
+      "id": "web-speech",
+      "type": "external",
+      "label": "Browser Web Speech API",
+      "sublabel": "TTS + SpeechRecognition",
+      "tag": "en-US",
+      "pos": [40, 470],
+      "size": [145, 72],
+      "sources": [
+        { "path": "frontend/src/pronunciation/speech-recognition-adapter.js", "line": 32, "end_line": 53, "label": "Capability check" },
+        { "path": "frontend/src/pronunciation/speech-recognition-adapter.js", "line": 97, "end_line": 116, "label": "Recognition setup" },
+        { "path": "frontend/src/pronunciation/reference-playback-coordinator.js", "line": 131, "end_line": 175, "label": "Browser TTS" }
+      ]
+    },
+    {
+      "id": "express-api",
+      "type": "backend",
+      "label": "Node.js / Express Backend",
+      "sublabel": "Routes → controllers → services → repositories",
+      "pos": [550, 260],
+      "size": [180, 76],
+      "sources": [
+        { "path": "backend/src/create-app.js", "line": 47, "end_line": 68, "label": "Composition root" },
+        { "path": "backend/src/create-app.js", "line": 136, "end_line": 150, "label": "API mounts" },
+        { "path": "backend/package.json", "line": 31, "end_line": 40, "label": "Runtime dependencies" }
+      ]
+    },
+    {
+      "id": "session-auth",
+      "type": "security",
+      "label": "Stateful Session Auth",
+      "sublabel": "HttpOnly cookie + hashed session token",
+      "pos": [550, 55],
+      "size": [180, 72],
+      "sources": [
+        { "path": "backend/src/controllers/auth-controller.js", "line": 26, "end_line": 48, "label": "Session cookie" },
+        { "path": "backend/src/services/authentication-service.js", "line": 60, "end_line": 92, "label": "Login and session" },
+        { "path": "backend/src/middleware/authentication-middleware.js", "line": 2, "end_line": 20, "label": "Request authentication" }
+      ]
+    },
+    {
+      "id": "content-modules",
+      "type": "backend",
+      "label": "Content Modules",
+      "sublabel": "Topic & Discovery • Vocabulary • Vocabulary Sets",
+      "pos": [790, 55],
+      "size": [190, 76],
+      "sources": [
+        { "path": "backend/src/create-app.js", "line": 69, "end_line": 116, "label": "Content wiring" },
+        { "path": "backend/src/routes/vocabulary-set-routes.js", "line": 5, "end_line": 60, "label": "Set endpoints" },
+        { "path": "frontend/src/topics/discovery-catalog.js", "line": 4, "end_line": 21, "label": "Discovery composition" }
+      ]
+    },
+    {
+      "id": "learning-srs",
+      "type": "backend",
+      "label": "Flashcard / Learning",
+      "sublabel": "Custom fixed-stage SRS + progress",
+      "tag": "1 • 3 • 7 • 14 • 30 days",
+      "pos": [790, 245],
+      "size": [190, 82],
+      "sources": [
+        { "path": "backend/src/services/learning-service.js", "line": 32, "end_line": 87, "label": "Learning reads" },
+        { "path": "backend/src/services/learning-service.js", "line": 127, "end_line": 194, "label": "Progress writes" },
+        { "path": "backend/src/services/srs-scheduler.js", "line": 2, "end_line": 127, "label": "Fixed-stage scheduler" }
+      ]
+    },
+    {
+      "id": "quiz",
+      "type": "backend",
+      "label": "Quiz",
+      "sublabel": "VI→English + Unscramble Word",
+      "tag": "Backend grading",
+      "pos": [790, 435],
+      "size": [190, 76],
+      "sources": [
+        { "path": "backend/src/services/quiz-service.js", "line": 34, "end_line": 88, "label": "Question and answer service" },
+        { "path": "backend/src/services/quiz-service.js", "line": 92, "end_line": 180, "label": "Authoritative grading" },
+        { "path": "backend/src/services/quiz-domain.js", "line": 32, "end_line": 166, "label": "Grading algorithm" }
+      ]
+    },
+    {
+      "id": "prisma",
+      "type": "backend",
+      "label": "Prisma Data Access",
+      "sublabel": "Repositories and transactions",
+      "pos": [1030, 245],
+      "size": [165, 72],
+      "sources": [
+        { "path": "backend/src/create-app.js", "line": 52, "end_line": 129, "label": "Repository construction" },
+        { "path": "backend/prisma/schema.prisma", "line": 7, "end_line": 16, "label": "Prisma PostgreSQL config" }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "Supabase PostgreSQL",
+      "sublabel": "Users, sessions, content, learning progress",
+      "pos": [1030, 435],
+      "size": [175, 76],
+      "sources": [
+        { "path": "backend/prisma/schema.prisma", "line": 13, "end_line": 16, "label": "PostgreSQL datasource" },
+        { "path": "backend/prisma/schema.prisma", "line": 23, "end_line": 49, "label": "Users and sessions" },
+        { "path": "backend/prisma/schema.prisma", "line": 97, "end_line": 145, "label": "Sets and progress" }
+      ]
+    },
+    {
+      "id": "supabase-storage",
+      "type": "cloud",
+      "label": "Supabase Storage",
+      "sublabel": "Vocabulary Set cover objects",
+      "pos": [1030, 55],
+      "size": [175, 72],
+      "sources": [
+        { "path": "backend/src/storage/vocabulary-set-cover-storage.js", "line": 2, "end_line": 20, "label": "Storage client" },
+        { "path": "backend/src/storage/vocabulary-set-cover-storage.js", "line": 27, "end_line": 58, "label": "Cover operations" },
+        { "path": "backend/src/config/vocabulary-set-cover-storage-config.js", "line": 15, "end_line": 40, "label": "Storage configuration" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Browser runtime — UI and transient TTS/STT",
+      "wraps": ["react-app", "speaking-practice"],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "ELVocab Backend services — authoritative access and learning logic",
+      "wraps": ["express-api", "session-auth", "content-modules", "learning-srs", "quiz"],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    { "id": "actor-ui", "from": "learner", "to": "react-app", "label": "uses", "variant": "emphasis" },
+    { "id": "ui-api", "from": "react-app", "to": "express-api", "label": "HTTPS /api + session cookie", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "api-auth", "from": "express-api", "to": "session-auth", "label": "authenticate / authorize", "variant": "security" },
+    { "id": "api-content", "from": "express-api", "to": "content-modules", "label": "public and role-guarded content" },
+    { "id": "api-learning", "from": "express-api", "to": "learning-srs", "label": "learning reads and ratings" },
+    { "id": "api-quiz", "from": "express-api", "to": "quiz", "label": "questions and answers" },
+    { "id": "auth-data", "from": "session-auth", "to": "prisma", "label": "USER / AUTH_SESSION" },
+    { "id": "content-data", "from": "content-modules", "to": "prisma", "label": "topics, vocabulary, sets" },
+    { "id": "learning-data", "from": "learning-srs", "to": "prisma", "label": "LEARNING_PROGRESS", "variant": "emphasis" },
+    { "id": "quiz-data", "from": "quiz", "to": "prisma", "label": "grade then update progress" },
+    { "id": "prisma-postgres", "from": "prisma", "to": "postgres", "label": "PostgreSQL queries / transactions", "variant": "emphasis" },
+    { "id": "covers-storage", "from": "content-modules", "to": "supabase-storage", "label": "cover upload / copy / remove" },
+    { "id": "ui-speaking", "from": "react-app", "to": "speaking-practice", "label": "starts activity" },
+    { "id": "speaking-read", "from": "speaking-practice", "to": "express-api", "label": "GET learning set?mode=NORMAL", "variant": "dashed" },
+    { "id": "speaking-browser", "from": "speaking-practice", "to": "web-speech", "label": "TTS / recognition", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Authoritative backend behavior",
+      "items": [
+        "Express enforces session and role authorization.",
+        "The fixed-stage SRS scheduler and Quiz grading run in backend services.",
+        "Learning Progress persists per USER and Vocabulary in PostgreSQL."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Speaking boundary",
+      "items": [
+        "Speaking Practice reuses the authorized NORMAL Learning read.",
+        "Browser TTS/STT produces transient transcript classifications only.",
+        "Express receives no Speaking audio or transcript and stores no Speaking result."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Deliberate omissions",
+      "items": [
+        "No AI pronunciation scoring, phoneme assessment, or Speaking persistence.",
+        "No runtime XP, Level, Streak, Achievement, Community, or unsupported ADMIN modules shown."
+      ]
+    }
+  ]
+}

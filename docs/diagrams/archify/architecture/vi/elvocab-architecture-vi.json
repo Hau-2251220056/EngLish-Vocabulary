@@ -1,0 +1,706 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Kiến trúc vận hành ELVocab",
+    "output": "docs/diagrams/archify/architecture/vi/elvocab-architecture-vi.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Hau-2251220056/EngLish-Vocabulary.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "0198b74fc576c8f82954b060519ae90e8c70c708"
+    },
+    "views": [
+      {
+        "id": "learning-path",
+        "label": "Học tập và tiến độ",
+        "focus": [
+          "learner",
+          "react-app",
+          "express-api",
+          "learning-srs",
+          "prisma",
+          "postgres"
+        ]
+      },
+      {
+        "id": "speaking-path",
+        "label": "Luyện nói",
+        "focus": [
+          "learner",
+          "react-app",
+          "speaking-practice",
+          "web-speech",
+          "express-api",
+          "learning-srs"
+        ]
+      },
+      {
+        "id": "content-path",
+        "label": "Chủ đề và từ vựng",
+        "focus": [
+          "react-app",
+          "express-api",
+          "content-modules",
+          "prisma",
+          "postgres",
+          "supabase-storage"
+        ]
+      }
+    ],
+    "locale": "vi",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "Frontend"
+        },
+        "backend": {
+          "label": "Backend"
+        },
+        "database": {
+          "label": "Cơ sở dữ liệu"
+        },
+        "cloud": {
+          "label": "Dịch vụ đám mây"
+        },
+        "security": {
+          "label": "Bảo mật"
+        },
+        "external": {
+          "label": "Hệ thống bên ngoài"
+        }
+      }
+    },
+    "translations": {
+      "page.title": "Sơ đồ {title}",
+      "diagram.description.architecture": "Sơ đồ kiến trúc được tạo bằng Archify.",
+      "node.focus": "Tập trung vào {label}",
+      "node.focus.detail": "Tập trung vào {label}, {detail}",
+      "node.context.architecture": "Thành phần kiến trúc",
+      "legend.title": "Chú giải",
+      "legend.architecture.frontend": "Frontend",
+      "legend.architecture.backend": "Backend",
+      "legend.architecture.database": "Cơ sở dữ liệu",
+      "legend.architecture.cloud": "Dịch vụ đám mây",
+      "legend.architecture.security": "Bảo mật",
+      "legend.architecture.messagebus": "Bus thông điệp",
+      "legend.architecture.external": "Hệ thống bên ngoài",
+      "viewer.kind.frontend": "Frontend",
+      "viewer.kind.backend": "Backend",
+      "viewer.kind.database": "Cơ sở dữ liệu",
+      "viewer.kind.cloud": "Dịch vụ đám mây",
+      "viewer.kind.security": "Bảo mật",
+      "viewer.kind.messagebus": "Bus thông điệp",
+      "viewer.kind.external": "Hệ thống bên ngoài",
+      "viewer.passport.eyebrow": "Hồ sơ ngữ nghĩa",
+      "viewer.passport.metadata": "Siêu dữ liệu thành phần",
+      "viewer.passport.evidence": "Bằng chứng nguồn đã xác minh",
+      "viewer.passport.verified": "Nguồn đã xác minh",
+      "viewer.passport.verificationScope": "Đã xác minh với Git cục bộ tại revision được ghim. Chưa kiểm tra truy cập từ xa.",
+      "viewer.passport.reach": "Phạm vi liên kết đã khai báo",
+      "viewer.passport.reach.trace": "Truy vết phạm vi liên kết đã khai báo",
+      "viewer.passport.upstream": "Phía trước",
+      "viewer.passport.downstream": "Phía sau",
+      "viewer.passport.upstream.trace": "Truy vết các thành phần phía trước đã khai báo",
+      "viewer.passport.downstream.trace": "Truy vết các thành phần phía sau đã khai báo",
+      "viewer.passport.close": "Đóng hồ sơ ngữ nghĩa",
+      "viewer.passport.move": "Di chuyển hồ sơ ngữ nghĩa. Kéo, dùng phím mũi tên hoặc nhấn Home để đặt lại.",
+      "viewer.passport.copy": "Sao chép liên kết",
+      "viewer.passport.copy.focus": "Sao chép liên kết đến thành phần đang chọn",
+      "viewer.passport.relations": "Quan hệ",
+      "viewer.passport.relations.show": "Hiện các quan hệ kết nối",
+      "viewer.passport.relations.hide": "Ẩn các quan hệ kết nối",
+      "viewer.passport.relations.list": "Các quan hệ kết nối",
+      "viewer.passport.copyRelation": "Sao chép quan hệ",
+      "viewer.passport.copyNode": "Sao chép thành phần",
+      "viewer.passport.copyPinned": "Sao chép liên kết đến quan hệ đã ghim",
+      "viewer.passport.copySource": "Sao chép liên kết đến thành phần nguồn",
+      "viewer.passport.copy.focused.success": "Đã sao chép liên kết thành phần",
+      "viewer.passport.copy.pinned.success": "Đã sao chép liên kết quan hệ",
+      "viewer.passport.copy.focused.failed": "Không thể sao chép liên kết thành phần",
+      "viewer.passport.copy.pinned.failed": "Không thể sao chép liên kết quan hệ",
+      "viewer.passport.relationship.none": "Không có quan hệ kết nối",
+      "viewer.passport.relationship.count.one": "{count} quan hệ",
+      "viewer.passport.relationship.count.other": "{count} quan hệ",
+      "viewer.passport.relationship.show.one": "Hiện {count} quan hệ kết nối",
+      "viewer.passport.relationship.show.other": "Hiện {count} quan hệ kết nối",
+      "viewer.passport.relationship.summary": "{out} đi ra · {in} đi vào{loops}",
+      "viewer.passport.relationship.loops": " · {count} vòng lặp",
+      "viewer.passport.relationship.explorer": "Trình khám phá quan hệ trực tiếp",
+      "viewer.passport.relationship.help": "Dùng phím mũi tên để duyệt quan hệ. Nhấn Enter hoặc Space để ghim chi tiết; Escape để xóa.",
+      "viewer.passport.relationship.loopsBack": "quay lại",
+      "viewer.passport.relationship.connectsTo": "kết nối đến",
+      "viewer.passport.relationship.connectsFrom": "kết nối từ",
+      "viewer.passport.relationship.pinned": "Quan hệ đã ghim · {from} → {to} · {label}",
+      "viewer.passport.relationship.inspect": "Xem quan hệ {index}/{total}: {from} đến {to}, {label}. Nhấn Enter để xem chi tiết.",
+      "viewer.passport.relationship.group.out": "Đi ra",
+      "viewer.passport.relationship.group.in": "Đi vào",
+      "viewer.passport.relationship.group.loop": "Tự lặp",
+      "viewer.passport.relationship.row": "{group}: {relationship}, {neighbor}",
+      "viewer.passport.relationship.direction.out": "RA →",
+      "viewer.passport.relationship.direction.in": "← VÀO",
+      "viewer.passport.relationship.direction.loop": "LẶP",
+      "viewer.passport.sourceCount.one": "{count} tham chiếu nguồn đã xác minh",
+      "viewer.passport.sourceCount.other": "{count} tham chiếu nguồn đã xác minh",
+      "viewer.passport.repository.open": "Mở revision kho mã đã xác minh {revision}",
+      "viewer.passport.source.open": "Mở nguồn đã xác minh {path} tại revision {revision}",
+      "viewer.passport.source.openLink": "Mở ↗",
+      "viewer.passport.reach.upstream.one": "Truy vết {count} thành phần phía trước",
+      "viewer.passport.reach.upstream.other": "Truy vết {count} thành phần phía trước",
+      "viewer.passport.reach.downstream.one": "Truy vết {count} thành phần phía sau",
+      "viewer.passport.reach.downstream.other": "Truy vết {count} thành phần phía sau",
+      "viewer.passport.reach.noUpstream": "Không có thành phần phía trước",
+      "viewer.passport.reach.noDownstream": "Không có thành phần phía sau",
+      "viewer.passport.reach.status": "{direction} · {nodes} thành phần · {links} liên kết · tối đa {hops} bước",
+      "viewer.common.copied": "Đã sao chép",
+      "viewer.common.copyFailed": "Sao chép thất bại",
+      "viewer.common.copyLink": "Sao chép liên kết",
+      "viewer.common.clear": "Xóa",
+      "viewer.common.close": "Đóng"
+    }
+  },
+  "components": [
+    {
+      "id": "learner",
+      "type": "external",
+      "label": "Khách / USER / ADMIN",
+      "sublabel": "Vai trò trên trình duyệt",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        155,
+        64
+      ],
+      "sources": [
+        {
+          "path": "backend/prisma/schema.prisma",
+          "line": 18,
+          "end_line": 21,
+          "label": "Vai trò đã xác thực"
+        },
+        {
+          "path": "frontend/src/app-router.jsx",
+          "line": 36,
+          "end_line": 66,
+          "label": "Quyền truy cập route"
+        }
+      ]
+    },
+    {
+      "id": "react-app",
+      "type": "frontend",
+      "label": "React / Vite Frontend",
+      "sublabel": "Trang, trạng thái, dịch vụ API",
+      "pos": [
+        235,
+        260
+      ],
+      "size": [
+        170,
+        68
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/app-router.jsx",
+          "line": 30,
+          "end_line": 70,
+          "label": "Route React"
+        },
+        {
+          "path": "frontend/package.json",
+          "line": 7,
+          "end_line": 18,
+          "label": "Script Vite"
+        }
+      ]
+    },
+    {
+      "id": "speaking-practice",
+      "type": "frontend",
+      "label": "Luyện nói",
+      "sublabel": "Phản hồi bản ghi tạm thời",
+      "tag": "Chỉ Frontend",
+      "pos": [
+        235,
+        470
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/pronunciation/speaking-practice-page-session.js",
+          "line": 29,
+          "end_line": 80,
+          "label": "Tải bộ NORMAL"
+        },
+        {
+          "path": "frontend/src/pronunciation/recognition-classifier.js",
+          "line": 26,
+          "end_line": 78,
+          "label": "Phân loại bản ghi"
+        }
+      ]
+    },
+    {
+      "id": "web-speech",
+      "type": "external",
+      "label": "Browser Web Speech API",
+      "sublabel": "TTS + SpeechRecognition",
+      "tag": "en-US",
+      "pos": [
+        40,
+        470
+      ],
+      "size": [
+        160,
+        72
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/pronunciation/speech-recognition-adapter.js",
+          "line": 32,
+          "end_line": 53,
+          "label": "Kiểm tra khả năng"
+        },
+        {
+          "path": "frontend/src/pronunciation/speech-recognition-adapter.js",
+          "line": 97,
+          "end_line": 116,
+          "label": "Thiết lập nhận dạng"
+        },
+        {
+          "path": "frontend/src/pronunciation/reference-playback-coordinator.js",
+          "line": 131,
+          "end_line": 175,
+          "label": "TTS trình duyệt"
+        }
+      ]
+    },
+    {
+      "id": "express-api",
+      "type": "backend",
+      "label": "Node.js / Express Backend",
+      "sublabel": "Route → controller → service → repository",
+      "pos": [
+        550,
+        260
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/src/create-app.js",
+          "line": 47,
+          "end_line": 68,
+          "label": "Gốc khởi tạo"
+        },
+        {
+          "path": "backend/src/create-app.js",
+          "line": 136,
+          "end_line": 150,
+          "label": "Gắn API"
+        },
+        {
+          "path": "backend/package.json",
+          "line": 31,
+          "end_line": 40,
+          "label": "Phụ thuộc runtime"
+        }
+      ]
+    },
+    {
+      "id": "session-auth",
+      "type": "security",
+      "label": "Xác thực phiên có trạng thái",
+      "sublabel": "Cookie HttpOnly + mã phiên băm",
+      "pos": [
+        550,
+        55
+      ],
+      "size": [
+        200,
+        72
+      ],
+      "sources": [
+        {
+          "path": "backend/src/controllers/auth-controller.js",
+          "line": 26,
+          "end_line": 48,
+          "label": "Cookie phiên"
+        },
+        {
+          "path": "backend/src/services/authentication-service.js",
+          "line": 60,
+          "end_line": 92,
+          "label": "Đăng nhập và phiên"
+        },
+        {
+          "path": "backend/src/middleware/authentication-middleware.js",
+          "line": 2,
+          "end_line": 20,
+          "label": "Xác thực request"
+        }
+      ]
+    },
+    {
+      "id": "content-modules",
+      "type": "backend",
+      "label": "Mô-đun nội dung",
+      "sublabel": "Chủ đề & Khám phá • Từ vựng • Bộ từ",
+      "pos": [
+        790,
+        55
+      ],
+      "size": [
+        205,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/src/create-app.js",
+          "line": 69,
+          "end_line": 116,
+          "label": "Kết nối mô-đun nội dung"
+        },
+        {
+          "path": "backend/src/routes/vocabulary-set-routes.js",
+          "line": 5,
+          "end_line": 60,
+          "label": "Endpoint Bộ từ"
+        },
+        {
+          "path": "frontend/src/topics/discovery-catalog.js",
+          "line": 4,
+          "end_line": 21,
+          "label": "Tổ chức Khám phá"
+        }
+      ]
+    },
+    {
+      "id": "learning-srs",
+      "type": "backend",
+      "label": "Flashcard / Học tập",
+      "sublabel": "SRS theo giai đoạn cố định + tiến độ",
+      "tag": "1 • 3 • 7 • 14 • 30 ngày",
+      "pos": [
+        790,
+        245
+      ],
+      "size": [
+        205,
+        82
+      ],
+      "sources": [
+        {
+          "path": "backend/src/services/learning-service.js",
+          "line": 32,
+          "end_line": 87,
+          "label": "Đọc dữ liệu học"
+        },
+        {
+          "path": "backend/src/services/learning-service.js",
+          "line": 127,
+          "end_line": 194,
+          "label": "Ghi tiến độ"
+        },
+        {
+          "path": "backend/src/services/srs-scheduler.js",
+          "line": 2,
+          "end_line": 127,
+          "label": "Bộ lập lịch cố định"
+        }
+      ]
+    },
+    {
+      "id": "quiz",
+      "type": "backend",
+      "label": "Quiz",
+      "sublabel": "VI→English + Sắp xếp từ",
+      "tag": "Backend chấm điểm",
+      "pos": [
+        790,
+        435
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/src/services/quiz-service.js",
+          "line": 34,
+          "end_line": 88,
+          "label": "Dịch vụ câu hỏi và đáp án"
+        },
+        {
+          "path": "backend/src/services/quiz-service.js",
+          "line": 92,
+          "end_line": 180,
+          "label": "Chấm điểm chuẩn"
+        },
+        {
+          "path": "backend/src/services/quiz-domain.js",
+          "line": 32,
+          "end_line": 166,
+          "label": "Thuật toán chấm điểm"
+        }
+      ]
+    },
+    {
+      "id": "prisma",
+      "type": "backend",
+      "label": "Truy cập dữ liệu Prisma",
+      "sublabel": "Repository và transaction",
+      "pos": [
+        1030,
+        245
+      ],
+      "size": [
+        175,
+        72
+      ],
+      "sources": [
+        {
+          "path": "backend/src/create-app.js",
+          "line": 52,
+          "end_line": 129,
+          "label": "Khởi tạo repository"
+        },
+        {
+          "path": "backend/prisma/schema.prisma",
+          "line": 7,
+          "end_line": 16,
+          "label": "Cấu hình Prisma PostgreSQL"
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "Supabase PostgreSQL",
+      "sublabel": "Người dùng, phiên, nội dung, tiến độ học",
+      "pos": [
+        1030,
+        435
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/prisma/schema.prisma",
+          "line": 13,
+          "end_line": 16,
+          "label": "Nguồn dữ liệu PostgreSQL"
+        },
+        {
+          "path": "backend/prisma/schema.prisma",
+          "line": 23,
+          "end_line": 49,
+          "label": "Người dùng và phiên"
+        },
+        {
+          "path": "backend/prisma/schema.prisma",
+          "line": 97,
+          "end_line": 145,
+          "label": "Bộ từ và tiến độ"
+        }
+      ]
+    },
+    {
+      "id": "supabase-storage",
+      "type": "cloud",
+      "label": "Supabase Storage",
+      "sublabel": "Ảnh bìa Bộ từ vựng",
+      "pos": [
+        1030,
+        55
+      ],
+      "size": [
+        180,
+        72
+      ],
+      "sources": [
+        {
+          "path": "backend/src/storage/vocabulary-set-cover-storage.js",
+          "line": 2,
+          "end_line": 20,
+          "label": "Client Storage"
+        },
+        {
+          "path": "backend/src/storage/vocabulary-set-cover-storage.js",
+          "line": 27,
+          "end_line": 58,
+          "label": "Thao tác ảnh bìa"
+        },
+        {
+          "path": "backend/src/config/vocabulary-set-cover-storage-config.js",
+          "line": 15,
+          "end_line": 40,
+          "label": "Cấu hình Storage"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Runtime trình duyệt — UI và TTS/STT tạm thời",
+      "wraps": [
+        "react-app",
+        "speaking-practice"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "Dịch vụ Backend ELVocab — quyền truy cập và logic học tập chuẩn",
+      "wraps": [
+        "express-api",
+        "session-auth",
+        "content-modules",
+        "learning-srs",
+        "quiz"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "id": "actor-ui",
+      "from": "learner",
+      "to": "react-app",
+      "label": "sử dụng",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ui-api",
+      "from": "react-app",
+      "to": "express-api",
+      "label": "HTTPS /api + cookie phiên",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "api-auth",
+      "from": "express-api",
+      "to": "session-auth",
+      "label": "xác thực / phân quyền",
+      "variant": "security"
+    },
+    {
+      "id": "api-content",
+      "from": "express-api",
+      "to": "content-modules",
+      "label": "nội dung công khai và theo vai trò"
+    },
+    {
+      "id": "api-learning",
+      "from": "express-api",
+      "to": "learning-srs",
+      "label": "đọc dữ liệu học và mức đánh giá"
+    },
+    {
+      "id": "api-quiz",
+      "from": "express-api",
+      "to": "quiz",
+      "label": "câu hỏi và câu trả lời"
+    },
+    {
+      "id": "auth-data",
+      "from": "session-auth",
+      "to": "prisma",
+      "label": "USER / AUTH_SESSION"
+    },
+    {
+      "id": "content-data",
+      "from": "content-modules",
+      "to": "prisma",
+      "label": "chủ đề, từ vựng, bộ từ"
+    },
+    {
+      "id": "learning-data",
+      "from": "learning-srs",
+      "to": "prisma",
+      "label": "LEARNING_PROGRESS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "quiz-data",
+      "from": "quiz",
+      "to": "prisma",
+      "label": "chấm điểm rồi cập nhật tiến độ"
+    },
+    {
+      "id": "prisma-postgres",
+      "from": "prisma",
+      "to": "postgres",
+      "label": "truy vấn / transaction PostgreSQL",
+      "variant": "emphasis"
+    },
+    {
+      "id": "covers-storage",
+      "from": "content-modules",
+      "to": "supabase-storage",
+      "label": "tải lên / sao chép / xóa ảnh bìa"
+    },
+    {
+      "id": "ui-speaking",
+      "from": "react-app",
+      "to": "speaking-practice",
+      "label": "bắt đầu hoạt động"
+    },
+    {
+      "id": "speaking-read",
+      "from": "speaking-practice",
+      "to": "express-api",
+      "label": "GET learning set?mode=NORMAL",
+      "variant": "dashed"
+    },
+    {
+      "id": "speaking-browser",
+      "from": "speaking-practice",
+      "to": "web-speech",
+      "label": "TTS / nhận dạng",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Hành vi chuẩn ở Backend",
+      "items": [
+        "Express thực thi xác thực phiên và phân quyền theo vai trò.",
+        "Bộ lập lịch SRS theo giai đoạn cố định và chấm điểm Quiz chạy trong dịch vụ Backend.",
+        "Learning Progress được lưu theo USER và Vocabulary trong PostgreSQL."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Ranh giới Luyện nói",
+      "items": [
+        "Luyện nói tái sử dụng API đọc Learning ở chế độ NORMAL đã được phân quyền.",
+        "TTS/STT của trình duyệt chỉ tạo phân loại bản ghi tạm thời.",
+        "Express không nhận audio hoặc bản ghi Luyện nói và không lưu kết quả Luyện nói."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Chủ ý không thể hiện",
+      "items": [
+        "Không có chấm phát âm bằng AI, đánh giá âm vị hoặc lưu tiến độ Luyện nói.",
+        "Không thể hiện XP, Level, Streak, Achievement, Community hoặc mô-đun ADMIN chưa được hỗ trợ."
+      ]
+    }
+  ]
+}

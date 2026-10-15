@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "ELVocab Login Sequence",
+    "locale": "en",
+    "output": "docs/diagrams/archify/sequence/login/elvocab-login-sequence.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Hau-2251220056/EngLish-Vocabulary.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "0198b74fc576c8f82954b060519ae90e8c70c708"
+    }
+  },
+  "participants": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "USER",
+      "sublabel": "authenticated application user",
+      "sources": [
+        { "path": "frontend/src/app-router.jsx", "line": 44, "end_line": 45, "label": "Login route" },
+        { "path": "frontend/src/auth/ui/login-form.jsx", "line": 31, "end_line": 47, "label": "Login interaction" }
+      ]
+    },
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "React/Vite Frontend",
+      "sublabel": "login UI + auth state",
+      "sources": [
+        { "path": "frontend/src/auth/ui/login-form.jsx", "line": 13, "end_line": 47, "label": "Form and redirect" },
+        { "path": "frontend/src/services/auth-service.js", "line": 36, "end_line": 46, "label": "Login API request" },
+        { "path": "frontend/src/auth/auth-store.js", "line": 55, "end_line": 71, "label": "Auth state update" }
+      ]
+    },
+    {
+      "id": "backend",
+      "type": "backend",
+      "label": "Node/Express Backend",
+      "sublabel": "POST /api/auth/login",
+      "sources": [
+        { "path": "backend/src/routes/auth-routes.js", "line": 4, "end_line": 16, "label": "Login route" },
+        { "path": "backend/src/controllers/auth-controller.js", "line": 26, "end_line": 51, "label": "Cookie and response" },
+        { "path": "backend/src/controllers/auth-controller.js", "line": 98, "end_line": 117, "label": "Error mapping" }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Stateful Auth",
+      "sublabel": "server-side sessions",
+      "sources": [
+        { "path": "backend/src/services/authentication-service.js", "line": 60, "end_line": 92, "label": "Login orchestration" },
+        { "path": "backend/src/utils/password-security.js", "line": 82, "end_line": 95, "label": "Password verification" },
+        { "path": "backend/src/services/authentication-service.js", "line": 162, "end_line": 163, "label": "Session SHA-256" }
+      ]
+    },
+    {
+      "id": "prisma",
+      "type": "backend",
+      "label": "Prisma Data Access",
+      "sublabel": "USER + AUTH_SESSION",
+      "sources": [
+        { "path": "backend/src/repositories/user-repository.js", "line": 11, "end_line": 18, "label": "USER lookup" },
+        { "path": "backend/src/repositories/auth-session-repository.js", "line": 18, "end_line": 25, "label": "Session insert" },
+        { "path": "backend/prisma/schema.prisma", "line": 7, "end_line": 16, "label": "Prisma PostgreSQL" }
+      ]
+    },
+    {
+      "id": "database",
+      "type": "database",
+      "label": "Supabase PostgreSQL",
+      "sublabel": "auth table persistence",
+      "sources": [
+        { "path": "backend/prisma/schema.prisma", "line": 13, "end_line": 16, "label": "PostgreSQL datasource" },
+        { "path": "backend/prisma/schema.prisma", "line": 23, "end_line": 49, "label": "Auth entities" },
+        { "path": "docs/DATABASE.md", "line": 17, "end_line": 18, "label": "Supabase hosting" }
+      ]
+    }
+  ],
+  "segments": [
+    { "from": 150, "to": 230, "label": "Open and submit" },
+    { "from": 240, "to": 725, "label": "Successful authentication" },
+    { "from": 755, "to": 1045, "label": "Failure branches (alternate)" }
+  ],
+  "messages": [
+    { "id": "open-login", "from": "user", "to": "frontend", "y": 165, "label": "open /login", "variant": "default" },
+    { "id": "submit-credentials", "from": "user", "to": "frontend", "y": 205, "label": "submit email + password", "variant": "emphasis" },
+    { "id": "post-login", "from": "frontend", "to": "backend", "y": 255, "label": "POST /api/auth/login", "variant": "security" },
+    { "id": "invoke-auth", "from": "backend", "to": "auth", "y": 295, "label": "login(email, password)", "variant": "security", "note": "Validate input shape before credential lookup." },
+    { "id": "find-user", "from": "auth", "to": "prisma", "y": 350, "label": "findByNormalizedEmail(lowercase email)", "variant": "default" },
+    { "id": "select-user", "from": "prisma", "to": "database", "y": 390, "label": "SELECT USER by unique email", "variant": "emphasis" },
+    { "id": "user-row", "from": "database", "to": "prisma", "y": 425, "label": "USER row", "variant": "return" },
+    { "id": "user-record", "from": "prisma", "to": "auth", "y": 460, "label": "user + password_hash", "variant": "return" },
+    { "id": "create-session", "from": "auth", "to": "prisma", "y": 505, "label": "createSession(SHA-256 token hash, expiry)", "variant": "security", "note": "First verify the stored scrypt password hash. The raw random token is never persisted." },
+    { "id": "insert-session", "from": "prisma", "to": "database", "y": 560, "label": "INSERT AUTH_SESSION", "variant": "emphasis" },
+    { "id": "auth-result", "from": "auth", "to": "backend", "y": 600, "label": "public user + raw session token", "variant": "return" },
+    { "id": "login-success", "from": "backend", "to": "frontend", "y": 640, "label": "200 user payload + Set-Cookie session_id", "variant": "return", "note": "HttpOnly, SameSite=Lax, path=/, seven-day max age; Secure for production or HTTPS." },
+    { "id": "authenticated-ui", "from": "frontend", "to": "user", "y": 715, "label": "update auth state; redirect /dashboard", "variant": "return" },
+    { "id": "invalid-form", "from": "user", "to": "frontend", "y": 765, "label": "submit malformed fields", "variant": "default" },
+    { "id": "validation-errors", "from": "frontend", "to": "user", "y": 805, "label": "show field validation; no API request", "variant": "return" },
+    { "id": "invalid-post", "from": "frontend", "to": "backend", "y": 850, "label": "POST /api/auth/login (invalid credentials)", "variant": "security" },
+    { "id": "invalid-auth-check", "from": "backend", "to": "auth", "y": 890, "label": "login(email, password)", "variant": "security" },
+    { "id": "authentication-failed", "from": "auth", "to": "backend", "y": 930, "label": "AUTHENTICATION_FAILED", "variant": "return", "note": "Unknown/inactive USER, password mismatch, or invalid input all return the same error." },
+    { "id": "unauthorized", "from": "backend", "to": "frontend", "y": 996, "label": "401 generic error; no cookie/session", "variant": "return" },
+    { "id": "login-error", "from": "frontend", "to": "user", "y": 1035, "label": "remain guest; show login error", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "frontend", "from": 200, "to": 720, "type": "frontend" },
+    { "participant": "backend", "from": 250, "to": 645, "type": "backend" },
+    { "participant": "auth", "from": 290, "to": 605, "type": "security" },
+    { "participant": "prisma", "from": 345, "to": 565, "type": "backend" },
+    { "participant": "database", "from": 385, "to": 570, "type": "database" },
+    { "participant": "frontend", "from": 760, "to": 810, "type": "frontend" },
+    { "participant": "backend", "from": 845, "to": 1000, "type": "backend" },
+    { "participant": "auth", "from": 885, "to": 935, "type": "security" },
+    { "participant": "frontend", "from": 990, "to": 1040, "type": "frontend" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Success boundary",
+      "items": [
+        "Express sets the raw session token only in an HttpOnly cookie.",
+        "PostgreSQL persists only its SHA-256 hash in AUTH_SESSION.",
+        "React/Vite stores the public user and redirects to /dashboard.",
+        "Authentication uses stateful server-side sessions."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure behavior",
+      "items": [
+        "Frontend schema failures do not call the backend.",
+        "Backend credential failures use one generic 401 response.",
+        "No AUTH_SESSION or session cookie is created on failure."
+      ]
+    }
+  ]
+}
