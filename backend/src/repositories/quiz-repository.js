@@ -1,32 +1,7 @@
 // @ts-nocheck
 export function createQuizRepository(prisma) {
   return {
-    findAccessibleSetForUser(setId, userId, quizType) {
-      const vocabularySelect = {
-        id: true,
-        word: true,
-        updated_at: true,
-        learning_progress: {
-          where: { user_id: userId },
-          select: {
-            status: true,
-            review_count: true,
-            revision: true,
-            last_reviewed_at: true,
-          },
-        },
-      };
-      vocabularySelect.meanings = {
-        orderBy: [{ created_at: "asc" }, { id: "asc" }],
-        select: {
-          id: true,
-          part_of_speech: true,
-          meaning_vi: true,
-          context: true,
-          cefr_level: true,
-          updated_at: true,
-        },
-      };
+    findAccessibleSetForUser(setId, userId) {
       return prisma.vOCABULARY_SET.findFirst({
         where: {
           id: setId,
@@ -44,11 +19,24 @@ export function createQuizRepository(prisma) {
               id: true,
               position: true,
               vocabulary: {
-                select: vocabularySelect,
+                select: questionVocabularySelect(userId),
               },
             },
           },
         },
+      });
+    },
+
+    findCanonicalDistractorCandidates(excludedVocabularyIds) {
+      return prisma.vOCABULARY.findMany({
+        where: {
+          owner_id: null,
+          id: { notIn: excludedVocabularyIds },
+          meanings: { some: {} },
+        },
+        orderBy: { id: "asc" },
+        take: 100,
+        select: candidateVocabularySelect(),
       });
     },
 
@@ -128,6 +116,43 @@ export function createQuizRepository(prisma) {
         async (transaction) => callback(createQuizRepository(transaction)),
         { maxWait: 10_000, timeout: 30_000 },
       );
+    },
+  };
+}
+
+function meaningSelect() {
+  return {
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      part_of_speech: true,
+      meaning_vi: true,
+      cefr_level: true,
+      updated_at: true,
+    },
+  };
+}
+
+function candidateVocabularySelect() {
+  return {
+    id: true,
+    word: true,
+    updated_at: true,
+    meanings: meaningSelect(),
+  };
+}
+
+function questionVocabularySelect(userId) {
+  return {
+    ...candidateVocabularySelect(),
+    learning_progress: {
+      where: { user_id: userId },
+      select: {
+        status: true,
+        review_count: true,
+        revision: true,
+        last_reviewed_at: true,
+      },
     },
   };
 }

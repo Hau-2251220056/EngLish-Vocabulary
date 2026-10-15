@@ -689,24 +689,16 @@ The Dashboard must not become a separate source of truth for business data.
 
 4.7 Quiz
 
-The system currently supports exactly two quiz types:
-
-1. Vietnamese → English
-2. Unscramble Word
+The sole active Quiz mode is Multiple Choice (English → Vietnamese). The replacement is currently `IN_PROGRESS` pending safe verification, guarded CI, formal review and HUMAN approval.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vietnamese → English Quiz	DONE	✅	✅	✅	✅	✅	✅
-Unscramble Word Quiz	DONE	✅	✅	✅	✅	✅	✅
-Per-Character Feedback	DONE	✅	✅	✅	✅	✅	✅
-Transient Quiz Result	DONE	✅	✅	✅	✅	✅	✅
+Multiple Choice Quiz	IN_PROGRESS	✅	✅	✅	✅	⏳	⏳
+Transient Quiz Result	IN_PROGRESS	✅	✅	✅	✅	⏳	⏳
 
-For both active Quiz types, accepted per-character feedback uses visible characters above underlines plus non-color semantics:
-
-Correct position → Green underline + `correct`
-Incorrect/missing/extra → Error underline + explicit semantic state
+Accepted feedback identifies the selected and correct opaque choice IDs after Backend grading and uses visible text plus non-color semantics.
 
 Quiz correctness must be determined by the Backend.
 
-Only the approved quiz types should be implemented.
+Only the approved `MULTIPLE_CHOICE` type should be implemented.
 
 Do not add additional quiz types without explicit scope approval.
 
@@ -714,10 +706,9 @@ Quiz V1 is an authenticated USER-only, Vocabulary-Set-scoped workflow over every
 
 Current workflow evidence:
 
-- Original Quiz V1 SPEC, PLAN and TASK decomposition are HUMAN APPROVED; TASK-080 through TASK-085 are HUMAN APPROVED and TASK-086 preserves completed historical `MISSING_LETTER` implementation evidence.
-- During TASK-086 visual review, HUMAN requested and approved the active `UNSCRAMBLE_WORD` replacement and shared underline feedback revision.
-- TASK-086A, TASK-086B, TASK-087 and TASK-088 are complete and HUMAN APPROVED. TASK-089 formal TEST is `PASS` for AC-01 through AC-16 and formal REVIEW is `APPROVE`, with no findings or blockers.
-- TASK-089 is `COMPLETE — HUMAN APPROVED`; HUMAN final closure is authorized and Quiz V1 is `DONE — HUMAN APPROVED`.
+- The Multiple Choice Quiz SPEC, PLAN and TASK decomposition are HUMAN APPROVED.
+- Backend, Frontend and documentation implementation is complete, including the HUMAN-approved compact single-column answer presentation and restart behavior.
+- Formal offline TEST and REVIEW are in progress. Database-backed authorization, Progress, idempotency and concurrency verification remains reserved for guarded CI.
 - Quiz runs/results remain transient and add no schema/migration or Quiz Session/Attempt/history persistence.
 - SRS/review queue, XP/Level/Streak/Daily Goal/Achievement, Pronunciation Practice, additional Quiz types and analytics remain deferred.
 
@@ -968,7 +959,7 @@ Status: DONE
 
 ### Verified Boundary
 
-- Quiz uses one route-scoped outer vertical scroll owner while preserving both approved Quiz types and backend-authoritative behavior.
+- Quiz uses one route-scoped outer vertical scroll owner while preserving backend-authoritative behavior. The former two-mode statement is historical; the active mode is `MULTIPLE_CHOICE`.
 - Register error states remain content-safe; field errors stay inline and global failures use one responsive, non-focus-stealing Auth notification with keyboard-accessible dismissal and no hidden tab stop.
 - Exactly the five approved USER-facing native selects share the presentation-only native-select primitive; ADMIN controls and native semantics remain unchanged.
 - No backend, API, schema, migration, route, role, dependency, Storage or database behavior changed.

@@ -116,8 +116,7 @@ User
 ├── Learn Vocabulary
 │   ├── Flashcard
 │   ├── Pronunciation Practice
-│   ├── Vietnamese → English Quiz
-│   ├── Unscramble Word Quiz
+│   ├── Multiple Choice Quiz
 │   └── Quiz Result
 │
 ├── Progress
@@ -616,7 +615,7 @@ Outcome panels are compact: one Lucide icon, one heading and at most one support
 
 10.5 Quiz V1 Run
 
-Quiz V1 is a USER-only, Set-scoped flow at `/quiz/vocabulary-sets/:setId`. The USER selects exactly one type—`VI_TO_ENGLISH` or `UNSCRAMBLE_WORD`—and answers every current ordered Set Item once.
+Quiz V1 is a USER-only, Set-scoped flow at `/quiz/vocabulary-sets/:setId`. It starts the sole `MULTIPLE_CHOICE` mode directly and presents every eligible current ordered Set Item once.
 
 Quiz entry actions appear only on currently accessible, non-empty public System Sets or owned private Sets. There is no standalone Quiz catalog, Guest route or ADMIN Quiz page.
 
@@ -628,11 +627,9 @@ Same-tab resume may use a Quiz-owned `sessionStorage` namespace. Stored state is
 
 10.6 Quiz Question Types
 
-`VI_TO_ENGLISH` shows the deterministic primary Vietnamese Meaning and approved prompt metadata, then accepts the complete English word. The pre-answer UI must not receive or render canonical-answer fields, phonetic, pronunciation or English Examples.
+`MULTIPLE_CHOICE` shows the English word and primary-Meaning part of speech, followed by exactly four Vietnamese choice cards. One radio choice may be selected before explicit submission. Enabled cards and buttons use pointer cursors, visible focus and at least 44px touch targets. Feedback and focus move to the authoritative result after grading; the pre-answer UI never identifies the correct choice.
 
-`UNSCRAMBLE_WORD` shows the deterministic primary Vietnamese Meaning/context and a stable backend-provided pool of opaque, duplicate-safe character tiles for the current `run_id`. Letters/digits are selectable; significant spaces and punctuation occupy fixed slots. Selecting a tile appends that exact tile, and activating a selected tile restores it to its original pool position. The interaction is click/tap/keyboard, not drag-and-drop. An unshufflable word remains answerable through the documented identity fallback.
-
-Both types submit to the Backend for authoritative correctness. Accepted feedback uses one shared wrapping underline presentation over Unicode code points: correct positions use green underlines; incorrect/missing/extra positions use error underlines plus accessible text/icon semantics. Color alone is insufficient, and canonical answers appear only after acceptance.
+The selected opaque choice submits to the Backend for authoritative correctness. After acceptance, the correct choice and any wrong selected choice receive distinct visual treatment plus accessible labels; neutral unselected choices remain unchanged. The correct choice is never identified before acceptance.
 
 10.7 Transient Quiz Completion
 
@@ -1059,13 +1056,13 @@ PV-08 implements the following behavior inside the existing owned private Set ed
 - Loading, empty, validation, pending, safe error/retry, keyboard, focus and responsive states remain required.
 - ADMIN System Set editing uses explicit canonical-only capability and exposes no private create/edit behavior.
 
-Flashcard and both Quiz modes present the `part_of_speech` corresponding to the displayed Meaning, consume the exact Set Item Vocabulary, and never substitute content by spelling. Private Vocabulary may use existing native TTS with its exact word and does not borrow canonical pronunciation/content. Broad redesign remains out of scope.
+Flashcard and the active Multiple Choice Quiz present the `part_of_speech` corresponding to the displayed Meaning, consume the exact Set Item Vocabulary, and never substitute content by spelling. Private Vocabulary may use existing native TTS with its exact word and does not borrow canonical pronunciation/content. Broad redesign remains out of scope.
 
 PV-09 verification found the existing Learning path compatible as-is: Set-based authorization, position-ordered exact-ID traversal, deterministic primary Meaning selection with POS/Vietnamese presentation, `(user_id, vocabulary_id)` Progress, per-card pronunciation URL, and native TTS fallback all already preserve Personal Vocabulary identity. No Learning/Flashcard/Progress/TTS production correction or redesign was required. PV-09 is HUMAN approved.
 
-PV-10 verification found both existing Quiz modes compatible as-is. `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD` retain position-ordered exact Vocabulary IDs, use one deterministic selected Meaning with matching Vietnamese text and part of speech, render that POS, and keep exact-ID answer, result and Progress behavior for canonical and private entries. No Quiz production correction, new mode or redesign was required. PV-10 is HUMAN approved.
+Historical PV-10 evidence (superseded by the active Multiple Choice Quiz contract) found the former `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD` modes compatible with Personal Vocabulary exact identity and Progress behavior. The identity findings remain valid; those two modes are no longer active.
 
-PV-11 closure verification combines the existing affected real-stack regressions with six focused Personal Vocabulary browser scenarios. Together they cover atomic create/double-submit, exact-ID reuse/edit/removal/zero-membership recovery and Progress preservation, same-word coexistence and cross-user concealment, System Set rejection/copy behavior, Flashcard exact content/POS/TTS, and both Quiz modes. The approved contract requires this consolidated scenario matrix, not one monolithic browser journey. TASK-PV-01 through TASK-PV-11 are `COMPLETE — HUMAN APPROVED`; Personal Vocabulary V1 is `DONE — HUMAN APPROVED`. Integration into `dev` has not yet occurred.
+PV-11 closure verification combines the existing affected real-stack regressions with six focused Personal Vocabulary browser scenarios. Together they cover atomic create/double-submit, exact-ID reuse/edit/removal/zero-membership recovery and Progress preservation, same-word coexistence and cross-user concealment, System Set rejection/copy behavior, Flashcard exact content/POS/TTS, and the Quiz identity paths active at that time. The approved contract requires this consolidated scenario matrix, not one monolithic browser journey. TASK-PV-01 through TASK-PV-11 are `COMPLETE — HUMAN APPROVED`; Personal Vocabulary V1 is `DONE — HUMAN APPROVED`. Integration into `dev` has not yet occurred.
 
 ### 12.4 Flashcard / Learning V1 Active UX Contract
 
@@ -1460,8 +1457,7 @@ Dashboard
 Learn Vocabulary
 Flashcard
 Pronunciation Practice
-Vietnamese → English Quiz
-Unscramble Word Quiz
+Multiple Choice Quiz
 Quiz Result
 Learning Progress
 Achievements

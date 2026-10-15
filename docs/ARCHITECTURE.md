@@ -600,7 +600,7 @@ Quiz V1 is exposed only to authenticated `USER` accounts through `GET /api/quiz/
 
 Question loading is read-only and structurally excludes canonical-answer fields. The transient UUID `run_id` and opaque `question_revision` require no persistent Quiz Session. Answer submission is the sole Quiz mutation path; it re-authorizes access/membership and applies correctness plus the existing `event_id`/`expected_revision` concurrency contract in one transaction.
 
-For active Quiz V1, `UNSCRAMBLE_WORD` replaces the historical Missing Letter implementation. The Backend derives the safe Vietnamese prompt, opaque duplicate-safe character tiles, fixed-separator slot pattern, deterministic ordering/fallback and question revision. The Frontend owns only accessible tile interaction and transient run presentation; it does not shuffle or evaluate answers authoritatively. Both types share post-acceptance underline-based character feedback.
+For active Quiz V1, `MULTIPLE_CHOICE` replaces the historical typed-answer and Unscramble modes. The Backend selects deterministic primary Meanings, prefers Set-local distractors, uses canonical-only outside-Set fallback, excludes ambiguous labels and foreign-private data, derives opaque deterministic choice IDs, and reconstructs the question before grading. The Frontend owns only accessible single-choice interaction and transient run presentation; it does not select correct answers or grade authoritatively.
 
 No Quiz Session/Attempt/history table, XP/gamification service, SRS algorithm, Pronunciation integration or third Quiz type belongs to Quiz V1 architecture.
 

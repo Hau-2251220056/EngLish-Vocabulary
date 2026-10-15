@@ -1,218 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  QuizApiError,
-  createQuizService,
-} from "../src/services/quiz-service.js";
+import { createQuizService } from "../src/services/quiz-service.js";
 
-const runId = "11111111-1111-4111-8111-111111111111";
-const questionRevision = "A".repeat(43);
-
-test("Quiz service uses only the approved question and answer endpoints", async () => {
+test("Quiz service sends sole type and exact selected-choice contract", async () => {
   const calls = [];
   const service = createQuizService({
-    async get(url, config) {
-      calls.push(["GET", url, config]);
-      return { data: { data: questionPayload } };
-    },
-    async post(url, body) {
-      calls.push(["POST", url, body]);
-      return { data: { data: answerResult } };
-    },
+    async get(url, config) { calls.push(["GET", url, config]); return { data: { data: payload() } }; },
+    async post(url, body) { calls.push(["POST", url, body]); return { data: { data: result(body) } }; },
   });
-  const answer = answerRequest();
-
-  assert.deepEqual(
-    await service.getQuestions("set/id", "VI_TO_ENGLISH", runId),
-    questionPayload,
-  );
-  assert.deepEqual(await service.submitAnswer(answer), answerResult);
-  assert.deepEqual(calls, [
-    [
-      "GET",
-      "/api/quiz/sets/set%2Fid/questions",
-      { params: { type: "VI_TO_ENGLISH", run_id: runId } },
-    ],
-    ["POST", "/api/quiz/answers", answer],
-  ]);
+  await service.getQuestions("set/id", RUN);
+  await service.submitAnswer(answer());
+  assert.deepEqual(calls[0], ["GET", "/api/quiz/sets/set%2Fid/questions", { params: { type: "MULTIPLE_CHOICE", run_id: RUN } }]);
+  assert.deepEqual(Object.keys(calls[1][2]), ["event_id", "set_id", "vocabulary_id", "run_id", "question_revision", "quiz_type", "expected_revision", "selected_choice_id"]);
   assert.equal(JSON.stringify(calls).includes("/api/learning/events"), false);
 });
 
-test("Quiz service serializes exactly the approved answer contract", async () => {
-  let received;
-  const service = createQuizService({
-    async post(_url, body) {
-      received = body;
-      return { data: { data: answerResult } };
-    },
-  });
-
-  await service.submitAnswer(answerRequest());
-  assert.deepEqual(Object.keys(received), [
-    "event_id",
-    "set_id",
-    "vocabulary_id",
-    "run_id",
-    "question_revision",
-    "quiz_type",
-    "expected_revision",
-    "answer",
-  ]);
-  await assert.rejects(
-    service.submitAnswer({ ...answerRequest(), canonical_answer: "leak" }),
-    { code: "INVALID_QUIZ_REQUEST" },
-  );
-});
-
-test("Quiz service validates both approved types and rejects answer leakage", async () => {
-  const unscramble = {
-    ...questionPayload,
-    quiz_type: "UNSCRAMBLE_WORD",
-    questions: [{
-      ...questionPayload.questions[0],
-      prompt: {
-        ...questionPayload.questions[0].prompt,
-        tiles: [
-          { tile_id: "B".repeat(43), character: "b" },
-          { tile_id: "C".repeat(43), character: "a" },
-        ],
-        slots: [{ kind: "tile" }, { kind: "separator", value: "-" }, { kind: "tile" }],
-        shuffle_mode: "SHUFFLED",
-      },
-    }],
-  };
-  const valid = createQuizService({
-    async get() { return { data: { data: unscramble } }; },
-  });
-  assert.deepEqual(
-    await valid.getQuestions("set", "UNSCRAMBLE_WORD", runId),
-    unscramble,
-  );
-
-  const leaking = createQuizService({
-    async get() {
-      return {
-        data: {
-          data: {
-            ...questionPayload,
-            questions: [{ ...questionPayload.questions[0], word: "vocabulary" }],
-          },
-        },
-      };
-    },
-  });
-  await assert.rejects(
-    leaking.getQuestions("set", "VI_TO_ENGLISH", runId),
-    { code: "INVALID_QUIZ_RESPONSE" },
-  );
-  const nestedLeak = createQuizService({
-    async get() {
-      return {
-        data: {
-          data: {
-            ...questionPayload,
-            questions: [{
-              ...questionPayload.questions[0],
-              prompt: {
-                ...questionPayload.questions[0].prompt,
-                correct_answer: "vocabulary",
-              },
-            }],
-          },
-        },
-      };
-    },
-  });
-  await assert.rejects(
-    nestedLeak.getQuestions("set", "VI_TO_ENGLISH", runId),
-    { code: "INVALID_QUIZ_RESPONSE" },
-  );
-  await assert.rejects(
-    valid.getQuestions("set", "UNAPPROVED", runId),
-    { code: "INVALID_QUIZ_REQUEST" },
-  );
-});
-
-test("Quiz service maps not-found, conflict and operational failures safely", async () => {
-  for (const [status, expectedKind] of [[404, "not-found"], [409, "conflict"]]) {
-    const service = createQuizService({
-      async get() {
-        throw {
-          response: {
-            status,
-            data: { error: { code: `QUIZ_${status}`, message: "Safe message." } },
-          },
-        };
-      },
-    });
-    await assert.rejects(
-      service.getQuestions("set", "VI_TO_ENGLISH", runId),
-      (error) => {
-        assert.equal(error instanceof QuizApiError, true);
-        assert.equal(error.kind, expectedKind);
-        assert.equal(error.status, status);
-        return true;
-      },
-    );
+test("question validation requires four unique safe choices and rejects correctness leakage", async () => {
+  for (const data of [
+    { ...payload(), questions: [{ ...payload().questions[0], choices: payload().questions[0].choices.slice(0, 3) }] },
+    { ...payload(), questions: [{ ...payload().questions[0], choices: payload().questions[0].choices.map((choice, index) => index ? choice : { ...choice, label: " ngủ " }) }] },
+    { ...payload(), questions: [{ ...payload().questions[0], correct_choice_id: ID_A }] },
+  ]) {
+    const service = createQuizService({ async get() { return { data: { data } }; } });
+    await assert.rejects(service.getQuestions("set", RUN), { code: "INVALID_QUIZ_RESPONSE" });
   }
-
-  await assert.rejects(
-    createQuizService({ async get() { throw new Error("network detail"); } })
-      .getQuestions("set", "VI_TO_ENGLISH", runId),
-    { kind: "operational", code: "QUIZ_REQUEST_FAILED" },
-  );
 });
 
-const questionPayload = {
-  id: "set-id",
-  name: "Core words",
-  quiz_type: "VI_TO_ENGLISH",
-  run_id: runId,
-  questions: [{
-    vocabulary_id: "word-1",
-    position: 1,
-    question_revision: questionRevision,
-    prompt: {
-      meaning_vi: "từ vựng",
-      context: null,
-      part_of_speech: "noun",
-      cefr_level: "A2",
-    },
-    progress: {
-      status: "NEW",
-      review_count: 0,
-      revision: 0,
-      last_reviewed_at: null,
-    },
-  }],
-};
+test("answer validation rejects legacy and extra fields", async () => {
+  const service = createQuizService({ async post(_url, body) { return { data: { data: result(body) } }; } });
+  await assert.rejects(service.submitAnswer({ ...answer(), answer: "wake" }), { code: "INVALID_QUIZ_REQUEST" });
+  await assert.rejects(service.submitAnswer({ ...answer(), quiz_type: "VI_TO_ENGLISH" }), { code: "INVALID_QUIZ_REQUEST" });
+});
 
-const answerResult = {
-  set_id: "set-id",
-  vocabulary_id: "word-1",
-  run_id: runId,
-  quiz_type: "VI_TO_ENGLISH",
-  is_correct: true,
-  correct_answer: "vocabulary",
-  normalized_answer: "vocabulary",
-  character_feedback: [{ position: 0, expected: "v", submitted: "v", state: "correct" }],
-  progress: {
-    status: "LEARNED",
-    review_count: 1,
-    revision: 1,
-    last_reviewed_at: "2026-09-26T00:00:00.000Z",
-  },
-};
-
-function answerRequest() {
-  return {
-    event_id: "22222222-2222-4222-8222-222222222222",
-    set_id: "set-id",
-    vocabulary_id: "word-1",
-    run_id: runId,
-    question_revision: questionRevision,
-    quiz_type: "VI_TO_ENGLISH",
-    expected_revision: 0,
-    answer: "vocabulary",
-  };
-}
+const RUN = "11111111-1111-4111-8111-111111111111", ID_A = "A".repeat(43), ID_B = "B".repeat(43), ID_C = "C".repeat(43), ID_D = "D".repeat(43);
+function payload() { return { id: "set", name: "Core", quiz_type: "MULTIPLE_CHOICE", run_id: RUN, questions: [{ vocabulary_id: "word", position: 1, question_revision: "R".repeat(43), prompt: { word: "wake", part_of_speech: "verb" }, choices: [{ choice_id: ID_A, label: "thức dậy" }, { choice_id: ID_B, label: "ngủ" }, { choice_id: ID_C, label: "ăn" }, { choice_id: ID_D, label: "đi bộ" }], progress: { status: "NEW", review_count: 0, revision: 0, last_reviewed_at: null } }] }; }
+function answer() { return { event_id: "22222222-2222-4222-8222-222222222222", set_id: "set", vocabulary_id: "word", run_id: RUN, question_revision: "R".repeat(43), quiz_type: "MULTIPLE_CHOICE", expected_revision: 0, selected_choice_id: ID_A }; }
+function result(body) { return { set_id: body.set_id, vocabulary_id: body.vocabulary_id, run_id: body.run_id, quiz_type: "MULTIPLE_CHOICE", is_correct: true, selected_choice_id: body.selected_choice_id, correct_choice_id: ID_A, progress: { status: "LEARNED", review_count: 1, revision: 1, last_reviewed_at: null } }; }

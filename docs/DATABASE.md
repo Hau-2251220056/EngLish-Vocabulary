@@ -852,9 +852,9 @@ Bonus không được tính vào điều kiện hoàn thành Daily Goal.
 
 15.1. Active V1 storage
 
-Quiz V1 supports only `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD`, but introduces no Quiz table, enum, session, attempt, question, shuffle, answer, result, score, accuracy or character-feedback persistence. `UNSCRAMBLE_WORD` replaces the historical `MISSING_LETTER` contract after TASK-086 visual review.
+Quiz V1 supports only `MULTIPLE_CHOICE`, but introduces no Quiz table, enum, session, attempt, question, choice, answer, result, score or accuracy persistence. The historical typed-answer and Unscramble contracts are inactive.
 
-Quiz runs are transient. Stable Unscramble tile ordering/identity, separator slot patterns, identity fallback and opaque `question_revision` values are derived at runtime and require no stored server session.
+Quiz runs are transient. Stable choice ordering/identity and opaque `question_revision` values are derived at runtime and require no stored server session. Outside-Set canonical Vocabulary is used only as distractor material and never as a Progress target.
 
 15.2. Existing data reused
 

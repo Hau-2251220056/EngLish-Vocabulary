@@ -1,14 +1,16 @@
 # Quiz V1 — UI/UX Design Checkpoint
 
+> **Historical checkpoint:** This document records the retired typed-answer and Unscramble UI. The active Multiple Choice design is defined by `docs/specs/QUIZ_V1_SPEC.md`, `docs/plans/QUIZ_V1_PLAN.md`, `docs/tasks/QUIZ_V1_TASK.md` and section 10.5–10.7 of `docs/UI_UX_SPEC.md`.
+
 **Source SPEC:** `docs/specs/QUIZ_V1_SPEC.md` (HUMAN APPROVED)
 
 **Source PLAN:** `docs/plans/QUIZ_V1_PLAN.md` (HUMAN APPROVED)
 
 **Source TASK:** `docs/tasks/QUIZ_V1_TASK.md` (HUMAN APPROVED)
 
-**Checkpoint status:** `HUMAN APPROVED`, including the revised Unscramble/underline direction
+**Checkpoint status:** `SUPERSEDED` — retained as historical implementation evidence
 
-**Production revision authorized:** `BLOCKED` until TASK-086A HUMAN review approves implementation evidence.
+**Production revision authorized:** Not applicable to the active Multiple Choice implementation.
 
 > **Revision after TASK-086 visual review:** HUMAN requested `UNSCRAMBLE_WORD` to replace `MISSING_LETTER` and shared underline-based answer feedback. The original TASK-085 approval and TASK-086 implementation remain historical evidence. This revised checkpoint is `AWAITING HUMAN UI/UX APPROVAL`; production revision is assigned to TASK-086B after TASK-086A backend approval.
 

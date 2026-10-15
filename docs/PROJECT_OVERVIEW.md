@@ -326,43 +326,19 @@ Quy tắc cụ thể phải tuân theo Business Rules đã được phê duyệt
 
 Hệ thống hỗ trợ các dạng bài tập từ vựng.
 
-## 9.1. Vietnamese → English Full Typing
+## 9.1. Multiple Choice: English → Vietnamese
 
-Hệ thống hiển thị nghĩa tiếng Việt.
+Mỗi Quiz thuộc một Vocabulary Set cụ thể và hiển thị lần lượt từng từ tiếng Anh theo thứ tự Set Item. Mỗi câu hỏi có đúng bốn lựa chọn nghĩa tiếng Việt, trong đó đúng một lựa chọn chính xác.
 
-Ví dụ:
+Backend tạo lựa chọn, giữ kín đáp án trước khi nộp và chấm điểm authoritative. User chỉ chọn một đáp án; không có bước nhập chữ hoặc sắp xếp ký tự.
 
-    Công việc → ______
+## 9.2. Quiz Feedback
 
-User phải nhập từ tiếng Anh đầy đủ.
+Sau khi Backend chấp nhận đáp án, lựa chọn đúng được đánh dấu rõ ràng; lựa chọn sai do User chọn được phân biệt với các lựa chọn trung lập. Feedback sử dụng cả ngữ nghĩa accessible, không chỉ dựa vào màu sắc.
 
-## 9.2. Unscramble Word
+## 9.3. Transient Quiz Result
 
-Hệ thống hiển thị nghĩa tiếng Việt và các ký tự chữ/số tiếng Anh đã được Backend xáo trộn ổn định cho run hiện tại.
-
-User chọn từng tile để sắp xếp thành từ hoặc cụm từ tiếng Anh hoàn chỉnh. Khoảng trắng và dấu câu có ý nghĩa được giữ ở vị trí cố định; trường hợp không thể tạo hoán vị khác vẫn giữ câu hỏi bằng fallback an toàn thay vì bỏ Vocabulary khỏi run.
-
-## 9.3. Character-level Feedback
-
-Đối với cả hai dạng Quiz, hệ thống hỗ trợ feedback theo từng ký tự/position sau khi Backend chấp nhận đáp án.
-
-Ví dụ:
-
-- Ký tự đúng ở đúng vị trí: gạch chân xanh kèm ngữ nghĩa `correct`.
-- Ký tự sai, thiếu hoặc thừa: gạch chân lỗi kèm trạng thái chữ/icon tương ứng.
-
-Mục tiêu là tạo feedback trực quan và giúp User nhận biết chính xác vị trí sai.
-
-## 9.4. Quiz Result
-
-Sau mỗi Quiz attempt, hệ thống có thể ghi nhận:
-
-- Kết quả đúng/sai.
-- Điểm.
-- Learning Progress.
-- XP.
-- Streak.
-- SRS information nếu Quiz là một learning/review activity.
+Sau mỗi run, hệ thống hiển thị tổng số câu, số câu đúng và số câu sai của run hiện tại. Quiz cập nhật Learning Progress của đúng Vocabulary được hỏi nhưng không tạo Quiz Session, Attempt history, điểm bền vững, XP, Streak hoặc lịch SRS mới.
 
 Quiz không được tự ý gọi thêm learning/review flow gây cộng thưởng hai lần cho cùng một learning event.
 

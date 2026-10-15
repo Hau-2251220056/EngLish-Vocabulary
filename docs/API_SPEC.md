@@ -942,28 +942,21 @@ và đã đến thời điểm review.
 
 26. Quiz V1
 
-Quiz V1 supports exactly two types for an authenticated `USER`:
+Quiz V1 supports exactly one type for an authenticated `USER`: `MULTIPLE_CHOICE` (English to Vietnamese). Earlier typed-answer and Unscramble contracts are historical and are not active API values.
 
-- `VI_TO_ENGLISH`
-- `UNSCRAMBLE_WORD`
-
-`UNSCRAMBLE_WORD` replaces the historical `MISSING_LETTER` contract after TASK-086 visual review. Earlier completed-task evidence remains historical and must not be interpreted as the active API.
-
-A run is scoped to one accessible, non-empty Vocabulary Set, uses one selected type and traverses every current Set Item once in explicit position order. Guest and ADMIN have no learner Quiz V1 API access. Missing or inaccessible Sets use the approved concealed not-found behavior.
+A run is scoped to one accessible, non-empty Vocabulary Set and traverses every eligible current Set Item once in explicit position order. Guest and ADMIN have no learner Quiz V1 API access. Missing or inaccessible Sets use the approved concealed not-found behavior.
 
 Quiz V1 is transient. It creates no Quiz Session, Quiz Attempt, answer history, durable score or accuracy record.
 
-27. Quiz: Vietnamese → English
+27. Quiz: Multiple Choice (English → Vietnamese)
 
-`VI_TO_ENGLISH` presents the deterministic primary Vietnamese Meaning and approved prompt metadata. Primary Meaning selection matches Flashcard/Learning: choose the lowest recognized CEFR (`A1` through `C2`), preserving deterministic `created_at → id` order for ties or missing CEFR.
+`MULTIPLE_CHOICE` presents the English word and the part of speech from its deterministic primary Vietnamese Meaning. Primary Meaning selection matches Flashcard/Learning: choose the lowest recognized CEFR (`A1` through `C2`), preserving deterministic `created_at → id` order for ties or missing CEFR.
 
-The pre-answer payload structurally excludes canonical-answer fields and directly answer-bearing Vocabulary fields such as `word`, `phonetic`, `pronunciation_url` and English Examples. V1 does not scan or rewrite administrator-authored Vietnamese Meaning/context text.
+Each question has exactly four distinct Vietnamese labels and opaque choice IDs. The Backend prefers other eligible Vocabulary in the Set, then fills any deficit from canonical (`owner_id = null`) Vocabulary outside the Set. Private Vocabulary owned by another USER is never a distractor. Duplicate normalized labels and ambiguous correct labels are excluded; failure to form four safe choices rejects the run.
 
-28. Quiz: Unscramble Word
+28. Deterministic Choice Generation
 
-`UNSCRAMBLE_WORD` presents the deterministic primary Vietnamese Meaning/context plus a safe shuffled projection of the canonical English headword. The projection contains opaque duplicate-safe selectable tile IDs/characters, a separator-only slot pattern and `shuffle_mode`; it contains no canonical word or canonical source indexes.
-
-The Backend iterates NFC Unicode code points. Unicode letters/digits are selectable; collapsed spaces, apostrophes, hyphens and other punctuation remain fixed significant separators. Digest-backed ordering is deterministic for the same `run_id` and question and may change for a new run. When no visibly different permutation exists, `IDENTITY_FALLBACK` preserves the item rather than dropping it. No Quiz state is persisted.
+Choice selection and ordering are digest-derived from `run_id`, Set identity, question identity and authoritative content. Choice IDs are opaque and deterministic for the same run. Outside-Set candidates are distractors only: they never become questions and never receive Learning Progress writes.
 
 29. Get Ordered Quiz Questions
 
@@ -971,7 +964,7 @@ The Backend iterates NFC Unicode code points. Unicode letters/digits are selecta
 
 Access: authenticated `USER` only.
 
-The response returns every current Set Item once in explicit position order. Each safe question projection includes UUID identity, selected type, position, display prompt data and an opaque `question_revision`. Unscramble questions include only the approved safe tile/slot projection. It does not expose a canonical answer.
+The response returns every eligible current Set Item once in explicit position order. Each safe question projection includes UUID identity, `MULTIPLE_CHOICE`, position, English prompt data, exactly four `{ choice_id, label }` choices and an opaque `question_revision`. It does not identify the correct choice.
 
 `question_revision` is derived deterministically from authoritative fields relevant to the question, does not reveal the answer and is recomputed transactionally on answer submission. It is API-only and is not persisted.
 
@@ -990,20 +983,20 @@ Request fields:
   "vocabulary_id": "uuid",
   "run_id": "uuid",
   "question_revision": "opaque-value",
-  "quiz_type": "VI_TO_ENGLISH",
+  "quiz_type": "MULTIPLE_CHOICE",
   "expected_revision": 0,
-  "answer": "work"
+  "selected_choice_id": "opaque-choice-id"
 }
 ```
 
-The Backend transactionally re-authorizes Set access and current membership, validates the question revision, normalizes and evaluates the answer, and mutates only the requesting USER's Learning Progress:
+The Backend transactionally re-authorizes Set access and current membership, reconstructs the deterministic choices, validates the question revision and selected opaque choice ID, evaluates correctness, and mutates only the requesting USER's Learning Progress:
 
 - correct → `LEARNED`;
 - incorrect → `LEARNING`;
 - either accepted outcome increments `review_count` and `revision` exactly once and updates `last_reviewed_at`/`last_event_id`;
 - future SRS fields remain unchanged/null.
 
-Answer normalization trims, applies Unicode NFC, collapses Unicode whitespace and applies locale-independent lowercase. For `VI_TO_ENGLISH` only, one normalized submitted ASCII space is accepted in place of one canonical ASCII hyphen; the equivalence is one-way and does not remove separators or relax apostrophes/other punctuation. `UNSCRAMBLE_WORD` fixed separators remain strict. Post-acceptance feedback uses deterministic minimum-edit alignment over Unicode code points and exposes explicit `correct`, `incorrect`, `missing` and `extra` states. A missing item has `submitted: null`; an accepted space/hyphen pair retains submitted space, expected hyphen and `correct` state for the shared accessible underline presentation.
+Vietnamese labels are compared for uniqueness by trimming, applying Unicode NFC, collapsing Unicode whitespace and applying locale-independent lowercase. Submission uses only the opaque `selected_choice_id`; typed answers, character alignment and tile input are not part of the active contract.
 
 `expected_revision` protects concurrency. Immediate retry with the same current `event_id` and identical logical request does not mutate Progress again. The Backend recomputes transient feedback; incompatible retry state and stale/reordered events return safe conflict responses. Exact historical response replay and an event ledger are outside V1.
 
@@ -1016,19 +1009,19 @@ Quiz V1 safe error contract:
 | Authenticated non-USER role | `403` | existing authorization error |
 | Missing/inaccessible Set | `404` | `QUIZ_SET_NOT_FOUND` |
 | Accessible empty Set | `409` | `QUIZ_SET_EMPTY` |
+| Four distinct safe choices cannot be generated | `409` | `QUIZ_CHOICES_UNAVAILABLE` |
 | Vocabulary is no longer a current Set Item | `409` | `QUIZ_ITEM_CHANGED` |
 | `question_revision` no longer matches authoritative content | `409` | `QUIZ_QUESTION_CHANGED` |
+| Submitted choice is no longer in the reconstructed question | `409` | `QUIZ_CHOICE_CHANGED` |
 | Stale revision, reordered event or incompatible immediate retry | `409` | `QUIZ_PROGRESS_CONFLICT` |
 
 Errors expose no canonical answer, private Set existence, stack trace or database detail.
 
-31. Quiz Character Feedback
+31. Quiz Choice Feedback
 
-The accepted answer response may include per-character feedback computed over Unicode code points. Each position is marked correct or incorrect without storing character feedback in the database.
+An accepted response includes question identity, Quiz type, `is_correct`, `selected_choice_id`, `correct_choice_id` and resulting Progress `status`, `review_count`, `revision` and `last_reviewed_at`. Correctness is never exposed before an accepted submission.
 
 32. Transient Quiz Result
-
-An accepted response includes question identity, Quiz type, `is_correct`, canonical answer, normalized submitted answer, accessible character feedback and resulting Progress `status`, `review_count`, `revision` and `last_reviewed_at`.
 
 The Frontend derives only the transient current-run total/correct/incorrect completion summary. No XP, streak, achievement, SRS schedule, durable result/history ID or accuracy record is returned or persisted.
 

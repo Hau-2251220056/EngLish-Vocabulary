@@ -1,6 +1,6 @@
 const STORAGE_PREFIX = "elvocab.quiz.run.v1:";
 const ACTIVE_PREFIX = "elvocab.quiz.active.v1:";
-const QUIZ_TYPES = new Set(["VI_TO_ENGLISH", "UNSCRAMBLE_WORD"]);
+const QUIZ_TYPES = new Set(["MULTIPLE_CHOICE"]);
 
 export function createQuizRunState(userId, setId, quizType, createRunId = defaultRunId) {
   requireIdentity(userId, setId, quizType);
@@ -59,7 +59,7 @@ export function reconcileQuizRunState(stored, userId, payload) {
   };
 }
 
-export function beginQuizAnswer(state, vocabularyId, answer, createEventId = defaultRunId) {
+export function beginQuizAnswer(state, vocabularyId, selectedChoiceId, createEventId = defaultRunId) {
   const question = state.questions.find((item) => item.vocabulary_id === vocabularyId);
   if (!question || state.accepted[vocabularyId] || state.pending_attempt) return state;
   return {
@@ -72,7 +72,7 @@ export function beginQuizAnswer(state, vocabularyId, answer, createEventId = def
       question_revision: question.question_revision,
       quiz_type: state.quiz_type,
       expected_revision: question.progress_revision,
-      answer,
+      selected_choice_id: selectedChoiceId,
     },
     request_state: "submitting",
     error_code: null,
@@ -197,7 +197,7 @@ function isPendingAttempt(value) {
       typeof value.event_id === "string" &&
       typeof value.vocabulary_id === "string" &&
       typeof value.question_revision === "string" &&
-      typeof value.answer === "string",
+      typeof value.selected_choice_id === "string",
   );
 }
 
