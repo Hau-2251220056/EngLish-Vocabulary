@@ -4,8 +4,9 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { NativeSelect } from "../components/native-select.jsx";
+import { notifications } from "../components/notification-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
-import { SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
+import { SetDetailPagination, SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
 import { paginateSetDetailItems } from "./set-detail-pagination.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "./set-metadata-presentation.jsx";
 import { useSavedVocabularySetSession } from "./saved-vocabulary-set-session.js";
@@ -106,7 +107,6 @@ function PublicVocabularySetDetailContent({ setId }) {
   const [copyError, setCopyError] = useState(null);
   const [itemsPage, setItemsPage] = useState(1);
   const [addItem, setAddItem] = useState(null);
-  const [addFeedback, setAddFeedback] = useState(null);
   const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
   const isSaved = savedSetIds.has(setId);
 
@@ -149,7 +149,6 @@ function PublicVocabularySetDetailContent({ setId }) {
   }
 
   function openAdd(item, trigger) {
-    setAddFeedback(null);
     setAddItem({ item, trigger });
   }
 
@@ -184,15 +183,14 @@ function PublicVocabularySetDetailContent({ setId }) {
             {user?.role === "USER" && !isSaved ? <button type="button" className="inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[0.7rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-sm font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] hover:text-[var(--accent-primary)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] max-[800px]:min-h-11 max-[800px]:w-full" onClick={() => void copySet()} disabled={copyState === "pending"} aria-busy={copyState === "pending"}><Bookmark className="size-4" aria-hidden="true" />{copyState === "pending" ? "Đang lưu…" : copyError ? "Thử lưu lại" : "Lưu vào Bộ từ của tôi"}</button> : null}
           </header>
           {copyError ? <p className="mb-0 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{copyError}</p> : null}
-          {addFeedback ? <p className="mb-0 mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">{addFeedback}</p> : null}
 
           {user?.role === "USER" ? <SetLearningActions enabled={items.length > 0} returnTo={`/vocabulary-sets/${set.id}`} setId={set.id} setName={set.name} /> : null}
 
           <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="vocabulary-set-items-title">
             <div className="set-detail-section-heading flex items-center justify-between gap-4"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="vocabulary-set-items-title">Từ vựng trong bộ ({items.length})</h2></div>
-            {items.length > 0 ? <><SetVocabularyPreviewTable items={itemPagination.items} renderAction={user?.role === "USER" ? (item) => <button type="button" className="public-set-add-action inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1 rounded-lg border border-[var(--accent-primary)] bg-white px-2.5 text-xs font-semibold text-[var(--accent-primary-pressed)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-label={`Thêm ${item.word} vào bộ từ cá nhân`} onClick={(event) => openAdd(item, event.currentTarget)}><Plus className="size-4 shrink-0" aria-hidden="true" /><span className="public-set-add-label">Thêm</span></button> : undefined} /><div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-3 text-sm text-slate-600"><p className="m-0 font-semibold" aria-live="polite">{itemPagination.start}–{itemPagination.end} / {itemPagination.totalItems} từ</p>{itemPagination.totalPages > 1 ? <nav className="flex items-center gap-2" aria-label="Phân trang từ vựng"><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.max(1, value - 1))} disabled={itemPagination.currentPage === 1}>Trước</button><span aria-current="page" className="min-w-16 text-center font-semibold">Trang {itemPagination.currentPage} / {itemPagination.totalPages}</span><button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-3 font-semibold text-slate-700 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setItemsPage((value) => Math.min(itemPagination.totalPages, value + 1))} disabled={itemPagination.currentPage === itemPagination.totalPages}>Sau</button></nav> : null}</div></> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
+            {items.length > 0 ? <><SetVocabularyPreviewTable items={itemPagination.items} renderAction={user?.role === "USER" ? (item) => <button type="button" className="public-set-add-action inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1 rounded-lg border border-[var(--accent-primary)] bg-white px-2.5 text-xs font-semibold text-[var(--accent-primary-pressed)] hover:bg-[var(--accent-primary-soft)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-label={`Thêm ${item.word} vào bộ từ cá nhân`} onClick={(event) => openAdd(item, event.currentTarget)}><Plus className="size-4 shrink-0" aria-hidden="true" /><span className="public-set-add-label">Thêm</span></button> : undefined} /><SetDetailPagination pagination={itemPagination} setPage={setItemsPage} /></> : <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Hiện chưa có nội dung để học với Flashcard, Quiz và Luyện nói.</p></div>}
           </section>
-          {addItem ? <AddPublicVocabularyDialog item={addItem.item} sourceSetId={set.id} onClose={closeAdd} onSuccess={(destination) => { setAddFeedback(`Đã thêm ${addItem.item.word} vào ${destination.name}.`); closeAdd(); }} /> : null}
+          {addItem ? <AddPublicVocabularyDialog item={addItem.item} sourceSetId={set.id} onClose={closeAdd} onSuccess={(destination) => { notifications.success(`Đã thêm ${addItem.item.word} vào ${destination.name}.`, `public-word-added-${addItem.item.vocabulary_id}-${destination.id}`); closeAdd(); }} /> : null}
         </article>
       ) : null}
     </section>

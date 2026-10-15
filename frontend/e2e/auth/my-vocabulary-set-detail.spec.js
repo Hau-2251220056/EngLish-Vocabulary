@@ -118,9 +118,13 @@ test("renders the owner learning hub, projection, and source-based actions", asy
 });
 
 test("empty Set keeps real activities disabled and vocabulary management available", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
   await install(page, { ...populated, items: [] }); await page.goto(`/my/vocabulary-sets/${setId}`);
   await expect(page.getByText("Thêm từ vựng để bắt đầu", { exact: true })).toHaveCount(3);
   await expect(page.getByRole("link", { name: /Thẻ ghi nhớ|Quiz|Luyện nói/ })).toHaveCount(0);
+  const disabledCards = page.locator('.set-detail-learning-card[aria-disabled="true"]');
+  await expect(disabledCards).toHaveCount(3);
+  for (const card of await disabledCards.all()) await expect(card).toHaveCSS("cursor", "auto");
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
   await expect(page.getByRole("dialog", { name: "Thêm từ vựng" })).toBeVisible();
 });
@@ -237,6 +241,7 @@ test("private create protects pending work, preserves values after failure, and 
   await expect(dialog.getByRole("textbox", { name: "Từ vựng", exact: true })).toHaveValue("journey");
   await submit.click(); await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "journey", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Đã tạo và thêm từ mới." })).toBeVisible();
 });
 
 test("add existing appends exact IDs, restores focus, and mobile does not overflow", async ({ page }) => {
@@ -251,6 +256,7 @@ test("add existing appends exact IDs, restores focus, and mobile does not overfl
   const patch = calls.find((call) => call.method === "PATCH" && call.body?.items?.length === 3);
   expect(patch.body.items).toEqual([{ vocabulary_id: "canonical-1" }, { vocabulary_id: "private-1" }, { vocabulary_id: "canonical-2" }]);
   await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
+  await expect(page.getByRole("alert").filter({ hasText: "Đã thêm từ vựng vào bộ." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -263,6 +269,7 @@ test("private edit preserves values after failure and refreshes authoritative de
   await dialog.getByRole("button", { name: "Lưu thay đổi" }).click(); await expect(dialog.getByRole("alert")).toContainText("Không thể lưu từ vựng");
   await expect(dialog.getByRole("textbox", { name: "Từ vựng", exact: true })).toHaveValue("novel"); await dialog.getByRole("button", { name: "Lưu thay đổi" }).click();
   await expect(dialog).toHaveCount(0); await expect(page.getByRole("cell", { name: "novel", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Đã cập nhật từ vựng." })).toBeVisible();
   await expect(page.getByRole("row", { name: /novel/ }).getByRole("button", { name: "Chỉnh sửa novel" })).toBeFocused();
 });
 
@@ -307,13 +314,43 @@ test("membership removal keeps a failed row and retry removes only that membersh
   await expect(page.getByRole("alert")).toContainText("Không thể gỡ từ vựng"); await expect(row).toBeVisible();
   await expect(removeButton).toBeFocused(); await removeButton.click(); dialog = page.getByRole("dialog", { name: "Gỡ từ khỏi bộ?" }); await dialog.getByRole("button", { name: "Gỡ khỏi bộ" }).click(); await expect(row).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Từ vựng trong bộ (1)" })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Đã gỡ airport khỏi bộ");
+  const successToast = page.getByRole("alert").filter({ hasText: "Đã gỡ airport khỏi bộ" });
+  await expect(successToast).toBeVisible();
+  await expect(successToast.locator(".Toastify__progress-bar")).toBeVisible();
   await expect(page.getByRole("row", { name: /book/ })).toBeVisible();
   const patches = calls.filter((call) => call.method === "PATCH");
   expect(patches).toHaveLength(2);
   expect(patches[1].body).toEqual({ items: [{ vocabulary_id: "private-1" }] });
   expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(0);
   await expect(page.getByRole("button", { name: "Xóa từ vựng" })).toHaveCount(0);
+});
+
+test("paginates ordered rows and clamps after removing the final row on the last page", async ({ page }) => {
+  const items = Array.from({ length: 21 }, (_, index) => ({
+    id: `item-${index + 1}`,
+    vocabulary_id: `canonical-${index + 1}`,
+    position: index + 1,
+    word: `word-${String(index + 1).padStart(2, "0")}`,
+    phonetic: null,
+    source: "CANONICAL",
+    primary_meaning: { part_of_speech: "noun", meaning_vi: `nghĩa ${index + 1}`, example: null },
+  }));
+  await install(page, { ...populated, items });
+  await page.goto(`/my/vocabulary-sets/${setId}`);
+  await expect(page.getByText("1–10 / 21 từ", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: /word-01/ })).toBeVisible();
+  await page.getByRole("button", { name: "Trang sau" }).click();
+  await expect(page.getByText("Trang 2 / 3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: /word-11/ })).toBeVisible();
+  await page.getByRole("button", { name: "Trang sau" }).click();
+  await expect(page.getByText("21–21 / 21 từ", { exact: true })).toBeVisible();
+  const finalRow = page.getByRole("row", { name: /word-21/ });
+  await finalRow.getByRole("button", { name: "Gỡ word-21 khỏi bộ" }).click();
+  await page.getByRole("dialog", { name: "Gỡ từ khỏi bộ?" }).getByRole("button", { name: "Gỡ khỏi bộ" }).click();
+  await expect(page.getByText("Trang 2 / 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("11–20 / 20 từ", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: /word-11/ })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Từ vựng trong bộ (20)" })).toBeFocused();
 });
 
 test("shows loading, retries an operational error, and keeps not-found private", async ({ page }) => {
@@ -343,6 +380,127 @@ test("backdrop dismissal and responsive columns remain usable", async ({ page })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.getByRole("button", { name: /sắp xếp|di chuyển|kéo|thả/i })).toHaveCount(0);
   await expect(page.locator('[draggable="true"]')).toHaveCount(0);
+});
+
+test("Personal Set learning cards use the approved compact mobile grid", async ({ page }, testInfo) => {
+  await install(page, { ...populated, name: "Bộ từ tiếng Anh giao tiếp hằng ngày có tiêu đề dài" });
+  const viewports = [
+    { width: 320, height: 700 }, { width: 375, height: 812 },
+    { width: 479, height: 820 }, { width: 481, height: 820 },
+    { width: 720, height: 900 }, { width: 768, height: 1024 },
+    { width: 799, height: 900 }, { width: 801, height: 900 },
+    { width: 1024, height: 768 }, { width: 1440, height: 900 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/my/vocabulary-sets/${setId}`);
+    const grid = page.locator(".set-detail-learning-grid");
+    const cards = grid.locator(".set-detail-learning-card");
+    await expect(cards).toHaveCount(3);
+    const boxes = await cards.evaluateAll((elements) => elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }));
+
+    if (viewport.width <= 800) {
+      expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
+      expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
+      expect(Math.abs(boxes[2].x - boxes[0].x)).toBeLessThan(1);
+    } else {
+      expect(Math.abs(boxes[0].y - boxes[2].y)).toBeLessThan(1);
+    }
+    if (viewport.width <= 480) {
+      for (const box of boxes) {
+        expect(box.height).toBeGreaterThanOrEqual(100);
+        expect(box.height).toBeLessThanOrEqual(115);
+      }
+      await expect(cards.first().locator("p")).toBeHidden();
+    }
+    expect(Math.max(...boxes.map((box) => box.height)) - Math.min(...boxes.map((box) => box.height))).toBeLessThan(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    const flashcard = page.getByRole("link", { name: /Thẻ ghi nhớ/ });
+    await expect(flashcard).toHaveCSS("cursor", "pointer");
+    await flashcard.focus();
+    await expect(flashcard).toBeFocused();
+
+    if ([320, 375, 768, 1440].includes(viewport.width)) {
+      await grid.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`personal-learning-cards-${viewport.width}.png`) });
+    }
+  }
+});
+
+test("Speaking learning card keeps its teal accent on mobile and desktop", async ({ page }) => {
+  await install(page);
+  for (const viewport of [{ width: 375, height: 812 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/my/vocabulary-sets/${setId}`);
+    const speaking = page.getByRole("link", { name: /Luyện nói/ });
+    await expect(speaking).toHaveCSS("border-color", "rgb(93, 220, 203)");
+    const icon = speaking.locator(".set-detail-learning-icon");
+    await expect(icon).toHaveCSS("background-color", "rgb(240, 253, 250)");
+    await expect(icon).toHaveCSS("color", "rgb(13, 148, 136)");
+    await expect(speaking).toBeVisible();
+  }
+});
+
+test("Focused UI review keeps pagination, toast, touch targets, and overflow safe", async ({ page }, testInfo) => {
+  const items = Array.from({ length: 21 }, (_, index) => ({
+    id: `review-item-${index + 1}`,
+    vocabulary_id: `review-vocabulary-${index + 1}`,
+    position: index + 1,
+    word: `responsive-word-${String(index + 1).padStart(2, "0")}`,
+    phonetic: null,
+    source: "CANONICAL",
+    primary_meaning: { part_of_speech: "noun", meaning_vi: `Một nghĩa tiếng Việt dài để kiểm tra xuống dòng an toàn ${index + 1}`, example: null },
+  }));
+  await install(page, { ...populated, items });
+  for (const viewport of [{ width: 320, height: 700 }, { width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 799, height: 900 }, { width: 801, height: 900 }, { width: 844, height: 390 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/my/vocabulary-sets/${setId}`);
+    const previous = page.getByRole("button", { name: "Trang trước" });
+    const next = page.getByRole("button", { name: "Trang sau" });
+    await expect(previous).toBeDisabled();
+    await expect(previous).toHaveCSS("cursor", "not-allowed");
+    await expect(next).toBeVisible();
+    await expect(next).toHaveCSS("cursor", "pointer");
+    const nextBox = await next.boundingBox();
+    expect(nextBox.width).toBeGreaterThanOrEqual(44);
+    expect(nextBox.height).toBeGreaterThanOrEqual(44);
+    await next.focus();
+    await next.press("Enter");
+    await expect(page.getByText(/Trang 2 \/ [23]/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (viewport.width === 375) {
+      const row = page.getByRole("row", { name: /responsive-word-11/ });
+      await row.getByRole("button", { name: "Gỡ responsive-word-11 khỏi bộ" }).click();
+      await page.getByRole("dialog", { name: "Gỡ từ khỏi bộ?" }).getByRole("button", { name: "Gỡ khỏi bộ" }).click();
+      const toast = page.getByRole("alert").filter({ hasText: "Đã gỡ responsive-word-11 khỏi bộ." });
+      await expect(toast).toBeVisible();
+      await expect(toast.locator(".Toastify__progress-bar")).toBeVisible();
+      const close = toast.locator(".Toastify__close-button");
+      await expect(close).toHaveCSS("cursor", "pointer");
+      const closeBox = await close.boundingBox();
+      expect(closeBox.width).toBeGreaterThanOrEqual(44);
+      expect(closeBox.height).toBeGreaterThanOrEqual(44);
+      const toastRoot = toast.locator("xpath=ancestor-or-self::div[contains(concat(' ', normalize-space(@class), ' '), ' Toastify__toast ')][1]");
+      await expect(toastRoot).toHaveCSS("opacity", "1");
+      await expect(toastRoot).toHaveCSS("transform", "none");
+      const toastBox = await toastRoot.boundingBox();
+      expect(toastBox.y).toBeGreaterThanOrEqual(0);
+      expect(toastBox.y).toBeLessThanOrEqual(24);
+      expect(viewport.width - (toastBox.x + toastBox.width)).toBeGreaterThanOrEqual(8);
+      await page.screenshot({ path: testInfo.outputPath("ui-consistency-toast-375.png") });
+    }
+    const pagination = page.getByRole("navigation", { name: "Phân trang từ vựng" });
+    await pagination.scrollIntoViewIfNeeded();
+    const paginationBox = await pagination.boundingBox();
+    expect(paginationBox.x).toBeGreaterThanOrEqual(0);
+    expect(paginationBox.x + paginationBox.width).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: testInfo.outputPath(`ui-consistency-${viewport.width}.png`) });
+  }
 });
 
 function privateAggregate(word, meanings = [{ id: "meaning-1", part_of_speech: "noun", meaning_vi: "sách", context: null, cefr_level: null, examples: [] }]) { return { success: true, data: { id: "private-1", word, phonetic: null, meanings } }; }

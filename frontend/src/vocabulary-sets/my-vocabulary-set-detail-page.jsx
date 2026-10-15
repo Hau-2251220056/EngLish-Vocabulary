@@ -1,11 +1,13 @@
 import { ArrowLeft, BookOpen, CircleAlert, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { notifications } from "../components/notification-service.js";
 import { vocabularyService } from "../services/vocabulary-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { AddVocabularyModal } from "./add-vocabulary-modal.jsx";
 import { PrivateVocabularyEditor } from "./private-vocabulary-editor.jsx";
-import { SetLearningActions } from "./set-detail-primitives.jsx";
+import { SetDetailPagination, SetLearningActions } from "./set-detail-primitives.jsx";
+import { paginateSetDetailItems } from "./set-detail-pagination.js";
 import { SetCefrBadge } from "./set-metadata-presentation.jsx";
 
 const DETAIL_PRIMARY_BUTTON_CLASSES = "inline-flex min-h-10 shrink-0 cursor-pointer items-center justify-center gap-[0.4rem] rounded-[0.7rem] border-0 bg-[var(--accent-primary)] px-3 py-[0.55rem] text-sm font-semibold text-white shadow-[0_4px_12px_rgb(76_162_230/16%)] transition-[transform,box-shadow,background-color] duration-150 hover:-translate-y-px hover:bg-[var(--accent-primary-hover)] hover:shadow-[0_6px_16px_rgb(76_162_230/20%)] active:translate-y-0 active:bg-[var(--accent-primary-pressed)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transform-none motion-reduce:transition-none max-[800px]:min-h-11 max-[800px]:w-full";
@@ -20,16 +22,17 @@ export function MyVocabularySetDetailPage() {
   const [removeTarget, setRemoveTarget] = useState(null);
   const [privateError, setPrivateError] = useState(null);
   const [pending, setPending] = useState(null);
-  const [feedback, setFeedback] = useState(null);
+  const [itemsPage, setItemsPage] = useState(1);
   const privateEditControlsRef = useRef(new Map());
   const removeControlsRef = useRef(new Map());
   const pendingPrivateFocusIdRef = useRef(null);
   const pendingRemoveFocusIdRef = useRef(null);
+  const vocabularyHeadingRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => {
-      if (active) { setState("loading"); setFeedback(null); }
+      if (active) setState("loading");
       return vocabularySetService.getMySet(setId);
     }).then(
       (data) => { if (active) { setDetail(data); setState("ready"); } },
@@ -57,6 +60,7 @@ export function MyVocabularySetDetailPage() {
   }, [detail, pending, removeTarget]);
 
   const items = useMemo(() => [...(detail?.items ?? [])].sort((a, b) => a.position - b.position), [detail]);
+  const itemPagination = useMemo(() => paginateSetDetailItems(items, itemsPage), [items, itemsPage]);
   const existingIds = useMemo(() => new Set(items.map((item) => item.vocabulary_id)), [items]);
   const detailPath = `/my/vocabulary-sets/${setId}`;
 
@@ -68,7 +72,7 @@ export function MyVocabularySetDetailPage() {
 
   async function addExisting(vocabularyId) {
     await vocabularySetService.updateMySet(setId, { items: [...items.map((item) => ({ vocabulary_id: item.vocabulary_id })), { vocabulary_id: vocabularyId }] });
-    await refresh(); setAddOpen(false); setFeedback({ type: "success", text: "Đã thêm từ vựng vào bộ." });
+    await refresh(); setAddOpen(false); notifications.success("Đã thêm từ vựng vào bộ.", `personal-set-add-${setId}-${vocabularyId}`);
   }
 
   async function openPrivateEditor(item) {
@@ -79,7 +83,7 @@ export function MyVocabularySetDetailPage() {
       const data = await vocabularyService.getPrivateVocabulary(item.vocabulary_id);
       setPrivateEditor((current) => current?.item.vocabulary_id === item.vocabulary_id ? { item, data } : current);
     }
-    catch (error) { setPrivateEditor(null); setFeedback({ type: "error", text: message(error, "Không thể tải từ vựng để chỉnh sửa.") }); requestAnimationFrame(() => privateEditControlsRef.current.get(item.vocabulary_id)?.focus?.()); }
+    catch (error) { setPrivateEditor(null); notifications.error(message(error, "Không thể tải từ vựng để chỉnh sửa."), `private-vocabulary-load-${item.vocabulary_id}`); requestAnimationFrame(() => privateEditControlsRef.current.get(item.vocabulary_id)?.focus?.()); }
     finally { setPending(null); }
   }
 
@@ -92,7 +96,7 @@ export function MyVocabularySetDetailPage() {
 
   async function savePrivate(input) {
     setPending("private"); setPrivateError(null);
-    try { const vocabularyId = privateEditor.data.id; await vocabularyService.updatePrivateVocabulary(vocabularyId, input); await refresh(); pendingPrivateFocusIdRef.current = vocabularyId; setPrivateEditor(null); setFeedback({ type: "success", text: "Đã cập nhật từ vựng." }); return true; }
+    try { const vocabularyId = privateEditor.data.id; await vocabularyService.updatePrivateVocabulary(vocabularyId, input); await refresh(); pendingPrivateFocusIdRef.current = vocabularyId; setPrivateEditor(null); notifications.success("Đã cập nhật từ vựng.", `private-vocabulary-updated-${vocabularyId}`); return true; }
     catch (error) { setPrivateError(message(error, "Không thể lưu từ vựng. Vui lòng thử lại.")); return false; }
     finally { setPending(null); }
   }
@@ -111,11 +115,15 @@ export function MyVocabularySetDetailPage() {
   async function confirmRemove() {
     const item = removeTarget;
     if (!item || pending) return;
-    setPending(`remove-${item.vocabulary_id}`); setFeedback(null);
+    setPending(`remove-${item.vocabulary_id}`);
     try {
       const current = await vocabularySetService.updateMySet(setId, { items: items.filter((entry) => entry.vocabulary_id !== item.vocabulary_id).map((entry) => ({ vocabulary_id: entry.vocabulary_id })) });
-      setDetail(current); setState("ready"); setRemoveTarget(null); setFeedback({ type: "success", text: `Đã gỡ ${item.word} khỏi bộ.` });
-    } catch (error) { pendingRemoveFocusIdRef.current = item.vocabulary_id; setRemoveTarget(null); setFeedback({ type: "error", text: message(error, "Không thể gỡ từ vựng. Vui lòng thử lại.") }); }
+      setDetail(current); setState("ready"); setRemoveTarget(null);
+      const nextPage = paginateSetDetailItems(current.items ?? [], itemsPage).currentPage;
+      setItemsPage(nextPage);
+      notifications.success(`Đã gỡ ${item.word} khỏi bộ.`, `personal-set-remove-${setId}-${item.vocabulary_id}`);
+      requestAnimationFrame(() => vocabularyHeadingRef.current?.focus());
+    } catch (error) { pendingRemoveFocusIdRef.current = item.vocabulary_id; setRemoveTarget(null); notifications.error(message(error, "Không thể gỡ từ vựng. Vui lòng thử lại."), `personal-set-remove-error-${setId}-${item.vocabulary_id}`); }
     finally { setPending(null); }
   }
 
@@ -129,16 +137,14 @@ export function MyVocabularySetDetailPage() {
           <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]">{detail.name}</h1><SetCefrBadge cefrLevel={detail.cefr_level} /></div><p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{detail.description || "Chưa có mô tả cho bộ từ này."}</p></div>
         </div>
       </header>
-      {feedback ? <p className={`set-detail-feedback mb-0 mt-4 rounded-xl px-4 py-3 text-sm font-normal ${feedback.type === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`} role={feedback.type === "error" ? "alert" : "status"}>{feedback.text}</p> : null}
-
-      <SetLearningActions enabled={items.length > 0} returnTo={detailPath} setId={setId} setName={detail.name} />
+      <SetLearningActions compactMobile enabled={items.length > 0} returnTo={detailPath} setId={setId} setName={detail.name} />
 
       <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="set-detail-vocabulary-title">
-        <div className="set-detail-section-heading flex items-center justify-between gap-4 max-[800px]:flex-col max-[800px]:items-stretch"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="set-detail-vocabulary-title">Từ vựng trong bộ ({items.length})</h2><button type="button" className={`my-vocabulary-sets-primary ${DETAIL_PRIMARY_BUTTON_CLASSES}`} onClick={() => setAddOpen(true)}><Plus aria-hidden="true" />Thêm từ vựng</button></div>
-        {items.length === 0 ? <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Thêm từ vựng để bắt đầu học với Flashcard, Quiz và Luyện nói.</p></div> : <VocabularyTable items={items} pending={pending} onEdit={openPrivateEditor} onRemove={requestRemove} registerEditControl={(vocabularyId, control) => { if (control) privateEditControlsRef.current.set(vocabularyId, control); else privateEditControlsRef.current.delete(vocabularyId); }} registerRemoveControl={(vocabularyId, control) => { if (control) removeControlsRef.current.set(vocabularyId, control); else removeControlsRef.current.delete(vocabularyId); }} />}
+        <div className="set-detail-section-heading flex items-center justify-between gap-4 max-[800px]:flex-col max-[800px]:items-stretch"><h2 ref={vocabularyHeadingRef} tabIndex="-1" className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold focus:outline-none" id="set-detail-vocabulary-title">Từ vựng trong bộ ({items.length})</h2><button type="button" className={`my-vocabulary-sets-primary ${DETAIL_PRIMARY_BUTTON_CLASSES}`} onClick={() => setAddOpen(true)}><Plus aria-hidden="true" />Thêm từ vựng</button></div>
+        {items.length === 0 ? <div className="set-detail-empty mt-4 grid justify-items-center gap-[0.65rem] rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-[clamp(2rem,6vw,4rem)] text-center text-slate-500 [&_h3]:m-0 [&_p]:m-0 [&>svg]:size-8 [&>svg]:text-[var(--accent-primary)]"><BookOpen aria-hidden="true" /><h3>Bộ từ chưa có từ vựng</h3><p>Thêm từ vựng để bắt đầu học với Flashcard, Quiz và Luyện nói.</p></div> : <><VocabularyTable items={itemPagination.items} pending={pending} onEdit={openPrivateEditor} onRemove={requestRemove} registerEditControl={(vocabularyId, control) => { if (control) privateEditControlsRef.current.set(vocabularyId, control); else privateEditControlsRef.current.delete(vocabularyId); }} registerRemoveControl={(vocabularyId, control) => { if (control) removeControlsRef.current.set(vocabularyId, control); else removeControlsRef.current.delete(vocabularyId); }} /><SetDetailPagination pagination={itemPagination} pending={Boolean(pending)} setPage={setItemsPage} /></>}
       </section>
 
-      {addOpen ? <AddVocabularyModal existingIds={existingIds} setId={setId} onAddExisting={addExisting} onCreated={async () => { await refresh(); setAddOpen(false); setFeedback({ type: "success", text: "Đã tạo và thêm từ mới." }); }} onClose={() => setAddOpen(false)} /> : null}
+      {addOpen ? <AddVocabularyModal existingIds={existingIds} setId={setId} onAddExisting={addExisting} onCreated={async () => { await refresh(); setAddOpen(false); notifications.success("Đã tạo và thêm từ mới.", `private-vocabulary-created-${setId}`); }} onClose={() => setAddOpen(false)} /> : null}
       {privateEditor?.data ? <PrivateVocabularyEditor error={privateError} initialValue={privateEditor.data} mode="edit" pending={pending === "private"} onCancel={closePrivateEditor} onSubmit={savePrivate} /> : null}
       {privateEditor && !privateEditor.data ? <PrivateVocabularyLoadingDialog word={privateEditor.item.word} onCancel={closePrivateEditor} /> : null}
       {removeTarget ? <RemoveMembershipDialog item={removeTarget} pending={pending === `remove-${removeTarget.vocabulary_id}`} onCancel={cancelRemove} onConfirm={confirmRemove} /> : null}

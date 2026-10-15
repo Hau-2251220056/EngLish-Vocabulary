@@ -42,7 +42,7 @@ test("Set entry actions expose Quiz only for non-empty accessible Sets", async (
   );
   assert.match(
     ownedDetailSource,
-    /<SetLearningActions enabled=\{items\.length > 0\} returnTo=\{detailPath\} setId=\{setId\} setName=\{detail\.name\}/,
+    /<SetLearningActions compactMobile enabled=\{items\.length > 0\} returnTo=\{detailPath\} setId=\{setId\} setName=\{detail\.name\}/,
   );
   assert.match(learningActionsSource, /to=\{`\/quiz\/vocabulary-sets\/\$\{setId\}`\} state=\{\{ returnTo, setName \}\}/);
   assert.match(learningActionsSource, /enabled \? <Link[\s\S]*aria-disabled="true"/);

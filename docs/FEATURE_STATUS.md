@@ -972,7 +972,18 @@ Status: DONE
 
 ### Deferred / Non-blocking
 
-- A future separately scoped notification-system refactor may evaluate a shared toast library such as React-Toastify. It is not part of this completed workstream.
+- This completed workstream did not include notification-system replacement; the separately scoped UI Consistency V1 workstream below now owns React-Toastify integration.
+
+## UI Consistency V1
+
+Status: IN_PROGRESS
+
+- HUMAN approved shared React-Toastify notifications, Public-consistent client-side pagination for Personal Set Detail, the compact two-column Personal mobile learning-card layout, and the teal Speaking-card accent.
+- SPEC: `docs/specs/UI_CONSISTENCY_V1_SPEC.md`
+- PLAN: `docs/plans/UI_CONSISTENCY_V1_PLAN.md`
+- TASK: `docs/tasks/UI_CONSISTENCY_V1_TASK.md`
+- No backend, API, schema, migration or database change is included.
+- Status remains `IN_PROGRESS` until formal verification, HUMAN visual approval and guarded CI are complete.
 
 4.15 Engineering Foundation
 

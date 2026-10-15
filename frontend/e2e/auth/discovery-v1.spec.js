@@ -438,7 +438,9 @@ test("USER selects a personal destination, confirms once, and receives success f
   await dialog.getByLabel("Bộ từ đích").selectOption("personal-1");
   await confirm.click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("Đã thêm passport vào Du lịch cá nhân.");
+  const successToast = page.getByRole("alert").filter({ hasText: "Đã thêm passport vào Du lịch cá nhân." });
+  await expect(successToast).toBeVisible();
+  await expect(successToast.locator(".Toastify__progress-bar")).toBeVisible();
   expect(calls).toEqual([{ setId: "personal-1", body: { source_set_id: "set-airport", vocabulary_id: "vocabulary-passport" } }]);
   await expect(trigger).toBeFocused();
 });
@@ -644,11 +646,11 @@ test("Public Detail paginates ten ordered words, keeps controls outside mobile s
   await expect(table.getByRole("row")).toHaveCount(11);
   await expect(page.getByText("1–10 / 11 từ", { exact: true })).toBeVisible();
   await expect(page.getByText("Trang 1 / 2", { exact: true })).toBeVisible();
-  await expect(pagination.getByRole("button", { name: "Trước" })).toBeDisabled();
+  await expect(pagination.getByRole("button", { name: "Trang trước" })).toBeDisabled();
   await expect(page.locator(".set-detail-table-wrap").getByRole("navigation")).toHaveCount(0);
   await expect.poll(() => page.locator(".set-detail-table-wrap").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 
-  const next = pagination.getByRole("button", { name: "Sau" });
+  const next = pagination.getByRole("button", { name: "Trang sau" });
   await next.focus();
   await expect(next).toBeFocused();
   await next.click();
