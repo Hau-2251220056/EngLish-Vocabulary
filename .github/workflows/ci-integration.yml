@@ -259,6 +259,12 @@ jobs:
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:xp-migration:ci
 
+      - name: Run isolated XP repository verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-repository:ci
+
   xp-migration-cleanup:
     name: XP Migration Cleanup
     needs:
@@ -338,14 +344,14 @@ jobs:
         run: |
           if [[ "$XP_HARNESS_MODE" == "true" ]]; then
             if [[ "$XP_VERIFICATION_RESULT" != "success" || "$XP_CLEANUP_RESULT" != "success" ]]; then
-              echo "## XP Migration Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "## XP Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
               echo "Verification result: $XP_VERIFICATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
               echo "Cleanup result: $XP_CLEANUP_RESULT" >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
 
-            echo "## XP Migration Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
-            echo "Isolated migration verification and independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            echo "## XP Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated migration and repository verification plus independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
