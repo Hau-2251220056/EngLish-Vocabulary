@@ -8,6 +8,12 @@ on:
     branches:
       - dev
   workflow_dispatch:
+    inputs:
+      run_xp_migration_harness:
+        description: Run only the isolated XP migration harness and cleanup
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -46,7 +52,9 @@ jobs:
   backend-db-integration:
     name: Backend DB Integration
     needs: trust-gate
-    if: needs.trust-gate.outputs.trusted == 'true'
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true)
     outputs:
       configured: ${{ steps.configuration.outputs.configured }}
     runs-on: ubuntu-latest
@@ -124,6 +132,7 @@ jobs:
       - backend-db-integration
     if: >-
       needs.trust-gate.outputs.trusted == 'true' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true) &&
       needs.backend-db-integration.result == 'success' &&
       needs.backend-db-integration.outputs.configured == 'true'
     runs-on: ubuntu-latest
@@ -199,6 +208,111 @@ jobs:
           const database = await createTestDatabase();
           try { await database.reset(); } finally { await database.disconnect(); }"
 
+  xp-migration-verification:
+    name: XP Migration Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      XP_MIGRATION_HARNESS_ALLOW: "true"
+
+    steps:
+      - name: Require configured CI TEST database
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing XP migration verification."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Run isolated XP migration verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-migration:ci
+
+  xp-migration-cleanup:
+    name: XP Migration Cleanup
+    needs:
+      - trust-gate
+      - xp-migration-verification
+    if: >-
+      always() &&
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      XP_MIGRATION_HARNESS_ALLOW: "true"
+
+    steps:
+      - name: Require configured CI TEST database
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing XP migration cleanup."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Remove only owned XP migration schemas for this run
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-migration:cleanup:ci
+
   integration-summary:
     name: Summary
     if: always()
@@ -206,6 +320,8 @@ jobs:
       - trust-gate
       - backend-db-integration
       - real-stack-browser
+      - xp-migration-verification
+      - xp-migration-cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -216,7 +332,23 @@ jobs:
           DATABASE_CONFIGURED: ${{ needs.backend-db-integration.outputs.configured }}
           BACKEND_RESULT: ${{ needs.backend-db-integration.result }}
           BROWSER_RESULT: ${{ needs.real-stack-browser.result }}
+          XP_HARNESS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true }}
+          XP_VERIFICATION_RESULT: ${{ needs.xp-migration-verification.result }}
+          XP_CLEANUP_RESULT: ${{ needs.xp-migration-cleanup.result }}
         run: |
+          if [[ "$XP_HARNESS_MODE" == "true" ]]; then
+            if [[ "$XP_VERIFICATION_RESULT" != "success" || "$XP_CLEANUP_RESULT" != "success" ]]; then
+              echo "## XP Migration Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $XP_VERIFICATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              echo "Cleanup result: $XP_CLEANUP_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## XP Migration Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated migration verification and independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           if [[ "$CLASSIFICATION" == "SKIPPED_FORK" ]]; then
             echo "## CI Guarded Integration: SKIPPED_FORK" >> "$GITHUB_STEP_SUMMARY"
             echo "Database-backed and real-stack checks did not run and are not PASS evidence." >> "$GITHUB_STEP_SUMMARY"
