@@ -4,6 +4,12 @@ import {
   calculateRatingTransition,
   evaluateProgress,
 } from "./srs-scheduler.js";
+import {
+  XP_REWARD_TYPES,
+  deriveSrsRewardCandidate,
+  projectXpLevel,
+} from "./xp-level-service.js";
+import { isXpRewardCollisionError } from "../repositories/xp-reward-repository.js";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -143,7 +149,7 @@ export function createLearningService({ learningRepository, now = () => new Date
 
           const current = await repository.findProgress(userId, event.vocabulary_id);
           if (current?.last_event_id === event.event_id) {
-            return toAuthoritativeProgress(current);
+            return toAcceptedEventResult(repository, userId, event, current, true);
           }
           if (current && !evaluateProgress(current, acceptedAt).is_eligible) {
             throw learningProgressChangedError();
@@ -154,6 +160,21 @@ export function createLearningService({ learningRepository, now = () => new Date
           if (current && current.revision !== event.expected_revision) {
             throw learningProgressChangedError();
           }
+
+          const initialReward = await repository.findRewardByIdentity(
+            userId,
+            event.vocabulary_id,
+            XP_REWARD_TYPES.SRS_INITIAL,
+            0,
+          );
+          const rewardCandidate = deriveSrsRewardCandidate({
+            user_id: userId,
+            vocabulary_id: event.vocabulary_id,
+            rating: event.rating,
+            progress: current,
+            has_initial_reward: Boolean(initialReward),
+            accepted_at: acceptedAt,
+          });
 
           const transition = calculateRatingTransition(current, event.rating, acceptedAt);
           const data = {
@@ -171,7 +192,13 @@ export function createLearningService({ learningRepository, now = () => new Date
               review_count: 1,
               revision: 1,
             });
-            return toAuthoritativeProgress(created);
+            return completeAcceptedEvent(
+              repository,
+              userId,
+              event,
+              created,
+              rewardCandidate,
+            );
           }
 
           const updated = await repository.updateProgressAtRevision(
@@ -186,25 +213,95 @@ export function createLearningService({ learningRepository, now = () => new Date
           const latest = await repository.findProgress(userId, event.vocabulary_id);
           if (updated.count === 0) {
             if (latest?.last_event_id === event.event_id) {
-              return toAuthoritativeProgress(latest);
+              return toAcceptedEventResult(repository, userId, event, latest, true);
             }
             throw learningProgressChangedError();
           }
-          return toAuthoritativeProgress(latest);
+          return completeAcceptedEvent(
+            repository,
+            userId,
+            event,
+            latest,
+            rewardCandidate,
+          );
         });
       } catch (error) {
-        if (error?.code === "P2002" || error?.code === "P2034") {
+        if (
+          error?.code === "P2002"
+          || error?.code === "P2034"
+          || isXpRewardCollisionError(error)
+        ) {
           const latest = await learningRepository.findProgress(
             userId,
             event.vocabulary_id,
           );
           if (latest?.last_event_id === event.event_id) {
-            return toAuthoritativeProgress(latest);
+            return toAcceptedEventResult(
+              learningRepository,
+              userId,
+              event,
+              latest,
+              true,
+            );
           }
           throw learningProgressChangedError();
         }
         throw error;
       }
+    },
+  };
+}
+
+async function completeAcceptedEvent(
+  repository,
+  userId,
+  event,
+  progress,
+  rewardCandidate,
+) {
+  let xpEarned = 0;
+  let totalXp;
+  if (rewardCandidate) {
+    const result = await repository.insertRewardAndIncrementXp({
+      user_id: userId,
+      vocabulary_id: event.vocabulary_id,
+      ...rewardCandidate,
+      source_event_id: event.event_id,
+    });
+    xpEarned = result.reward.xp_amount;
+    totalXp = result.total_xp;
+  } else {
+    totalXp = await repository.readUserTotalXp(userId);
+  }
+  return withRewardProjection(progress, event.event_id, xpEarned, false, totalXp);
+}
+
+async function toAcceptedEventResult(
+  repository,
+  userId,
+  event,
+  progress,
+  replayed,
+) {
+  const [reward, totalXp] = await Promise.all([
+    repository.findRewardBySourceEvent(userId, event.event_id),
+    repository.readUserTotalXp(userId),
+  ]);
+  const xpEarned = reward?.vocabulary_id === event.vocabulary_id
+    ? reward.xp_amount
+    : 0;
+  return withRewardProjection(progress, event.event_id, xpEarned, replayed, totalXp);
+}
+
+function withRewardProjection(progress, sourceEventId, xpEarned, replayed, totalXp) {
+  const projection = projectXpLevel(totalXp);
+  return {
+    ...toAuthoritativeProgress(progress),
+    reward: {
+      source_event_id: sourceEventId,
+      xp_earned: xpEarned,
+      replayed,
+      ...projection,
     },
   };
 }
