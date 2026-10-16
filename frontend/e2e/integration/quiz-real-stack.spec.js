@@ -30,7 +30,23 @@ test.afterEach(async () => { if (created.userIds.length && created.vocabularyIds
 test.afterAll(async () => { try { await targetedCleanup(); } finally { await prisma.$disconnect(); } });
 
 test("USER completes ordered Multiple Choice questions through authoritative Progress mutations", async ({ page }) => {
-  await login(page, learner); await page.goto(`/quiz/vocabulary-sets/${systemSet.id}`);
+  await login(page, learner);
+  const observedRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === `/api/learning/sets/${systemSet.id}` || url.pathname === `/api/quiz/sets/${systemSet.id}/questions`) observedRequests.push(url);
+  });
+  const initialQuestions = page.waitForResponse((response) => response.url().includes(`/api/quiz/sets/${systemSet.id}/questions`) && response.status() === 200);
+  await page.goto(`/quiz/vocabulary-sets/${systemSet.id}`);
+  await initialQuestions;
+  const manifestIndex = observedRequests.findIndex((url) => url.pathname === `/api/learning/sets/${systemSet.id}` && url.searchParams.get("mode") === "NORMAL");
+  const boundedIndex = observedRequests.findIndex((url) => url.pathname === `/api/quiz/sets/${systemSet.id}/questions`);
+  expect(manifestIndex).toBeGreaterThanOrEqual(0);
+  expect(boundedIndex).toBeGreaterThan(manifestIndex);
+  const firstQuestionRequest = observedRequests[boundedIndex];
+  expect(firstQuestionRequest.searchParams.get("vocabulary_ids")).toBe(systemWords.map(({ id }) => id).join(","));
+  const firstRunId = firstQuestionRequest.searchParams.get("run_id");
+  expect(firstRunId).toBeTruthy();
   await expect(page.getByRole("heading", { name: systemWords[0].word })).toBeFocused();
   await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
   await page.getByRole("radio", { name: /thức dậy/ }).check();
@@ -46,7 +62,18 @@ test("USER completes ordered Multiple Choice questions through authoritative Pro
   await page.getByRole("button", { name: "Xem kết quả" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeFocused();
   const beforeRestart = await progressSnapshot(learnerRecord.id);
-  await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+  const restartRequestStart = observedRequests.length;
+  const restartedQuestions = page.waitForResponse((response) => response.url().includes(`/api/quiz/sets/${systemSet.id}/questions`) && response.status() === 200);
+  await page.getByRole("button", { name: "Học lại từ đầu" }).click();
+  const restartUrl = new URL((await restartedQuestions).url());
+  const restartRequests = observedRequests.slice(restartRequestStart);
+  const restartManifestIndex = restartRequests.findIndex((url) => url.pathname === `/api/learning/sets/${systemSet.id}` && url.searchParams.get("mode") === "NORMAL");
+  const restartBoundedIndex = restartRequests.findIndex((url) => url.pathname === `/api/quiz/sets/${systemSet.id}/questions`);
+  expect(restartManifestIndex).toBeGreaterThanOrEqual(0);
+  expect(restartBoundedIndex).toBeGreaterThan(restartManifestIndex);
+  expect(restartUrl.searchParams.get("vocabulary_ids")).toBe(systemWords.map(({ id }) => id).join(","));
+  expect(restartUrl.searchParams.get("run_id")).toBeTruthy();
+  expect(restartUrl.searchParams.get("run_id")).not.toBe(firstRunId);
   await expect(page.getByRole("heading", { name: systemWords[0].word })).toBeFocused();
   expect(await progressSnapshot(learnerRecord.id)).toEqual(beforeRestart);
 });

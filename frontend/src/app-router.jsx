@@ -14,6 +14,7 @@ import { LearningProgressPage } from "./learning-progress/learning-progress-page
 import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
 import { SpeakingPracticePage } from "./pronunciation/speaking-practice-page.jsx";
+import { SpeakingSessionStorageObserver } from "./pronunciation/speaking-session-storage-observer.jsx";
 import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
 import { DiscoveryRouteLayout } from "./topics/discovery-route-layout.jsx";
 import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
@@ -32,6 +33,7 @@ export function AppRouter() {
     <BrowserRouter>
       <LearningSessionStorageObserver />
       <QuizSessionStorageObserver />
+      <SpeakingSessionStorageObserver />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route element={<DiscoveryRouteLayout />}>

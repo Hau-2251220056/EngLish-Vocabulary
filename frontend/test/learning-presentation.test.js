@@ -63,6 +63,23 @@ test("Learning audio keeps card URL priority and exact-word native TTS fallback"
   assert.doesNotMatch(source, /find\([^\n]*\.word|filter\([^\n]*\.word/);
 });
 
+test("NORMAL learning UI exposes explicit batch completion, continuation and full restart labels", async () => {
+  const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  assert.match(source, /currentIndex === cards\.length - 1[\s\S]*Hoàn thành phiên/);
+  assert.match(source, /Học tiếp \{normalSummary\.next_batch_size\} từ/);
+  assert.match(source, /Học lại từ đầu/);
+  assert.match(source, /onClick=\{finishNormalBatch\}/);
+  assert.doesNotMatch(source, /recordMeaningfulEvent\([^)]*NORMAL/);
+});
+
+test("SRS completion and up-to-date UI use the approved status and explicit continuation", async () => {
+  const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  assert.match(source, />Hoàn thành ôn tập</);
+  assert.match(source, /onClick=\{continueSrsReview\}[\s\S]*Ôn tiếp/);
+  assert.match(source, /payload\.next_review_at[\s\S]*formatNextReview/);
+  assert.doesNotMatch(source, /> Làm mới SRS</);
+});
+
 test("pending visual belongs only to the submitted SRS rating", () => {
   const attempt = { rating: "AGAIN" };
   assert.equal(pendingLearningRating("pending", attempt), "AGAIN");

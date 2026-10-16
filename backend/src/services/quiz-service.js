@@ -2,7 +2,9 @@
 import { buildMultipleChoiceQuestion } from "./quiz-domain.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const QUESTION_QUERY_FIELDS = new Set(["type", "run_id"]);
+const QUESTION_QUERY_FIELDS = new Set(["type", "run_id", "vocabulary_ids"]);
+const REQUIRED_QUESTION_QUERY_FIELDS = new Set(["type", "run_id"]);
+const MAX_BOUNDED_QUESTIONS = 10;
 const ANSWER_FIELDS = new Set(["event_id", "set_id", "vocabulary_id", "run_id", "question_revision", "quiz_type", "expected_revision", "selected_choice_id"]);
 const QUIZ_TYPE = "MULTIPLE_CHOICE";
 
@@ -14,12 +16,20 @@ export function createQuizService({ quizRepository }) {
   return {
     async getQuestions(userId, setId, input) {
       validateUuid(userId); validateUuid(setId);
-      const query = validateQuestionQuery(input);
+      const query = validateQuestionQueryShape(input);
       const set = await quizRepository.findAccessibleSetForUser(setId, userId);
       if (!set) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
-      if (!set.items.length) throw serviceError("QUIZ_SET_EMPTY", "Quiz set has no vocabulary to practice.");
+      const requestedIds = query.has_vocabulary_ids
+        ? parseBoundedVocabularyIds(query.vocabulary_ids)
+        : null;
+      if (!set.items.length && requestedIds === null) {
+        throw serviceError("QUIZ_SET_EMPTY", "Quiz set has no vocabulary to practice.");
+      }
+      const questionItems = requestedIds === null
+        ? set.items
+        : selectRequestedItems(set.items, requestedIds);
       const external = await quizRepository.findCanonicalDistractorCandidates(set.items.map((item) => item.vocabulary.id));
-      const questions = buildQuestions(set, external, query.run_id);
+      const questions = buildQuestions(set, questionItems, external, query.run_id);
       return { id: set.id, name: set.name, quiz_type: QUIZ_TYPE, run_id: query.run_id, questions };
     },
 
@@ -38,9 +48,9 @@ export function createQuizService({ quizRepository }) {
   };
 }
 
-function buildQuestions(set, external, runId) {
+function buildQuestions(set, questionItems, external, runId) {
   const setCandidates = set.items.map(({ vocabulary }) => vocabulary);
-  return set.items.map((item) => {
+  return questionItems.map((item) => {
     let built;
     try { built = buildMultipleChoiceQuestion({ runId, setId: set.id, item, setCandidates, canonicalCandidates: external }); }
     catch (error) { if (error instanceof TypeError) throw questionUnavailableError(); throw error; }
@@ -112,9 +122,31 @@ function progressProjection(progress) {
     last_reviewed_at: progress.last_reviewed_at } : { status: "NEW", review_count: 0, revision: 0, last_reviewed_at: null };
 }
 
-function validateQuestionQuery(input) {
-  if (!exactFields(input, QUESTION_QUERY_FIELDS) || input.type !== QUIZ_TYPE) throw validationError();
-  validateUuid(input.run_id); return { run_id: input.run_id };
+function validateQuestionQueryShape(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || !Object.keys(input).every((field) => QUESTION_QUERY_FIELDS.has(field))
+    || ![...REQUIRED_QUESTION_QUERY_FIELDS].every((field) => Object.hasOwn(input, field))
+    || input.type !== QUIZ_TYPE) throw validationError();
+  validateUuid(input.run_id);
+  return {
+    run_id: input.run_id,
+    has_vocabulary_ids: Object.hasOwn(input, "vocabulary_ids"),
+    vocabulary_ids: input.vocabulary_ids,
+  };
+}
+function parseBoundedVocabularyIds(value) {
+  if (typeof value !== "string" || value.length === 0) throw validationError();
+  const ids = value.split(",");
+  if (ids.length < 1 || ids.length > MAX_BOUNDED_QUESTIONS
+    || ids.some((id) => id.length === 0 || !UUID_PATTERN.test(id))
+    || new Set(ids).size !== ids.length) throw validationError();
+  return ids;
+}
+function selectRequestedItems(items, requestedIds) {
+  const itemsByVocabularyId = new Map(items.map((item) => [item.vocabulary.id, item]));
+  const selected = requestedIds.map((id) => itemsByVocabularyId.get(id));
+  if (selected.some((item) => !item)) throw questionUnavailableError();
+  return selected;
 }
 function validateAnswerInput(input) {
   if (!exactFields(input, ANSWER_FIELDS)) throw validationError();

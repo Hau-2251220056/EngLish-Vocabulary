@@ -37,26 +37,25 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     expect(calls.answers[1]).toEqual(calls.answers[0]);
   });
 
-  test("unavailable choices and changed choice are actionable", async ({ page }) => {
-    await installQuizApiMock(page, { onQuestions: ({ call, runId }) => call === 1 ? failure(409, "QUIZ_CHOICES_UNAVAILABLE") : success(questionPayload(runId)) });
+  test("one-shot stale question recovery deliberately retries once", async ({ page }) => {
+    const calls = await installQuizApiMock(page, { onQuestions: ({ call, runId }) => call === 1 ? failure(409, "QUIZ_CHOICES_UNAVAILABLE") : success(questionPayload(runId)) });
     await page.goto("/quiz/vocabulary-sets/set-flow");
-    await expect(page.getByRole("heading", { name: "Chưa đủ lựa chọn" })).toBeVisible();
-    await page.getByRole("button", { name: "Thử lại" }).click();
     await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
+    expect(calls.questions).toHaveLength(2);
   });
 
   test("restart confirms partial progress, starts a fresh run, and is direct after completion", async ({ page }) => {
     const calls = await installQuizApiMock(page, { questions: [question("word-wake", 1, "wake", "thức dậy")] });
     await page.goto("/quiz/vocabulary-sets/set-flow");
     await page.getByRole("radio", { name: /thức dậy/ }).check();
-    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
-    const dialog = page.getByRole("dialog", { name: "Bắt đầu lại Quiz?" });
+    await page.getByRole("button", { name: "Học lại từ đầu" }).click();
+    const dialog = page.getByRole("dialog", { name: "Học lại từ đầu?" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Hủy" }).click();
     await expect(dialog).toBeHidden();
 
-    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
-    await dialog.getByRole("button", { name: "Bắt đầu lại" }).click();
+    await page.getByRole("button", { name: "Học lại từ đầu" }).click();
+    await dialog.getByRole("button", { name: "Học lại từ đầu" }).click();
     await expect.poll(() => calls.questions.length).toBe(2);
     expect(calls.questions[1].runId).not.toBe(calls.questions[0].runId);
 
@@ -64,7 +63,7 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
     await page.getByRole("button", { name: "Xem kết quả" }).click();
     await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeVisible();
-    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+    await page.getByRole("button", { name: "Học lại từ đầu" }).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => calls.questions.length).toBe(3);
     expect(calls.questions[2].runId).not.toBe(calls.questions[1].runId);

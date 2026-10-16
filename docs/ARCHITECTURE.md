@@ -773,6 +773,12 @@ The backend authorizes a public System Set or current-USER-owned private Set, re
 
 The frontend route reuses `ProtectedRoute`, `UserRoute` and `AuthenticatedShell`. It owns a namespaced same-tab run state in `sessionStorage`, reconciles it with fresh server payloads and clears only that namespace on logout/session invalidation. Auth internals do not know Flashcard storage keys, and the frontend never becomes authoritative for durable progress.
 
+Learning Session V1 standardizes this transient frontend boundary across `NORMAL_FLASHCARD`, `SRS_FLASHCARD`, `MULTIPLE_CHOICE_QUIZ` and `SPEAKING_PRACTICE`. Records are versioned and isolated by authenticated USER, Set and stable mode. A small dependency-free adapter writes to `sessionStorage` and retains an in-memory page-lifetime copy; storage access/quota failure falls back to that memory copy without using `localStorage`, cookies, a database or a new Backend session model. Malformed, unsupported-version or wrong-identity state fails closed, and logout/session invalidation clears only ELVocab-owned namespaces.
+
+NORMAL, Quiz and Speaking use immutable ordered exact-ID snapshots split into fixed batches of at most 10. Reconciliation intersects those original batches with fresh authorized membership, excludes additions and removes missing IDs without refill, substitution or reordering. SRS instead takes at most the first 10 distinct cards only after the existing Backend eligibility/order calculation. Client restoration and storage fallback never submit or replay a Quiz answer or SRS rating.
+
+Speaking session persistence is positional only. Transcript alternatives, confidence, recognition result, audio, attempt state and pronunciation score remain transient in memory and are never serialized. Quiz bounded reads reuse the authorized Learning `NORMAL` response as a membership manifest, but the Quiz Backend independently authorizes every submitted ID and constructs the requested batch atomically; the existing answer transaction remains authoritative.
+
 A mandatory HUMAN UI/UX checkpoint separates frontend service/route/run-state foundation from final Flashcard UI implementation. No SRS service/algorithm, Words to Review, Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community or AI is part of this V1 architecture.
 
 ### 12.2 Learning Progress View V1 Read Extension

@@ -538,6 +538,7 @@ Status: DONE
 4.5 Learning
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
+Learning Session V1 Enhancement	DONE	✓	✓	✓	✓	✓	✓
 Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
@@ -559,6 +560,8 @@ LEARNED
 NEEDS_REVIEW
 
 Flashcard / Learning with SRS V1 is a USER-only Set learning flow with transient client state and backend-authoritative per-`(user_id, vocabulary_id)` progress. SRS is the default mode; NORMAL preserves read-only all-card traversal. The backend owns the four-rating schedule, and immediate retry of the current event ID is idempotent while stale different events are rejected by revision protection. No persistent Learning Session/history or event ledger is introduced.
+
+Learning Session V1 is `DONE` and HUMAN approved. NORMAL Flashcard, SRS Flashcard, Quiz and Speaking Practice use resilient USER/Set/mode-isolated same-tab sessions, stable ordered batches of at most 10 distinct Vocabulary IDs, safe Set reconciliation and explicit continuation/restart. Quiz bounded-read authorization remains backend-authoritative, SRS scheduling and mutation integrity are preserved, and Speaking recognition data remains transient. Formal TEST, focused UI/UX review, guarded Backend DB Integration and Real Stack Browser CI, and final REVIEW passed. Live Chrome microphone/vendor-recognition behavior and device-specific audio routing remain deferred manual verification because guarded mocked/browser CI does not establish those device-dependent paths.
 
 ## Flashcard / Learning V1 Closure
 

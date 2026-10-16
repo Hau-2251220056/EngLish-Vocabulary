@@ -306,7 +306,7 @@ test("SRS persists revised NEW intervals and AGAIN resumes after three other pre
 
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Khó, Ngày mai" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   firstProgress = await progressFor(learnerRecord.id, firstVocabulary.id);
   expect(firstProgress).toMatchObject({ status: "LEARNED", interval_days: 1, review_count: 3, revision: 3 });
 
@@ -491,11 +491,27 @@ test("Flashcard navigation uses expressive actionable colors and neutral disable
   await expect(previous).toHaveClass(/!border-\[#f97316\]/);
   await expect(previous).toHaveClass(/text-\[#f97316\]/);
   await expect(previous).toHaveCSS("cursor", "pointer");
-  await expect(next).toBeDisabled();
-  await expect(next).toHaveClass(/disabled:bg-slate-100/);
-  await expect(next).toHaveClass(/disabled:!border-slate-200/);
-  await expect(next).toHaveClass(/disabled:text-slate-400/);
-  await expect(next).toHaveCSS("cursor", "not-allowed");
+  await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
+  await expect(next).toHaveCount(0);
+  const complete = page.getByRole("button", { name: "Hoàn thành phiên", exact: true });
+  await expect(complete).toBeEnabled();
+  await expect(complete).toHaveClass(/bg-\[#7ed321\]/);
+  await expect(complete).toHaveClass(/!border-\[#7ed321\]/);
+  await expect(complete).toHaveClass(/text-white/);
+  await expect(complete).toHaveCSS("cursor", "pointer");
+  expect(await progressSnapshot(learnerRecord.id)).toEqual(before);
+
+  await previous.click();
+  await expect(page.getByRole("heading", { name: firstVocabulary.word })).toBeFocused();
+  await expect(previous).toBeDisabled();
+  await expect(previous).toHaveClass(/disabled:bg-slate-100/);
+  await expect(previous).toHaveClass(/disabled:!border-slate-200/);
+  await expect(previous).toHaveClass(/disabled:text-slate-400/);
+  await expect(previous).toHaveCSS("cursor", "not-allowed");
+  await page.getByRole("button", { name: /Thẻ sau/ }).click();
+  await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
+  await page.getByRole("button", { name: "Hoàn thành phiên", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeFocused();
   expect(await progressSnapshot(learnerRecord.id)).toEqual(before);
 });
 
@@ -526,14 +542,14 @@ test("stable-stage rating, up-to-date and empty states use authoritative persist
   await page.keyboard.press("Space");
   await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeFocused();
   await page.getByRole("button", { name: "Dễ, 2 tuần" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
   const stable = await progressFor(learnerRecord.id, firstVocabulary.id);
   expect(stable).toMatchObject({ status: "LEARNED", interval_days: 14, review_count: 3, revision: 3 });
   expect(stable.next_review_at.getTime() - stable.last_reviewed_at.getTime()).toBe(14 * 86_400_000);
 
   await page.goto(`/learn/vocabulary-sets/${stableSet.id}`);
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
   const emptySet = await prisma.vOCABULARY_SET.create({
     data: { owner_id: learnerRecord.id, name: `${prefix} Empty`, is_public: false },

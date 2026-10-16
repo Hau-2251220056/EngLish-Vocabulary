@@ -66,9 +66,9 @@ test("target navigation, completion and Restart keep deliberate focus destinatio
   await page.getByRole("button", { name: "Từ tiếp theo" }).press("Enter");
   await expect(page.getByRole("heading", { name: "travel" })).toBeFocused();
   await page.getByRole("button", { name: "Từ tiếp theo" }).press("Enter");
-  await expect(page.getByRole("heading", { name: "Đã đi hết bộ từ" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Hoàn thành luyện nói" })).toBeFocused();
 
-  await page.getByRole("button", { name: "Luyện lại từ đầu" }).press("Enter");
+  await page.getByRole("button", { name: "Học lại từ đầu" }).press("Enter");
   await expect(page.getByRole("heading", { name: "book" })).toBeFocused();
 });
 
