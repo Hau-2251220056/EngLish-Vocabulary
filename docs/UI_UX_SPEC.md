@@ -1206,7 +1206,7 @@ The UI provides separate semantic Listen and Speak/Stop buttons using Lucide ico
 
 The pronunciation feature should not be presented as a third quiz type.
 
-Action legality comes only from the accepted controller snapshot. First Speak shows a concise disclosure that browser-vendor processing may occur locally or remotely; continuing is explicit and does not promise on-device processing. No microphone starts automatically.
+Action legality comes only from the accepted controller snapshot. First Speak shows a concise disclosure that browser-vendor processing may occur locally or remotely; continuing is explicit and does not promise on-device processing. Recognition starts only from an explicit **Nói** or **Thử nói lại** gesture; Retry immediately starts a fresh attempt without a second **Nói** click. Page load, navigation, rendering and automated retry never start recognition, and no automatic retry loop is permitted.
 
 Terminal focus, Retry recovery, target-change/completion focus, atomic live announcements, 44px touch targets, visible focus and reduced-motion behavior follow the accepted accessibility contract. Exact real-device support remains evidence-based; responsive source/mock coverage is not a claim of mobile recognition compatibility.
 

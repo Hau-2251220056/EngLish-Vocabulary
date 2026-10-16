@@ -326,7 +326,7 @@ These are UI recovery bounds, not recording limits, scores, or responsiveness gu
 
 **Dependencies:** Gate R1 PASS; TASK-192, TASK-197.
 
-**Work:** Implement LOADING, READY, DISCLOSURE, UNSUPPORTED, INSECURE_CONTEXT, STARTING, LISTENING, FINALIZING, RESULT, INCONCLUSIVE, RECOVERABLE_ERROR, CANCELLING, INACCESSIBLE, EMPTY. Derive controls from state; no auto retry/history; clear result on target change; preserve attempt ownership.
+**Work:** Implement LOADING, READY, DISCLOSURE, UNSUPPORTED, INSECURE_CONTEXT, STARTING, LISTENING, FINALIZING, RESULT, INCONCLUSIVE, RECOVERABLE_ERROR, CANCELLING, INACCESSIBLE, EMPTY. Derive controls from state; explicit USER-triggered Retry immediately starts a fresh recognition attempt without a second Speak action, while no automatic retry loop/history is permitted; clear result on target change; preserve attempt ownership.
 
 **Evidence:** Reducer/controller tests for legal/illegal transitions, every issue, side-effect spies, and disposal.
 
