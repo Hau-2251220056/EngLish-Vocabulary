@@ -31,6 +31,22 @@ test("schema names and ownership markers round-trip exactly", () => {
   );
 });
 
+test("repository verification schemas use the same owned run identity", () => {
+  const schemaName = buildSchemaName(
+    "repository",
+    identity.runId,
+    identity.attempt,
+    "cafebabe",
+  );
+  const ownership = buildOwnership({ ...identity, schemaName });
+
+  assert.equal(assertSafeSchemaName(schemaName), schemaName);
+  assert.deepEqual(
+    decodeOwnershipMarker(encodeOwnershipMarker(ownership)),
+    ownership,
+  );
+});
+
 test("public, malformed and different-run ownership are rejected", () => {
   assert.throws(() => assertSafeSchemaName("public"));
   assert.throws(() => assertSafeSchemaName("elvocab_xp_clean_123_2_not-hex"));

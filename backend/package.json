@@ -12,6 +12,7 @@
     "test:xp-migration:safety": "node test/xp-level/xp-level-migration-safety.test.js",
     "test:xp-migration:ci": "node test/xp-level/xp-level-migration-harness.js",
     "test:xp-migration:cleanup:ci": "node test/xp-level/xp-level-migration-harness.js --cleanup-only",
+    "test:xp-repository:ci": "node test/xp-level/xp-level-migration-harness.js --repository",
     "test:vocabulary": "node --env-file=.env.test --test --test-concurrency=1 test/vocabulary/vocabulary.test.js",
     "test:learning": "node --env-file=.env.test --test --test-concurrency=1 test/learning/learning.test.js",
     "test:quiz": "node --env-file=.env.test --test --test-concurrency=1 test/quiz/quiz-read.test.js test/quiz/quiz-answer.test.js test/quiz/quiz.integration.test.js",

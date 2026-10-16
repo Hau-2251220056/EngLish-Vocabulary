@@ -52,6 +52,9 @@ const prismaConfigModule = new URL(
   "../../node_modules/prisma/config.js",
   import.meta.url,
 ).href;
+const repositoryIntegrationTest = fileURLToPath(
+  new URL("./xp-reward-repository.integration.test.js", import.meta.url),
+);
 
 let temporaryDirectory;
 let databaseUrl;
@@ -65,6 +68,8 @@ try {
   if (mode === "cleanup") {
     await cleanupCurrentRunSchemas();
     console.log("XP migration harness independent cleanup: PASS");
+  } else if (mode === "repository") {
+    await runRepositoryVerificationHarness();
   } else {
     await runVerificationHarness();
   }
@@ -152,6 +157,25 @@ async function runVerificationHarness() {
   console.log("XP migration harness: PASS");
 }
 
+async function runRepositoryVerificationHarness() {
+  temporaryDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "elvocab-xp-repository-"),
+  );
+  const schemaName = buildSchemaName(
+    "repository",
+    runIdentity.runId,
+    runIdentity.attempt,
+    randomBytes(4).toString("hex"),
+  );
+
+  await createHarnessSchema(schemaName);
+  const complete = await prepareMigrationCopy("repository", { includeXp: true });
+  await migrateDeploy(schemaName, complete.configPath);
+  await assertPreparedRepositorySchema(schemaName);
+  await runRepositoryIntegrationTests(schemaName);
+  console.log("XP repository integration harness: PASS");
+}
+
 function requireHarnessEnvironment() {
   if (
     process.env.CI !== "true" ||
@@ -177,6 +201,9 @@ function requireHarnessMode(args) {
   }
   if (args.length === 1 && args[0] === "--cleanup-only") {
     return "cleanup";
+  }
+  if (args.length === 1 && args[0] === "--repository") {
+    return "repository";
   }
   throw new Error("Unsupported XP migration harness arguments.");
 }
@@ -289,6 +316,21 @@ async function assertDatabaseOwnership(prisma, expectedOwnership) {
     "SELECT obj_description(current_schema()::regnamespace, 'pg_namespace') AS ownership_marker",
   );
   assertMatchingOwnership(row?.ownership_marker, expectedOwnership);
+}
+
+async function assertPreparedRepositorySchema(schemaName) {
+  const ownership = ownedSchemas.get(schemaName);
+  assert.ok(ownership, `No ownership record exists for ${schemaName}.`);
+  await withSchemaClient(schemaName, async (prisma) => {
+    await assertDatabaseOwnership(prisma, ownership);
+    const requiredTables = await prisma.$queryRawUnsafe(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('USER', 'VOCABULARY', 'LEARNING_PROGRESS', 'XP_REWARD') ORDER BY table_name",
+    );
+    assert.deepEqual(
+      requiredTables.map(({ table_name }) => table_name),
+      ["LEARNING_PROGRESS", "USER", "VOCABULARY", "XP_REWARD"],
+    );
+  });
 }
 
 async function cleanupCurrentRunSchemas() {
@@ -736,6 +778,32 @@ async function runPrisma(schemaName, args) {
   });
   await withSchemaClient(schemaName, async () => {});
   return exitCode;
+}
+
+async function runRepositoryIntegrationTests(schemaName) {
+  assertSafeSchemaName(schemaName);
+  await withSchemaClient(schemaName, async () => {});
+  const scopedUrl = schemaDatabaseUrl(schemaName);
+  const exitCode = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--test", "--test-concurrency=1", repositoryIntegrationTest],
+      {
+        cwd: backendDirectory,
+        env: {
+          ...process.env,
+          TEST_DATABASE_URL: scopedUrl,
+          DATABASE_URL: scopedUrl,
+          XP_REPOSITORY_TEST_SCHEMA: schemaName,
+        },
+        stdio: "inherit",
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
+  assert.equal(exitCode, 0, "XP repository integration tests failed.");
+  await withSchemaClient(schemaName, async () => {});
 }
 
 function sha256(value) {
