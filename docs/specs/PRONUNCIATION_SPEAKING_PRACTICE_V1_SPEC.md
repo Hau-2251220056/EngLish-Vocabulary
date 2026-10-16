@@ -106,7 +106,7 @@ No raw audio is exposed to or uploaded by ELVocab in this flow.
 
 ### 6.4 Retry and Navigation
 
-- Retry creates a new local attempt token and never automatically starts recognition or reuses a prior result.
+- Selecting Retry is an explicit USER gesture that immediately starts recognition with a new local attempt token; it requires no second Speak action, never creates an automatic retry loop, and never reuses a prior result.
 - Starting a new attempt invalidates late `result`, `error`, and `end` events from the previous attempt.
 - Previous, next, and skip abort or invalidate recognition before changing exact target identity.
 - Exit returns to Set Detail. Returning to a word does not restore persistent or authoritative history.
@@ -268,7 +268,7 @@ Ordinary automated tests require no real microphone or live vendor service.
 - **AC-12:** Capability, permission, service, no-speech, network, abort, and unusable-result cases produce actionable inconclusive/recovery states with no learner penalty.
 - **AC-13:** Comparison uses the conservative normalization rules and no stemming, plural equivalence, substring, fuzzy, or edit-distance matching.
 - **AC-14:** Confidence is optional diagnostic metadata, never changes classification, and never becomes a learner score.
-- **AC-15:** Retry creates a new transient attempt and never automatically restarts or reuses stale output.
+- **AC-15:** Explicit Retry immediately starts a new transient recognition attempt without a second Speak action; no automatic retry loop occurs and stale output is never reused.
 - **AC-16:** Duplicate/stale events cannot create multiple outcomes or update a superseded attempt or target.
 - **AC-17:** Navigation, logout, unmount, and lifecycle interruption stop/abort or invalidate recognition and prevent late updates.
 - **AC-18:** Responsive desktop/mobile UI preserves core content and controls without overflow; runtime recognition capability remains independent.

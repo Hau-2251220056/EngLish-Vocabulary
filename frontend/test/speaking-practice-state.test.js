@@ -451,13 +451,14 @@ test("active target replacement invalidates recognition before publishing the ne
   assert.ok(harness.nativeLog.includes("recognition.abort"));
 });
 
-test("explicit retry creates a new attempt and never automatically restarts", () => {
+test("explicit retry immediately starts a fresh owned attempt", () => {
   const harness = createHarness();
   const first = beginRecognition(harness);
   first.emitError("no-speech");
   assert.equal(harness.recognizers.length, 1);
   assert.equal(harness.controller.retry().ok, true);
   assert.equal(harness.recognizers.length, 2);
+  assert.equal(harness.controller.getSnapshot().phase, SPEAKING_PRACTICE_PHASES.STARTING);
   assert.notEqual(harness.controller.getSnapshot().recognition.attemptToken, 1);
 });
 

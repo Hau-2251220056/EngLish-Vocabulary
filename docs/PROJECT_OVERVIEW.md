@@ -377,7 +377,7 @@ User có thể nghe lại Model Pronunciation nhiều lần.
 
 Speaking Practice V1 là activity USER-only theo Vocabulary Set. Activity đọc payload Learning `NORMAL` đã được Backend authorize, giữ nguyên Set Item order và từng Vocabulary ID, rồi cho phép User nghe mẫu, nói, nhận transcript-classification feedback, chuyển từ, Retry, Restart hoặc Exit về Set Detail hợp lệ.
 
-Microphone chỉ bắt đầu sau hành động **Nói** và disclosure lần đầu. Không có microphone auto-start khi load, đổi từ, Retry page load hoặc Restart.
+Microphone chỉ bắt đầu sau hành động rõ ràng của User: **Nói** (sau disclosure lần đầu) hoặc **Thử nói lại**, trong đó **Thử nói lại** bắt đầu ngay một recognition attempt mới mà không cần bấm **Nói** lần nữa. Không có microphone auto-start khi load, đổi từ, render Retry, Retry page load, Restart hoặc qua automatic retry loop.
 
 Các trạng thái V1 gồm loading/ready, disclosure, unsupported/insecure context, starting, listening, finalizing, result/inconclusive, recoverable error, inaccessible/empty, cancelling/disposed và completion tạm thời trong session.
 
