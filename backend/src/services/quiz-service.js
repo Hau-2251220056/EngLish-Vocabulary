@@ -1,5 +1,11 @@
 // @ts-nocheck
 import { buildMultipleChoiceQuestion } from "./quiz-domain.js";
+import {
+  XP_REWARD_TYPES,
+  deriveQuizRewardCandidate,
+  projectXpLevel,
+} from "./xp-level-service.js";
+import { isXpRewardCollisionError } from "../repositories/xp-reward-repository.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const QUESTION_QUERY_FIELDS = new Set(["type", "run_id", "vocabulary_ids"]);
@@ -38,9 +44,9 @@ export function createQuizService({ quizRepository }) {
       const answer = validateAnswerInput(input);
       const execute = () => quizRepository.withTransaction((repository) => recordAnswerInTransaction(repository, userId, answer));
       try { return await execute(); } catch (error) {
-        if (error?.code !== "P2002" && error?.code !== "P2034") throw error;
+        if (!isRetryablePersistenceConflict(error)) throw error;
         try { return await execute(); } catch (retryError) {
-          if (retryError?.code === "P2002" || retryError?.code === "P2034") throw progressConflictError();
+          if (isRetryablePersistenceConflict(retryError)) throw progressConflictError();
           throw retryError;
         }
       }
@@ -84,8 +90,29 @@ async function recordAnswerInTransaction(repository, userId, answer) {
   const current = await repository.findProgress(userId, answer.vocabulary_id);
   if (current?.last_event_id === answer.event_id) {
     if (!isCompatibleRetry(current, targetStatus, answer.expected_revision)) throw retryConflictError();
-    return toAnswerResult(answer, built.correctChoiceId, isCorrect, current);
+    return toAcceptedAnswerResult(
+      repository,
+      userId,
+      answer,
+      built.correctChoiceId,
+      isCorrect,
+      current,
+      true,
+    );
   }
+
+  const firstCorrectReward = await repository.findRewardByIdentity(
+    userId,
+    answer.vocabulary_id,
+    XP_REWARD_TYPES.QUIZ_FIRST_CORRECT,
+    0,
+  );
+  const rewardCandidate = deriveQuizRewardCandidate({
+    user_id: userId,
+    vocabulary_id: answer.vocabulary_id,
+    is_correct: isCorrect,
+    has_first_correct_reward: Boolean(firstCorrectReward),
+  });
 
   const reviewedAt = new Date();
   let progress;
@@ -106,16 +133,97 @@ async function recordAnswerInTransaction(repository, userId, answer) {
       } else throw progressConflictError();
     }
   }
-  return toAnswerResult(answer, built.correctChoiceId, isCorrect, progress);
+  return completeAcceptedAnswer(
+    repository,
+    userId,
+    answer,
+    built.correctChoiceId,
+    isCorrect,
+    progress,
+    rewardCandidate,
+  );
 }
 
 function isCompatibleRetry(progress, status, expectedRevision) {
   return progress.status === status && progress.revision === expectedRevision + 1;
 }
-function toAnswerResult(answer, correctChoiceId, isCorrect, progress) {
+async function completeAcceptedAnswer(
+  repository,
+  userId,
+  answer,
+  correctChoiceId,
+  isCorrect,
+  progress,
+  rewardCandidate,
+) {
+  let xpEarned = 0;
+  let totalXp;
+  if (rewardCandidate) {
+    const result = await repository.insertRewardAndIncrementXp({
+      user_id: userId,
+      vocabulary_id: answer.vocabulary_id,
+      ...rewardCandidate,
+      source_event_id: answer.event_id,
+    });
+    xpEarned = result.reward.xp_amount;
+    totalXp = result.total_xp;
+  } else {
+    totalXp = await repository.readUserTotalXp(userId);
+  }
+  return toAnswerResult(
+    answer,
+    correctChoiceId,
+    isCorrect,
+    progress,
+    answer.event_id,
+    xpEarned,
+    false,
+    totalXp,
+  );
+}
+
+async function toAcceptedAnswerResult(
+  repository,
+  userId,
+  answer,
+  correctChoiceId,
+  isCorrect,
+  progress,
+  replayed,
+) {
+  const [reward, totalXp] = await Promise.all([
+    repository.findRewardBySourceEvent(userId, answer.event_id),
+    repository.readUserTotalXp(userId),
+  ]);
+  const xpEarned = reward?.vocabulary_id === answer.vocabulary_id
+    ? reward.xp_amount
+    : 0;
+  return toAnswerResult(
+    answer,
+    correctChoiceId,
+    isCorrect,
+    progress,
+    answer.event_id,
+    xpEarned,
+    replayed,
+    totalXp,
+  );
+}
+
+function toAnswerResult(
+  answer,
+  correctChoiceId,
+  isCorrect,
+  progress,
+  sourceEventId,
+  xpEarned,
+  replayed,
+  totalXp,
+) {
   return { set_id: answer.set_id, vocabulary_id: answer.vocabulary_id, run_id: answer.run_id,
     quiz_type: QUIZ_TYPE, is_correct: isCorrect, selected_choice_id: answer.selected_choice_id,
-    correct_choice_id: correctChoiceId, progress: progressProjection(progress) };
+    correct_choice_id: correctChoiceId, progress: progressProjection(progress),
+    reward: { source_event_id: sourceEventId, xp_earned: xpEarned, replayed, ...projectXpLevel(totalXp) } };
 }
 function progressProjection(progress) {
   return progress ? { status: progress.status, review_count: progress.review_count, revision: progress.revision,
@@ -172,3 +280,6 @@ function questionChangedError() { return serviceError("QUIZ_QUESTION_CHANGED", "
 function choiceChangedError() { return serviceError("QUIZ_CHOICE_CHANGED", "Quiz choice changed. Refresh before trying again."); }
 function retryConflictError() { return serviceError("QUIZ_RETRY_CONFLICT", "Quiz answer retry conflicts with current progress."); }
 function progressConflictError() { return serviceError("QUIZ_PROGRESS_CONFLICT", "Learning progress changed. Refresh before trying again."); }
+function isRetryablePersistenceConflict(error) {
+  return error?.code === "P2002" || error?.code === "P2034" || isXpRewardCollisionError(error);
+}
