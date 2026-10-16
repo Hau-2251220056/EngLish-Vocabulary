@@ -182,8 +182,14 @@ test("replay returns original XP and current total without a second mutation", a
 
 test("same headword UUIDs and alternate Sets preserve exact reward identity", async () => {
   const user = await createUser();
-  const first = await createVocabulary("same-headword", { word: `${TEST_PREFIX}-shared` });
-  const second = await createVocabulary("same-headword", { word: `${TEST_PREFIX}-shared` });
+  const first = await createVocabulary("same-headword", {
+    ownerId: user.id,
+    word: `${TEST_PREFIX}-shared`,
+  });
+  const second = await createVocabulary("same-headword", {
+    ownerId: user.id,
+    word: `${TEST_PREFIX}-shared`,
+  });
   const firstSet = await createSet(user.id, [first.id, second.id]);
   const alternateSet = await createSet(user.id, [first.id]);
   const firstEventId = randomUUID();
@@ -339,9 +345,12 @@ async function createUser(totalXp = 0) {
   return user;
 }
 
-async function createVocabulary(label, { word } = {}) {
+async function createVocabulary(label, { ownerId = null, word } = {}) {
   const vocabulary = await prisma.vOCABULARY.create({
-    data: { word: word ?? `${TEST_PREFIX}-${label}-${randomUUID()}` },
+    data: {
+      owner_id: ownerId,
+      word: word ?? `${TEST_PREFIX}-${label}-${randomUUID()}`,
+    },
   });
   fixtureVocabularyIds.add(vocabulary.id);
   return vocabulary;
