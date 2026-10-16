@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 export const OWNER_MARKER_PREFIX = "elvocab-xp-harness:v1:";
 export const SAFE_SCHEMA =
-  /^elvocab_xp_(capability|clean|negative|rollback|repository|learning)_([0-9]+)_([0-9]+)_[a-f0-9]{8}$/;
+  /^elvocab_xp_(capability|clean|negative|rollback|repository|learning|quiz)_([0-9]+)_([0-9]+)_[a-f0-9]{8}$/;
 
 const SAFE_REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SAFE_NUMERIC_ID = /^[0-9]+$/;

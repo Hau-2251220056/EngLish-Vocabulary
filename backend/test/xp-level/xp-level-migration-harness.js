@@ -61,6 +61,12 @@ const learningXpIntegrationTest = fileURLToPath(
 const learningRegressionTest = fileURLToPath(
   new URL("../learning/learning.test.js", import.meta.url),
 );
+const quizXpIntegrationTest = fileURLToPath(
+  new URL("./quiz-xp-postgresql.integration.test.js", import.meta.url),
+);
+const quizRegressionTest = fileURLToPath(
+  new URL("../quiz/quiz.integration.test.js", import.meta.url),
+);
 
 let temporaryDirectory;
 let databaseUrl;
@@ -78,6 +84,8 @@ try {
     await runRepositoryVerificationHarness();
   } else if (mode === "learning") {
     await runLearningVerificationHarness();
+  } else if (mode === "quiz") {
+    await runQuizVerificationHarness();
   } else {
     await runVerificationHarness();
   }
@@ -203,6 +211,25 @@ async function runLearningVerificationHarness() {
   console.log("XP Learning integration harness: PASS");
 }
 
+async function runQuizVerificationHarness() {
+  temporaryDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "elvocab-xp-quiz-"),
+  );
+  const schemaName = buildSchemaName(
+    "quiz",
+    runIdentity.runId,
+    runIdentity.attempt,
+    randomBytes(4).toString("hex"),
+  );
+
+  await createHarnessSchema(schemaName);
+  const complete = await prepareMigrationCopy("quiz", { includeXp: true });
+  await migrateDeploy(schemaName, complete.configPath);
+  await assertPreparedRepositorySchema(schemaName);
+  await runQuizIntegrationTests(schemaName);
+  console.log("XP Quiz integration harness: PASS");
+}
+
 function requireHarnessEnvironment() {
   if (
     process.env.CI !== "true" ||
@@ -234,6 +261,9 @@ function requireHarnessMode(args) {
   }
   if (args.length === 1 && args[0] === "--learning") {
     return "learning";
+  }
+  if (args.length === 1 && args[0] === "--quiz") {
+    return "quiz";
   }
   throw new Error("Unsupported XP migration harness arguments.");
 }
@@ -864,6 +894,37 @@ async function runLearningIntegrationTests(schemaName) {
     child.once("exit", (code) => resolve(code ?? 1));
   });
   assert.equal(exitCode, 0, "XP Learning integration tests failed.");
+  await withSchemaClient(schemaName, async () => {});
+}
+
+async function runQuizIntegrationTests(schemaName) {
+  assertSafeSchemaName(schemaName);
+  await withSchemaClient(schemaName, async () => {});
+  const scopedUrl = schemaDatabaseUrl(schemaName);
+  const exitCode = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "--test",
+        "--test-concurrency=1",
+        quizXpIntegrationTest,
+        quizRegressionTest,
+      ],
+      {
+        cwd: backendDirectory,
+        env: {
+          ...process.env,
+          TEST_DATABASE_URL: scopedUrl,
+          DATABASE_URL: scopedUrl,
+          XP_QUIZ_TEST_SCHEMA: schemaName,
+        },
+        stdio: "inherit",
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
+  assert.equal(exitCode, 0, "XP Quiz integration tests failed.");
   await withSchemaClient(schemaName, async () => {});
 }
 

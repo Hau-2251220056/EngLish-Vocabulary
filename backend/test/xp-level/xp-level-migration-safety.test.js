@@ -31,8 +31,8 @@ test("schema names and ownership markers round-trip exactly", () => {
   );
 });
 
-test("repository and Learning verification schemas use the same owned run identity", () => {
-  for (const purpose of ["repository", "learning"]) {
+test("repository, Learning, and Quiz verification schemas use the same owned run identity", () => {
+  for (const purpose of ["repository", "learning", "quiz"]) {
     const schemaName = buildSchemaName(
       purpose,
       identity.runId,
