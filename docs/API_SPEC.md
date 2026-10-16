@@ -726,6 +726,8 @@ The requested Set must be either a public System Set or a private Set owned by t
 
 The response uses `{ "success": true, "data": ... }` and contains Set ID/name, a stable `topic` value (`TopicSummary | null`), `mode`, and mode-specific cards. `NORMAL` returns every Set Item in exact `position` order and is read-only. `SRS` returns a fixed snapshot of eligible NEW, LEARNING, legacy-compatible or due cards, evaluated at one backend-owned `evaluated_at`, together with total/eligible counts and nullable nearest future due time. Each card contains the approved Vocabulary aggregate and current USER progress projection; SRS cards additionally contain authoritative `rating_previews`.
 
+Learning Session V1 reuses the unchanged authorized `NORMAL` response as the current Set-membership manifest for NORMAL Flashcard, Quiz and Speaking reconciliation. The frontend may retain only the original ordered exact-ID snapshot for the current run: added IDs do not enter it, removed IDs are discarded without refill or reordering, and only an explicit full restart captures the latest membership/order. This client snapshot never grants access or establishes Backend membership.
+
 ```json
 {
   "status": "NEW",
@@ -960,11 +962,15 @@ Choice selection and ordering are digest-derived from `run_id`, Set identity, qu
 
 29. Get Ordered Quiz Questions
 
-`GET /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>`
+`GET /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>[&vocabulary_ids=<uuid>,<uuid>,...]`
 
 Access: authenticated `USER` only.
 
-The response returns every eligible current Set Item once in explicit position order. Each safe question projection includes UUID identity, `MULTIPLE_CHOICE`, position, English prompt data, exactly four `{ choice_id, label }` choices and an opaque `question_revision`. It does not identify the correct choice.
+Without `vocabulary_ids`, the response retains the existing compatibility behavior and returns every eligible current Set Item once in explicit position order. Learning Session V1 sends exactly one comma-separated `vocabulary_ids` scalar containing 1–10 unique UUIDs after fresh authorized manifest reconciliation. For a bounded read, the Backend authorizes the Set first, then atomically requires every requested ID to be a current Set Item and every requested question to be buildable. Success returns all and only those questions in submitted original-snapshot order. No ID is silently dropped or substituted, no partial question response is returned, and no membership/`removed_vocabulary_ids` metadata is exposed.
+
+Malformed UUIDs, empty values/segments, duplicate IDs, repeated query keys, unsupported fields and lists over 10 return `400 QUIZ_VALIDATION_ERROR`. Missing/inaccessible Sets retain concealed `404 QUIZ_SET_NOT_FOUND`. A foreign, different-Set, removed, non-member or otherwise ineligible requested item returns a non-identifying `409 QUIZ_ITEM_CHANGED`; inability to construct four safe choices returns atomic `409 QUIZ_CHOICES_UNAVAILABLE`. These read changes do not alter `POST /api/quiz/answers`, authoritative grading, question/choice revision reconstruction, event idempotency or Learning Progress mutation.
+
+Each safe question projection includes UUID identity, `MULTIPLE_CHOICE`, position, English prompt data, exactly four `{ choice_id, label }` choices and an opaque `question_revision`. It does not identify the correct choice.
 
 `question_revision` is derived deterministically from authoritative fields relevant to the question, does not reveal the answer and is recomputed transactionally on answer submission. It is API-only and is not persisted.
 

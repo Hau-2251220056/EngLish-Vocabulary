@@ -2,11 +2,29 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { QuizApiError } from "../src/services/quiz-service.js";
-import { classifyQuizLoadError, classifyQuizSubmissionError, createSharedQuizQuestionLoader } from "../src/quiz/quiz-presentation.js";
+import { classifyQuizLoadError, classifyQuizSubmissionError, createSharedQuizQuestionLoader, readQuizSessionWithRecovery } from "../src/quiz/quiz-presentation.js";
 
 test("Quiz presentation classifies choice and conflict errors", () => {
-  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" })), "choices-unavailable");
+  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" })), "stale");
+  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_ITEM_CHANGED", kind: "conflict", status: 409, message: "x" })), "stale");
   assert.equal(classifyQuizSubmissionError(new QuizApiError({ code: "QUIZ_CHOICE_CHANGED", kind: "conflict", status: 409, message: "x" })).kind, "question-changed");
+});
+test("stale question reads reconcile once without posting or looping", async () => {
+  let reads = 0;
+  const recovered = await readQuizSessionWithRecovery(async () => {
+    reads += 1;
+    if (reads === 1) throw new QuizApiError({ code: "QUIZ_ITEM_CHANGED", kind: "conflict", status: 409, message: "x" });
+    return "recovered";
+  }, { run_id: "run" });
+  assert.equal(recovered, "recovered");
+  assert.equal(reads, 2);
+
+  reads = 0;
+  await assert.rejects(() => readQuizSessionWithRecovery(async () => {
+    reads += 1;
+    throw new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" });
+  }, { run_id: "run" }), { code: "QUIZ_CHOICES_UNAVAILABLE" });
+  assert.equal(reads, 2);
 });
 test("duplicate loads share one request", async () => {
   let count = 0; const load = createSharedQuizQuestionLoader(async () => { count += 1; return "ok"; });
@@ -23,4 +41,10 @@ test("production page contains compact vertical Multiple Choice presentation and
   assert.doesNotMatch(source, /grid-cols-\[repeat\(auto-fit/);
   assert.doesNotMatch(source, /<small[^>]*>Đáp án đúng|<small[^>]*>Đáp án sai/);
   assert.doesNotMatch(source, /TypeSelection|UnscrambleAnswerForm|CharacterFeedback|VI_TO_ENGLISH|UNSCRAMBLE_WORD/);
+  assert.match(source, /Học tiếp \{summary\.next_batch_size\} từ/);
+  assert.match(source, /Làm lại nhóm này/);
+  assert.match(source, /Học lại từ đầu/);
+  assert.match(source, /submitLockRef/);
+  assert.match(source, /readQuizSessionWithRecovery/);
+  assert.match(source, /browserSessionStorage/);
 });

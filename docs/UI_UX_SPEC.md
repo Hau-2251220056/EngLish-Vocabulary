@@ -1092,6 +1092,16 @@ This approved SRS extension supersedes section 12.4's two-outcome action wording
 
 The SRS up-to-date state uses the helper text **Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ.** It exposes only **Ôn tập thường** and **Quay lại bộ từ**; it does not expose **Làm mới SRS**. This server-empty up-to-date state remains distinct from a just-completed client session, where the approved completion summary and restart behavior remain available.
 
+#### 12.4.2 Learning Session V1 Active UX Contract
+
+Opening NORMAL Flashcard, SRS Flashcard, Multiple Choice Quiz or Speaking Practice starts or restores that USER/Set/mode automatically; there is no session-selection screen. A batch contains at most 10 distinct Vocabulary IDs. NORMAL, Quiz and Speaking retain the original Backend-authored Set Item order for the full run, including unstarted batches. Set additions wait for **Học lại từ đầu**; removals are reconciled without refill/substitution, and reordering never repeats or skips a valid original ID. SRS keeps its Backend eligibility/order and `AGAIN` queue rather than a full-Set remainder.
+
+Unfinished state resumes at its previous valid exact ID in the same tab. Batch/full-run completion screens persist on re-entry, and no mode advances or restarts because of reload, midnight or inactivity. Continuation/restart remains explicit: NORMAL final-card completion is **Hoàn thành phiên**; Flashcard/Quiz use **Học tiếp N từ**; Quiz retry is **Làm lại nhóm này**; Speaking uses **Luyện tiếp N từ**; full-run restart is **Học lại từ đầu**; SRS continuation is **Ôn tiếp** and **Hoàn thành ôn tập** is status text. `N` is the reconciled next-batch size.
+
+Session state is versioned and isolated by authenticated USER, Set and mode in same-tab `sessionStorage`. If storage is malformed or unavailable, learning remains usable with page-lifetime memory fallback; reload position may then be lost without a disruptive default warning. Restoration never auto-submits a Quiz answer or SRS rating. Completion never claims Mastery and restart never resets durable Learning Progress or scheduling.
+
+Speaking restores only position/lifecycle in a non-listening state. Transcript, alternatives, confidence, recognition output, audio, attempt details and pronunciation scores are not persisted. All changed states retain keyboard operation, visible focus, textual status/error meaning, reduced-motion behavior, responsive wrapping and no horizontal overflow.
+
 ### 12.5 Learning Progress View V1 Active UX Contract
 
 Learning Progress View V1 adds `/my/learning-progress` under the existing authenticated App Layout and `UserRoute`, plus a USER-only **Tiến độ học** navigation destination. Guest and ADMIN cannot use the route. This is a read-only view over the completed per-USER/per-Vocabulary progress engine, not Dashboard or a standalone Vocabulary catalog.

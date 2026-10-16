@@ -231,7 +231,7 @@ test("completion restart returns to the first server target without recognition 
   session.nextTarget();
   session.nextTarget();
 
-  assert.equal(session.restartAfterCompletion().ok, true);
+  assert.equal((await session.restartAfterCompletion()).ok, true);
   const restarted = session.getSnapshot();
   assert.equal(restarted.completed, false);
   assert.equal(restarted.targetIndex, 0);
@@ -239,6 +239,96 @@ test("completion restart returns to the first server target without recognition 
   assert.equal(restarted.phase, SPEAKING_PRACTICE_PHASES.READY);
   assert.equal(native.constructions, 0);
   session.dispose();
+});
+
+test("Speaking batches are bounded, persist position and advance only after explicit continuation", async () => {
+  const storage = memoryStorage();
+  const manifests = [sizedLearningSet("set-1", 12), sizedLearningSet("set-1", 12)];
+  let loads = 0;
+  const first = createSession({
+    setId: "set-1",
+    userId: "user-1",
+    storage,
+    loadLearningSet: async () => manifests[Math.min(loads++, manifests.length - 1)],
+  });
+  await first.session.start();
+  assert.equal(first.session.getSnapshot().targets.length, 10);
+  for (let index = 0; index < 4; index += 1) first.session.nextTarget();
+  assert.equal(first.session.getSnapshot().target.id, "vocabulary-5");
+  first.session.dispose();
+
+  const restored = createSession({
+    setId: "set-1",
+    userId: "user-1",
+    storage,
+    loadLearningSet: async () => manifests[Math.min(loads++, manifests.length - 1)],
+  });
+  await restored.session.start();
+  assert.equal(restored.session.getSnapshot().target.id, "vocabulary-5");
+  assert.equal(restored.session.getSnapshot().phase, SPEAKING_PRACTICE_PHASES.READY);
+  assert.equal(restored.native.constructions, 0);
+  while (!restored.session.getSnapshot().completed) restored.session.nextTarget();
+  assert.equal(restored.session.getSnapshot().session.next_batch_size, 2);
+  assert.equal(restored.session.getSnapshot().targets.length, 10);
+
+  assert.equal((await restored.session.continueAfterCompletion()).ok, true);
+  assert.deepEqual(restored.session.getSnapshot().targets.map(({ id }) => id), ["vocabulary-11", "vocabulary-12"]);
+  assert.equal(restored.session.getSnapshot().target.id, "vocabulary-11");
+  restored.session.dispose();
+});
+
+test("Speaking reconciliation removes missing items without additions, reorder or batch refill", async () => {
+  const storage = memoryStorage();
+  const original = sizedLearningSet("set-1", 12);
+  const first = createSession({ setId: "set-1", userId: "reconcile-user", storage, loadLearningSet: async () => original });
+  await first.session.start();
+  first.session.nextTarget();
+  first.session.dispose();
+
+  const changed = {
+    ...original,
+    total_items: 12,
+    cards: [
+      { id: "new-vocabulary", word: "new", position: 0, phonetic: null, pronunciation_url: null },
+      ...original.cards.filter(({ id }) => id !== "vocabulary-3").reverse(),
+    ],
+  };
+  const restored = createSession({ setId: "set-1", userId: "reconcile-user", storage, loadLearningSet: async () => changed });
+  await restored.session.start();
+  assert.deepEqual(restored.session.getSnapshot().targets.map(({ id }) => id), [
+    "vocabulary-1", "vocabulary-2", "vocabulary-4", "vocabulary-5", "vocabulary-6",
+    "vocabulary-7", "vocabulary-8", "vocabulary-9", "vocabulary-10",
+  ]);
+  assert.equal(restored.session.getSnapshot().target.id, "vocabulary-2");
+  restored.session.dispose();
+});
+
+test("full completion is restored and explicit restart captures the latest authorized order", async () => {
+  const storage = memoryStorage();
+  let manifest = singleLearningSet("set-1");
+  const first = createSession({ setId: "set-1", userId: "user-1", storage, loadLearningSet: async () => manifest });
+  await first.session.start();
+  first.session.skipTarget();
+  first.session.dispose();
+
+  manifest = {
+    id: "set-1",
+    name: "Latest",
+    mode: "NORMAL",
+    total_items: 2,
+    cards: [
+      { id: "latest-2", word: "two", position: 1, phonetic: null, pronunciation_url: null },
+      { id: "latest-1", word: "one", position: 2, phonetic: null, pronunciation_url: null },
+    ],
+  };
+  const restored = createSession({ setId: "set-1", userId: "user-1", storage, loadLearningSet: async () => manifest });
+  await restored.session.start();
+  assert.equal(restored.session.getSnapshot().completed, true);
+  assert.equal(restored.session.getSnapshot().session.full_run_completed, true);
+  assert.equal((await restored.session.restartAfterCompletion()).ok, true);
+  assert.deepEqual(restored.session.getSnapshot().targets.map(({ id }) => id), ["latest-2", "latest-1"]);
+  assert.equal(restored.session.getSnapshot().completed, false);
+  restored.session.dispose();
 });
 
 test("completion blocks stale navigation commands and remains authoritative after cancellation", async () => {
@@ -406,7 +496,13 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.match(page, /PREVIOUS_BUTTON_CLASSES[\s\S]*previousTarget/);
   assert.match(page, /SKIP_BUTTON_CLASSES[\s\S]*skipTarget/);
   assert.match(page, /NEXT_BUTTON_CLASSES[\s\S]*nextTarget/);
-  assert.match(page, /presentation\.description[\s\S]*snapshot\.controls\.canRetry[\s\S]*presentation\.disclosure/);
+  assert.match(page, /continueAfterCompletion\(\)/);
+  assert.match(page, /restartAfterCompletion\(\)/);
+  assert.equal(page.includes("Luy\u1ec7n ti\u1ebfp {nextBatchSize} t\u1eeb"), true);
+  assert.equal(page.includes("H\u1ecdc l\u1ea1i t\u1eeb \u0111\u1ea7u"), true);
+  assert.match(page, /presentation\.description/);
+  assert.match(page, /snapshot\.controls\.canRetry/);
+  assert.match(page, /presentation\.disclosure/);
   assert.match(page, /showFeedback = !\[[\s\S]*SPEAKING_PRACTICE_PHASES\.READY,[\s\S]*SPEAKING_PRACTICE_PHASES\.STARTING,[\s\S]*SPEAKING_PRACTICE_PHASES\.LISTENING,[\s\S]*SPEAKING_PRACTICE_PHASES\.FINALIZING,[\s\S]*\]\.includes\(snapshot\.phase\)[\s\S]*presentation\.issue !== null/);
   assert.match(page, /showFeedback \? <FeedbackPanel/);
   assert.match(page, /function ListeningWaveform\(\)[\s\S]*data-testid="listening-waveform"[\s\S]*motion-reduce:animate-none/);
@@ -490,7 +586,7 @@ test("page session delegates UI commands to the accepted integrated controller",
   session.dispose();
 });
 
-function createSession({ setId, loadLearningSet, onSnapshot = () => {}, controllers = [] }) {
+function createSession({ setId, userId, storage, loadLearningSet, onSnapshot = () => {}, controllers = [] }) {
   const native = {
     constructions: 0,
     aborts: 0,
@@ -518,6 +614,8 @@ function createSession({ setId, loadLearningSet, onSnapshot = () => {}, controll
   };
   const session = createSpeakingPracticePageSession({
     setId,
+    userId,
+    storage,
     loadLearningSet,
     controllerOptions: {
       browserWindow,
@@ -556,6 +654,33 @@ function singleLearningSet(id) {
     cards: [
       { id: "vocabulary-only", word: "alone", position: 1, phonetic: null, pronunciation_url: null },
     ],
+  };
+}
+
+function sizedLearningSet(id, size) {
+  return {
+    id,
+    name: "Sized",
+    mode: "NORMAL",
+    total_items: size,
+    cards: Array.from({ length: size }, (_, index) => ({
+      id: `vocabulary-${index + 1}`,
+      word: `word ${index + 1}`,
+      position: index + 1,
+      phonetic: null,
+      pronunciation_url: null,
+    })),
+  };
+}
+
+function memoryStorage() {
+  const values = new Map();
+  return {
+    get length() { return values.size; },
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, String(value)),
   };
 }
 

@@ -185,27 +185,27 @@ test("old two-outcome storage fails closed and accepted state resumes after relo
   await page.reload();
   await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
   const stored = await page.evaluate(() => JSON.parse(sessionStorage.getItem("elvocab.learning.run.v1:user-1:set-srs")));
-  expect(stored.version).toBe(2);
+  expect(stored.version).toBe(3);
   expect(stored.srs.queue.filter((id) => id === "word-1")).toHaveLength(1);
 });
 
-test("a settled v2 session cannot hide a fresh eligible backend snapshot", async ({ page }) => {
+test("a completed v3 review remains completed until explicit continuation", async ({ page }) => {
   await seedSettledSession(page);
   await installLearningMock(page);
   await page.goto("/learn/vocabulary-sets/set-srs");
 
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
-  await expect(page.getByText("Đã hoàn thành 0 / 4")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ôn tiếp" })).toBeVisible();
 });
 
-test("a settled v2 session with zero backend eligibility shows up-to-date, not old completion", async ({ page }) => {
+test("a completed v3 review can explicitly continue into the up-to-date state", async ({ page }) => {
   await seedSettledSession(page);
   await installLearningMock(page, { upToDate: true });
   await page.goto("/learn/vocabulary-sets/set-srs");
 
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
+  await page.getByRole("button", { name: "Ôn tiếp" }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 });
 
 test("AGAIN on the final card immediately presents that unresolved card again", async ({ page }) => {
@@ -225,11 +225,11 @@ test("AGAIN on the final card immediately presents that unresolved card again", 
 
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   expect(calls.events.map(({ rating }) => rating)).toEqual(["AGAIN", "GOOD"]);
 });
 
-test("completed session route re-entry uses fresh zero-eligible backend state", async ({ page }) => {
+test("completed session route re-entry preserves completion until explicit continuation", async ({ page }) => {
   const calls = await installLearningMock(page, {
     cardCount: 1,
     upToDate: ({ events }) => events.length > 0,
@@ -237,17 +237,16 @@ test("completed session route re-entry uses fresh zero-eligible backend state", 
   await page.goto("/learn/vocabulary-sets/set-srs");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Dễ" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
   await page.goto("/dashboard");
   await page.goto("/learn/vocabulary-sets/set-srs");
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   expect(calls.reads.length).toBeGreaterThanOrEqual(2);
   expect(calls.reads.every((mode) => mode === "SRS")).toBe(true);
 });
 
-test("completed session restart fetches fresh eligibility and becomes up-to-date", async ({ page }) => {
+test("completed session continuation fetches fresh eligibility and becomes up-to-date", async ({ page }) => {
   const calls = await installLearningMock(page, {
     cardCount: 1,
     upToDate: ({ events }) => events.length > 0,
@@ -255,12 +254,10 @@ test("completed session restart fetches fresh eligibility and becomes up-to-date
   await page.goto("/learn/vocabulary-sets/set-srs");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Làm mới SRS" }).click();
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Ôn tiếp" }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   expect(calls.reads.length).toBeGreaterThanOrEqual(2);
   expect(calls.reads.every((mode) => mode === "SRS")).toBe(true);
 });
@@ -282,7 +279,7 @@ test("pending and conflict states never advance optimistically", async ({ page }
 test("up-to-date SRS offers Normal review and return action", async ({ page }) => {
   await installLearningMock(page, { upToDate: true });
   await page.goto("/learn/vocabulary-sets/set-srs");
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ôn tập thường" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Quay lại bộ từ" })).toBeVisible();
   await expect(page.getByText("Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ.", { exact: true })).toBeVisible();
@@ -367,7 +364,7 @@ for (const viewport of [
     expect(overflow).toBe(false);
     for (const name of ["Ôn tập SRS", "Ôn tập thường", "Lại, Trong phiên này", "Khó, Ngày mai", "Tốt, 1–3 ngày", "Dễ, 1 tuần+"]) {
       const box = await page.getByRole("button", { name, exact: true }).boundingBox();
-      expect(box.height).toBeGreaterThanOrEqual(36);
+      expect(box.height).toBeGreaterThanOrEqual(44);
     }
     const ratingBoxes = await page.getByRole("region", { name: "Đánh giá SRS" })
       .getByRole("button").evaluateAll((buttons) => buttons.map((button) => ({
@@ -460,7 +457,7 @@ const LONG_TRANSLATION = "Bản dịch dài được giữ đầy đủ để x�
 async function seedSettledSession(page) {
   await page.addInitScript(() => {
     sessionStorage.setItem("elvocab.learning.run.v1:user-1:set-srs", JSON.stringify({
-      version: 2,
+      version: 3,
       user_id: "user-1",
       set_id: "set-srs",
       active_mode: "SRS",
@@ -471,8 +468,13 @@ async function seedSettledSession(page) {
         passed_ids: ["word-1", "word-2", "word-3", "word-4"],
         presentation_count: 4,
         retry_context: null,
+        status: "COMPLETED",
       },
-      normal: { current_vocabulary_id: null },
+      normal_initialized: false,
+      normal: {
+        snapshot_ids: [], batches: [], active_batch_index: null,
+        current_vocabulary_id: null, batch_status: "COMPLETED", run_status: "COMPLETED",
+      },
     }));
   });
 }

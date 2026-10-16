@@ -108,8 +108,8 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   await expect(page.getByRole("heading", { name: "Đã nhận diện từ mục tiêu" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Bỏ qua từ này" }).click();
-  await expect(page.getByRole("heading", { name: "Đã đi hết bộ từ" })).toBeVisible();
-  await page.getByRole("button", { name: "Luyện lại từ đầu" }).click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành luyện nói" })).toBeVisible();
+  await page.getByRole("button", { name: "Học lại từ đầu" }).click();
   await expect(page.getByRole("heading", { name: "book" })).toBeVisible();
   await page.getByRole("button", { name: "Browser Speaking Set" }).click();
   await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${setId}$`));

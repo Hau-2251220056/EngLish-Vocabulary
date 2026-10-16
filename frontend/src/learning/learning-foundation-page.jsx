@@ -13,6 +13,9 @@ import {
 } from "./learning-presentation.js";
 import {
   applySrsRating,
+  completeNormalBatch,
+  continueNormalRun,
+  currentNormalBatchCards,
   currentSrsVocabularyId,
   loadLearningRunState,
   reconcileLearningRunState,
@@ -23,6 +26,7 @@ import {
   selectNormalCard,
   setSrsRetryContext,
   summarizeLearningRun,
+  summarizeNormalRun,
 } from "./learning-run-state.js";
 
 const RATING_LABELS = { AGAIN: "Lại", HARD: "Khó", GOOD: "Tốt", EASY: "Dễ" };
@@ -59,10 +63,10 @@ export function LearningFoundationPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const storedAtEntry = useMemo(
-    () => loadLearningRunState(window.sessionStorage, user.id, setId),
+    () => loadLearningRunState(browserSessionStorage(), user.id, setId),
     [setId, user.id],
   );
-  const [mode, setMode] = useState(storedAtEntry?.version === 2 ? storedAtEntry.active_mode : "SRS");
+  const [mode, setMode] = useState(storedAtEntry?.version === 3 ? storedAtEntry.active_mode : "SRS");
   const [pendingMode, setPendingMode] = useState(null);
   const [payload, setPayload] = useState(null);
   const [runState, setRunState] = useState(null);
@@ -93,14 +97,14 @@ export function LearningFoundationPage() {
     void learningService.getLearningSet(setId, { mode: requestedMode }).then(
       (freshPayload) => {
         if (!active) return;
-        const stored = loadLearningRunState(window.sessionStorage, user.id, setId);
+        const stored = loadLearningRunState(browserSessionStorage(), user.id, setId);
         let nextState = reconcileLearningRunState(stored, user.id, setId, freshPayload);
         nextState = selectLearningMode(nextState, requestedMode);
         if (requestedMode === "SRS" && restartSrsRef.current) {
           nextState = restartSrsRun(nextState, freshPayload);
           restartSrsRef.current = false;
         }
-        saveLearningRunState(window.sessionStorage, nextState);
+        saveLearningRunState(browserSessionStorage(), nextState);
         setPayload(freshPayload);
         setRunState(nextState);
         setMode(requestedMode);
@@ -110,7 +114,11 @@ export function LearningFoundationPage() {
         setEventState("idle");
         setAudioError(null);
         setStatus("ready");
-        requestFocus(freshPayload.cards.length > 0 ? "card" : "mode");
+        const normalCompleted = requestedMode === "NORMAL"
+          && summarizeNormalRun(nextState).batch_completed;
+        const srsSummary = requestedMode === "SRS" ? summarizeLearningRun(nextState) : null;
+        requestFocus(normalCompleted || srsSummary?.completed || srsSummary?.up_to_date
+          ? "summary" : freshPayload.cards.length > 0 ? "card" : "mode");
       },
       (error) => {
         if (!active) return;
@@ -134,8 +142,18 @@ export function LearningFoundationPage() {
     };
   }, [reloadToken, requestedMode, setId, supportsSpeechSynthesis, user.id]);
 
-  const cards = useMemo(() => payload?.cards ?? [], [payload]);
+  const allCards = useMemo(() => payload?.cards ?? [], [payload]);
+  const cards = useMemo(
+    () => mode === "NORMAL" && runState
+      ? currentNormalBatchCards(runState, allCards)
+      : allCards,
+    [allCards, mode, runState],
+  );
   const summary = useMemo(() => runState ? summarizeLearningRun(runState) : null, [runState]);
+  const normalSummary = useMemo(
+    () => runState ? summarizeNormalRun(runState) : null,
+    [runState],
+  );
   const currentId = mode === "SRS"
     ? currentSrsVocabularyId(runState)
     : runState?.normal.current_vocabulary_id;
@@ -176,7 +194,7 @@ export function LearningFoundationPage() {
 
   function persist(nextState) {
     setRunState(nextState);
-    saveLearningRunState(window.sessionStorage, nextState);
+    saveLearningRunState(browserSessionStorage(), nextState);
   }
 
   function requestFocus(kind) { setFocusTarget({ kind, nonce: Date.now() }); }
@@ -236,6 +254,29 @@ export function LearningFoundationPage() {
     requestFocus("card");
   }
 
+  function finishNormalBatch() {
+    if (mode !== "NORMAL" || !runState || currentIndex !== cards.length - 1) return;
+    cancelPronunciation();
+    const nextState = completeNormalBatch(runState);
+    if (nextState === runState) return;
+    persist(nextState);
+    setRevealed(false);
+    setAudioError(null);
+    setAnnouncement("Đã hoàn thành phiên học hiện tại.");
+    requestFocus("summary");
+  }
+
+  function continueNormalBatch() {
+    if (mode !== "NORMAL" || !runState) return;
+    const nextState = continueNormalRun(runState);
+    if (nextState === runState) return;
+    persist(nextState);
+    setRevealed(false);
+    setAudioError(null);
+    setAnnouncement("Đã chuyển sang nhóm từ tiếp theo.");
+    requestFocus("card");
+  }
+
   async function submitRating(rating, attempt = null) {
     if (mode !== "SRS" || !currentCard || !runState || eventState === "pending") return;
     const nextAttempt = attempt ?? {
@@ -287,11 +328,18 @@ export function LearningFoundationPage() {
       setStatus("loading");
       setReloadToken((value) => value + 1);
     } else {
-      persist(restartNormalRun(runState, cards));
+      persist(restartNormalRun(runState, allCards));
       setRevealed(false);
       setAnnouncement("Đã trở về thẻ đầu tiên.");
       requestFocus("card");
     }
+  }
+
+  function continueSrsReview() {
+    if (mode !== "SRS" || !runState || !summary.completed) return;
+    restartSrsRef.current = true;
+    setStatus("loading");
+    setReloadToken((value) => value + 1);
   }
 
   async function playPronunciation() {
@@ -340,17 +388,37 @@ export function LearningFoundationPage() {
   }
 
   const isSrsFinished = mode === "SRS" && summary.completed;
-  const isUpToDate = mode === "SRS" && payload.total_items > 0 && payload.eligible_count === 0;
+  const isUpToDate = mode === "SRS" && summary.up_to_date;
   if (isSrsFinished || isUpToDate) {
     return (
       <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
         <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status">
           <BookOpenCheck className="mx-auto size-14 rounded-2xl bg-[var(--accent-primary-soft)] p-3 text-[var(--accent-primary-pressed)]" aria-hidden="true" />
-          <h1 ref={summaryHeadingRef} tabIndex={-1}>{isSrsFinished ? "Hoàn thành phiên SRS" : "Bạn đã ôn tập đúng hạn"}</h1>
-          <p>{isSrsFinished ? `Đã hoàn thành ${summary.completed_count} / ${summary.total}.` : "Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ."}</p>
+          <h1 ref={summaryHeadingRef} tabIndex={-1}>Hoàn thành ôn tập</h1>
+          <p>{isSrsFinished ? `Đã hoàn thành ${summary.completed_count} / ${summary.total} từ trong phiên này.` : "Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ."}</p>
+          {isUpToDate && payload.next_review_at ? <p>Lần ôn tập tiếp theo: {formatNextReview(payload.next_review_at)}</p> : null}
           <div className="flex flex-wrap justify-center gap-3">
             <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => switchMode("NORMAL")}>Ôn tập thường</button>
-            {isSrsFinished ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={restartRun}><RotateCcw aria-hidden="true" /> Làm mới SRS</button> : null}
+            {isSrsFinished ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={continueSrsReview}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}
+            <Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (mode === "NORMAL" && normalSummary?.batch_completed) {
+    const isFullRunCompleted = normalSummary.full_run_completed;
+    return (
+      <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
+        <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status">
+          <BookOpenCheck className="mx-auto size-14 rounded-2xl bg-[var(--accent-primary-soft)] p-3 text-[var(--accent-primary-pressed)]" aria-hidden="true" />
+          <h1 ref={summaryHeadingRef} tabIndex={-1}>{isFullRunCompleted ? "Hoàn thành bộ từ" : "Hoàn thành phiên"}</h1>
+          <p>{isFullRunCompleted ? "Bạn đã hoàn thành toàn bộ lượt học này." : "Nhóm từ hiện tại đã được hoàn thành."}</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {isFullRunCompleted
+              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={restartRun}>Học lại từ đầu</button>
+              : <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={continueNormalBatch}>Học tiếp {normalSummary.next_batch_size} từ</button>}
             <Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link>
           </div>
         </section>
@@ -372,12 +440,12 @@ export function LearningFoundationPage() {
             </div>
             <div className="inline-flex min-h-11 justify-self-center rounded-xl border border-slate-300 bg-slate-100 p-1 max-[900px]:col-start-2 max-[900px]:row-start-2 max-[520px]:col-span-2 max-[520px]:col-start-1 max-[520px]:row-start-3" role="group" aria-label="Chế độ ôn tập">
               {[['SRS', 'Ôn tập SRS'], ['NORMAL', 'Ôn tập thường']].map(([value, label]) => (
-                <button key={value} type="button" className={`min-h-9 cursor-pointer rounded-lg px-3 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed ${requestedMode === value ? "bg-white text-[var(--accent-primary-pressed)] shadow-sm" : "bg-transparent text-slate-600"}`} aria-pressed={requestedMode === value} onClick={() => switchMode(value)} disabled={eventState === "pending" || Boolean(pendingMode)}>{label}</button>
+                <button key={value} type="button" className={`min-h-11 cursor-pointer rounded-lg px-3 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed ${requestedMode === value ? "bg-white text-[var(--accent-primary-pressed)] shadow-sm" : "bg-transparent text-slate-600"}`} aria-pressed={requestedMode === value} onClick={() => switchMode(value)} disabled={eventState === "pending" || Boolean(pendingMode)}>{label}</button>
               ))}
             </div>
             <div className="group relative justify-self-end max-[900px]:col-start-2 max-[900px]:row-start-1">
-              <button type="button" className="inline-flex size-11 cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white p-0 text-slate-700 transition-colors hover:not-disabled:border-[var(--accent-primary)] hover:not-disabled:bg-[var(--accent-primary-soft)] hover:not-disabled:text-[var(--accent-primary-pressed)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-[1.15rem]" onClick={restartRun} disabled={eventState === "pending"} aria-label="Bắt đầu lại" aria-describedby="learning-restart-tooltip"><RotateCcw aria-hidden="true" /></button>
-              <span id="learning-restart-tooltip" role="tooltip" className="learning-restart-tooltip pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Bắt đầu lại</span>
+              <button type="button" className="inline-flex size-11 cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white p-0 text-slate-700 transition-colors hover:not-disabled:border-[var(--accent-primary)] hover:not-disabled:bg-[var(--accent-primary-soft)] hover:not-disabled:text-[var(--accent-primary-pressed)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-[1.15rem]" onClick={restartRun} disabled={eventState === "pending"} aria-label={mode === "NORMAL" ? "Học lại từ đầu" : "Bắt đầu lại"} aria-describedby="learning-restart-tooltip"><RotateCcw aria-hidden="true" /></button>
+              <span id="learning-restart-tooltip" role="tooltip" className="learning-restart-tooltip pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{mode === "NORMAL" ? "Học lại từ đầu" : "Bắt đầu lại"}</span>
             </div>
           </div>
         </header>
@@ -442,7 +510,7 @@ export function LearningFoundationPage() {
               })}
             </section>
           ) : <p className="m-0 text-sm text-slate-500">Lật thẻ để chọn mức độ ghi nhớ.</p> : (
-            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode)}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button><button type="button" className={NEXT_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex + 1)} disabled={currentIndex === cards.length - 1 || Boolean(pendingMode)}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button></nav>
+            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode)}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button>{currentIndex === cards.length - 1 ? <button type="button" className={NEXT_BUTTON_CLASSES} onClick={finishNormalBatch} disabled={Boolean(pendingMode)}>Hoàn thành phiên</button> : <button type="button" className={NEXT_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex + 1)} disabled={Boolean(pendingMode)}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button>}</nav>
           )}
         </div>
         </div>
@@ -453,6 +521,21 @@ export function LearningFoundationPage() {
 
 function LearningKeyHint({ keyLabel, label }) {
   return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><kbd className="min-w-6 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-center font-mono text-[0.68rem] font-bold leading-4 text-slate-700 shadow-sm">{keyLabel}</kbd><span className="text-[15px] font-medium">{label}</span></span>;
+}
+
+function browserSessionStorage() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function formatNextReview(value) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function LearningPageState({ onRetry, returnTo, status }) {

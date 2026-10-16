@@ -2,13 +2,40 @@ import { installAuthApiMock, publicAdmin, publicUser, responses } from "./auth-a
 
 export const ids = ["A", "B", "C", "D"].map((letter) => letter.repeat(43));
 export async function installQuizApiMock(page, options = {}) {
-  const calls = { answers: [], learningEvents: [], questions: [] };
+  const calls = { answers: [], learningEvents: [], manifests: [], questions: [] };
+  const questions = options.questions ?? [
+    question("word-wake", 1, "wake", "thức dậy"),
+    question("word-sleep", 2, "sleep", "ngủ"),
+  ];
   await installAuthApiMock(page, { "/api/auth/me": options.guest ? responses.guest() : responses.currentUser(options.user ?? publicUser) });
+  await page.route("**/api/learning/sets/*?mode=NORMAL", async (route) => {
+    calls.manifests.push({ method: route.request().method(), url: route.request().url() });
+    await route.fulfill({ status: 200, json: { success: true, data: {
+      id: options.setId ?? "set-flow",
+      name: options.setName ?? "Quiz browser review",
+      mode: "NORMAL",
+      total_items: questions.length,
+      cards: questions.map(({ vocabulary_id, position, prompt }) => ({
+        id: vocabulary_id,
+        position,
+        word: prompt.word,
+        meanings: [],
+        progress: {
+          effective_status: "NEW",
+          stage: 0,
+          interval_days: null,
+          next_review_at: null,
+          review_count: 0,
+          revision: 0,
+        },
+      })),
+    } } });
+  });
   await page.route("**/api/learning/events", async (route) => { calls.learningEvents.push(route.request().postDataJSON()); await route.fulfill({ status: 500, json: { success: false } }); });
   await page.route("**/api/quiz/sets/*/questions**", async (route) => {
     const url = new URL(route.request().url()); const runId = url.searchParams.get("run_id");
-    calls.questions.push({ quizType: url.searchParams.get("type"), runId });
-    await fulfill(route, options.onQuestions ? await options.onQuestions({ call: calls.questions.length, runId }) : success(questionPayload(runId, options)));
+    calls.questions.push({ quizType: url.searchParams.get("type"), runId, vocabularyIds: url.searchParams.get("vocabulary_ids") });
+    await fulfill(route, options.onQuestions ? await options.onQuestions({ call: calls.questions.length, runId }) : success(questionPayload(runId, { ...options, questions })));
   });
   await page.route("**/api/quiz/answers", async (route) => {
     const body = route.request().postDataJSON(); calls.answers.push(body);

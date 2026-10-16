@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw, SkipForward, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useAuthentication } from "../auth/use-authentication.js";
 import { getSpeakingPracticePresentation } from "./speaking-practice-presentation.js";
 import { SPEAKING_PRACTICE_PHASES } from "./speaking-practice-state.js";
 import { bindSpeakingPracticeVisibility, createSpeakingPracticePageSession, resolveSpeakingPracticeReturnTo } from "./speaking-practice-page-session.js";
@@ -30,6 +31,8 @@ export function SpeakingPracticePage() {
   const { setId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuthentication();
+  const [storage] = useState(browserSessionStorage);
   const sessionRef = useRef(null);
   const targetHeadingRef = useRef(null);
   const completionHeadingRef = useRef(null);
@@ -40,12 +43,16 @@ export function SpeakingPracticePage() {
   const [retryToken, setRetryToken] = useState(0);
   const [terminalFocusIntent, setTerminalFocusIntent] = useState(false);
   const returnTo = resolveSpeakingPracticeReturnTo(setId, location.state);
+  const userId = user?.id ?? null;
 
   useEffect(() => {
     let ownedSession = null;
     let active = true;
+    if (!userId) return undefined;
     ownedSession = createSpeakingPracticePageSession({
       setId,
+      userId,
+      storage,
       onSnapshot(nextSnapshot) {
         if (active && sessionRef.current === ownedSession) setSnapshot(nextSnapshot);
       },
@@ -61,7 +68,7 @@ export function SpeakingPracticePage() {
       if (sessionRef.current === ownedSession) sessionRef.current = null;
       ownedSession.dispose();
     };
-  }, [retryToken, setId]);
+  }, [retryToken, setId, storage, userId]);
 
   const targetId = snapshot?.target?.id ?? null;
   const completed = snapshot?.completed === true;
@@ -120,20 +127,24 @@ export function SpeakingPracticePage() {
     return <PageState presentation={presentation} />;
   }
 
-  if (snapshot.phase === SPEAKING_PRACTICE_PHASES.INACCESSIBLE || snapshot.phase === SPEAKING_PRACTICE_PHASES.EMPTY
-    || (snapshot.phase === SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR && !snapshot.target)) {
+  if (!snapshot.completed && (snapshot.phase === SPEAKING_PRACTICE_PHASES.INACCESSIBLE || snapshot.phase === SPEAKING_PRACTICE_PHASES.EMPTY
+    || (snapshot.phase === SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR && !snapshot.target))) {
     return <PageState presentation={presentation} onExit={exitPractice} onRetry={snapshot.phase === SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR ? () => setRetryToken((value) => value + 1) : null} />;
   }
 
   if (snapshot.completed) {
+    const fullRunCompleted = snapshot.session?.full_run_completed === true;
+    const nextBatchSize = snapshot.session?.next_batch_size ?? 0;
     return (
       <PageFrame>
         <section className="w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" aria-labelledby="speaking-practice-complete-title" role="status">
           <RotateCcw className="mx-auto size-14 rounded-2xl bg-[#edf5fc] p-3 text-[#63A0E0]" aria-hidden="true" />
-          <h1 ref={completionHeadingRef} tabIndex={-1} id="speaking-practice-complete-title" className="mb-0 mt-4 rounded-lg text-2xl font-black text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">{presentation.heading}</h1>
-          <p className="mx-auto mb-0 mt-2 max-w-md leading-relaxed text-slate-600">{presentation.description}</p>
+          <h1 ref={completionHeadingRef} tabIndex={-1} id="speaking-practice-complete-title" className="mb-0 mt-4 rounded-lg text-2xl font-black text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">{fullRunCompleted ? "Hoàn thành luyện nói" : "Hoàn thành nhóm luyện nói"}</h1>
+          <p className="mx-auto mb-0 mt-2 max-w-md leading-relaxed text-slate-600">Bạn đã đi hết các từ trong {fullRunCompleted ? "lượt học này" : "nhóm hiện tại"}. Trạng thái này không đánh giá mức độ thành thạo phát âm.</p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <button type="button" className={PRIMARY_BUTTON_CLASSES} disabled={!snapshot.controls.canRestart} onClick={() => sessionRef.current?.restartAfterCompletion()}>{presentation.actions.restart.label}</button>
+            {fullRunCompleted
+              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} disabled={!snapshot.controls.canRestart} onClick={() => { void sessionRef.current?.restartAfterCompletion(); }}>Học lại từ đầu</button>
+              : <button type="button" className={PRIMARY_BUTTON_CLASSES} disabled={!snapshot.controls.canRestart} onClick={() => { void sessionRef.current?.continueAfterCompletion(); }}>Luyện tiếp {nextBatchSize} từ</button>}
             <button type="button" className={SECONDARY_BUTTON_CLASSES} disabled={!snapshot.controls.canExit} onClick={exitPractice}>{presentation.actions.exit.label}</button>
           </div>
         </section>
@@ -282,4 +293,8 @@ function PageState({ presentation, onExit = null, onRetry = null }) {
       </section>
     </PageFrame>
   );
+}
+
+function browserSessionStorage() {
+  try { return window.sessionStorage; } catch { return null; }
 }

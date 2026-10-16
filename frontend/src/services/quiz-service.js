@@ -10,11 +10,17 @@ export class QuizApiError extends Error {
 
 export function createQuizService(client = httpClient) {
   return {
-    async getQuestions(setId, runId) {
+    async getQuestions(setId, runId, vocabularyIds = null) {
       requireString(setId); requireString(runId);
+      const boundedIds = vocabularyIds === null ? null : requireVocabularyIds(vocabularyIds);
       try {
-        const response = await client.get(`${ENDPOINT}/sets/${encodeURIComponent(setId)}/questions`, { params: { type: TYPE, run_id: runId } });
-        return requireQuestionPayload(response.data?.data);
+        const params = { type: TYPE, run_id: runId };
+        if (boundedIds) params.vocabulary_ids = boundedIds.join(",");
+        const response = await client.get(`${ENDPOINT}/sets/${encodeURIComponent(setId)}/questions`, { params });
+        return requireQuestionPayload(response.data?.data, {
+          runId,
+          vocabularyIds: boundedIds,
+        });
       } catch (error) { throw mapQuizError(error); }
     },
     async submitAnswer(input) {
@@ -34,14 +40,18 @@ function serializeAnswer(input) {
   return body;
 }
 
-function requireQuestionPayload(value) {
+function requireQuestionPayload(value, expected) {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string" || value.quiz_type !== TYPE
-    || typeof value.run_id !== "string" || !Array.isArray(value.questions) || !value.questions.length
-    || !value.questions.every((question, index) => isQuestion(question, index + 1))) throw invalidResponseError();
+    || value.run_id !== expected.runId || !Array.isArray(value.questions) || !value.questions.length
+    || !value.questions.every(isQuestion)) throw invalidResponseError();
+  const responseIds = value.questions.map(({ vocabulary_id: vocabularyId }) => vocabularyId);
+  if (new Set(responseIds).size !== responseIds.length
+    || expected.vocabularyIds && !sameOrderedIds(responseIds, expected.vocabularyIds)) throw invalidResponseError();
   return value;
 }
-function isQuestion(value, position) {
-  if (!isRecord(value) || typeof value.vocabulary_id !== "string" || value.position !== position
+function isQuestion(value) {
+  if (!isRecord(value) || typeof value.vocabulary_id !== "string"
+    || !Number.isSafeInteger(value.position) || value.position < 0
     || typeof value.question_revision !== "string" || !isRecord(value.prompt)
     || typeof value.prompt.word !== "string" || !(value.prompt.part_of_speech === null || typeof value.prompt.part_of_speech === "string")
     || !Array.isArray(value.choices) || value.choices.length !== 4 || !value.choices.every(isChoice) || !isProgress(value.progress)) return false;
@@ -58,6 +68,15 @@ function requireAnswerResult(value) {
 }
 function isProgress(value) { return isRecord(value) && typeof value.status === "string" && Number.isSafeInteger(value.review_count) && Number.isSafeInteger(value.revision); }
 function normalizeLabel(value) { return typeof value === "string" ? value.trim().normalize("NFC").replace(/\s+/gu, " ").toLowerCase() : ""; }
+function requireVocabularyIds(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 10
+    || value.some((id) => typeof id !== "string" || !id)
+    || new Set(value).size !== value.length) throw validationError();
+  return [...value];
+}
+function sameOrderedIds(left, right) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
 function mapQuizError(error) {
   if (error instanceof QuizApiError) return error;
   const status = error?.response?.status ?? null;

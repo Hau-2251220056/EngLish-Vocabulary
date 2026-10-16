@@ -538,6 +538,7 @@ Status: DONE
 4.5 Learning
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
+Learning Session V1 Enhancement	IN_PROGRESS	✓	✓	✓	IN_PROGRESS	⏳	⏳
 Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
@@ -559,6 +560,8 @@ LEARNED
 NEEDS_REVIEW
 
 Flashcard / Learning with SRS V1 is a USER-only Set learning flow with transient client state and backend-authoritative per-`(user_id, vocabulary_id)` progress. SRS is the default mode; NORMAL preserves read-only all-card traversal. The backend owns the four-rating schedule, and immediate retry of the current event ID is idempotent while stale different events are rejected by revision protection. No persistent Learning Session/history or event ledger is introduced.
+
+Learning Session V1 is an approved enhancement currently `IN_PROGRESS`. TASK-LS-01 through TASK-LS-03 establish synchronized active contracts, resilient USER/Set/mode-isolated transient storage and pure fixed-batch/exact-ID reconciliation foundations. Mode integration, bounded Quiz API implementation, UI/UX review, formal TEST, guarded CI and final REVIEW remain pending; existing DONE foundations are not downgraded and the enhancement is not yet complete.
 
 ## Flashcard / Learning V1 Closure
 

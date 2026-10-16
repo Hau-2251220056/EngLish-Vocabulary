@@ -306,7 +306,7 @@ test("SRS persists revised NEW intervals and AGAIN resumes after three other pre
 
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Khó, Ngày mai" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   firstProgress = await progressFor(learnerRecord.id, firstVocabulary.id);
   expect(firstProgress).toMatchObject({ status: "LEARNED", interval_days: 1, review_count: 3, revision: 3 });
 
@@ -526,14 +526,14 @@ test("stable-stage rating, up-to-date and empty states use authoritative persist
   await page.keyboard.press("Space");
   await expect(page.getByRole("heading", { name: "nghĩa A1 chính" })).toBeFocused();
   await page.getByRole("button", { name: "Dễ, 2 tuần" }).click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành phiên SRS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
   const stable = await progressFor(learnerRecord.id, firstVocabulary.id);
   expect(stable).toMatchObject({ status: "LEARNED", interval_days: 14, review_count: 3, revision: 3 });
   expect(stable.next_review_at.getTime() - stable.last_reviewed_at.getTime()).toBe(14 * 86_400_000);
 
   await page.goto(`/learn/vocabulary-sets/${stableSet.id}`);
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đúng hạn" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
   const emptySet = await prisma.vOCABULARY_SET.create({
     data: { owner_id: learnerRecord.id, name: `${prefix} Empty`, is_public: false },

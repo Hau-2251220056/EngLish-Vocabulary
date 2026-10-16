@@ -14,10 +14,19 @@ export function createSharedQuizQuestionLoader(load) {
 }
 
 export function classifyQuizLoadError(error) {
-  if (error instanceof QuizApiError && error.code === "QUIZ_SET_EMPTY") return "empty";
-  if (error instanceof QuizApiError && error.code === "QUIZ_CHOICES_UNAVAILABLE") return "choices-unavailable";
-  if (error instanceof QuizApiError && error.kind === "not-found") return "not-found";
+  if (["QUIZ_SET_EMPTY", "LEARNING_SET_EMPTY"].includes(error?.code)) return "empty";
+  if (["QUIZ_ITEM_CHANGED", "QUIZ_CHOICES_UNAVAILABLE"].includes(error?.code)) return "stale";
+  if (error?.kind === "not-found") return "not-found";
   return "error";
+}
+
+export async function readQuizSessionWithRecovery(readSession, state) {
+  try {
+    return await readSession(state);
+  } catch (error) {
+    if (!["QUIZ_ITEM_CHANGED", "QUIZ_CHOICES_UNAVAILABLE"].includes(error?.code)) throw error;
+    return readSession(state);
+  }
 }
 
 export function classifyQuizSubmissionError(error) {
