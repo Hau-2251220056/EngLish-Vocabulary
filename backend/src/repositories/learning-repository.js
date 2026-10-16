@@ -1,6 +1,10 @@
 // @ts-nocheck
+import { createXpRewardRepository } from "./xp-reward-repository.js";
+
 export function createLearningRepository(prisma) {
   return {
+    ...createXpRewardRepository(prisma),
+
     findAccessibleSetForUser(setId, userId) {
       return prisma.vOCABULARY_SET.findFirst({
         relationLoadStrategy: "join",
