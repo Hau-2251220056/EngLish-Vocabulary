@@ -31,20 +31,22 @@ test("schema names and ownership markers round-trip exactly", () => {
   );
 });
 
-test("repository verification schemas use the same owned run identity", () => {
-  const schemaName = buildSchemaName(
-    "repository",
-    identity.runId,
-    identity.attempt,
-    "cafebabe",
-  );
-  const ownership = buildOwnership({ ...identity, schemaName });
+test("repository and Learning verification schemas use the same owned run identity", () => {
+  for (const purpose of ["repository", "learning"]) {
+    const schemaName = buildSchemaName(
+      purpose,
+      identity.runId,
+      identity.attempt,
+      "cafebabe",
+    );
+    const ownership = buildOwnership({ ...identity, schemaName });
 
-  assert.equal(assertSafeSchemaName(schemaName), schemaName);
-  assert.deepEqual(
-    decodeOwnershipMarker(encodeOwnershipMarker(ownership)),
-    ownership,
-  );
+    assert.equal(assertSafeSchemaName(schemaName), schemaName);
+    assert.deepEqual(
+      decodeOwnershipMarker(encodeOwnershipMarker(ownership)),
+      ownership,
+    );
+  }
 });
 
 test("public, malformed and different-run ownership are rejected", () => {

@@ -55,6 +55,12 @@ const prismaConfigModule = new URL(
 const repositoryIntegrationTest = fileURLToPath(
   new URL("./xp-reward-repository.integration.test.js", import.meta.url),
 );
+const learningXpIntegrationTest = fileURLToPath(
+  new URL("./srs-xp-postgresql.integration.test.js", import.meta.url),
+);
+const learningRegressionTest = fileURLToPath(
+  new URL("../learning/learning.test.js", import.meta.url),
+);
 
 let temporaryDirectory;
 let databaseUrl;
@@ -70,6 +76,8 @@ try {
     console.log("XP migration harness independent cleanup: PASS");
   } else if (mode === "repository") {
     await runRepositoryVerificationHarness();
+  } else if (mode === "learning") {
+    await runLearningVerificationHarness();
   } else {
     await runVerificationHarness();
   }
@@ -176,6 +184,25 @@ async function runRepositoryVerificationHarness() {
   console.log("XP repository integration harness: PASS");
 }
 
+async function runLearningVerificationHarness() {
+  temporaryDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "elvocab-xp-learning-"),
+  );
+  const schemaName = buildSchemaName(
+    "learning",
+    runIdentity.runId,
+    runIdentity.attempt,
+    randomBytes(4).toString("hex"),
+  );
+
+  await createHarnessSchema(schemaName);
+  const complete = await prepareMigrationCopy("learning", { includeXp: true });
+  await migrateDeploy(schemaName, complete.configPath);
+  await assertPreparedRepositorySchema(schemaName);
+  await runLearningIntegrationTests(schemaName);
+  console.log("XP Learning integration harness: PASS");
+}
+
 function requireHarnessEnvironment() {
   if (
     process.env.CI !== "true" ||
@@ -204,6 +231,9 @@ function requireHarnessMode(args) {
   }
   if (args.length === 1 && args[0] === "--repository") {
     return "repository";
+  }
+  if (args.length === 1 && args[0] === "--learning") {
+    return "learning";
   }
   throw new Error("Unsupported XP migration harness arguments.");
 }
@@ -803,6 +833,37 @@ async function runRepositoryIntegrationTests(schemaName) {
     child.once("exit", (code) => resolve(code ?? 1));
   });
   assert.equal(exitCode, 0, "XP repository integration tests failed.");
+  await withSchemaClient(schemaName, async () => {});
+}
+
+async function runLearningIntegrationTests(schemaName) {
+  assertSafeSchemaName(schemaName);
+  await withSchemaClient(schemaName, async () => {});
+  const scopedUrl = schemaDatabaseUrl(schemaName);
+  const exitCode = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "--test",
+        "--test-concurrency=1",
+        learningXpIntegrationTest,
+        learningRegressionTest,
+      ],
+      {
+        cwd: backendDirectory,
+        env: {
+          ...process.env,
+          TEST_DATABASE_URL: scopedUrl,
+          DATABASE_URL: scopedUrl,
+          XP_LEARNING_TEST_SCHEMA: schemaName,
+        },
+        stdio: "inherit",
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
+  assert.equal(exitCode, 0, "XP Learning integration tests failed.");
   await withSchemaClient(schemaName, async () => {});
 }
 
