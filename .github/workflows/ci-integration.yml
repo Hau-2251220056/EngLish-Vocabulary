@@ -1,0 +1,25 @@
+name: XP Migration Dispatch Bootstrap
+
+# Temporary default-branch registration only. The reviewed XP verification
+# workflow lives on feature/xp-level-v1 and must be selected explicitly.
+on:
+  workflow_dispatch:
+    inputs:
+      run_xp_migration_harness:
+        description: Run the reviewed XP migration harness workflow
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  registration-only:
+    name: Refuse bootstrap execution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop on the bootstrap workflow
+        run: |
+          echo "This bootstrap only registers manual dispatch. Select the reviewed XP feature ref."
+          exit 1
