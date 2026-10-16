@@ -271,6 +271,12 @@ jobs:
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:xp-learning:ci
 
+      - name: Run isolated Quiz XP verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-quiz:ci
+
   xp-migration-cleanup:
     name: XP Migration Cleanup
     needs:
@@ -357,7 +363,7 @@ jobs:
             fi
 
             echo "## XP Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
-            echo "Isolated migration, repository and SRS XP Learning verification plus independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated migration, repository, SRS XP Learning and Quiz XP verification plus independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
