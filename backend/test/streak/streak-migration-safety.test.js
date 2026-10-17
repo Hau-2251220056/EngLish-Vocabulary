@@ -7,6 +7,7 @@ import {
   assertMatchingOwnership,
   assertRunIdentity,
   assertSafeSchemaName,
+  assertUtcCurrentTimestampDefault,
   buildOwnership,
   buildSchemaName,
   collectExactlyOwnedSchemas,
@@ -60,6 +61,23 @@ test("authorization fails closed without every CI-exclusive approval signal", ()
     targetIdentity: "ci-db.example.invalid:5432/elvocab_ci",
     actualIdentity: "ci-db.example.invalid:5432/elvocab_ci",
   });
+});
+
+test("UTC timestamp defaults accept only equivalent PostgreSQL representations", () => {
+  for (const value of [
+    "timezone('UTC'::text, CURRENT_TIMESTAMP)",
+    "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)",
+  ]) {
+    assert.equal(assertUtcCurrentTimestampDefault(value), value);
+  }
+
+  for (const value of [
+    "timezone('Asia/Ho_Chi_Minh'::text, CURRENT_TIMESTAMP)",
+    "timezone('UTC'::text, CURRENT_DATE)",
+    "CURRENT_TIMESTAMP",
+  ]) {
+    assert.throws(() => assertUtcCurrentTimestampDefault(value));
+  }
 });
 
 test("owned schema identity and marker round-trip exactly", () => {

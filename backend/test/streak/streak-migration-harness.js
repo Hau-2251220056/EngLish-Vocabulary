@@ -10,6 +10,7 @@ import {
   assertHarnessAuthorization,
   assertMatchingOwnership,
   assertSafeSchemaName,
+  assertUtcCurrentTimestampDefault,
   buildOwnership,
   buildSchemaName,
   collectExactlyOwnedSchemas,
@@ -518,7 +519,7 @@ async function verifySchemaObjects(prisma) {
   );
   assert.equal(defaults.length, 2);
   for (const { column_default: value } of defaults) {
-    assert.match(value, /timezone\('UTC'::text, CURRENT_TIMESTAMP\)/i);
+    assertUtcCurrentTimestampDefault(value);
   }
 }
 

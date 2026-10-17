@@ -8,6 +8,20 @@ const SAFE_REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SAFE_NUMERIC_ID = /^[0-9]+$/;
 const SAFE_POSITIVE_DECIMAL_ID = /^[1-9][0-9]*$/;
 const SAFE_TARGET_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$/;
+const UTC_CURRENT_TIMESTAMP_DEFAULTS = [
+  /^timezone\(\s*'UTC'::text\s*,\s*CURRENT_TIMESTAMP\s*\)$/i,
+  /^\(\s*CURRENT_TIMESTAMP\s+AT\s+TIME\s+ZONE\s+'UTC'::text\s*\)$/i,
+];
+
+export function assertUtcCurrentTimestampDefault(value) {
+  assert.equal(typeof value, "string");
+  assert.equal(
+    UTC_CURRENT_TIMESTAMP_DEFAULTS.some((pattern) => pattern.test(value.trim())),
+    true,
+    `Expected an explicit UTC CURRENT_TIMESTAMP default, received: ${value}`,
+  );
+  return value;
+}
 
 export function assertHarnessAuthorization(environment) {
   assert.equal(environment.CI, "true");
