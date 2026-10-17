@@ -232,7 +232,7 @@ test("Quiz preserves complete and incomplete SRS schedules and cannot create due
   assert.equal(progress.revision, 5);
   assert.equal(progress.next_review_at.toISOString(), FIXED_NOW.toISOString());
   assert.equal(progress.interval_days, 3);
-  assert.equal(progress.ease_factor, 2.5);
+  assert.equal(Number(progress.ease_factor), 2.5);
   assert.equal(await prisma.xP_REWARD.count({
     where: { user_id: fixture.user.id, reward_type: "SRS_DUE_REVIEW" },
   }), 0);
