@@ -7,6 +7,7 @@ import {
   LibraryBig,
   Plus,
   RefreshCw,
+  Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -55,7 +56,7 @@ export function DashboardPage() {
         title="Tiến độ học tập"
         type="progress"
       >
-        {(data) => <ProgressSummary summary={data.summary} />}
+        {(data) => <ProgressSummary summary={data.summary} xpLevel={data.xp_level} />}
       </DashboardSection>
 
       <DashboardSection
@@ -182,7 +183,7 @@ function DashboardLoadingState({ message, type }) {
   );
 }
 
-function ProgressSummary({ summary }) {
+function ProgressSummary({ summary, xpLevel }) {
   const values = [
     { key: "total", label: "Tổng đã bắt đầu", value: summary.total_started, icon: BookOpenCheck },
     { key: "learning", label: "Đang học", value: summary.learning, icon: RefreshCw },
@@ -190,6 +191,7 @@ function ProgressSummary({ summary }) {
   ];
   return (
     <>
+      <XpLevelSummary xpLevel={xpLevel} />
       <dl className="dashboard-progress-grid m-0 grid grid-cols-3 gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-sm)] max-[760px]:grid-cols-1 max-[760px]:gap-[0.6rem]" aria-label="Tóm tắt tiến độ" role="group">
         {values.map(({ icon: Icon, key, label, value }) => (
           <div className={`dashboard-progress-card is-${key} flex min-h-[5.75rem] min-w-0 items-center gap-[0.8rem] rounded-[var(--radius-lg)] p-4 max-[760px]:min-h-[4.75rem] ${PROGRESS_STYLES[key].card}`} key={key}>
@@ -212,6 +214,79 @@ function ProgressSummary({ summary }) {
       ) : null}
     </>
   );
+}
+
+function XpLevelSummary({ xpLevel }) {
+  const progressPercent = xpLevel.is_max_level
+    ? 100
+    : clampPercentage(
+      ((xpLevel.total_xp - xpLevel.level_min_xp)
+        / (xpLevel.next_level_xp - xpLevel.level_min_xp)) * 100,
+    );
+  const remainingXp = xpLevel.is_max_level
+    ? null
+    : xpLevel.next_level_xp - xpLevel.total_xp;
+
+  return (
+    <section
+      aria-label="XP và cấp độ"
+      className="dashboard-xp-summary mb-3 min-w-0 rounded-[var(--radius-xl)] border border-[#d9e2ff] bg-[linear-gradient(135deg,#f7f9ff,#eef3ff)] p-[clamp(1rem,2.4vw,1.35rem)] shadow-[var(--shadow-sm)]"
+    >
+      <div className="flex min-w-0 items-center justify-between gap-4 max-[480px]:items-start">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-lg)] bg-[#dce6ff] text-[var(--color-primary)] [&_svg]:size-6" aria-hidden="true">
+            <Zap />
+          </span>
+          <div className="min-w-0">
+            <p className="m-0 text-[0.75rem] font-extrabold uppercase tracking-[0.08em] text-[#4d64a5]">Cấp độ hiện tại</p>
+            <h3 className="m-0 mt-1 text-[clamp(1.15rem,2vw,1.4rem)] leading-tight text-[var(--color-heading)]">
+              Level {xpLevel.level}{xpLevel.is_max_level ? " — MAX" : ""}
+            </h3>
+          </div>
+        </div>
+        <p className="m-0 shrink-0 text-right text-[clamp(1.15rem,2vw,1.45rem)] font-extrabold text-[var(--color-primary)]">
+          {formatXp(xpLevel.total_xp)} XP
+        </p>
+      </div>
+
+      {xpLevel.is_max_level ? (
+        <div className="mt-4">
+          <div className="h-2.5 overflow-hidden rounded-full bg-[#dbe3f8]" aria-hidden="true">
+            <span className="block h-full w-full rounded-full bg-[var(--color-primary)]" />
+          </div>
+          <p className="mb-0 mt-2 text-[0.8rem] font-bold text-[#42547f]">Đã đạt cấp độ tối đa. Tổng XP vẫn tiếp tục tăng.</p>
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div className="mb-2 flex items-end justify-between gap-3 text-[0.78rem] text-[#526078] max-[480px]:items-start max-[480px]:flex-col max-[480px]:gap-1">
+            <span>{formatXp(xpLevel.total_xp - xpLevel.level_min_xp)} / {formatXp(xpLevel.next_level_xp - xpLevel.level_min_xp)} XP trong cấp độ này</span>
+            <strong className="shrink-0 text-[#34466f]">Còn {formatXp(remainingXp)} XP đến cấp tiếp theo</strong>
+          </div>
+          <div
+            aria-label={`Tiến độ XP Level ${xpLevel.level}`}
+            aria-valuemax={xpLevel.next_level_xp}
+            aria-valuemin={xpLevel.level_min_xp}
+            aria-valuenow={xpLevel.total_xp}
+            className="h-2.5 overflow-hidden rounded-full bg-[#dbe3f8]"
+            role="progressbar"
+          >
+            <span
+              className="block h-full rounded-full bg-[var(--color-primary)]"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function clampPercentage(value) {
+  return Math.min(100, Math.max(0, value));
+}
+
+function formatXp(value) {
+  return value.toLocaleString("vi-VN");
 }
 
 function MySetsSummary({ sets }) {

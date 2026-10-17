@@ -53,6 +53,7 @@ export async function installAuthApiMock(page, handlers = {}) {
         success: true,
         data: {
           evaluated_at: "2026-09-24T12:00:00.000Z",
+          xp_level: { total_xp: 0, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false },
           summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
           items: [],
           pagination: { page: 1, page_size: 1, total_items: 0, total_pages: 0 },

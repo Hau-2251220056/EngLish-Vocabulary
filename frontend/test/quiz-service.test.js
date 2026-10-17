@@ -62,7 +62,43 @@ test("answer validation rejects legacy and extra fields", async () => {
   await assert.rejects(service.submitAnswer({ ...answer(), quiz_type: "VI_TO_ENGLISH" }), { code: "INVALID_QUIZ_REQUEST" });
 });
 
+test("answer validation accepts authoritative original, replay, zero and MAX rewards", async () => {
+  for (const reward of [
+    rewardProjection(),
+    rewardProjection({ xp_earned: 0 }),
+    rewardProjection({ replayed: true, total_xp: 153, level: 3, level_min_xp: 150, next_level_xp: 300 }),
+    rewardProjection({ total_xp: 6000, level: 15, level_min_xp: 5250, next_level_xp: null, is_max_level: true }),
+  ]) {
+    const service = createQuizService({
+      async post(_url, body) {
+        return { data: { data: { ...result(body), reward } } };
+      },
+    });
+    assert.deepEqual((await service.submitAnswer(answer())).reward, reward);
+  }
+});
+
+test("answer validation rejects malformed reward projections as operational responses", async () => {
+  for (const reward of [
+    undefined,
+    rewardProjection({ source_event_id: "not-a-uuid" }),
+    rewardProjection({ xp_earned: 2 }),
+    rewardProjection({ replayed: "false" }),
+    rewardProjection({ level: 16 }),
+    rewardProjection({ is_max_level: true, next_level_xp: null }),
+    { ...rewardProjection(), reward_type: "QUIZ_FIRST_CORRECT" },
+  ]) {
+    const service = createQuizService({
+      async post(_url, body) {
+        return { data: { data: { ...result(body), reward } } };
+      },
+    });
+    await assert.rejects(service.submitAnswer(answer()), { code: "INVALID_QUIZ_RESPONSE" });
+  }
+});
+
 const RUN = "11111111-1111-4111-8111-111111111111", ID_A = "A".repeat(43), ID_B = "B".repeat(43), ID_C = "C".repeat(43), ID_D = "D".repeat(43);
 function payload(ids = ["word"]) { return { id: "set", name: "Core", quiz_type: "MULTIPLE_CHOICE", run_id: RUN, questions: ids.map((id, index) => ({ vocabulary_id: id, position: index + 1, question_revision: String.fromCharCode(82 + index).repeat(43), prompt: { word: `wake-${index}`, part_of_speech: "verb" }, choices: [{ choice_id: ID_A, label: "thức dậy" }, { choice_id: ID_B, label: "ngủ" }, { choice_id: ID_C, label: "ăn" }, { choice_id: ID_D, label: "đi bộ" }], progress: { status: "NEW", review_count: 0, revision: 0, last_reviewed_at: null } })) }; }
 function answer() { return { event_id: "22222222-2222-4222-8222-222222222222", set_id: "set", vocabulary_id: "word", run_id: RUN, question_revision: "R".repeat(43), quiz_type: "MULTIPLE_CHOICE", expected_revision: 0, selected_choice_id: ID_A }; }
-function result(body) { return { set_id: body.set_id, vocabulary_id: body.vocabulary_id, run_id: body.run_id, quiz_type: "MULTIPLE_CHOICE", is_correct: true, selected_choice_id: body.selected_choice_id, correct_choice_id: ID_A, progress: { status: "LEARNED", review_count: 1, revision: 1, last_reviewed_at: null } }; }
+function result(body) { return { set_id: body.set_id, vocabulary_id: body.vocabulary_id, run_id: body.run_id, quiz_type: "MULTIPLE_CHOICE", is_correct: true, selected_choice_id: body.selected_choice_id, correct_choice_id: ID_A, progress: { status: "LEARNED", review_count: 1, revision: 1, last_reviewed_at: null }, reward: rewardProjection({ source_event_id: body.event_id }) }; }
+function rewardProjection(overrides = {}) { return { source_event_id: answer().event_id, xp_earned: 3, replayed: false, total_xp: 53, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false, ...overrides }; }

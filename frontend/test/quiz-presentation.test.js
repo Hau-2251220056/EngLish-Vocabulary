@@ -48,3 +48,12 @@ test("production page contains compact vertical Multiple Choice presentation and
   assert.match(source, /readQuizSessionWithRecovery/);
   assert.match(source, /browserSessionStorage/);
 });
+
+test("Quiz feedback uses transient positive non-replay XP and keeps persistence whitelisted", async () => {
+  const page = await readFile(new URL("../src/quiz/quiz-foundation-page.jsx", import.meta.url), "utf8");
+  const state = await readFile(new URL("../src/quiz/quiz-run-state.js", import.meta.url), "utf8");
+  assert.match(page, /formatNewXpFeedback\(result\.reward\)/);
+  assert.match(page, /data-testid="quiz-xp-feedback"/);
+  assert.match(state, /\{ question_revision: attempt\.question_revision,[\s\S]*is_correct: result\.is_correct, progress_revision: result\.progress\.revision \}/);
+  assert.doesNotMatch(state, /accepted[^;]*reward/);
+});

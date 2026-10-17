@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { expect, test } from "@playwright/test";
 import { installAuthApiMock, publicUser, responses } from "./fixtures/auth-api.js";
 
@@ -27,6 +28,7 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   ));
   expect(afterAgain.srs.queue).toEqual(["word-2", "word-3", "word-4", "word-1"]);
   expect(afterAgain.srs.passed_ids).toEqual([]);
+  await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 
   for (const word of ["word-2", "word-3", "word-4"]) {
     await page.getByRole("heading", { name: word }).press("Space");
@@ -37,6 +39,47 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   expect(calls.events.map(({ vocabulary_id }) => vocabulary_id)).toEqual([
     "word-1", "word-2", "word-3", "word-4",
   ]);
+});
+
+test("new SRS XP is announced once without persistence and reload stays silent", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await installLearningMock(page, { cardCount: 2 });
+  await page.goto("/learn/vocabulary-sets/set-srs");
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).press("Enter");
+
+  const announcement = page.locator('.sr-only[role="status"]');
+  await expect(announcement).toContainText("+3 XP");
+  await expect(announcement).toHaveAttribute("aria-live", "polite");
+  await expect(announcement).toHaveAttribute("aria-atomic", "true");
+  const stored = await page.evaluate(() => sessionStorage.getItem("elvocab.learning.run.v1:user-1:set-srs"));
+  expect(stored).not.toContain("reward");
+  expect(stored).not.toContain("xp_earned");
+  await page.screenshot({
+    fullPage: true,
+    path: "test-results/task-230-evidence/srs-positive-xp-mobile.png",
+  });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
+  await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
+});
+
+test("zero and replayed SRS responses never announce XP", async ({ page }) => {
+  await installLearningMock(page, {
+    onEvent(body) {
+      const response = successRating(body);
+      if (body.rating === "GOOD") response.data.reward.replayed = true;
+      return { status: 200, json: response };
+    },
+  });
+  await page.goto("/learn/vocabulary-sets/set-srs");
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
+  await page.getByRole("heading", { name: "word-2" }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).press("Enter");
+  await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 });
 
 test("NORMAL preserves browsing and never submits a rating", async ({ page }) => {
@@ -446,7 +489,7 @@ function ratingPreviews(hard, good, easy) {
 }
 function successRating(body) {
   const again = body.rating === "AGAIN";
-  return { success: true, data: { vocabulary_id: body.vocabulary_id, status: again ? "LEARNING" : "LEARNED", stored_status: again ? "LEARNING" : "LEARNED", effective_status: again ? "LEARNING" : "LEARNED", stage: again ? 0 : 1, interval_days: again ? null : 1, next_review_at: again ? NOW : "2026-10-05T00:00:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: body.expected_revision + 1 } };
+  return { success: true, data: { vocabulary_id: body.vocabulary_id, status: again ? "LEARNING" : "LEARNED", stored_status: again ? "LEARNING" : "LEARNED", effective_status: again ? "LEARNING" : "LEARNED", stage: again ? 0 : 1, interval_days: again ? null : 1, next_review_at: again ? NOW : "2026-10-05T00:00:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: body.expected_revision + 1, reward: { source_event_id: body.event_id, xp_earned: again ? 0 : 3, replayed: false, total_xp: again ? 0 : 3, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false } } };
 }
 function failure(code) { return { success: false, error: { code, message: "Changed." } }; }
 const NOW = "2026-10-04T00:00:00.000Z";

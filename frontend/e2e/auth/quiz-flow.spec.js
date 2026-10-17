@@ -37,6 +37,54 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     expect(calls.answers[1]).toEqual(calls.answers[0]);
   });
 
+  test("new Quiz XP is visible and announced once without surviving reload", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await installQuizApiMock(page);
+    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.getByRole("radio").first().check();
+    await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
+
+    await expect(page.getByTestId("quiz-xp-feedback")).toHaveText("+3 XP");
+    const announcement = page.getByRole("status");
+    await expect(announcement).toContainText("+3 XP");
+    await expect(announcement).toHaveAttribute("aria-live", "polite");
+    await expect(announcement).toHaveAttribute("aria-atomic", "true");
+    const stored = await page.evaluate(() => Object.entries(sessionStorage)
+      .filter(([key]) => key.startsWith("elvocab.quiz.run.v2:"))
+      .map(([, value]) => value).join(""));
+    expect(stored).not.toContain("reward");
+    expect(stored).not.toContain("xp_earned");
+    await page.screenshot({
+      fullPage: true,
+      path: "test-results/task-230-evidence/quiz-positive-xp-mobile.png",
+    });
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "sleep" })).toBeVisible();
+    await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveCount(0);
+  });
+
+  test("zero and replayed Quiz responses keep reward feedback silent", async ({ browser }) => {
+    for (const responseKind of ["zero", "replay"]) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await installQuizApiMock(page, {
+        async onAnswer({ body }) {
+          const response = answerResult(body, { is_correct: responseKind === "replay" });
+          if (responseKind === "replay") response.reward.replayed = true;
+          return success(response);
+        },
+      });
+      await page.goto("/quiz/vocabulary-sets/set-flow");
+      await page.getByRole("radio").first().check();
+      await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+      await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
+      await expect(page.getByRole("status")).not.toContainText(/\+\d+ XP/);
+      await context.close();
+    }
+  });
+
   test("one-shot stale question recovery deliberately retries once", async ({ page }) => {
     const calls = await installQuizApiMock(page, { onQuestions: ({ call, runId }) => call === 1 ? failure(409, "QUIZ_CHOICES_UNAVAILABLE") : success(questionPayload(runId)) });
     await page.goto("/quiz/vocabulary-sets/set-flow");

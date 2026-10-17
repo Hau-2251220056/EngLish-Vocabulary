@@ -1,4 +1,5 @@
 import { httpClient } from "./http-client.js";
+import { isRewardProjection } from "./xp-level-response.js";
 
 const ENDPOINT = "/api/quiz";
 const TYPE = "MULTIPLE_CHOICE";
@@ -63,7 +64,8 @@ function isChoice(value) { return isRecord(value) && Object.keys(value).length =
 function requireAnswerResult(value) {
   if (!isRecord(value) || typeof value.set_id !== "string" || typeof value.vocabulary_id !== "string" || typeof value.run_id !== "string"
     || value.quiz_type !== TYPE || typeof value.is_correct !== "boolean" || typeof value.selected_choice_id !== "string"
-    || typeof value.correct_choice_id !== "string" || !isProgress(value.progress)) throw invalidResponseError();
+    || typeof value.correct_choice_id !== "string" || !isProgress(value.progress)
+    || !isRewardProjection(value.reward)) throw invalidResponseError();
   return value;
 }
 function isProgress(value) { return isRecord(value) && typeof value.status === "string" && Number.isSafeInteger(value.review_count) && Number.isSafeInteger(value.revision); }

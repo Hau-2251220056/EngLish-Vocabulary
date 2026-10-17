@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LearningApiError, learningService } from "../services/learning-service.js";
+import { formatNewXpFeedback } from "../services/xp-level-response.js";
 import {
   isKeyboardShortcutSafe,
   pendingLearningRating,
@@ -289,7 +290,7 @@ export function LearningFoundationPage() {
     setEventError(null);
     setAnnouncement(`Đang ghi nhận: ${RATING_LABELS[rating]}.`);
     try {
-      const progress = await learningService.recordMeaningfulEvent(nextAttempt);
+      const { reward, ...progress } = await learningService.recordMeaningfulEvent(nextAttempt);
       setPayload((current) => ({
         ...current,
         cards: current.cards.map((card) => card.id === currentCard.id
@@ -302,9 +303,10 @@ export function LearningFoundationPage() {
       setRevealed(false);
       setAudioError(null);
       setEventState("idle");
-      setAnnouncement(rating === "AGAIN"
+      const acceptedAnnouncement = rating === "AGAIN"
         ? "Đã ghi nhận Lại. Thẻ sẽ quay lại sau các lượt tiếp theo."
-        : `${RATING_LABELS[rating]} đã được ghi nhận.`);
+        : `${RATING_LABELS[rating]} đã được ghi nhận.`;
+      setAnnouncement([acceptedAnnouncement, formatNewXpFeedback(reward)].filter(Boolean).join(" "));
       requestFocus(nextSummary.completed ? "summary" : "card");
     } catch (error) {
       if (error instanceof LearningApiError
@@ -458,7 +460,7 @@ export function LearningFoundationPage() {
           </div>
           <progress className="h-[0.45rem] w-full overflow-hidden rounded-full border-0 bg-slate-200 accent-[var(--accent-primary)]" value={mode === "SRS" ? summary.completed_count : currentIndex + 1} max={mode === "SRS" ? summary.total : cards.length}>{mode === "SRS" ? summary.completed_count : currentIndex + 1}/{mode === "SRS" ? summary.total : cards.length}</progress>
         </section>
-        <div className="sr-only" aria-live="polite">{announcement}</div>
+        <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
         {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <div key={`${mode}:${currentCard.id}`} className="learning-flip-stage relative grid min-h-[22rem] w-full shrink-0 cursor-pointer self-center lg:min-h-96 max-[700px]:min-h-56" onClick={handleCardClick}>

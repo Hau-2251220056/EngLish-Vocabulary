@@ -198,6 +198,7 @@ Cách hash và verify password được quy định trong Authentication Specifi
 * Default `0`.
 * INTEGER.
 * Không được âm.
+* Database constraint `USER_total_xp_non_negative` bảo vệ `total_xp >= 0`; migration chỉ thêm constraint sau read-only preflight và dừng mà không sửa dữ liệu nếu phát hiện balance âm.
 
 Level không được lưu trong bảng `USER`.
 
@@ -772,6 +773,9 @@ Thuật toán Spaced Repetition cụ thể chưa được cố định trong Dat
 AI Agent không được tự ý thêm entity hoặc bảng riêng chỉ để phục vụ thuật toán Spaced Repetition.
 
 14. USER_DAILY_PROGRESS
+
+> **Deferred model:** `USER_DAILY_PROGRESS` is not created or used by XP & Level V1. Section 14 remains future Daily Goal design direction; the active XP persistence contract is `USER.total_xp` plus internal `XP_REWARD` in section 21.3.
+
 14.1. Mục đích
 
 Lưu tiến độ XP của User theo từng ngày để phục vụ:
@@ -858,7 +862,7 @@ Quiz runs are transient. Stable choice ordering/identity and opaque `question_re
 
 15.2. Existing data reused
 
-An accepted Quiz answer transactionally updates the existing `LEARNING_PROGRESS` row for `(user_id, vocabulary_id)`:
+An accepted Quiz answer transactionally updates the existing `LEARNING_PROGRESS` row for `(user_id, vocabulary_id)` and, when first-correct reward eligibility exists, creates `QUIZ_FIRST_CORRECT` plus increments `USER.total_xp` in that same transaction:
 
 - correct → `LEARNED`;
 - incorrect → `LEARNING`;
@@ -866,7 +870,7 @@ An accepted Quiz answer transactionally updates the existing `LEARNING_PROGRESS`
 - `last_reviewed_at` and `last_event_id` are updated;
 - nullable future SRS fields remain unchanged/null.
 
-The current `last_event_id`/`revision` fields provide immediate-current-event mutation idempotency and stale-event protection. Quiz V1 adds no event ledger and does not persist an exact historical response for replay.
+The current `last_event_id`/`revision` fields provide immediate-current-event mutation idempotency and stale-event protection. `XP_REWARD` retains only positive reward deduplication evidence needed to recover original positive `xp_earned`; it is not a Quiz attempt/history ledger and does not persist an exact historical response.
 
 15.3. Runtime-only feedback
 
@@ -874,7 +878,7 @@ Answer normalization, correctness and per-character Unicode-code-point feedback 
 
 15.4. Legacy/future references
 
-Any later generic diagram, index, foreign-key list, transaction example or implementation-order list in this document that mentions `QUIZ_ATTEMPT`, Quiz history, XP or SRS describes a legacy/future product direction only. It is not part of the active Quiz V1 database contract and must not be materialized without a separate approved SPEC/PLAN/migration.
+Any later generic diagram, index, foreign-key list, transaction example or implementation-order list that mentions `QUIZ_ATTEMPT` or Quiz history describes a legacy/future product direction only. The active XP exception is the internal `XP_REWARD` deduplication contract in section 21.3; it is not Quiz history.
 
 16. Pronunciation Data Principle
 
@@ -1084,6 +1088,8 @@ Daily Goal
 Streak
 Achievement
 
+Trong implementation hiện tại của XP & Level V1, chỉ XP/Level boundary ở section 21.3 là active. Daily Goal, Streak và Achievement entities/rules trong các section conceptual vẫn deferred.
+
 Trong đó:
 
 XP được lưu trong USER.total_xp.
@@ -1126,6 +1132,31 @@ XP
 Không được suy luận rằng:
 
 1 XP = 1 learned word
+
+### 21.3. XP & Level V1 Active Persistence Contract
+
+`USER.total_xp` là authoritative cumulative balance. Level được Backend derive từ balance này, không có cột `level` hoặc bảng `LEVEL`.
+
+`XP_REWARD` là bảng append-only lưu duy nhất positive reward deduplication evidence:
+
+| Field | Contract |
+|---|---|
+| `id` | UUID primary key, generated |
+| `user_id` | UUID NOT NULL, FK đến `USER.id`, `ON DELETE RESTRICT`, `ON UPDATE CASCADE` |
+| `vocabulary_id` | UUID NOT NULL, FK đến `VOCABULARY.id`, `ON DELETE RESTRICT`, `ON UPDATE CASCADE` |
+| `reward_type` | enum `SRS_INITIAL`, `QUIZ_FIRST_CORRECT`, `SRS_DUE_REVIEW` |
+| `reward_cycle` | integer NOT NULL; cycle `0` cho initial/Quiz, positive pre-event Progress revision cho due review |
+| `source_event_id` | UUID NOT NULL |
+| `xp_amount` | positive integer; `3` cho initial/Quiz, `1` cho due review |
+| `created_at` | immutable timestamp, default current time |
+
+Database enforce unique `(user_id, vocabulary_id, reward_type, reward_cycle)` và unique `(user_id, source_event_id)`, cùng checks cho positive amount, nonnegative cycle và exact type/cycle/amount combinations. Index `XP_REWARD_vocabulary_id_idx` hỗ trợ restrictive Vocabulary reference lookup. Application không cung cấp reward list/update/delete API.
+
+Progress mutation, positive reward insert và atomic `USER.total_xp` increment nằm trong cùng transaction. Zero-XP events không tạo reward row. Immediate current-event replay không mutate, lấy original positive amount từ reward row nếu có và trả current total/Level projection. Reward identity dùng exact USER/Vocabulary UUID; Set, run, spelling và frontend state không phải identity.
+
+Migration theo no-backfill Policy A: không tạo reward row, không cộng XP, không suy luận từ historical Progress/status/timestamp/`review_count`, và giữ nguyên mọi balance. Reward rows được giữ qua Set membership removal, Set deletion, reload, restart và session cleanup. Final Set membership removal vẫn chỉ xóa membership; future account/Vocabulary hard deletion hoặc retention khác cần contract riêng.
+
+`XP_REWARD` không phải XP transaction-history product surface; tổng reward rows không bắt buộc bằng `USER.total_xp` vì migration giữ nguyên legacy balances. Daily Goal/Daily Goal bonus, Streak và Achievement persistence không thuộc XP & Level V1.
 22. COMMUNITY_POST
 22.1. Mục đích
 
@@ -1508,7 +1539,7 @@ Daily XP được lưu trong USER_DAILY_PROGRESS.
 Streak được quản lý bởi STREAK.
 Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 
-Không tạo thêm bảng riêng cho từng loại XP event nếu chưa có nhu cầu audit XP chi tiết.
+Không tạo bảng XP history/audit cho từng event. `XP_REWARD` là ngoại lệ active tối thiểu để deduplicate các positive reward đã duyệt, không phải transaction-history UI hay general event ledger.
 
 Nếu sau này cần lịch sử XP, có thể bổ sung:
 

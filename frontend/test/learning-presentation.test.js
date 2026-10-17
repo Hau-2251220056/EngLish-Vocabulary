@@ -80,6 +80,14 @@ test("SRS completion and up-to-date UI use the approved status and explicit cont
   assert.doesNotMatch(source, /> Làm mới SRS</);
 });
 
+test("SRS feedback announces only a new positive reward and never persists reward data", async () => {
+  const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  assert.match(source, /const \{ reward, \.\.\.progress \} = await learningService\.recordMeaningfulEvent\(nextAttempt\)/);
+  assert.match(source, /applySrsRating\(pendingState, currentCard\.id, rating, progress\)/);
+  assert.match(source, /formatNewXpFeedback\(reward\)/);
+  assert.doesNotMatch(source, /applySrsRating\([^\n]*reward/);
+});
+
 test("pending visual belongs only to the submitted SRS rating", () => {
   const attempt = { rating: "AGAIN" };
   assert.equal(pendingLearningRating("pending", attempt), "AGAIN");

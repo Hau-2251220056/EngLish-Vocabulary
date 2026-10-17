@@ -528,6 +528,13 @@ test("progress view is USER-only, isolated, minimal, compatible and read-only", 
       learned: 1,
       needs_review: 1,
     });
+    assert.deepEqual(response.json.data.xp_level, {
+      total_xp: 0,
+      level: 1,
+      level_min_xp: 0,
+      next_level_xp: 50,
+      is_max_level: false,
+    });
     assert.deepEqual(response.json.data.pagination, {
       page: 1,
       page_size: 20,
@@ -884,7 +891,7 @@ test("future scheduled progress rejects a new event but current-event retry rema
 
   const retry = await postEvent(ownerCookie, { ...accepted, rating: "EASY" });
   assert.equal(retry.status, 200, retry.text);
-  assert.deepEqual(retry.json.data, first.json.data);
+  assertReplayOf(retry.json.data, first.json.data);
   assert.deepEqual(await findProgress(owner.id, vocabulary.id), before);
 
   assertError(
@@ -915,7 +922,7 @@ test("meaningful ratings transition progress once with retry and stale revision 
   assertProgress(response, { status: "LEARNING", reviewCount: 1, revision: 1 });
   const firstResult = response.json.data;
   response = await postEvent(ownerCookie, first);
-  assert.deepEqual(response.json.data, firstResult);
+  assertReplayOf(response.json.data, firstResult);
 
   assertError(
     await postEvent(ownerCookie, { ...first, event_id: randomUUID() }),
@@ -923,7 +930,7 @@ test("meaningful ratings transition progress once with retry and stale revision 
     "LEARNING_PROGRESS_CHANGED",
   );
   response = await postEvent(ownerCookie, { ...first, rating: "EASY" });
-  assert.deepEqual(response.json.data, firstResult);
+  assertReplayOf(response.json.data, firstResult);
 
   const second = {
     ...first,
@@ -1189,6 +1196,14 @@ async function cleanupLearningSuiteFixtures() {
         ],
       },
     });
+    await transaction.xP_REWARD.deleteMany({
+      where: {
+        OR: [
+          ...(userIds.length > 0 ? [{ user_id: { in: userIds } }] : []),
+          ...(vocabularyIds.length > 0 ? [{ vocabulary_id: { in: vocabularyIds } }] : []),
+        ],
+      },
+    });
     await transaction.lEARNING_PROGRESS.deleteMany({
       where: {
         OR: [
@@ -1355,6 +1370,17 @@ function assertProgress(response, { status, reviewCount, revision }) {
   assert.equal(response.json.data.review_count, reviewCount);
   assert.equal(response.json.data.revision, revision);
   assert.equal(typeof response.json.data.last_reviewed_at, "string");
+}
+
+function assertReplayOf(replay, original) {
+  const { reward: replayReward, ...replayProgress } = replay;
+  const { reward: originalReward, ...originalProgress } = original;
+  assert.deepEqual(replayProgress, originalProgress);
+  assert.equal(replayReward.source_event_id, originalReward.source_event_id);
+  assert.equal(replayReward.xp_earned, originalReward.xp_earned);
+  assert.equal(replayReward.total_xp, originalReward.total_xp);
+  assert.equal(originalReward.replayed, false);
+  assert.equal(replayReward.replayed, true);
 }
 
 function assertError(response, status, code) {

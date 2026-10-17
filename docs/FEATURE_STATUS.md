@@ -659,8 +659,8 @@ The Dashboard provides a summary of the user's current learning state and activi
 
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 User Dashboard	DONE	✓	✓	✓	✓	✓	✓
-XP Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Level Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+XP Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
+Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Streak Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -679,7 +679,7 @@ The Dashboard must not become a separate source of truth for business data.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
 - Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
-- XP, Level, Streak, Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics and charts remain `TODO` or deferred.
+- The original Dashboard V1 closure excluded XP/Level. The later XP & Level V1 workstream implements the compact USER summary and is `DONE` after TASK-233 formal TEST PASS, TASK-234 formal REVIEW APPROVE and HUMAN Gate 6 acceptance. Streak, Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
 ### Dashboard V1 Formal Evidence
@@ -753,8 +753,8 @@ Pronunciation must not automatically become a third quiz type.
 
 4.9 Gamification
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-XP	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Level	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+XP	DONE	✓	✓	✓	✓	PASS	APPROVE
+Level	DONE	✓	✓	✓	✓	PASS	APPROVE
 Streak	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -768,7 +768,7 @@ Quiz correct              → +3 XP
 Incorrect quiz            → +0 XP
 Repeated meaningless use → +0 XP
 
-XP rules are universal for all users.
+XP & Level V1 applies only to authenticated `USER` accounts. Initial SRS pass and first-correct Quiz each award +3 once per exact USER/Vocabulary UUID; a genuinely due scheduled SRS cycle awards +1 once per pre-event Progress revision, including due `AGAIN`. Initial `AGAIN`, immediate requeues, incorrect/later-correct Quiz, NORMAL and Speaking award zero. Backend owns eligibility, atomic persistence, replay and Level projections.
 
 Level Rules
 
@@ -790,9 +790,24 @@ At Level 15:
 
 Level 15 — MAX
 
-The exact level threshold table must follow the approved business rules and must not be invented during implementation.
+The Backend threshold table is implemented for Levels 1–15 using `25 × L × (L − 1)`; Level 15 starts at 5,250 XP and remains MAX while XP continues increasing.
+
+### XP & Level V1 — Closure Evidence
+
+- Related SPEC: `docs/specs/XP_LEVEL_V1_SPEC.md` — HUMAN APPROVED.
+- Related PLAN: `docs/plans/XP_LEVEL_V1_PLAN.md` — HUMAN APPROVED.
+- Related TASK: `docs/tasks/XP_LEVEL_V1_TASK.md` — TASK-231 through TASK-234 completed and HUMAN accepted.
+- TASK-231 and Gate 5 are HUMAN accepted. GitHub Actions Run #58 at verified commit `648960a48c779286c0e11e7e2bd8679be55ef43b` passed Trust Gate, Backend DB Integration, Real Stack Browser and Summary.
+- TASK-232 documentation synchronization is HUMAN accepted. TASK-233 formal TEST passed all 26/26 acceptance criteria and is HUMAN accepted. TASK-234 formal REVIEW returned `APPROVE` with no BLOCKER or MAJOR findings; its MINOR-01 stale-status finding is resolved by this synchronization.
+- HUMAN Gate 6 final TEST/REVIEW acceptance is recorded as `ACCEPTED`. XP & Level V1 is `DONE` according to the project workflow.
+- Verified implementation includes USER-only SRS initial/due-review and first-correct Quiz rewards, durable `XP_REWARD` deduplication, no-backfill migration, atomic Progress/reward/XP writes, immediate replay projections, Learning Progress `xp_level`, Dashboard Level/XP/MAX display and transient non-replay feedback.
+- NORMAL Flashcard and Speaking remain zero-XP. Daily Goal bonus, Streak, Achievement, leaderboard and XP-history product surfaces remain deferred.
+- Evidence references: TASK-233 report `docs/testing/XP_LEVEL_V1_TEST_REPORT.md`; TASK-234 report `docs/reviews/XP_LEVEL_V1_REVIEW_REPORT.md`; GitHub Actions Run #58 for accepted backend DB/real-stack verification; Run #53 for guarded XP migration verification and cleanup.
+- Closure records feature implementation acceptance only. The XP migration has **not** been applied to the Preview TEST DB, and the feature branch has **not** been merged into `dev`; those deployment/integration actions require their own authorization and release controls.
 
 Streak Rules
+
+The Streak rules below remain conceptual/deferred and are not implemented by XP & Level V1.
 
 Streak is based on qualifying learning activity, not login.
 
@@ -836,7 +851,7 @@ Daily progress is stored per calendar day.
 
 The system must not require a global cron job to reset all users' daily XP.
 
-Do not add leaderboard, ranking system, or XP transaction/history tables unless explicitly approved.
+Do not add leaderboard, ranking system, or an XP transaction/history product table. Internal `XP_REWARD` is the approved positive-reward deduplication boundary, not user-facing history.
 
 4.10 Achievements
 

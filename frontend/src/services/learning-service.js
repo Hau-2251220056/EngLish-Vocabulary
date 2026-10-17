@@ -1,4 +1,5 @@
 import { httpClient } from "./http-client.js";
+import { isRewardProjection, isXpLevelProjection } from "./xp-level-response.js";
 
 const LEARNING_ENDPOINT = "/api/learning";
 const MODES = new Set(["SRS", "NORMAL"]);
@@ -105,6 +106,7 @@ function requireRatingProgress(value) {
     || !(value.interval_days === null || isNonNegativeInteger(value.interval_days))
     || !isDateString(value.next_review_at) || !isDateString(value.last_reviewed_at)
     || !isNonNegativeInteger(value.review_count) || !isNonNegativeInteger(value.revision)
+    || !isRewardProjection(value.reward)
   ) throw invalidResponseError();
   return value;
 }
@@ -133,7 +135,9 @@ function serializeProgressQuery(query) {
 
 function requireLearningProgress(value) {
   if (
-    !isRecord(value) || !isDateString(value.evaluated_at) || !isSummary(value.summary)
+    !isRecord(value) || !isDateString(value.evaluated_at)
+    || !isXpLevelProjection(value.xp_level)
+    || !isSummary(value.summary)
     || !Array.isArray(value.items) || !value.items.every(isProgressItem)
     || !isPagination(value.pagination) || !isRecord(value.filter)
     || !(value.filter.status === null || PROGRESS_STATUSES.has(value.filter.status))

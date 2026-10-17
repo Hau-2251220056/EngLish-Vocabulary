@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { quizService } from "../services/quiz-service.js";
+import { formatNewXpFeedback } from "../services/xp-level-response.js";
 import { classifyQuizLoadError, classifyQuizSubmissionError, createSharedQuizQuestionLoader, readQuizSessionWithRecovery } from "./quiz-presentation.js";
 import { resolveQuizSetDetailPath } from "./quiz-navigation.js";
 import { acceptQuizAnswer, beginQuizAnswer, continueQuizRun, createQuizRunState, failQuizAnswer, loadQuizRunState, restartQuizRun, retryQuizBatch, saveQuizRunState, summarizeQuizRun } from "./quiz-run-state.js";
@@ -157,7 +158,9 @@ function ChoiceForm({ choices, error, locked, onChange, onPointerSubmit, onRetry
 
 function Feedback({ choices, headingRef, result }) {
   const correct = result.is_correct;
-  return <section className="mt-4" aria-labelledby="quiz-result-title" data-testid="quiz-feedback"><p aria-live="polite" className="sr-only" role="status">{correct ? "Chính xác." : "Chưa chính xác. Đáp án đúng đã được đánh dấu."}</p><div className="flex items-center gap-2 font-extrabold text-[#344054]">{correct ? <CheckCircle2 className="size-5" aria-hidden="true" /> : <CircleX className="size-5" aria-hidden="true" />}<h2 className="m-0 text-base outline-none" id="quiz-result-title" ref={headingRef} tabIndex="-1">{correct ? "Chính xác" : "Chưa chính xác"}</h2></div><ul className="mt-3 flex list-none flex-col gap-2.5 p-0" data-testid="quiz-feedback-list">{choices.map((choice, index) => {
+  const xpFeedback = formatNewXpFeedback(result.reward);
+  const resultAnnouncement = correct ? "Chính xác." : "Chưa chính xác. Đáp án đúng đã được đánh dấu.";
+  return <section className="mt-4" aria-labelledby="quiz-result-title" data-testid="quiz-feedback"><p aria-atomic="true" aria-live="polite" className="sr-only" role="status">{[resultAnnouncement, xpFeedback].filter(Boolean).join(" ")}</p><div className="flex flex-wrap items-center gap-2 font-extrabold text-[#344054]">{correct ? <CheckCircle2 className="size-5" aria-hidden="true" /> : <CircleX className="size-5" aria-hidden="true" />}<h2 className="m-0 text-base outline-none" id="quiz-result-title" ref={headingRef} tabIndex="-1">{correct ? "Chính xác" : "Chưa chính xác"}</h2>{xpFeedback ? <span className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700" data-testid="quiz-xp-feedback">{xpFeedback}</span> : null}</div><ul className="mt-3 flex list-none flex-col gap-2.5 p-0" data-testid="quiz-feedback-list">{choices.map((choice, index) => {
     const isCorrect = choice.choice_id === result.correct_choice_id;
     const isSelected = choice.choice_id === result.selected_choice_id;
     const state = isCorrect ? "correct" : isSelected ? "incorrect-selected" : "neutral";

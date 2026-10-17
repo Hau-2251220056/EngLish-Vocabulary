@@ -10,7 +10,7 @@ test("Learning service serializes SRS/NORMAL reads and four-rating commands", as
   assert.equal((await service.getLearningSet("set/id", { omitMode: true })).mode, "SRS");
   const event = { event_id: "e", set_id: "s", vocabulary_id: "v", expected_revision: 0, rating: "GOOD" };
   assert.deepEqual(await service.recordMeaningfulEvent(event), ratingProgress);
-  assert.equal((await service.getLearningProgress()).evaluated_at, NOW);
+  assert.deepEqual((await service.getLearningProgress()).xp_level, xpLevel);
   assert.deepEqual(calls, [
     ["GET", "/api/learning/sets/set%2Fid", { params: { mode: "SRS" } }],
     ["GET", "/api/learning/sets/set%2Fid", { params: { mode: "NORMAL" } }],
@@ -54,6 +54,58 @@ test("mode-specific and authoritative response guards reject malformed data", as
       createLearningService({ async get() { return { data: { data: { ...srsSet, cards: [{ ...card, rating_previews: ratingPreviews }] } } }; } }).getLearningSet("set"),
       { code: "INVALID_LEARNING_RESPONSE" },
     );
+  }
+
+  for (const malformedReward of [
+    undefined,
+    { ...reward, source_event_id: "not-a-uuid" },
+    { ...reward, xp_earned: 2 },
+    { ...reward, replayed: "false" },
+    { ...reward, level: 16 },
+    { ...reward, reward_type: "SRS_INITIAL" },
+  ]) {
+    await assert.rejects(
+      createLearningService({
+        async post() {
+          return { data: { data: { ...ratingProgress, reward: malformedReward } } };
+        },
+      }).recordMeaningfulEvent({ rating: "GOOD" }),
+      { code: "INVALID_LEARNING_RESPONSE" },
+    );
+  }
+
+  for (const malformedXpLevel of [
+    undefined,
+    { ...xpLevel, total_xp: -1 },
+    { ...xpLevel, level: 0 },
+    { ...xpLevel, level_min_xp: 51 },
+    { ...xpLevel, next_level_xp: null },
+    { ...xpLevel, is_max_level: "false" },
+  ]) {
+    await assert.rejects(
+      createLearningService({
+        async get() {
+          return { data: { data: { ...learningProgress, xp_level: malformedXpLevel } } };
+        },
+      }).getLearningProgress(),
+      { code: "INVALID_LEARNING_RESPONSE" },
+    );
+  }
+});
+
+test("Learning mutation accepts authoritative original, replay, zero and MAX rewards", async () => {
+  for (const nextReward of [
+    reward,
+    { ...reward, xp_earned: 0 },
+    { ...reward, replayed: true, total_xp: 153, level: 3, level_min_xp: 150, next_level_xp: 300 },
+    { ...reward, total_xp: 6000, level: 15, level_min_xp: 5250, next_level_xp: null, is_max_level: true },
+  ]) {
+    const service = createLearningService({
+      async post() {
+        return { data: { data: { ...ratingProgress, reward: nextReward } } };
+      },
+    });
+    assert.deepEqual((await service.recordMeaningfulEvent({ rating: "GOOD" })).reward, nextReward);
   }
 });
 
@@ -132,6 +184,8 @@ function createClient(calls) {
 }
 
 const NOW = "2026-10-04T03:15:00.000Z";
+const xpLevel = Object.freeze({ total_xp: 50, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false });
+const reward = Object.freeze({ source_event_id: "22222222-2222-4222-8222-222222222222", xp_earned: 3, replayed: false, ...xpLevel });
 const previews = Object.freeze({ AGAIN: { kind: "SESSION_REQUEUE", interval_days: null }, HARD: { kind: "SCHEDULED", interval_days: 1 }, GOOD: { kind: "SCHEDULED", interval_days: 3 }, EASY: { kind: "SCHEDULED", interval_days: 7 } });
 const card = Object.freeze({ id: "v", word: "book", position: 1, meanings: [], progress: { effective_status: "NEW", stage: 0, interval_days: null, next_review_at: null, review_count: 0, revision: 0 }, rating_previews: previews });
 const srsSet = Object.freeze({ id: "s", name: "Set", mode: "SRS", evaluated_at: NOW, total_items: 1, eligible_count: 1, next_review_at: null, cards: [card] });
@@ -139,5 +193,5 @@ const normalCard = { ...card };
 delete normalCard.rating_previews;
 Object.freeze(normalCard);
 const normalSet = Object.freeze({ id: "s", name: "Set", mode: "NORMAL", total_items: 1, cards: [normalCard] });
-const ratingProgress = Object.freeze({ vocabulary_id: "v", status: "LEARNED", effective_status: "LEARNED", stage: 1, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: 1 });
-const learningProgress = Object.freeze({ evaluated_at: NOW, summary: { total_started: 1, learning: 0, learned: 1, needs_review: 0 }, items: [{ vocabulary: { id: "v", word: "book", phonetic: null }, status: "LEARNED", review_count: 1, last_reviewed_at: NOW, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z" }], pagination: { page: 1, page_size: 20, total_items: 1, total_pages: 1 }, filter: { status: null } });
+const ratingProgress = Object.freeze({ vocabulary_id: "v", status: "LEARNED", effective_status: "LEARNED", stage: 1, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: 1, reward });
+const learningProgress = Object.freeze({ evaluated_at: NOW, xp_level: xpLevel, summary: { total_started: 1, learning: 0, learned: 1, needs_review: 0 }, items: [{ vocabulary: { id: "v", word: "book", phonetic: null }, status: "LEARNED", review_count: 1, last_reviewed_at: NOW, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z" }], pagination: { page: 1, page_size: 20, total_items: 1, total_pages: 1 }, filter: { status: null } });

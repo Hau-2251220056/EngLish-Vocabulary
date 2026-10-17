@@ -759,7 +759,9 @@ The exact request body is:
 
 Only `AGAIN`, `HARD`, `GOOD` and `EASY` are allowed. Former `outcome`, `REMEMBERED` and `STUDY_AGAIN` payloads are rejected. The backend derives the USER, revalidates Set access/current exact membership, applies the authoritative deterministic scheduler, and atomically writes status, interval, due/review timestamps, `review_count`, `revision` and `last_event_id`. `AGAIN` resets to immediately-due stage 0/`LEARNING`; passing ratings persist `LEARNED` on the 1/3/7/14/30-day ladder. NORMAL mode never calls this endpoint.
 
-An immediate retry using the current `last_event_id` is idempotent and returns unchanged progress. A delayed/reordered different event with a stale revision returns `409 LEARNING_PROGRESS_CHANGED`. V1 has no event-history/ledger table and does not promise arbitrary historical replay idempotency.
+An immediate retry using the current `last_event_id` is idempotent and returns unchanged progress plus the original event's `xp_earned`, `replayed: true`, and current authoritative XP/Level projection without another increment. A delayed/reordered different event with a stale revision returns `409 LEARNING_PROGRESS_CHANGED`. V1 has no general event-history/ledger table and does not promise arbitrary historical replay idempotency.
+
+Every accepted SRS response adds a `reward` object with `source_event_id`, `xp_earned` (`0`, `1` or `3`), `replayed`, `total_xp`, `level`, `level_min_xp`, nullable `next_level_xp`, and `is_max_level`. First accepted `HARD`/`GOOD`/`EASY` earns 3 XP once; an eligible genuinely due review earns 1 XP once per pre-event Progress revision, including due `AGAIN`. Initial `AGAIN`, immediate requeue, future/incomplete schedule and all NORMAL activity earn zero. Progress, positive reward and XP increment are atomic; conflict/error responses contain no success reward projection.
 
 Known safe errors are `400 VALIDATION_ERROR`, `404 LEARNING_SET_NOT_FOUND`, `409 LEARNING_SET_EMPTY`, `409 LEARNING_SET_ITEM_CHANGED`, `409 LEARNING_PROGRESS_CHANGED`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
 
@@ -771,7 +773,7 @@ Reveal, NORMAL navigation, audio playback, reload, restart and client-run comple
 
 Supported query parameters are optional scalar `page` (default `1`), `page_size` (default `20`, maximum `100`) and exact `status` (`LEARNING`, `LEARNED` or `NEEDS_REVIEW`). Unknown, repeated, malformed or unsupported query values return `400 VALIDATION_ERROR`. Search and client-selectable sorting are not part of V1.
 
-The success envelope contains an unfiltered current-USER summary (`total_started`, `learning`, `learned`, `needs_review`), the optionally status-filtered page, truthful filtered pagination (`page`, `page_size`, `total_items`, `total_pages`) and the applied nullable status filter. Each item returns only Vocabulary `id`, `word`, nullable `phonetic`, plus progress `status`, `review_count` and nullable `last_reviewed_at`.
+The success envelope contains an unfiltered current-USER summary (`total_started`, `learning`, `learned`, `needs_review`), an authoritative `xp_level` projection, the optionally status-filtered page, truthful filtered pagination (`page`, `page_size`, `total_items`, `total_pages`) and the applied nullable status filter. `xp_level` contains `total_xp`, `level`, `level_min_xp`, nullable `next_level_xp`, and `is_max_level`. Each item returns only Vocabulary `id`, `word`, nullable `phonetic`, plus progress `status`, `review_count` and nullable `last_reviewed_at`.
 
 Records are ordered by `last_reviewed_at` descending with nulls last, then progress `created_at` descending and progress `id` ascending. A positive out-of-range page succeeds with an empty item collection and truthful metadata.
 
@@ -796,7 +798,7 @@ This section gives the detailed rating-preview matrix for the active contract ab
 
 `HARD`, `GOOD` and `EASY` preview values are calculated by the same pure deterministic scheduler used by `POST /api/learning/events`; they are not frontend estimates. For stages `0` through `5`, the respective `(HARD, GOOD, EASY)` interval-day matrix is `(1,3,7)`, `(1,3,7)`, `(3,7,14)`, `(7,14,30)`, `(14,30,30)`, and `(30,30,30)`. The 30-day cap applies. `AGAIN` is an immediate unresolved same-session requeue and therefore intentionally has no future interval.
 
-`GET /api/learning/sets/:setId?mode=NORMAL` does not expose `rating_previews`. Rating mutation semantics, eligibility, idempotency and the no-schema-change persistence contract remain unchanged.
+`GET /api/learning/sets/:setId?mode=NORMAL` does not expose `rating_previews`. Rating mutation semantics, eligibility and idempotency remain unchanged; XP & Level V1 only adds the approved reward persistence and additive mutation projection.
 
 Flashcard là learning activity.
 
@@ -900,7 +902,7 @@ For Quiz V1, `POST /api/quiz/answers` is the only command that evaluates an answ
 
 The Frontend must not also call `POST /api/learning/events` for the same Quiz answer. This prevents duplicate Progress mutation and duplicate `review_count`/`revision` increments.
 
-Quiz V1 does not update XP, streak, Daily Goal, Achievement or SRS state.
+Quiz updates XP only through XP & Level V1 first-correct reward rules. It does not update Streak, Daily Goal, Achievement or SRS scheduling state.
 24. Spaced Repetition
 
 Spaced Repetition dùng để xác định Vocabulary cần review.
@@ -1004,7 +1006,9 @@ The Backend transactionally re-authorizes Set access and current membership, rec
 
 Vietnamese labels are compared for uniqueness by trimming, applying Unicode NFC, collapsing Unicode whitespace and applying locale-independent lowercase. Submission uses only the opaque `selected_choice_id`; typed answers, character alignment and tile input are not part of the active contract.
 
-`expected_revision` protects concurrency. Immediate retry with the same current `event_id` and identical logical request does not mutate Progress again. The Backend recomputes transient feedback; incompatible retry state and stale/reordered events return safe conflict responses. Exact historical response replay and an event ledger are outside V1.
+`expected_revision` protects concurrency. Immediate retry with the same current `event_id` and identical logical request does not mutate Progress or XP again; it returns original `xp_earned`, `replayed: true`, and current XP/Level. Incompatible retry state and stale/reordered events return safe conflict responses. Exact historical response replay and a general event ledger are outside V1.
+
+Every accepted answer includes the same authoritative `reward` shape as SRS. The first correct answer for exact USER/Vocabulary earns 3 XP once, independent of SRS initial reward; incorrect and later-correct answers earn zero. Progress mutation, positive reward insert and atomic XP increment commit together. Request fields remain unchanged, and clients cannot supply reward owner/type/cycle/amount, total XP or Level.
 
 Quiz V1 safe error contract:
 
@@ -1029,13 +1033,13 @@ An accepted response includes question identity, Quiz type, `is_correct`, `selec
 
 32. Transient Quiz Result
 
-The Frontend derives only the transient current-run total/correct/incorrect completion summary. No XP, streak, achievement, SRS schedule, durable result/history ID or accuracy record is returned or persisted.
+The Frontend derives only the transient current-run total/correct/incorrect completion summary. The immediate accepted response may also show concise positive non-replay `+N XP` feedback, but reward feedback is not persisted. No streak, achievement, SRS schedule, durable result/history ID or accuracy record is returned or persisted.
 
 33. XP
 
 XP được backend quản lý.
 
-V1 không có XP transaction/history table.
+V1 không có public XP transaction/history API. Internal `XP_REWARD` chỉ là positive-reward deduplication evidence.
 
 Universal XP Rules
 
@@ -1061,6 +1065,8 @@ submit/repeat meaningless activity.
 Backend phải xác định activity có thực sự tạo learning event hay không.
 
 34. Daily Goal XP
+
+> **Deferred contract:** Daily Goal and its bonus are not implemented by XP & Level V1. This section is future product direction and does not describe an active endpoint, persistence path or XP reward source.
 
 Daily Goal tính dựa trên:
 
@@ -1182,6 +1188,8 @@ Không hard-code threshold ở frontend.
 
 39. Streak
 
+> **Deferred contract:** Streak is not implemented by XP & Level V1. The following material is future API/business direction and is not active functionality.
+
 Streak đo tính liên tục của learning activity.
 
 Không dựa vào login.
@@ -1289,7 +1297,7 @@ The Dashboard sends no user selector. Existing session-derived USER authorizatio
 
 Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call either USER-only endpoint. Guest access remains protected by the existing Authentication route behavior.
 
-Dashboard reads create or update no Learning Progress, Vocabulary Set or Dashboard persistence. V1 adds no global/Topic/Set percentage, conceptual `NEW`, review queue, SRS, recency, Continue Learning, XP, Level, Streak, Daily Goal, achievement, activity/history, Quiz/Pronunciation metric or Admin Dashboard behavior.
+Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the existing Progress response without another request. It shows total XP, backend-derived Level and progress to the next threshold; at Level 15 it shows `Level 15 — MAX`, omits a next target and continues accepting XP. Streak, Daily Goal, achievement, history, charts and Admin Dashboard behavior remain deferred.
 
 ### 43.1 Future Dashboard Aggregation — Deferred
 
