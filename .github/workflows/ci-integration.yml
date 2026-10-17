@@ -14,6 +14,28 @@ on:
         required: true
         default: false
         type: boolean
+      run_streak_migration_harness:
+        description: Run only the isolated Streak migration verification harness
+        required: true
+        default: false
+        type: boolean
+      run_streak_migration_cleanup:
+        description: Recover schemas from one separately authorized historical Streak verification run
+        required: true
+        default: false
+        type: boolean
+      streak_approved_target_identity:
+        description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
+        required: false
+        type: string
+      streak_cleanup_target_run_id:
+        description: Historical GitHub run ID for recovery cleanup only
+        required: false
+        type: string
+      streak_cleanup_target_run_attempt:
+        description: Historical GitHub run attempt for recovery cleanup only
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -54,7 +76,10 @@ jobs:
     needs: trust-gate
     if: >-
       needs.trust-gate.outputs.trusted == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true)
+      !(github.event_name == 'workflow_dispatch' &&
+        (inputs.run_xp_migration_harness == true ||
+         inputs.run_streak_migration_harness == true ||
+         inputs.run_streak_migration_cleanup == true))
     outputs:
       configured: ${{ steps.configuration.outputs.configured }}
     runs-on: ubuntu-latest
@@ -132,7 +157,10 @@ jobs:
       - backend-db-integration
     if: >-
       needs.trust-gate.outputs.trusted == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true) &&
+      !(github.event_name == 'workflow_dispatch' &&
+        (inputs.run_xp_migration_harness == true ||
+         inputs.run_streak_migration_harness == true ||
+         inputs.run_streak_migration_cleanup == true)) &&
       needs.backend-db-integration.result == 'success' &&
       needs.backend-db-integration.outputs.configured == 'true'
     runs-on: ubuntu-latest
@@ -214,7 +242,9 @@ jobs:
     if: >-
       needs.trust-gate.outputs.trusted == 'true' &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.run_xp_migration_harness == true
+      inputs.run_xp_migration_harness == true &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -286,7 +316,9 @@ jobs:
       always() &&
       needs.trust-gate.outputs.trusted == 'true' &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.run_xp_migration_harness == true
+      inputs.run_xp_migration_harness == true &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -331,6 +363,131 @@ jobs:
           DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:xp-migration:cleanup:ci
 
+  streak-migration-verification:
+    name: Streak Migration Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == true &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.streak_cleanup_target_run_id == '' &&
+      inputs.streak_cleanup_target_run_attempt == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+
+    steps:
+      - name: Require authorized Streak CI TEST configuration
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" || -z "$CI_TEST_DATABASE_IDENTITY" || -z "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Streak CI TEST configuration or target approval is unavailable; refusing verification."
+            exit 1
+          fi
+          if [[ "$CI_TEST_DATABASE_IDENTITY" != "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Configured and HUMAN-approved Streak CI TEST identities differ; refusing verification."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Run isolated Streak migration verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-migration:ci
+
+  streak-migration-recovery-cleanup:
+    name: Streak Migration Recovery Cleanup
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_MIGRATION_CLEANUP_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+      STREAK_CLEANUP_TARGET_RUN_ID: ${{ inputs.streak_cleanup_target_run_id }}
+      STREAK_CLEANUP_TARGET_RUN_ATTEMPT: ${{ inputs.streak_cleanup_target_run_attempt }}
+
+    steps:
+      - name: Require authorized historical Streak cleanup target
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" || -z "$CI_TEST_DATABASE_IDENTITY" || -z "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Streak CI TEST configuration or target approval is unavailable; refusing recovery cleanup."
+            exit 1
+          fi
+          if [[ "$CI_TEST_DATABASE_IDENTITY" != "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Configured and HUMAN-approved Streak CI TEST identities differ; refusing recovery cleanup."
+            exit 1
+          fi
+          if [[ ! "$STREAK_CLEANUP_TARGET_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$STREAK_CLEANUP_TARGET_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Historical Streak cleanup run ID and attempt must be positive decimal strings."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Remove only exactly owned historical Streak schemas
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-migration:cleanup:ci
+
   integration-summary:
     name: Summary
     if: always()
@@ -340,6 +497,8 @@ jobs:
       - real-stack-browser
       - xp-migration-verification
       - xp-migration-cleanup
+      - streak-migration-verification
+      - streak-migration-recovery-cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -353,7 +512,41 @@ jobs:
           XP_HARNESS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true }}
           XP_VERIFICATION_RESULT: ${{ needs.xp-migration-verification.result }}
           XP_CLEANUP_RESULT: ${{ needs.xp-migration-cleanup.result }}
+          STREAK_VERIFICATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_harness == true }}
+          STREAK_CLEANUP_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_cleanup == true }}
+          STREAK_VERIFICATION_RESULT: ${{ needs.streak-migration-verification.result }}
+          STREAK_CLEANUP_RESULT: ${{ needs.streak-migration-recovery-cleanup.result }}
         run: |
+          if [[ "$XP_HARNESS_MODE" == "true" && ( "$STREAK_VERIFICATION_MODE" == "true" || "$STREAK_CLEANUP_MODE" == "true" ) ]] || [[ "$STREAK_VERIFICATION_MODE" == "true" && "$STREAK_CLEANUP_MODE" == "true" ]]; then
+            echo "## Guarded Harness Dispatch: FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "Select exactly one isolated harness operation per dispatch." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if [[ "$STREAK_VERIFICATION_MODE" == "true" ]]; then
+            if [[ "$STREAK_VERIFICATION_RESULT" != "success" ]]; then
+              echo "## Streak Migration Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $STREAK_VERIFICATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Streak Migration Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated Streak migration, constraint, no-backfill and rollback verification completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$STREAK_CLEANUP_MODE" == "true" ]]; then
+            if [[ "$STREAK_CLEANUP_RESULT" != "success" ]]; then
+              echo "## Streak Migration Recovery Cleanup: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Cleanup result: $STREAK_CLEANUP_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Streak Migration Recovery Cleanup: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Exact historical Streak harness target contained no schemas or all exactly owned schemas were removed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           if [[ "$XP_HARNESS_MODE" == "true" ]]; then
             if [[ "$XP_VERIFICATION_RESULT" != "success" || "$XP_CLEANUP_RESULT" != "success" ]]; then
               echo "## XP Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
