@@ -422,6 +422,62 @@ test("authenticated USER can learn or quiz a public Set without copying and reta
   await expect(page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" })).toBeVisible();
 });
 
+test("Public Set learning cards match the compact Personal Set responsive grid", async ({ page }, testInfo) => {
+  await installDiscoveryApi(page);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const viewports = [
+    { width: 375, height: 812 }, { width: 390, height: 844 },
+    { width: 768, height: 1024 }, { width: 820, height: 1180 },
+    { width: 1366, height: 768 }, { width: 1536, height: 864 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/vocabulary-sets/set-airport");
+    const grid = page.locator(".set-detail-learning-grid");
+    const cards = grid.locator(".set-detail-learning-card");
+    await expect(cards).toHaveCount(3);
+    const boxes = await cards.evaluateAll((elements) => elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }));
+
+    if (viewport.width <= 800) {
+      expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
+      expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
+      expect(Math.abs(boxes[2].x - boxes[0].x)).toBeLessThan(1);
+    } else {
+      expect(Math.abs(boxes[0].y - boxes[2].y)).toBeLessThan(1);
+    }
+    if (viewport.width <= 480) {
+      for (const box of boxes) {
+        expect(box.height).toBeGreaterThanOrEqual(100);
+        expect(box.height).toBeLessThanOrEqual(115);
+      }
+      await expect(cards.first().locator("p")).toBeHidden();
+    }
+    expect(Math.max(...boxes.map((box) => box.height)) - Math.min(...boxes.map((box) => box.height))).toBeLessThan(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    for (const card of await cards.all()) {
+      const box = await card.boundingBox();
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    const flashcard = page.getByRole("link", { name: /Thẻ ghi nhớ/ });
+    await flashcard.focus();
+    await expect(flashcard).toBeFocused();
+    await expect(page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /cùng chủ đề/i }).first()).toBeVisible();
+    await expect(page.getByText("Bộ từ hệ thống", { exact: true })).toBeVisible();
+
+    if (viewport.width === 390) {
+      await grid.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath("responsive-comparison-public-390.png") });
+    }
+  }
+});
+
 test("USER selects a personal destination, confirms once, and receives success feedback", async ({ page }) => {
   await installDiscoveryApi(page);
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });

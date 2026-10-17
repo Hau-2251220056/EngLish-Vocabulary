@@ -38,7 +38,7 @@ test("Set entry actions expose Quiz only for non-empty accessible Sets", async (
 
   assert.match(
     publicSource,
-    /user\?\.role === "USER"[\s\S]*<SetLearningActions enabled=\{items\.length > 0\} returnTo=\{`\/vocabulary-sets\/\$\{set\.id\}`\} setId=\{set\.id\} setName=\{set\.name\}/,
+    /user\?\.role === "USER"[\s\S]*<SetLearningActions compactMobile enabled=\{items\.length > 0\} returnTo=\{`\/vocabulary-sets\/\$\{set\.id\}`\} setId=\{set\.id\} setName=\{set\.name\}/,
   );
   assert.match(
     ownedDetailSource,

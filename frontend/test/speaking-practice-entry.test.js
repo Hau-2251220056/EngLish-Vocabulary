@@ -12,7 +12,7 @@ test("public and owned-private Set Detail reuse the USER learning actions bounda
 
   assert.match(
     publicPage,
-    /user\?\.role === "USER"[\s\S]*<SetLearningActions enabled=\{items\.length > 0\} returnTo=\{`\/vocabulary-sets\/\$\{set\.id\}`\} setId=\{set\.id\} setName=\{set\.name\}/,
+    /user\?\.role === "USER"[\s\S]*<SetLearningActions compactMobile enabled=\{items\.length > 0\} returnTo=\{`\/vocabulary-sets\/\$\{set\.id\}`\} setId=\{set\.id\} setName=\{set\.name\}/,
   );
   assert.match(
     privatePage,
