@@ -33,6 +33,12 @@ test("USER composes independent Progress and bounded My Sets sources", async ({ 
   await expect(page.getByRole("alert")).toContainText("Không thể tải bộ từ riêng");
 
   await progress.fulfill(progressResponse({ total_started: 8, learning: 3, learned: 4, needs_review: 1 }));
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 2");
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("75 XP");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuenow", "75");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuemin", "50");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuemax", "150");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" }).locator("span")).toHaveAttribute("style", "width: 25%;");
   const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
   await expect(summary).toContainText("Tổng đã bắt đầu8");
   await expect(summary).toContainText("Đang học3");
@@ -119,7 +125,10 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
     "/api/auth/me": responses.currentUser(publicUser),
   });
   await page.route("**/api/learning/progress**", (route) =>
-    route.fulfill(progressResponse({ total_started: 0, learning: 0, learned: 0, needs_review: 0 })),
+    route.fulfill(progressResponse(
+      { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
+      { total_xp: 0, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false },
+    )),
   );
   await page.route("**/api/my/vocabulary-sets", (route) =>
     route.fulfill({ status: 200, json: { success: true, data: [] } }),
@@ -131,6 +140,9 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
   await expect(summary).toContainText("Tổng đã bắt đầu0");
   await expect(summary).toContainText("Đang học0");
   await expect(summary).toContainText("Đã thuộc0");
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 1");
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("0 XP");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" }).locator("span")).toHaveAttribute("style", "width: 0%;");
   await expect(page.getByRole("heading", { name: "Bạn chưa bắt đầu học từ vựng nào" })).toBeVisible();
   await expect(page.getByText("Không gian học của riêng bạn đang chờ bộ từ đầu tiên.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ riêng" })).toBeVisible();
@@ -138,6 +150,27 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
   await expect(page.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Tạo bộ từ" })).toHaveAttribute("href", "/my/vocabulary-sets");
   await expect(page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" })).toHaveAttribute("href", "/topics");
+});
+
+test("Level 15 renders MAX without a next-level target", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  await page.route("**/api/learning/progress**", (route) =>
+    route.fulfill(progressResponse(
+      { total_started: 12, learning: 5, learned: 7, needs_review: 0 },
+      { total_xp: 6000, level: 15, level_min_xp: 5250, next_level_xp: null, is_max_level: true },
+    )),
+  );
+  await page.route("**/api/my/vocabulary-sets", (route) => route.fulfill(setsResponse()));
+
+  await page.goto("/dashboard");
+  const xpSummary = page.getByRole("region", { name: "XP và cấp độ" });
+  await expect(xpSummary).toContainText("Level 15 — MAX");
+  await expect(xpSummary).toContainText("6.000 XP");
+  await expect(xpSummary).toContainText("Đã đạt cấp độ tối đa");
+  await expect(xpSummary.getByRole("progressbar")).toHaveCount(0);
+  await expect(xpSummary).not.toContainText("cấp tiếp theo");
 });
 
 test("Progress failure preserves successful Sets and supports one keyboard retry with predictable focus", async ({ page }) => {
@@ -177,9 +210,12 @@ test("Progress failure preserves successful Sets and supports one keyboard retry
 });
 
 for (const viewport of [
+  { name: "narrow-mobile", width: 320, height: 720 },
   { name: "mobile", width: 375, height: 812 },
+  { name: "mobile-landscape", width: 667, height: 375 },
   { name: "tablet", width: 768, height: 1024 },
-  { name: "desktop", width: 1366, height: 768 },
+  { name: "compact-desktop", width: 1024, height: 768 },
+  { name: "desktop", width: 1440, height: 900 },
 ]) {
   test(`${viewport.name} Dashboard reflows long real content without horizontal overflow`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -206,6 +242,8 @@ for (const viewport of [
 
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Learner With An Unusually Long");
+    await expect(page.getByRole("region", { name: "XP và cấp độ" })).toBeVisible();
+    await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
     await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toBeVisible();
     const overflow = await page.evaluate(() => ({
@@ -214,6 +252,12 @@ for (const viewport of [
     }));
     expect(overflow.body).toBeLessThanOrEqual(1);
     expect(overflow.document).toBeLessThanOrEqual(1);
+    if (["mobile", "desktop"].includes(viewport.name)) {
+      await page.screenshot({
+        fullPage: true,
+        path: `test-results/task-230-evidence/dashboard-${viewport.name}.png`,
+      });
+    }
   });
 }
 
@@ -240,13 +284,14 @@ test("Dashboard removes non-essential animation when reduced motion is requested
   await expect(setCard).toHaveCSS("transition-duration", "0s");
 });
 
-function progressResponse(summary) {
+function progressResponse(summary, xpLevel = { total_xp: 75, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false }) {
   return {
     status: 200,
     json: {
       success: true,
       data: {
         evaluated_at: "2026-09-24T12:00:00.000Z",
+        xp_level: xpLevel,
         summary,
         items: [],
         pagination: { page: 1, page_size: 1, total_items: summary.total_started, total_pages: summary.total_started ? summary.total_started : 0 },

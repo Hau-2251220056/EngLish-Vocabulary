@@ -157,13 +157,33 @@ test("immediate replay returns the original XP award and current total without a
   const vocabularyId = randomUUID();
   const acceptedEvent = event({ vocabularyId, rating: "GOOD" });
   const first = await service(repository).recordMeaningfulEvent(USER_ID, acceptedEvent);
+  repository.grantUnrelatedReward(3);
   const replay = await service(repository).recordMeaningfulEvent(USER_ID, {
     ...acceptedEvent,
     rating: "EASY",
   });
 
   assertReward(first, { xpEarned: 3, totalXp: 3, replayed: false });
-  assertReward(replay, { xpEarned: 3, totalXp: 3, replayed: true });
+  assertReward(replay, { xpEarned: 3, totalXp: 6, replayed: true });
+  assert.equal(first.reward.source_event_id, acceptedEvent.event_id);
+  assert.equal(replay.reward.source_event_id, acceptedEvent.event_id);
+  assert.equal(repository.rewards.length, 2);
+  assert.equal(repository.totalXp, 6);
+  assert.equal(replay.revision, first.revision);
+});
+
+test("zero-XP immediate replay preserves zero earned while returning the current total", async () => {
+  const repository = new FakeLearningRepository();
+  const vocabularyId = randomUUID();
+  const acceptedEvent = event({ vocabularyId, rating: "AGAIN" });
+  const first = await service(repository).recordMeaningfulEvent(USER_ID, acceptedEvent);
+  repository.grantUnrelatedReward(3);
+  const replay = await service(repository).recordMeaningfulEvent(USER_ID, acceptedEvent);
+
+  assertReward(first, { xpEarned: 0, totalXp: 0, replayed: false });
+  assertReward(replay, { xpEarned: 0, totalXp: 3, replayed: true });
+  assert.equal(first.reward.source_event_id, acceptedEvent.event_id);
+  assert.equal(replay.reward.source_event_id, acceptedEvent.event_id);
   assert.equal(repository.rewards.length, 1);
   assert.equal(repository.totalXp, 3);
   assert.equal(replay.revision, first.revision);
@@ -386,6 +406,15 @@ class FakeLearningRepository {
 
   seedReward(value) {
     this.state.rewards.push(value);
+  }
+
+  grantUnrelatedReward(amount) {
+    this.state.rewards.push(reward({
+      vocabularyId: randomUUID(),
+      rewardType: "QUIZ_FIRST_CORRECT",
+      amount,
+    }));
+    this.state.totalXp += amount;
   }
 
   withTransaction(callback) {

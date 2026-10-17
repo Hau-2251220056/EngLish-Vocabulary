@@ -26,6 +26,27 @@ test("accepted answers advance, summarize, retry safely and restart", () => {
   assert.equal(restartQuizRun(state, () => "run-2").run_id, "run-2");
 });
 
+test("accepted Quiz persistence whitelists progress and never stores reward feedback", () => {
+  const storage = memoryStorage();
+  let state = reconcileQuizRunState(createQuizRunState("user", "set", TYPE, () => RUN), "user", payload());
+  state = beginQuizAnswer(state, "word-1", "choice-word-1", () => "event-1");
+  state = acceptQuizAnswer(state, {
+    ...acceptedResult("word-1", true),
+    reward: { source_event_id: "event-1", xp_earned: 3, replayed: false },
+  });
+  saveQuizRunState(storage, state);
+  const serialized = storage.getItem([...Array(storage.length).keys()]
+    .map((index) => storage.key(index))
+    .find((key) => key.startsWith("elvocab.quiz.run.v2:")));
+  assert.equal(serialized.includes("reward"), false);
+  assert.equal(serialized.includes("xp_earned"), false);
+  assert.deepEqual(state.accepted["word-1"], {
+    question_revision: "revision-1",
+    is_correct: true,
+    progress_revision: 1,
+  });
+});
+
 test("legacy Quiz types are invalid", () => assert.throws(() => createQuizRunState("user", "set", "UNSCRAMBLE_WORD"), TypeError));
 
 test("same-tab storage restores accepted progress and an identical pending request", () => {

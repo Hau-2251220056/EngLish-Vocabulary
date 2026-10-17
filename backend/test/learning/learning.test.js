@@ -528,6 +528,13 @@ test("progress view is USER-only, isolated, minimal, compatible and read-only", 
       learned: 1,
       needs_review: 1,
     });
+    assert.deepEqual(response.json.data.xp_level, {
+      total_xp: 0,
+      level: 1,
+      level_min_xp: 0,
+      next_level_xp: 50,
+      is_max_level: false,
+    });
     assert.deepEqual(response.json.data.pagination, {
       page: 1,
       page_size: 20,

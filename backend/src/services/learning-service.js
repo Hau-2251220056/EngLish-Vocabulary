@@ -98,9 +98,9 @@ export function createLearningService({ learningRepository, now = () => new Date
       const query = validateProgressQuery(input);
       const evaluatedAt = captureNow(now);
       const skip = (query.page - 1) * query.page_size;
-      const { summaryProgress, filteredTotal, items } =
+      const { summaryProgress, filteredTotal, items, totalXp } =
         await learningRepository.withConsistentRead(async (repository) => {
-          const [summaryProgress, filteredTotal, items] = await Promise.all([
+          const [summaryProgress, filteredTotal, items, totalXp] = await Promise.all([
             repository.listProgressForSummary(userId),
             query.status
               ? repository.countProgress(userId, query.status, evaluatedAt)
@@ -111,13 +111,15 @@ export function createLearningService({ learningRepository, now = () => new Date
               skip,
               take: query.page_size,
             }),
+            repository.readUserTotalXp(userId),
           ]);
-          return { summaryProgress, filteredTotal, items };
+          return { summaryProgress, filteredTotal, items, totalXp };
         });
       const summary = toProgressSummary(summaryProgress, evaluatedAt);
       const totalItems = filteredTotal ?? summary.total_started;
       return {
         evaluated_at: evaluatedAt,
+        xp_level: projectXpLevel(totalXp),
         summary,
         items: items.map((item) => toProgressListItem(item, evaluatedAt)),
         pagination: {

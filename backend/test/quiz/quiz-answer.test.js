@@ -25,6 +25,24 @@ test("correct choice awards 3 XP once and identical retry is no-write", async ()
   assert.equal(harness.progress(USER).status, "LEARNED");
 });
 
+test("positive replay returns original earned XP with the current authoritative total", async () => {
+  const harness = createHarness();
+  const service = createQuizService({ quizRepository: harness.repository });
+  const question = await loadQuestion(service);
+  const request = answer(question, correctChoice(question).choice_id);
+  const original = await service.recordAnswer(USER, request);
+  harness.grantUnrelatedReward(3);
+  const replay = await service.recordAnswer(USER, request);
+
+  assertReward(original, 3, 3, false);
+  assertReward(replay, 3, 6, true);
+  assert.equal(original.reward.source_event_id, request.event_id);
+  assert.equal(replay.reward.source_event_id, request.event_id);
+  assert.equal(harness.rewardCount(), 2);
+  assert.equal(harness.totalXp(), 6);
+  assert.equal(replay.progress.revision, original.progress.revision);
+});
+
 test("incorrect choice awards 0 XP and preserves SRS fields", async () => {
   const initial = progress(USER, { revision: 4, review_count: 8, next_review_at: NOW, interval_days: 7, ease_factor: 2.5 });
   const harness = createHarness({ progressRows: [initial] });
@@ -39,6 +57,25 @@ test("incorrect choice awards 0 XP and preserves SRS fields", async () => {
   assert.equal(harness.progress(USER).next_review_at, NOW);
   assert.equal(harness.progress(USER).interval_days, 7);
   assert.equal(harness.progress(OTHER), null);
+});
+
+test("zero-XP replay preserves zero earned with the current authoritative total", async () => {
+  const harness = createHarness();
+  const service = createQuizService({ quizRepository: harness.repository });
+  const question = await loadQuestion(service);
+  const wrong = question.choices.find(({ choice_id }) => choice_id !== correctChoice(question).choice_id);
+  const request = answer(question, wrong.choice_id);
+  const original = await service.recordAnswer(USER, request);
+  harness.grantUnrelatedReward(3);
+  const replay = await service.recordAnswer(USER, request);
+
+  assertReward(original, 0, 0, false);
+  assertReward(replay, 0, 3, true);
+  assert.equal(original.reward.source_event_id, request.event_id);
+  assert.equal(replay.reward.source_event_id, request.event_id);
+  assert.equal(harness.rewardCount(), 1);
+  assert.equal(harness.totalXp(), 3);
+  assert.equal(replay.progress.revision, original.progress.revision);
 });
 
 test("later correct answers cannot repeat the first-correct reward", async () => {
@@ -241,6 +278,10 @@ function createHarness({ accessible = true, forceCasConflict = false, incrementE
     },
   };
   return { repository, progress: (userId) => structuredClone(committed.get(userId) ?? null),
+    grantUnrelatedReward: (amount) => {
+      committedRewards.push(reward("SRS_INITIAL", uuid(`unrelated-${committedRewards.length}`), amount));
+      committedTotalXp += amount;
+    },
     rewardCount: () => committedRewards.length, rewards: () => structuredClone(committedRewards),
     totalXp: () => committedTotalXp, writeCount: () => writes, transactionCount: () => transactions };
 }

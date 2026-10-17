@@ -7,6 +7,8 @@ test("keyboard selection and submission focus accepted feedback", async ({ page 
   await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
   await expect(page.getByRole("heading", { name: "Chính xác" })).toBeFocused();
   await expect(page.getByRole("status")).toHaveAttribute("aria-live", "polite");
+  await expect(page.getByRole("status")).toHaveAttribute("aria-atomic", "true");
+  await expect(page.getByRole("status")).toContainText("+3 XP");
 });
 
 test("pointer submission announces result without stealing focus", async ({ page }) => {

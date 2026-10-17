@@ -39,6 +39,7 @@ test.beforeAll(async () => {
     createVocabulary("alpha"),
     createVocabulary("beta"),
     createVocabulary("gamma"),
+    createVocabulary("delta"),
   ]);
 
   ownedSets = [];
@@ -62,6 +63,7 @@ test.afterAll(async () => {
   try {
     const userIds = Object.values(records ?? {}).map(({ id }) => id);
     if (userIds.length > 0) {
+      await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.vOCABULARY_SET.deleteMany({ where: { owner_id: { in: userIds } } });
@@ -89,6 +91,9 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await expect(summary).not.toContainText("Cần ôn");
 
   await expect(page.getByText("Bạn đang có 4 bộ từ riêng.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 1");
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("0 XP");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" })).toHaveAttribute("aria-valuenow", "0");
   const preview = page.getByRole("list", { name: "Bộ từ riêng xem trước" });
   await expect(preview.getByRole("listitem")).toHaveCount(3);
   await expect(preview).toContainText(`${prefix} 01 Empty`);
@@ -120,6 +125,39 @@ test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard request
   await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(requestedUserEndpoints).toEqual([]);
+});
+
+test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL and Speaking remain read-only", async ({ page }) => {
+  await prisma.uSER.update({ where: { id: records.learner.id }, data: { total_xp: 47 } });
+  await login(page, accounts.learner);
+  const xpSummary = page.getByRole("region", { name: "XP và cấp độ" });
+  await expect(xpSummary).toContainText("47 XP");
+  await expect(xpSummary).toContainText("Level 1");
+
+  const beforeExcluded = await xpSnapshot(records.learner.id);
+  await page.goto(`/learn/vocabulary-sets/${ownedSets[1].id}?mode=NORMAL`);
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+  await page.goto(`/pronunciation/vocabulary-sets/${ownedSets[1].id}`);
+  await expect(page.getByRole("heading", { name: vocabularies[0].word })).toBeVisible();
+  expect(await xpSnapshot(records.learner.id)).toEqual(beforeExcluded);
+
+  await page.goto(`/learn/vocabulary-sets/${ownedSets[1].id}`);
+  await page.getByRole("heading", { name: vocabularies[0].word }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).press("Enter");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("+3 XP");
+
+  await page.goto(`/quiz/vocabulary-sets/${ownedSets[1].id}`);
+  await expect(page.getByRole("heading", { name: vocabularies[0].word })).toBeVisible();
+  await page.getByRole("radio", { name: `${prefix} meaning alpha` }).check();
+  await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
+  await expect(page.getByTestId("quiz-xp-feedback")).toHaveText("+3 XP");
+
+  await page.goto("/dashboard");
+  await expect(xpSummary).toContainText("53 XP");
+  await expect(xpSummary).toContainText("Level 2");
+  await page.reload();
+  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("53 XP");
+  assertLifecycleRows(await xpSnapshot(records.learner.id));
 });
 
 function account(displayName, role) {
@@ -211,13 +249,32 @@ async function persistedSnapshot() {
 
 async function controlledFixtureCount() {
   const userIds = Object.values(records ?? {}).map(({ id }) => id);
-  const [users, topics, vocabulary, sets, progressRows, sessions] = await Promise.all([
+  const [users, topics, vocabulary, sets, progressRows, rewards, sessions] = await Promise.all([
     prisma.uSER.count({ where: { email: { endsWith: `@${domain}` } } }),
     prisma.tOPIC.count({ where: { name: { startsWith: prefix } } }),
     prisma.vOCABULARY.count({ where: { word: { startsWith: prefix } } }),
     prisma.vOCABULARY_SET.count({ where: { owner_id: { in: userIds } } }),
     prisma.lEARNING_PROGRESS.count({ where: { user_id: { in: userIds } } }),
+    prisma.xP_REWARD.count({ where: { user_id: { in: userIds } } }),
     prisma.aUTH_SESSION.count({ where: { user_id: { in: userIds } } }),
   ]);
-  return users + topics + vocabulary + sets + progressRows + sessions;
+  return users + topics + vocabulary + sets + progressRows + rewards + sessions;
+}
+
+async function xpSnapshot(userId) {
+  const [user, rewards] = await Promise.all([
+    prisma.uSER.findUniqueOrThrow({ where: { id: userId }, select: { total_xp: true } }),
+    prisma.xP_REWARD.findMany({
+      where: { user_id: userId },
+      orderBy: { reward_type: "asc" },
+      select: { reward_type: true, xp_amount: true },
+    }),
+  ]);
+  return { total_xp: user.total_xp, rewards };
+}
+
+function assertLifecycleRows(snapshot) {
+  expect(snapshot.total_xp).toBe(53);
+  expect(new Set(snapshot.rewards.map(({ reward_type, xp_amount }) => `${reward_type}:${xp_amount}`)))
+    .toEqual(new Set(["QUIZ_FIRST_CORRECT:3", "SRS_INITIAL:3"]));
 }

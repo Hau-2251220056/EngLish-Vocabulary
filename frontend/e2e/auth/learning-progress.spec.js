@@ -191,6 +191,7 @@ function success(data) {
 function populatedPage({ page = 1, totalPages = 2, items } = {}) {
   return {
     evaluated_at: "2026-09-24T12:00:00.000Z",
+    xp_level: xpLevel(),
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: items ?? [
       progressItem("achieve", "LEARNED", 5),
@@ -204,6 +205,7 @@ function populatedPage({ page = 1, totalPages = 2, items } = {}) {
 function emptyPage() {
   return {
     evaluated_at: "2026-09-24T12:00:00.000Z",
+    xp_level: xpLevel(),
     summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
     items: [],
     pagination: { page: 1, page_size: 20, total_items: 0, total_pages: 0 },
@@ -214,6 +216,7 @@ function emptyPage() {
 function filteredEmptyPage() {
   return {
     evaluated_at: "2026-09-24T12:00:00.000Z",
+    xp_level: xpLevel(),
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: [],
     pagination: { page: 1, page_size: 20, total_items: 0, total_pages: 0 },
@@ -224,11 +227,16 @@ function filteredEmptyPage() {
 function outOfRangePage() {
   return {
     evaluated_at: "2026-09-24T12:00:00.000Z",
+    xp_level: xpLevel(),
     summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
     items: [],
     pagination: { page: 8, page_size: 20, total_items: 25, total_pages: 3 },
     filter: { status: null },
   };
+}
+
+function xpLevel() {
+  return { total_xp: 50, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false };
 }
 
 function progressItem(word, status, reviewCount, lastReviewedAt = "2026-09-24T00:00:00.000Z") {
