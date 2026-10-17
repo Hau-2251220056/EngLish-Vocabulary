@@ -1,7 +1,7 @@
-name: XP Migration Dispatch Bootstrap
+name: Migration Dispatch Bootstrap
 
-# Temporary default-branch registration only. The reviewed XP verification
-# workflow lives on feature/xp-level-v1 and must be selected explicitly.
+# Temporary default-branch registration only. Reviewed migration verification
+# workflows live on their feature refs and must be selected explicitly.
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +10,15 @@ on:
         required: true
         default: false
         type: boolean
+      run_streak_migration_harness:
+        description: Run the reviewed Streak migration verification workflow
+        required: true
+        default: false
+        type: boolean
+      streak_approved_target_identity:
+        description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -21,5 +30,5 @@ jobs:
     steps:
       - name: Stop on the bootstrap workflow
         run: |
-          echo "This bootstrap only registers manual dispatch. Select the reviewed XP feature ref."
+          echo "This bootstrap only registers manual dispatch. Select the reviewed migration feature ref."
           exit 1
