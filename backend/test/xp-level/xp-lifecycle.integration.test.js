@@ -61,7 +61,7 @@ test("due replay, requeue, alternate Set, USER isolation and NORMAL remain anti-
   } });
   await prisma.lEARNING_PROGRESS.create({ data: {
     user_id: fixture.user.id, vocabulary_id: fixture.vocabulary.id,
-    status: "LEARNED", stage: 1, interval_days: 3,
+    status: "LEARNED", interval_days: 3,
     next_review_at: new Date(NOW.getTime() - 86_400_000),
     last_reviewed_at: new Date(NOW.getTime() - 172_800_000),
     review_count: 1, revision: 4, last_event_id: randomUUID(),
