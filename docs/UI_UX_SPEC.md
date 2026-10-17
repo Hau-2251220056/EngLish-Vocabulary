@@ -497,7 +497,7 @@ The page must use semantic headings, native controls, visible focus, textual mea
 
 A dedicated HUMAN UI/UX Design Checkpoint is mandatory after the role-safe functional foundation and before production Dashboard UI implementation. This active contract defines function and states, not final pixel-level composition.
 
-Dashboard V1 does not display conceptual `NEW`, `NEEDS_REVIEW` as a queue/action, global/Topic/Set percentages, Continue Learning/recency, XP, Level, Streak, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. Those broader Dashboard concepts remain future/deferred scope. Dashboard is not a source of truth and viewing or retrying it never creates or updates learning data.
+Dashboard V1 does not display conceptual `NEW`, `NEEDS_REVIEW` as a queue/action, global/Topic/Set percentages, Continue Learning/recency, Streak, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. XP & Level V1 adds one compact authenticated-USER summary inside the existing Progress section: current Level, total XP and a text-plus-progress indication toward the backend-provided next threshold. Zero XP is valid success data. At Level 15 it renders `Level 15 — MAX`, no next target, and a complete/MAX state without implying XP stops. Frontend computes only bounded presentation width from backend bounds; it does not contain the authoritative threshold table or decide Level. Dashboard remains read-only and issues no extra XP request; ADMIN retains the neutral Dashboard and makes no USER Progress/XP call.
 
 10.2 Learn Vocabulary
 
@@ -633,7 +633,7 @@ The selected opaque choice submits to the Backend for authoritative correctness.
 
 10.7 Transient Quiz Completion
 
-After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. Quiz V1 does not display or imply durable score, accuracy/history, XP, Level, streak, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
+After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. An accepted newly committed positive reward may add concise `+N XP` text to the existing answer feedback only when `xp_earned > 0` and `replayed === false`; zero/replay/restored-session responses do not celebrate, and reward feedback is never stored. Quiz does not display or imply durable score, accuracy/history, persistent XP history, streak, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
 
 The production Quiz composition, focus transitions, responsive arrangement and exact visual hierarchy require the mandatory HUMAN UI/UX Design Checkpoint before final frontend implementation. Keyboard operation, visible focus, screen-reader feedback, reduced motion and no horizontal overflow are required across desktop, tablet and mobile.
 
@@ -1084,7 +1084,7 @@ Required states include accessible loading, empty, not-found, stale-item, event/
 
 The HUMAN-approved repo-native checkpoint is recorded in `docs/FLASHCARD_LEARNING_V1_UI_UX_CHECKPOINT.md`. It defines card front/back, primary-Meaning hierarchy, run header, external assessment controls, all state transitions, focus/keyboard map, reduced motion and mobile/desktop behavior. Final UI implementation must remain within that checkpoint.
 
-SRS V1 does not add Quiz, Pronunciation Practice expansion, XP/Level/Streak/Achievements, Dashboard/Words-to-Review features, FSRS/SM-2, history/session tables, Community or AI behavior. Model audio playback is optional presentation only and never a progress event.
+The original SRS V1 closure did not add gamification. The later XP & Level V1 extension may append concise `+N XP` to the existing live feedback only for a newly committed positive non-replay reward. Reward data is separated before Learning run state is stored; zero XP, replay, reload and restored session remain silent. This extension does not add Streak, Achievement, Daily Goal, FSRS/SM-2, history/session tables, Community or AI behavior. NORMAL and model audio remain zero-XP presentation paths.
 
 #### 12.4.1 SRS V1 Rating Preview and Up-to-Date States
 

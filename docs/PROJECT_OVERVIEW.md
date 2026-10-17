@@ -541,25 +541,23 @@ Gamification không được làm thay đổi mục tiêu chính là học từ 
 
 ## 13.1. XP
 
-XP được cộng từ các learning activities hợp lệ.
-
-Quy tắc XP hiện tại là một quy tắc chung cho tất cả User.
+XP & Level V1 áp dụng cho tài khoản `USER`; Guest và `ADMIN` không thể kiếm XP qua các learner route. Backend là nguồn duy nhất quyết định reward eligibility, XP được cộng và Level hiện tại.
 
 ### New Word
 
-User học một Vocabulary lần đầu:
+Lần đầu User gửi một SRS rating `HARD`, `GOOD` hoặc `EASY` cho đúng Vocabulary UUID mà chưa có reward `SRS_INITIAL`:
 
     +3 XP
 
 ### Review
 
-User review một Vocabulary đã học:
+Một Progress đã có `SRS_INITIAL`, đang được lưu ở trạng thái `LEARNED`, có lịch SRS đầy đủ và thực sự đến hạn tại thời điểm Backend chấp nhận event sẽ nhận một reward cho pre-event revision đó:
 
     +1 XP
 
 ### Quiz Correct
 
-User trả lời Quiz đúng:
+Lần đầu User trả lời đúng Multiple Choice Quiz cho đúng Vocabulary UUID mà chưa có reward `QUIZ_FIRST_CORRECT`:
 
     +3 XP
 
@@ -571,11 +569,11 @@ Quiz trả lời sai:
 
 ### Repeated Activity
 
-Việc lặp lại cùng một từ trong cùng một context/activity mà không tạo ra learning event mới:
+SRS `AGAIN` trước initial pass, immediate SRS requeue, Quiz đúng sau lần đầu, incorrect Quiz, NORMAL Flashcard và Speaking Practice:
 
     +0 XP
 
-Hệ thống phải ngăn việc farming XP thông qua các thao tác không mang lại learning event thực sự.
+SRS initial, Quiz first-correct và từng genuine due-review cycle được deduplicate bền vững theo exact USER/Vocabulary identity. Progress mutation, positive reward record và `USER.total_xp` increment commit atomically. Immediate replay trả lại original `xp_earned` cùng current XP/Level nhưng không cộng lại reward.
 
 Ví dụ:
 
@@ -583,6 +581,8 @@ Ví dụ:
 - Nhấn nghe pronunciation nhiều lần không tự động cộng XP.
 - Reload trang không cộng XP.
 - Gửi lại cùng một thao tác không hợp lệ không được cộng XP.
+
+Migration không backfill reward hoặc XP từ Progress lịch sử và giữ nguyên mọi `USER.total_xp` hiện có. Daily Goal bonus là feature riêng được defer; XP & Level V1 không triển khai Daily Goal, Streak, Achievement, leaderboard hoặc XP history.
 
 ---
 
@@ -622,7 +622,7 @@ Ví dụ:
     8,000 XP  → Level 15
     20,000 XP → Level 15
 
-Bảng XP threshold cụ thể từ Level 1 đến Level 15 sẽ được xác định trong Business Rules/PLAN trước khi triển khai.
+Bảng threshold được Backend quản lý theo `25 × L × (L − 1)`: Level 1 bắt đầu tại 0 XP, Level 2 tại 50 XP và Level 15 tại 5,250 XP. Level là projection, không được persist.
 
 Level chỉ phục vụ Gamification.
 
@@ -631,6 +631,8 @@ Level không tự động khóa hoặc mở Vocabulary, Topic hoặc Learning Co
 ---
 
 # 13.3. Daily Goal
+
+> **Trạng thái:** Deferred. Nội dung dưới đây là product direction cho một feature riêng; XP & Level V1 không triển khai Daily Goal progress hoặc bonus và không được xem các quy tắc này là active behavior.
 
 Daily Goal là mục tiêu XP mà User muốn đạt trong một ngày.
 
@@ -702,6 +704,8 @@ Nếu User thay đổi Daily Goal trong ngày:
 ---
 
 # 13.4. Streak
+
+> **Trạng thái:** Deferred. Streak không phải functionality được triển khai bởi XP & Level V1; các quy tắc dưới đây chỉ là product direction cho workflow riêng.
 
 Streak biểu thị số ngày User có learning activity liên tiếp.
 
