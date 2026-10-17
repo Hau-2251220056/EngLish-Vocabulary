@@ -114,7 +114,10 @@ test("immediate replay returns original XP and current total without a second in
   const question = await questionFor(fixture);
   const eventId = randomUUID();
   const original = await answer(fixture, question, correctChoice(question).choice_id, { eventId });
-  const unrelated = await createVocabulary({ meaning: "unrelated reward" });
+  const unrelated = await createVocabulary({
+    ownerId: fixture.user.id,
+    meaning: "unrelated reward",
+  });
   await createQuizRepository(prisma).withTransaction((repository) =>
     repository.insertRewardAndIncrementXp({
       user_id: fixture.user.id,
@@ -175,7 +178,10 @@ test("reward source collision rolls back the accepted Progress mutation", async 
   const fixture = await createQuizFixture();
   const question = await questionFor(fixture);
   const eventId = randomUUID();
-  const other = await createVocabulary({ meaning: "collision owner" });
+  const other = await createVocabulary({
+    ownerId: fixture.user.id,
+    meaning: "collision owner",
+  });
   await prisma.xP_REWARD.create({ data: {
     user_id: fixture.user.id,
     vocabulary_id: other.id,
