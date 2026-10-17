@@ -41,17 +41,25 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   ]);
 });
 
-test("new SRS XP is announced once without persistence and reload stays silent", async ({ page }) => {
+test("new SRS XP uses one Toast without persistence and reload stays silent", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await installLearningMock(page, { cardCount: 2 });
   await page.goto("/learn/vocabulary-sets/set-srs");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
 
-  const announcement = page.locator('.sr-only[role="status"]');
-  await expect(announcement).toContainText("+3 XP");
-  await expect(announcement).toHaveAttribute("aria-live", "polite");
-  await expect(announcement).toHaveAttribute("aria-atomic", "true");
+  const xpToast = page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" });
+  await expect(xpToast).toHaveCount(1);
+  const toastRoot = xpToast.locator("xpath=ancestor-or-self::div[contains(concat(' ', normalize-space(@class), ' '), ' Toastify__toast ')][1]");
+  await toastRoot.hover();
+  await expect(toastRoot).toHaveCSS("transform", "none");
+  const toastBox = await toastRoot.boundingBox();
+  expect(toastBox.x).toBeGreaterThanOrEqual(8);
+  expect(toastBox.x + toastBox.width).toBeLessThanOrEqual(375 - 8);
+  const closeBox = await toastRoot.locator(".Toastify__close-button").boundingBox();
+  expect(closeBox.width).toBeGreaterThanOrEqual(44);
+  expect(closeBox.height).toBeGreaterThanOrEqual(44);
+  await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
   const stored = await page.evaluate(() => sessionStorage.getItem("elvocab.learning.run.v1:user-1:set-srs"));
   expect(stored).not.toContain("reward");
   expect(stored).not.toContain("xp_earned");
@@ -62,6 +70,7 @@ test("new SRS XP is announced once without persistence and reload stays silent",
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 });
 
@@ -76,9 +85,11 @@ test("zero and replayed SRS responses never announce XP", async ({ page }) => {
   await page.goto("/learn/vocabulary-sets/set-srs");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
   await page.getByRole("heading", { name: "word-2" }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
+  await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 });
 
@@ -316,6 +327,7 @@ test("pending and conflict states never advance optimistically", async ({ page }
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
   resolveEvent({ status: 409, json: failure("LEARNING_PROGRESS_CHANGED") });
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã thay đổi");
+  await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
 });
 

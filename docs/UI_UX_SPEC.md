@@ -633,7 +633,7 @@ The selected opaque choice submits to the Backend for authoritative correctness.
 
 10.7 Transient Quiz Completion
 
-After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. An accepted newly committed positive reward may add concise `+N XP` text to the existing answer feedback only when `xp_earned > 0` and `replayed === false`; zero/replay/restored-session responses do not celebrate, and reward feedback is never stored. Quiz does not display or imply durable score, accuracy/history, persistent XP history, streak, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
+After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. An accepted newly committed positive reward shows the shared success Toast with the Backend-confirmed `+N XP` amount only when `xp_earned > 0` and `replayed === false`; the answer feedback does not duplicate that XP indicator. Zero/replay/failed/restored-session responses do not show a reward Toast, and reward feedback is never stored. Quiz does not display or imply durable score, accuracy/history, persistent XP history, streak, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
 
 The production Quiz composition, focus transitions, responsive arrangement and exact visual hierarchy require the mandatory HUMAN UI/UX Design Checkpoint before final frontend implementation. Keyboard operation, visible focus, screen-reader feedback, reduced motion and no horizontal overflow are required across desktop, tablet and mobile.
 
@@ -1084,7 +1084,7 @@ Required states include accessible loading, empty, not-found, stale-item, event/
 
 The HUMAN-approved repo-native checkpoint is recorded in `docs/FLASHCARD_LEARNING_V1_UI_UX_CHECKPOINT.md`. It defines card front/back, primary-Meaning hierarchy, run header, external assessment controls, all state transitions, focus/keyboard map, reduced motion and mobile/desktop behavior. Final UI implementation must remain within that checkpoint.
 
-The original SRS V1 closure did not add gamification. The later XP & Level V1 extension may append concise `+N XP` to the existing live feedback only for a newly committed positive non-replay reward. Reward data is separated before Learning run state is stored; zero XP, replay, reload and restored session remain silent. This extension does not add Streak, Achievement, Daily Goal, FSRS/SM-2, history/session tables, Community or AI behavior. NORMAL and model audio remain zero-XP presentation paths.
+The original SRS V1 closure did not add gamification. The later XP & Level V1 extension shows the shared success Toast with the Backend-confirmed `+N XP` amount only for a newly committed positive non-replay reward; normal SRS result feedback remains separate and does not duplicate XP. Reward data is separated before Learning run state is stored; zero XP, replay, failed requests, reload and restored session remain silent. This extension does not add Streak, Achievement, Daily Goal, FSRS/SM-2, history/session tables, Community or AI behavior. NORMAL and model audio remain zero-XP presentation paths.
 
 #### 12.4.1 SRS V1 Rating Preview and Up-to-Date States
 

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LearningApiError, learningService } from "../services/learning-service.js";
-import { formatNewXpFeedback } from "../services/xp-level-response.js";
+import { showXpRewardToast } from "../components/xp-reward-notification.js";
 import {
   isKeyboardShortcutSafe,
   pendingLearningRating,
@@ -81,6 +81,7 @@ export function LearningFoundationPage() {
   const [focusTarget, setFocusTarget] = useState(null);
   const restartSrsRef = useRef(false);
   const modeTransitionRef = useRef(false);
+  const shownXpRewardEventsRef = useRef(new Set());
   const cardHeadingRef = useRef(null);
   const answerHeadingRef = useRef(null);
   const summaryHeadingRef = useRef(null);
@@ -306,7 +307,8 @@ export function LearningFoundationPage() {
       const acceptedAnnouncement = rating === "AGAIN"
         ? "Đã ghi nhận Lại. Thẻ sẽ quay lại sau các lượt tiếp theo."
         : `${RATING_LABELS[rating]} đã được ghi nhận.`;
-      setAnnouncement([acceptedAnnouncement, formatNewXpFeedback(reward)].filter(Boolean).join(" "));
+      setAnnouncement(acceptedAnnouncement);
+      showXpRewardToast(reward, shownXpRewardEventsRef.current);
       requestFocus(nextSummary.completed ? "summary" : "card");
     } catch (error) {
       if (error instanceof LearningApiError
