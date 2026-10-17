@@ -8,7 +8,8 @@ test("keyboard selection and submission focus accepted feedback", async ({ page 
   await expect(page.getByRole("heading", { name: "Chính xác" })).toBeFocused();
   await expect(page.getByRole("status")).toHaveAttribute("aria-live", "polite");
   await expect(page.getByRole("status")).toHaveAttribute("aria-atomic", "true");
-  await expect(page.getByRole("status")).toContainText("+3 XP");
+  await expect(page.getByRole("status")).toHaveText("Chính xác.");
+  await expect(page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" })).toHaveCount(1);
 });
 
 test("pointer submission announces result without stealing focus", async ({ page }) => {
