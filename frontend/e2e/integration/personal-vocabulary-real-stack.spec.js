@@ -46,6 +46,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   try {
+    await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: ids.users } } });
     await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: ids.users } } });
     await prisma.pRIVATE_VOCABULARY_CREATE_OPERATION.deleteMany({ where: { owner_id: { in: ids.users } } });
     await prisma.vOCABULARY_SET.deleteMany({ where: { id: { in: ids.sets } } });
