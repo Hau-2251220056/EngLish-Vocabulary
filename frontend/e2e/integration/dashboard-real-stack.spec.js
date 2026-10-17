@@ -143,6 +143,8 @@ test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL an
   expect(await xpSnapshot(records.learner.id)).toEqual(beforeExcluded);
 
   await page.goto(`/learn/vocabulary-sets/${ownedSets[1].id}`);
+  await page.getByRole("button", { name: "Ôn tập SRS" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("heading", { name: vocabularies[0].word }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("+3 XP");
