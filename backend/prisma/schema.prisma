@@ -26,6 +26,26 @@ enum XP_REWARD_TYPE {
   SRS_DUE_REVIEW
 }
 
+enum LEARNING_SESSION_MODE {
+  NORMAL
+  SRS
+  QUIZ
+}
+
+enum LEARNING_SESSION_STATUS {
+  ACTIVE
+  COMPLETED
+}
+
+enum SESSION_ITEM_EVIDENCE {
+  NORMAL_REVEALED
+  SRS_HARD
+  SRS_GOOD
+  SRS_EASY
+  QUIZ_CORRECT
+  QUIZ_INCORRECT
+}
+
 model USER {
   id                                   String                                @id @default(uuid()) @db.Uuid
   email                                String                                @unique @db.VarChar(255)
@@ -44,6 +64,8 @@ model USER {
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationOwner")
   learning_progress                    LEARNING_PROGRESS[]
   xp_rewards                           XP_REWARD[]
+  learning_sessions                    LEARNING_SESSION[]
+  streak_days                          STREAK_DAY[]
 }
 
 model AUTH_SESSION {
@@ -118,6 +140,7 @@ model VOCABULARY_SET {
   owner                                USER                                  @relation(fields: [owner_id], references: [id], onDelete: Restrict)
   items                                VOCABULARY_SET_ITEM[]
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationSet")
+  learning_sessions                    LEARNING_SESSION[]
 }
 
 model VOCABULARY_SET_ITEM {
@@ -168,6 +191,56 @@ model XP_REWARD {
   @@unique([user_id, vocabulary_id, reward_type, reward_cycle])
   @@unique([user_id, source_event_id])
   @@index([vocabulary_id])
+}
+
+model LEARNING_SESSION {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  user_id             String                  @db.Uuid
+  vocabulary_set_id   String?                 @db.Uuid
+  set_id_snapshot     String                  @db.Uuid
+  mode                LEARNING_SESSION_MODE
+  status              LEARNING_SESSION_STATUS @default(ACTIVE)
+  create_operation_id String                  @db.Uuid
+  snapshot_size       Int
+  created_at          DateTime                @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @db.Timestamp(3)
+  expires_at          DateTime                @db.Timestamp(3)
+  completed_at        DateTime?               @db.Timestamp(3)
+  completion_event_id String?                 @db.Uuid
+  user                USER                    @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  vocabulary_set      VOCABULARY_SET?         @relation(fields: [vocabulary_set_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  items               LEARNING_SESSION_ITEM[]
+  streak_days         STREAK_DAY[]
+
+  @@unique([user_id, create_operation_id])
+  @@unique([user_id, completion_event_id])
+  @@index([user_id, status, expires_at])
+  @@index([vocabulary_set_id])
+}
+
+model LEARNING_SESSION_ITEM {
+  id                String                 @id @default(uuid()) @db.Uuid
+  session_id        String                 @db.Uuid
+  vocabulary_id     String                 @db.Uuid
+  position          Int
+  evidence          SESSION_ITEM_EVIDENCE?
+  evidence_event_id String?                @unique @db.Uuid
+  evidence_at       DateTime?              @db.Timestamp(3)
+  session           LEARNING_SESSION       @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([session_id, vocabulary_id])
+  @@unique([session_id, position])
+}
+
+model STREAK_DAY {
+  id               String            @id @default(uuid()) @db.Uuid
+  user_id          String            @db.Uuid
+  activity_date    DateTime          @db.Date
+  first_session_id String?           @db.Uuid
+  created_at       DateTime          @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @db.Timestamp(3)
+  user             USER              @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  first_session    LEARNING_SESSION? @relation(fields: [first_session_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([user_id, activity_date])
 }
 
 model PRIVATE_VOCABULARY_CREATE_OPERATION {
