@@ -32,36 +32,47 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     await page.getByRole("radio").first().check(); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
     await expect(page.getByRole("button", { name: "Đang kiểm tra…" })).toBeDisabled();
     expect(calls.answers).toHaveLength(1); resolve({ abort: "failed" });
+    await expect(page.getByRole("button", { name: "Thử gửi lại" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
     await page.getByRole("button", { name: "Thử gửi lại" }).click();
     await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" })).toHaveCount(1);
     expect(calls.answers[1]).toEqual(calls.answers[0]);
   });
 
-  test("new Quiz XP is visible and announced once without surviving reload", async ({ page }) => {
+test("new Quiz XP uses one Toast without surviving reload or duplicating inline feedback", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await installQuizApiMock(page);
     await page.goto("/quiz/vocabulary-sets/set-flow");
     await page.getByRole("radio").first().check();
     await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
 
-    await expect(page.getByTestId("quiz-xp-feedback")).toHaveText("+3 XP");
-    const announcement = page.getByRole("status");
-    await expect(announcement).toContainText("+3 XP");
-    await expect(announcement).toHaveAttribute("aria-live", "polite");
-    await expect(announcement).toHaveAttribute("aria-atomic", "true");
+    const xpToast = page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" });
+    await expect(xpToast).toHaveCount(1);
+    const toastRoot = xpToast.locator("xpath=ancestor-or-self::div[contains(concat(' ', normalize-space(@class), ' '), ' Toastify__toast ')][1]");
+    await toastRoot.hover();
+    await expect(toastRoot).toHaveCSS("transform", "none");
+    const toastBox = await toastRoot.boundingBox();
+    expect(toastBox.x).toBeGreaterThanOrEqual(8);
+    expect(toastBox.x + toastBox.width).toBeLessThanOrEqual(375 - 8);
+    const closeBox = await toastRoot.locator(".Toastify__close-button").boundingBox();
+    expect(closeBox.width).toBeGreaterThanOrEqual(44);
+    expect(closeBox.height).toBeGreaterThanOrEqual(44);
+    await page.screenshot({
+      fullPage: true,
+      path: "test-results/task-230-evidence/quiz-positive-xp-mobile.png",
+    });
+    await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
+    await expect(page.getByRole("status")).not.toContainText(/\+\d+ XP/);
     const stored = await page.evaluate(() => Object.entries(sessionStorage)
       .filter(([key]) => key.startsWith("elvocab.quiz.run.v2:"))
       .map(([, value]) => value).join(""));
     expect(stored).not.toContain("reward");
     expect(stored).not.toContain("xp_earned");
-    await page.screenshot({
-      fullPage: true,
-      path: "test-results/task-230-evidence/quiz-positive-xp-mobile.png",
-    });
-
     await page.reload();
     await expect(page.getByRole("heading", { name: "sleep" })).toBeVisible();
     await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
     await expect(page.getByRole("status")).toHaveCount(0);
   });
 
@@ -80,6 +91,7 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
       await page.getByRole("radio").first().check();
       await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
       await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
+      await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
       await expect(page.getByRole("status")).not.toContainText(/\+\d+ XP/);
       await context.close();
     }

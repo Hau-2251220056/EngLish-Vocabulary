@@ -385,11 +385,12 @@ test("backdrop dismissal and responsive columns remain usable", async ({ page })
 test("Personal Set learning cards use the approved compact mobile grid", async ({ page }, testInfo) => {
   await install(page, { ...populated, name: "Bộ từ tiếng Anh giao tiếp hằng ngày có tiêu đề dài" });
   const viewports = [
-    { width: 320, height: 700 }, { width: 375, height: 812 },
+    { width: 320, height: 700 }, { width: 375, height: 812 }, { width: 390, height: 844 },
     { width: 479, height: 820 }, { width: 481, height: 820 },
     { width: 720, height: 900 }, { width: 768, height: 1024 },
-    { width: 799, height: 900 }, { width: 801, height: 900 },
-    { width: 1024, height: 768 }, { width: 1440, height: 900 },
+    { width: 799, height: 900 }, { width: 801, height: 900 }, { width: 820, height: 1180 },
+    { width: 1024, height: 768 }, { width: 1366, height: 768 },
+    { width: 1440, height: 900 }, { width: 1536, height: 864 },
   ];
 
   for (const viewport of viewports) {
@@ -428,6 +429,10 @@ test("Personal Set learning cards use the approved compact mobile grid", async (
     if ([320, 375, 768, 1440].includes(viewport.width)) {
       await grid.scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath(`personal-learning-cards-${viewport.width}.png`) });
+    }
+    if (viewport.width === 390) {
+      await grid.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath("responsive-comparison-personal-390.png") });
     }
   }
 });

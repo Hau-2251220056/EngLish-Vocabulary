@@ -151,13 +151,27 @@ test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL an
   await srsCard.press("Space");
   await expect(page.getByRole("region", { name: "Đánh giá SRS" })).toBeVisible();
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("+3 XP");
+  const srsStatus = page.locator('.sr-only[role="status"]');
+  await expect(srsStatus).toHaveText("Tốt đã được ghi nhận.");
+  await expect(srsStatus).toHaveAttribute("aria-live", "polite");
+  await expect(srsStatus).toHaveAttribute("aria-atomic", "true");
+  const srsXpToast = page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" });
+  await expect(srsXpToast).toHaveCount(1);
+  const srsXpToastRoot = srsXpToast.locator("xpath=ancestor-or-self::div[contains(concat(' ', normalize-space(@class), ' '), ' Toastify__toast ')][1]");
+  await srsXpToastRoot.locator(".Toastify__close-button").click();
+  await expect(srsXpToast).toHaveCount(0);
 
   await page.goto(`/quiz/vocabulary-sets/${ownedSets[1].id}`);
   await expect(page.getByRole("heading", { name: vocabularies[0].word })).toBeVisible();
   await page.getByRole("radio", { name: `${prefix} meaning alpha` }).check();
   await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
-  await expect(page.getByTestId("quiz-xp-feedback")).toHaveText("+3 XP");
+  const quizResultHeading = page.getByRole("heading", { name: "Chính xác" });
+  await expect(quizResultHeading).toBeFocused();
+  const quizStatus = page.getByTestId("quiz-feedback").getByRole("status");
+  await expect(quizStatus).toHaveText("Chính xác.");
+  await expect(quizStatus).toHaveAttribute("aria-live", "polite");
+  await expect(quizStatus).toHaveAttribute("aria-atomic", "true");
+  await expect(page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" })).toHaveCount(1);
 
   await page.goto("/dashboard");
   await expect(xpSummary).toContainText("53 XP");

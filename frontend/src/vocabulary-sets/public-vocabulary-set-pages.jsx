@@ -184,7 +184,7 @@ function PublicVocabularySetDetailContent({ setId }) {
           </header>
           {copyError ? <p className="mb-0 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{copyError}</p> : null}
 
-          {user?.role === "USER" ? <SetLearningActions enabled={items.length > 0} returnTo={`/vocabulary-sets/${set.id}`} setId={set.id} setName={set.name} /> : null}
+          {user?.role === "USER" ? <SetLearningActions compactMobile enabled={items.length > 0} returnTo={`/vocabulary-sets/${set.id}`} setId={set.id} setName={set.name} /> : null}
 
           <section className="set-detail-vocabulary mt-[1.65rem]" aria-labelledby="vocabulary-set-items-title">
             <div className="set-detail-section-heading flex items-center justify-between gap-4"><h2 className="m-0 text-[clamp(1.125rem,1.6vw,1.25rem)] font-semibold" id="vocabulary-set-items-title">Từ vựng trong bộ ({items.length})</h2></div>
