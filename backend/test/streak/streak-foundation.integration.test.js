@@ -368,6 +368,97 @@ test("parallel completed sessions create one Streak day without deadlock", {
   }), 2);
 });
 
+test("successful NORMAL completion creates Streak evidence without changing Progress or XP", async () => {
+  const fixture = await createFixture();
+  const progressEventId = randomUUID();
+  const rewardEventId = randomUUID();
+  await prisma.uSER.update({
+    where: { id: fixture.user.id },
+    data: { total_xp: 3 },
+  });
+  await prisma.lEARNING_PROGRESS.create({
+    data: {
+      user_id: fixture.user.id,
+      vocabulary_id: fixture.vocabularyIds[0],
+      status: "LEARNED",
+      review_count: 1,
+      revision: 1,
+      last_reviewed_at: new Date("2026-10-17T08:00:00.000Z"),
+      last_event_id: progressEventId,
+      next_review_at: new Date("2026-10-20T08:00:00.000Z"),
+      interval_days: 3,
+      ease_factor: "2.50",
+    },
+  });
+  await prisma.xP_REWARD.create({
+    data: {
+      user_id: fixture.user.id,
+      vocabulary_id: fixture.vocabularyIds[0],
+      reward_type: "SRS_INITIAL",
+      reward_cycle: 0,
+      source_event_id: rewardEventId,
+      xp_amount: 3,
+    },
+  });
+  const before = await legacyState(fixture.user.id);
+  assert.equal(before.user.total_xp, 3);
+  assert.equal(before.progress.length, 1);
+  assert.equal(before.rewards.length, 1);
+
+  const createResponse = await request("/api/learning-sessions", {
+    method: "POST",
+    cookie: fixture.userCookie,
+    json: normalCreateBody(fixture),
+  });
+  assert.equal(createResponse.status, 201);
+  const session = createResponse.json.data.session;
+  assert.equal(session.set_id, fixture.set.id);
+  assert.equal(session.mode, "NORMAL");
+  assert.deepEqual(
+    session.items.map(({ vocabulary_id: vocabularyId }) => vocabularyId),
+    fixture.vocabularyIds,
+  );
+
+  for (const item of session.items) {
+    const revealResponse = await reveal(fixture, session.id, item.vocabulary_id, randomUUID());
+    assert.equal(revealResponse.status, 200);
+    assert.equal(revealResponse.json.data.item.vocabulary_id, item.vocabulary_id);
+    assert.equal(revealResponse.json.data.item.evidence, "NORMAL_REVEALED");
+  }
+
+  const completionEventId = randomUUID();
+  const completionResponse = await request(`/api/learning-sessions/${session.id}/complete`, {
+    method: "POST",
+    cookie: fixture.userCookie,
+    json: { operation_id: completionEventId },
+  });
+  assert.equal(completionResponse.status, 200);
+  assert.equal(completionResponse.json.data.session.id, session.id);
+  assert.equal(completionResponse.json.data.session.mode, "NORMAL");
+  assert.equal(completionResponse.json.data.session.state, "COMPLETED");
+  assert.equal(completionResponse.json.data.streak.current_streak, 1);
+  assert.equal(completionResponse.json.data.streak.completed_today, true);
+  assert.equal(completionResponse.json.data.streak.last_qualified_date, "2026-10-18");
+
+  const persisted = await readPersistedSession(session.id);
+  assert.equal(persisted.status, "COMPLETED");
+  assert.equal(persisted.completion_event_id, completionEventId);
+  assert.equal(persisted.items.length, fixture.vocabularyIds.length);
+  assert.equal(persisted.items.every((item) => item.evidence === "NORMAL_REVEALED"), true);
+  const streakDays = await prisma.sTREAK_DAY.findMany({
+    where: { user_id: fixture.user.id },
+    orderBy: { activity_date: "asc" },
+  });
+  assert.equal(streakDays.length, 1);
+  assert.equal(streakDays[0].first_session_id, session.id);
+  assert.equal(streakDays[0].activity_date.toISOString().slice(0, 10), "2026-10-18");
+
+  const after = await legacyState(fixture.user.id);
+  assert.equal(after.progress.length, before.progress.length);
+  assert.equal(after.rewards.length, before.rewards.length);
+  assert.deepEqual(after, before);
+});
+
 test("terminal failure rolls session and Streak back without changing Progress or XP", async () => {
   const fixture = await createFixture();
   const session = await createNormalSession(fixture);
@@ -638,12 +729,10 @@ async function legacyState(userId) {
     prisma.lEARNING_PROGRESS.findMany({
       where: { user_id: userId },
       orderBy: { vocabulary_id: "asc" },
-      select: { vocabulary_id: true, status: true, revision: true, last_event_id: true },
     }),
     prisma.xP_REWARD.findMany({
       where: { user_id: userId },
       orderBy: { id: "asc" },
-      select: { id: true, xp_amount: true, source_event_id: true },
     }),
   ]);
   return { user, progress, rewards };
