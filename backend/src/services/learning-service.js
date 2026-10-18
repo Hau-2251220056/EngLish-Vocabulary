@@ -149,6 +149,8 @@ export function createLearningService({ learningRepository, now = () => new Date
           );
           if (!setItem) throw learningSetItemChangedError();
 
+          await repository.lockProgressIdentity(userId, event.vocabulary_id);
+
           const current = await repository.findProgress(userId, event.vocabulary_id);
           if (current?.last_event_id === event.event_id) {
             return toAcceptedEventResult(repository, userId, event, current, true);

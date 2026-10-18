@@ -244,6 +244,7 @@ function createHarness({ accessible = true, forceCasConflict = false, incrementE
           ...base,
           lockAccessibleSetForUser: async () => accessible ? { id: SET } : null,
           lockQuestionItem: async () => ({ vocabulary_id: set.items[0].vocabulary.id }),
+          lockProgressIdentity: async () => ({ lock_result: "" }),
           findProgress: async (userId) => structuredClone(draft.get(userId) ?? null),
           findRewardByIdentity: async (userId, vocabularyId, rewardType, rewardCycle) => structuredClone(
             draftRewards.find((entry) => entry.user_id === userId && entry.vocabulary_id === vocabularyId

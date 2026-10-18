@@ -83,6 +83,17 @@ export function createLearningRepository(prisma) {
       return rows[0] ?? null;
     },
 
+    async lockAccessibleSetForSessionSnapshot(setId, userId) {
+      const rows = await prisma.$queryRaw`
+        SELECT "id"
+        FROM "VOCABULARY_SET"
+        WHERE "id" = ${setId}::uuid
+          AND ("is_public" = TRUE OR ("is_public" = FALSE AND "owner_id" = ${userId}::uuid))
+        FOR UPDATE
+      `;
+      return rows[0] ?? null;
+    },
+
     async lockSetItem(setId, vocabularyId) {
       const rows = await prisma.$queryRaw`
         SELECT "id"
@@ -90,6 +101,15 @@ export function createLearningRepository(prisma) {
         WHERE "vocabulary_set_id" = ${setId}::uuid
           AND "vocabulary_id" = ${vocabularyId}::uuid
         FOR SHARE
+      `;
+      return rows[0] ?? null;
+    },
+
+    async lockProgressIdentity(userId, vocabularyId) {
+      const rows = await prisma.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${userId}::text || ':' || ${vocabularyId}::text, 0)
+        )::text AS "lock_result"
       `;
       return rows[0] ?? null;
     },

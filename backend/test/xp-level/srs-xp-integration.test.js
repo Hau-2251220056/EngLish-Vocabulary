@@ -444,6 +444,7 @@ class FakeLearningRepository {
     return {
       lockAccessibleSetForUser: async () => this.accessible ? { id: SET_ID } : null,
       lockSetItem: async () => this.member ? { id: randomUUID() } : null,
+      lockProgressIdentity: async () => ({ lock_result: "" }),
       findProgress: async (userId, vocabularyId) =>
         state.progress.get(progressKey(userId, vocabularyId)) ?? null,
       findRewardByIdentity: async (userId, vocabularyId, rewardType, rewardCycle) =>

@@ -73,6 +73,15 @@ export function createQuizRepository(prisma) {
       return rows[0] ?? null;
     },
 
+    async lockProgressIdentity(userId, vocabularyId) {
+      const rows = await prisma.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${userId}::text || ':' || ${vocabularyId}::text, 0)
+        )::text AS "lock_result"
+      `;
+      return rows[0] ?? null;
+    },
+
     lockMeanings(vocabularyId) {
       return prisma.$queryRaw`
         SELECT

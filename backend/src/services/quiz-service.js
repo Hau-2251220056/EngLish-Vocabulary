@@ -71,6 +71,7 @@ async function recordAnswerInTransaction(repository, userId, answer) {
   if (!lockedSet) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
   const lockedItem = await repository.lockQuestionItem(answer.set_id, answer.vocabulary_id);
   if (!lockedItem) throw questionUnavailableError();
+  await repository.lockProgressIdentity(userId, answer.vocabulary_id);
   const set = await repository.findAccessibleSetForUser(answer.set_id, userId);
   if (!set) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
   const item = set.items.find(({ vocabulary }) => vocabulary.id === answer.vocabulary_id);
