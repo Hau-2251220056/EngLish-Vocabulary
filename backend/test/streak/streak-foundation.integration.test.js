@@ -802,7 +802,7 @@ test("AGAIN receipts stay unresolved and passing ratings complete atomically wit
 
   const replay = await postSrsEvent(fixture.userCookie, finalPass);
   assert.equal(replay.status, 200, replay.text);
-  assert.equal(replay.json.data.replayed, true);
+  assert.equal(replay.json.data.reward.replayed, true);
   assert.deepEqual(await srsState(fixture.user.id, session.id), beforeReplay);
 });
 
@@ -907,7 +907,7 @@ test("concurrent final ratings serialize exact replay and reject a competing eve
     label: "exact concurrent SRS replay",
   });
   assert.deepEqual(exactResponses.map(({ status }) => status), [200, 200]);
-  assert.deepEqual(exactResponses.map(({ json }) => json.data.replayed).sort(), [false, true]);
+  assert.deepEqual(exactResponses.map(({ json }) => json.data.reward.replayed).sort(), [false, true]);
   const exactState = await srsState(exactFixture.user.id, exactSession.id);
   assert.equal(exactState.receipts.length, 2);
   assert.equal(exactState.rewards.length, 2);
