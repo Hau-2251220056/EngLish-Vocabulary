@@ -8,6 +8,7 @@ import { createVocabularyController } from "./controllers/vocabulary-controller.
 import { createVocabularySetController } from "./controllers/vocabulary-set-controller.js";
 import { createLearningController } from "./controllers/learning-controller.js";
 import { createQuizController } from "./controllers/quiz-controller.js";
+import { createLearningSessionController } from "./controllers/learning-session-controller.js";
 import { createAuthenticationMiddleware } from "./middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "./middleware/role-authorization-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
@@ -17,9 +18,12 @@ import { createVocabularyRepository } from "./repositories/vocabulary-repository
 import { createVocabularySetRepository } from "./repositories/vocabulary-set-repository.js";
 import { createLearningRepository } from "./repositories/learning-repository.js";
 import { createQuizRepository } from "./repositories/quiz-repository.js";
+import { createLearningSessionRepository } from "./repositories/learning-session-repository.js";
+import { createStreakRepository } from "./repositories/streak-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createLearningRouter } from "./routes/learning-routes.js";
 import { createQuizRouter } from "./routes/quiz-routes.js";
+import { createLearningSessionRouter, createUserStreakRouter } from "./routes/learning-session-routes.js";
 import {
   createAdminTopicRouter,
   createPublicTopicRouter,
@@ -40,6 +44,7 @@ import { createVocabularyService } from "./services/vocabulary-service.js";
 import { createVocabularySetService } from "./services/vocabulary-set-service.js";
 import { createLearningService } from "./services/learning-service.js";
 import { createQuizService } from "./services/quiz-service.js";
+import { createLearningSessionService, createStreakService } from "./services/learning-session-service.js";
 import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
 import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
@@ -133,6 +138,33 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     authenticationMiddleware,
     userAuthorizationMiddleware,
   });
+  const withStreakTransaction = (callback) => prisma.$transaction(
+    (transaction) => callback(transaction),
+    { maxWait: 10_000, timeout: 30_000 },
+  );
+  const learningSessionService = createLearningSessionService({
+    withTransaction: withStreakTransaction,
+    createSessionRepository: createLearningSessionRepository,
+    createStreakRepository,
+    createLearningRepository,
+    ...(learningNow ? { now: learningNow } : {}),
+  });
+  const streakService = createStreakService({
+    withTransaction: withStreakTransaction,
+    createStreakRepository,
+    ...(learningNow ? { now: learningNow } : {}),
+  });
+  const learningSessionController = createLearningSessionController({ learningSessionService, streakService });
+  const learningSessionRouter = createLearningSessionRouter({
+    controller: learningSessionController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
+  const userStreakRouter = createUserStreakRouter({
+    controller: learningSessionController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
   const app = express();
 
   app.use(express.json({ strict: false }));
@@ -145,6 +177,8 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use("/api/my/vocabulary", userPrivateVocabularyRouter);
   app.use("/api/learning", learningRouter);
   app.use("/api/quiz", quizRouter);
+  app.use("/api/learning-sessions", learningSessionRouter);
+  app.use("/api/users/me", userStreakRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/vocabulary", adminVocabularyRouter);
   app.use("/api/admin/vocabulary-sets", adminVocabularySetRouter);
