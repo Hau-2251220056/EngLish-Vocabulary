@@ -12,7 +12,7 @@
 
 ## 1. Summary
 
-Streak V1 will add a small, Backend-authoritative session layer around the existing NORMAL, SRS and Multiple Choice Quiz flows. Each qualifying group receives an immutable server-owned snapshot of at most 10 Vocabulary identities. Per-item evidence is persisted, session completion is terminal, and the first completed session for a USER on an `Asia/Ho_Chi_Minh` calendar day inserts one durable Streak Day.
+Streak V1 will add a small, Backend-authoritative session layer around the existing NORMAL, SRS and Multiple Choice Quiz flows. Each qualifying group receives an immutable server-owned snapshot of at most 10 Vocabulary identities. Per-item evidence is persisted, session completion is terminal, and the first completed session for a USER on an `Asia/Ho_Chi_Minh` calendar day inserts one durable Streak Day. A narrow SRS operation receipt is auxiliary idempotency metadata owned by the Session Item data group; it is not qualification evidence, activity analytics or a fourth conceptual business-data group.
 
 The implementation will extend, rather than replace, the current learning and Quiz services. Existing SRS scheduling, optimistic revisions, Quiz grading, Progress mutations and XP reward transactions remain authoritative. Session-aware mutations add evidence and, on the terminal event, session completion plus the daily ledger insert to the same PostgreSQL transaction. Existing sessionless SRS and Quiz requests remain supported and retain their current Progress/XP behavior, but never qualify for Streak.
 
@@ -44,7 +44,7 @@ Current Streak is a read projection over durable day rows. It is not persisted o
 
 ### 2.4 Affected areas
 
-- **Database:** three new models and three enums; additive constraints/indexes; no backfill and no `USER.current_streak`.
+- **Database:** the three approved business models and three enums, plus one narrow child receipt model for accepted session-bound SRS operation identity; additive constraints/indexes; no backfill and no `USER.current_streak`.
 - **Backend:** new session/Streak repository and service boundary; new session routes; optional session association in existing SRS/Quiz mutations; Streak read endpoint.
 - **API:** additive session contracts and optional fields on existing SRS/Quiz requests/responses. Sessionless contracts stay valid.
 - **Frontend:** bind existing NORMAL/SRS/Quiz run state to Backend session identity; reconcile on resume; display expiry/restart; add compact Dashboard Streak card.
@@ -159,7 +159,34 @@ Relations and constraints:
 - Checks: `position BETWEEN 0 AND 9`; the three evidence columns are either all null or all non-null.
 - Service-level mode/evidence compatibility is mandatory because a PostgreSQL check cannot inspect the parent mode without a trigger, and V1 deliberately avoids triggers.
 
-For SRS `AGAIN`, the existing Progress event replay record remains authoritative and the session item stays unresolved. No general event-history table is added. A successful `AGAIN` response is recoverable through the existing `last_event_id` replay behavior; once a later revision is accepted, an older event becomes stale and cannot mutate the item. HARD/GOOD/EASY stores the resolving event. Quiz and NORMAL each accept only one durable evidence event per item.
+For SRS `AGAIN`, the session item stays unresolved and `LEARNING_PROGRESS.last_event_id` remains authoritative for whether the accepted outcome is still the current replayable Progress event. The auxiliary receipt below durably binds its UUID and exact payload identity without becoming qualification evidence or a general event-history API. Once a later revision is accepted, an older event becomes stale and cannot mutate the item, while its UUID remains reserved. HARD/GOOD/EASY stores both the operation receipt and the resolving item evidence. Quiz and NORMAL each retain their existing durable evidence identity behavior.
+
+### 4.3.1 Auxiliary `LEARNING_SESSION_SRS_RECEIPT`
+
+**HUMAN-approved amendment:** this narrow child record closes the durable identity gap for accepted session-bound SRS events. It belongs to the Session Item conceptual data group and is not qualification evidence, a learning result/history API, analytics or event-sourcing infrastructure.
+
+| Field | Prisma / PostgreSQL type | Purpose |
+|---|---|---|
+| `event_id` | `String @id @db.Uuid` | Globally single-use SRS operation identity. |
+| `session_item_id` | `String @db.Uuid` | Exact authoritative Session Item that received the operation. |
+| `rating` | `String @db.VarChar(5)` | Exact accepted `AGAIN`, `HARD`, `GOOD` or `EASY` payload identity. |
+| `expected_revision` | `Int` | Exact optimistic revision submitted with the accepted request. |
+| `accepted_revision` | `Int` | Resulting authoritative Progress revision; must equal `expected_revision + 1`. |
+| `accepted_at` | `DateTime @db.Timestamp(3)` | The same authoritative operation instant used by Progress/evidence/completion. |
+
+Relations and constraints:
+
+- FK `session_item_id -> LEARNING_SESSION_ITEM.id ON DELETE CASCADE ON UPDATE CASCADE`; receipts therefore follow the approved long-term Learning Session/Item lifecycle.
+- Primary-key uniqueness on `event_id` prevents reuse across USERs, sessions, items or ratings. The parent item/session supplies authoritative Vocabulary, session, mode and USER identity; those values are not duplicated from the request.
+- Index `(session_item_id, accepted_revision)` supports item-scoped reconciliation without exposing a history API.
+- Checks require `rating IN ('AGAIN', 'HARD', 'GOOD', 'EASY')`, non-negative revisions and `accepted_revision = expected_revision + 1`.
+- No update/delete business path exists. No receipt is created for sessionless SRS.
+
+This model and its constraints are introduced by a new forward-only additive migration after `20261017000000_add_streak_v1`; the accepted migration is not edited or replaced. The focused migration harness must prove clean sequential apply and no receipt backfill before the refreshed Gate ST-1 delta can be accepted.
+
+Every accepted session-bound SRS rating writes one receipt in the existing Progress transaction. An `AGAIN` receipt leaves `LEARNING_SESSION_ITEM.evidence`, `evidence_event_id` and `evidence_at` null, awards no XP merely because the receipt exists, and cannot contribute to completion. `HARD`, `GOOD` and `EASY` additionally write their existing resolving Session Item evidence. Receipt lookup is replay/conflict metadata only.
+
+Exact replay first looks up `event_id` and requires the same authenticated USER, session, item, rating and expected revision. It returns the original learning/reward projection only while `LEARNING_PROGRESS.last_event_id` and its resulting revision still identify that operation as authoritative. After a later accepted revision, the earlier event is stale and cannot mutate state, but its retained receipt still prevents UUID reuse with any payload or session.
 
 ### 4.4 `STREAK_DAY`
 
@@ -223,12 +250,13 @@ Before commit, the service/repository must verify that the inserted item count e
 
 ### 5.4 Locking, idempotency and recovery
 
-- Mutation transaction lock order: session row (`FOR UPDATE`), targeted item row, existing Progress/XP rows in their current order, then Streak Day insert. All code paths use the same order to limit deadlocks.
+- Mutation transaction lock order: session row (`FOR UPDATE`), authoritative session-item rows in stable order, SRS receipt/event-identity serialization, current Set/snapshot revalidation locks, existing USER/Vocabulary advisory Progress lock and Progress/XP rows in their current order, then evidence/completion/Streak Day persistence. All session-aware SRS paths use this order; sessionless Learning and Quiz retain their established Set then USER/Vocabulary advisory-lock order. The receipt step must not introduce a reverse wait from a Progress-locked writer back to a session row.
 - Re-read status/expiry after acquiring the lock.
-- Exact evidence/completion replay returns the stored authoritative projection. Same identity with a different session/item/mode/rating/answer returns `409 ..._EVENT_CONFLICT`.
+- Replay classification occurs only after the requested session has been scoped to the authenticated USER. A missing session, a session owned by another USER, or a receipt/event identity belonging to a foreign USER/session returns the same concealed `404 LEARNING_SESSION_NOT_FOUND`; the Backend must not reveal receipt or event existence through a `409`. After ownership is valid, exact receipt/evidence/completion replay returns the stored authoritative projection, while same-owner identity reuse with a different session/item/mode/rating/revision/answer returns `409 LEARNING_SESSION_EVENT_CONFLICT`.
+- Constraint handling is target-specific. Progress identity and typed XP collisions retain their existing reconciliation; SRS receipt, item-evidence and completion-event collisions reconcile only an exact stored identity. An unrelated or unidentified Prisma `P2002` propagates fail-closed and is never relabelled as a generic Progress conflict.
 - A competing final request observes the locked completed session and returns its immutable completion. Different sessions may both complete; `(user_id, activity_date)` permits one daily row.
 - Insert `STREAK_DAY.user_id` only from the validated locked session owner, never from request data. Mode/evidence compatibility and complete-group evidence remain service-enforced before terminal completion.
-- Any failure rolls back Progress/XP, item evidence, completion and Streak Day together. The client keeps the current card/question and retries with the same event UUID.
+- Any failure rolls back Progress/XP, the SRS operation receipt, item evidence, completion and Streak Day together. The client keeps the current card/question and retries with the same event UUID.
 - A stale SRS/Quiz revision returns the existing conflict and does not advance session evidence. Frontend reconciles both Progress/question state and Backend session before continuing.
 
 ## 6. Mode integration
@@ -247,9 +275,10 @@ Before commit, the service/repository must verify that the inserted item count e
 
 - Session creation calls the same Backend eligibility/order logic as the current SRS read and snapshots at most the first 10 eligible items. Later-due items never join it.
 - Add optional `session_id` to the existing rating request. With it, verify that the Vocabulary is an unresolved snapshot item before executing current revision, scheduling and XP rules.
-- `AGAIN` commits current Progress/SRS/XP behavior and leaves session evidence null; frontend requeues exactly as today.
-- `HARD`, `GOOD` or `EASY` commits existing mutation plus the corresponding resolving evidence. The last unresolved item additionally completes the session and inserts Streak Day in the same transaction.
-- Lost response: retry the same `event_id`; current event replay returns the original Progress/reward and reconstructed session/Streak projection. Stale or cross-tab competing revisions retain the current 409 behavior and cannot resolve a session item accidentally.
+- Every accepted session-bound rating commits a durable SRS operation receipt with the Progress mutation in the same transaction.
+- `AGAIN` commits current Progress/SRS/XP behavior and its operation receipt, leaves qualification evidence null and requeues exactly as today.
+- `HARD`, `GOOD` or `EASY` commits existing mutation plus the receipt and corresponding resolving evidence. The last unresolved item additionally completes the session and inserts Streak Day in the same transaction.
+- Lost response: persist the complete pending payload before submission and retry the same `event_id`, `session_id`, Set, item, rating and revision after refresh/navigation. The UI must not create a replacement event until that pending operation is authoritatively reconciled. Current exact replay returns the original Progress/reward and reconstructed session/Streak projection. Stale or cross-tab competing revisions retain the current 409 behavior and cannot resolve a session item accidentally.
 - Sessionless request: follow the current code path unchanged and omit all session/Streak writes and response additions.
 
 ### 6.3 Multiple Choice Quiz
@@ -458,7 +487,7 @@ Expected cases:
 ### 9.3 SRS
 
 - Start from the Backend session snapshot rather than reconstructing qualification from sessionStorage.
-- Include `session_id` in current rating calls; retain identical `AGAIN` requeue, keyboard/focus, Progress, reward Toast and retry behavior.
+- Include `session_id` in current rating calls; retain identical `AGAIN` requeue, keyboard/focus, Progress and reward Toast behavior. Persist a pending rating operation before transport; after refresh/navigation expose an actionable exact retry and block creation of a replacement event until reconciliation succeeds or returns an authoritative terminal/stale outcome.
 - Only accepted responses advance/requeue. Terminal response marks the Backend session complete; no extra completion request.
 
 ### 9.4 Quiz
@@ -500,16 +529,17 @@ Expected cases:
 
 ## 11. Migration and deployment safety
 
-### 11.1 Additive migration
+### 11.1 Baseline and follow-up additive migrations
 
-- One reviewed Prisma migration adds enums, the three tables, foreign keys, checks, unique constraints and indexes.
-- It does not alter or backfill `USER`, `LEARNING_PROGRESS`, `XP_REWARD`, SRS dates, Quiz data or XP.
+- The reviewed baseline migration `20261017000000_add_streak_v1` adds the approved enums and three business tables with their foreign keys, checks, unique constraints and indexes. That completed migration remains unchanged and its accepted evidence is not invalidated.
+- A separate forward-only follow-up migration adds only `LEARNING_SESSION_SRS_RECEIPT` and its receipt-specific FK, checks, uniqueness and index described in section 4.3.1. It must not rewrite or replace the baseline migration.
+- Neither migration alters or backfills `USER`, `LEARNING_PROGRESS`, `XP_REWARD`, SRS dates, Quiz data or XP. The follow-up creates no historical receipt rows.
 - All existing accounts project Streak `0` because `STREAK_DAY` starts empty.
-- Migration safety tests inspect exact PostgreSQL constraints, seven-day check, uniqueness, delete actions and absence of historical rows.
+- Baseline migration evidence remains accepted. Focused receipt-delta safety evidence verifies sequential apply, exact receipt constraints/delete behavior/global event uniqueness, no receipt backfill and preservation of existing USER/Progress/XP/session data before refreshed Gate ST-1 acceptance.
 
 ### 11.2 Rollout order
 
-1. Review and approve SPEC/PLAN/TASK separately.
+1. Review and approve SPEC/PLAN/TASK separately. The SRS receipt amendment reopens only its additive schema/constraint delta for Gate ST-1 evidence; it does not invalidate the accepted three-model baseline or prior TASK-235/236 results.
 2. Implement and verify against local development plus a dedicated isolated CI TEST database.
 3. Produce a current recoverable backup of each target before any authorized migration.
 4. Apply additive migration to the target using the repository's approved Prisma deploy command under separate HUMAN authorization.
@@ -562,9 +592,9 @@ Tests are planned only; none are executed at PLAN stage. Backend services receiv
 ### 12.1 Test layers
 
 - **Pure unit:** timezone/date conversion, expiry equality, state transitions, projection sequences, request validation and response parsing.
-- **Backend service/repository unit:** snapshot selection, ownership, mode evidence, idempotency and legacy branching with fakes.
-- **HTTP/PostgreSQL integration:** auth/ownership, constraints, locks, concurrency, rollback, Set changes, Progress/XP preservation and exact replay.
-- **Frontend component/browser:** resume/reconcile, reveal/finish, SRS requeue, Quiz zero-correct/retake, expiry UI, focus/live regions and Dashboard states/responsiveness.
+- **Backend service/repository unit:** snapshot selection, ownership, mode evidence, receipt identity, idempotency and legacy branching with fakes, including two-session UUID reuse and multiple `AGAIN` operations.
+- **HTTP/PostgreSQL integration:** auth/ownership, receipt/constraint metadata, locks, concurrent same/cross-session event collisions, rollback, Set changes, Progress/XP preservation and exact replay.
+- **Frontend component/browser:** resume/reconcile, reveal/finish, SRS requeue, lost response followed by actual reload and exact pending-event retry, Quiz zero-correct/retake, expiry UI, focus/live regions and Dashboard states/responsiveness.
 - **Guarded real-stack E2E:** one successful path per mode plus XP/Progress/Streak persistence and sessionless compatibility against the dedicated CI database only.
 - **Legacy/regression impact scan:** search all active callers, mocks, fixtures, response validators, route parameters, selectors, integration/E2E assertions and official documentation affected by optional `session_id` and additive response fields. Classify matches as active stale references, intentional rejection coverage, explicitly superseded history or unrelated references. Static review is not reported as an executed PASS when guarded database tests are unavailable.
 
@@ -724,7 +754,7 @@ HUMAN approved the following technical choices for TASK drafting. Approval does 
 
 | # | Decision | Recommended option | Trade-off / rejected alternative |
 |---|---|---|---|
-| 1 | Persistence shape | **HUMAN APPROVED:** use the three exact models `LEARNING_SESSION`, `LEARNING_SESSION_ITEM` and `STREAK_DAY`, their proposed enums/checks, and no `USER.current_streak`. | Read projection costs a small indexed date query, but avoids counter drift, reset writes and a redundant source of truth. A fourth analytics/event model is unnecessary for the approved evidence boundary. |
+| 1 | Persistence shape | **HUMAN APPROVED:** use the three business models `LEARNING_SESSION`, `LEARNING_SESSION_ITEM` and `STREAK_DAY`, their proposed enums/checks, and no `USER.current_streak`. The later approved SRS amendment adds only an auxiliary receipt child owned by the Session Item group; it is not a fourth conceptual business-data group. | Read projection costs a small indexed date query, but avoids counter drift, reset writes and a redundant source of truth. General analytics/event history remains unnecessary and out of scope. |
 | 2 | Expiry representation | **HUMAN APPROVED:** derive effective `EXPIRED` from stored `ACTIVE` plus Backend time `>= expires_at`; do not persist expiry or schedule cleanup. | Reads perform a timestamp comparison, but the boundary is immediately correct without a cron, delayed state or extra writes. |
 | 3 | Snapshot relations/deletion | **HUMAN APPROVED:** preserve immutable Set/Vocabulary UUID scalars; use optional Set FK with `ON DELETE SET NULL`, no Vocabulary FK, and USER `ON DELETE RESTRICT` for V1. | This preserves proof and existing Set/Vocabulary deletion behavior. Vocabulary validity is service-enforced. A future authorized account-deletion flow must explicitly handle dependent records before USER deletion rather than being silently broken or introduced by Streak V1. |
 | 4 | Retention | **HUMAN APPROVED:** retain sessions, items and Streak Days long-term in V1; defer cleanup until measured and separately approved. | Storage grows by bounded session items, but replay/audit proof remains intact and V1 avoids an unapproved scheduler. Retention optimization is future work, not a V1 requirement. |
@@ -735,6 +765,7 @@ HUMAN approved the following technical choices for TASK drafting. Approval does 
 | 9 | Item evidence identity | **HUMAN APPROVED:** each accepted durable item evidence receives its own globally unique `evidence_event_id`; terminal completion uses the separate `completion_event_id`. | A batch cannot reuse one UUID across items. Global single-use makes exact replay/conflict detection unambiguous without adding an event-history table. |
 | 10 | Timestamp convention | **HUMAN APPROVED:** retain `TIMESTAMP(3)` and persist Streak timestamps using the UTC convention; database defaults use `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`. Each production operation uses one server-clock instant, while tests may inject that clock, and `activity_date` is derived from the same instant in `Asia/Ho_Chi_Minh`. | Avoids a type change while removing PostgreSQL session-timezone dependence and mixed-clock boundary decisions. |
 | 11 | Cross-row integrity ownership | **HUMAN APPROVED:** service/repository code enforces item count equals `snapshot_size`, contiguous positions, mode-compatible evidence, complete-group completion, Streak Day ownership from the validated session and immutable snapshot write paths. Do not add triggers or new cross-table constraints in V1. | Keeps the additive schema straightforward; guarded service/repository tests must prove invariants that ordinary PostgreSQL checks cannot express across rows/tables. |
+| 12 | SRS operation receipt | **HUMAN APPROVED:** retain a globally unique immutable receipt for every accepted session-bound SRS event, linked to the exact Session Item with rating/revision identity. It shares transaction/retention with the session, is replay metadata only, and never resolves `AGAIN` or qualifies Streak. Add it through a new additive migration and refresh Gate ST-1 evidence for this delta. | Adds one narrow child table and bounded write per session-aware rating, but is the minimal relational design that supports repeated `AGAIN`, cross-session mismatch rejection and permanent UUID non-reuse without changing Progress or conflating operation identity with qualification evidence. |
 
 ## 17. Open issues and SPEC reconciliation
 

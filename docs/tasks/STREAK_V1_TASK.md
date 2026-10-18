@@ -16,7 +16,7 @@
 
 TASK-235 through TASK-253 decompose the approved Streak V1 PLAN into seven incremental phases. They introduce Backend-owned qualifying sessions for NORMAL, SRS and Multiple Choice Quiz; durable per-item evidence; one Streak Day per USER/application date; a read-only current-Streak projection; and one compact USER Dashboard card.
 
-The tasks extend the existing Learning and Quiz flows. They do not change SRS scheduling, Quiz grading, Progress rules, XP eligibility/deduplication, the Level/XP card or Speaking Practice. Existing sessionless SRS/Quiz requests remain compatible and never qualify for Streak.
+The tasks extend the existing Learning and Quiz flows. They do not change SRS scheduling, Quiz grading, Progress rules, XP eligibility/deduplication, the Level/XP card or Speaking Practice. Existing sessionless SRS/Quiz requests remain compatible and never qualify for Streak. A HUMAN-approved amendment adds one narrow durable SRS operation receipt as idempotency metadata owned by the Session Item conceptual group; it is not qualification evidence, analytics/event history or another qualifying mode.
 
 No task authorizes implementation merely by appearing in this document. HUMAN must approve this TASK document, then explicitly authorize task execution and each named database/deployment gate. No task may add Daily Goal, Streak Freeze, Achievement, leaderboard, weekly calendar, `USER.current_streak`, surveillance, view-duration rules, a new role, an external service or an unrelated refactor.
 
@@ -115,13 +115,15 @@ All work uses the current shared worktree unless HUMAN separately authorizes wor
 
 **Out of scope:** Repository/service code, migration execution, cleanup scheduler, retention purge, account deletion implementation, Progress/XP changes.
 
-**AC / BR mapping:** Primary persistence ownership: AC-ST-02, AC-ST-18, AC-ST-25, AC-ST-28, AC-ST-31; BR-ST-003, BR-ST-007, BR-ST-009, BR-ST-015–016, BR-ST-023, BR-ST-030–031, BR-ST-039–040, BR-ST-042, BR-ST-045–046; PLAN decisions 1–4.
+**AC / BR mapping:** Primary persistence ownership: AC-ST-02, AC-ST-18, AC-ST-25, AC-ST-28, AC-ST-31; BR-ST-003, BR-ST-007, BR-ST-009, BR-ST-015–016, BR-ST-023, BR-ST-030–031, BR-ST-039–040, BR-ST-042, BR-ST-045–046; PLAN decisions 1–4 and receipt amendment decision 12.
 
 **Focused verification:** Static Prisma/SQL review, constraint inventory and `git diff --check`. Prisma generation/validation may run only when separately authorized as implementation verification; no connection or migration command.
 
 **Risks / rollback:** Wrong FK/check semantics can block deletion or allow false completion. Migration remains additive; shared-environment rollback is never automatic or destructive.
 
 **Review gate:** Prepares Gate ST-1. HUMAN reviews exact schema and SQL before any database execution.
+
+**Approved follow-up amendment boundary:** The original three-model schema/migration draft remains accepted evidence. Before TASK-243 can be accepted, extend the schema through a separate additive migration with the auxiliary `LEARNING_SESSION_SRS_RECEIPT` child described in PLAN section 4.3.1. Do not rewrite the previously published migration. The receipt uses globally unique `event_id`, an exact Session Item FK, rating, expected/resulting revisions and the shared authoritative acceptance instant; it has no business update/delete API and follows Session Item deletion/retention. This follow-up does not reopen unrelated TASK-235 DDL.
 
 ## TASK-236 — Prove migration safety, constraints and no-backfill behavior
 
@@ -156,6 +158,8 @@ All work uses the current shared worktree unless HUMAN separately authorizes wor
 **Risks / rollback:** Migration harnesses are destructive by nature and must fail closed outside CI TEST. Normal harness finalization may remove only schemas created and ownership-registered by that run. A later recovery-only cleanup command may target only schemas whose exact repository/run/attempt ownership marker matches, and may run only under separate HUMAN authorization. Recovery cleanup must fail before deletion when any candidate ownership marker differs; an empty exact target is a successful no-op, not permission to broaden discovery. Do not create a down migration or automatically drop shared schema.
 
 **HUMAN Gate ST-1:** STOP. HUMAN must accept exact DDL, constraint/no-backfill evidence and rollback preparation before Backend persistence implementation proceeds.
+
+**Receipt-delta refresh:** TASK-236 remains completed for its previously accepted migration scope. The new additive receipt migration requires a focused extension of the same guarded harness: clean apply after the existing Streak migration, schema/constraint parity, zero receipt backfill, unchanged USER/Progress/XP/session data, FK cascade lifecycle, revision checks and global event uniqueness. HUMAN must accept this refreshed Gate ST-1 delta before receipt-dependent TASK-243 implementation is accepted; do not rerun unrelated foundation evidence merely because this additive delta exists.
 
 ## Phase 2 — Backend session and Streak foundation
 
@@ -341,18 +345,22 @@ All work uses the current shared worktree unless HUMAN separately authorizes wor
 - Add optional `session_id`; absent follows the unchanged legacy path.
 - Validate same USER/session/mode/Set/unresolved snapshot item before current event logic.
 - Keep existing replay-first, revision, scheduler, Progress and XP semantics.
-- `AGAIN` stays unresolved; HARD/GOOD/EASY stores resolution.
+- Persist one immutable, globally unique SRS operation receipt for every accepted session-bound rating, linked to the exact Session Item with rating, submitted revision, resulting revision and shared acceptance instant.
+- `AGAIN` stores only the receipt, stays unresolved, creates no qualification evidence and earns no XP from the receipt; HARD/GOOD/EASY stores the receipt plus existing resolution evidence.
+- Progress/XP, receipt, resolving evidence, final completion and Streak Day use the same caller-provided transaction.
+- Replay-first receipt lookup requires exact USER/session/item/mode/rating/revision identity. Exact current-event replay returns original learning/reward plus current authoritative session/Streak projection; an older event after a later accepted revision is stale but its UUID remains unavailable for reuse.
+- Classify Prisma uniqueness failures by exact constraint metadata. Progress/typed XP collisions retain current behavior; receipt/evidence/completion collisions reconcile only exact identity; unrelated `P2002` propagates fail-closed.
 - Final resolution completes session and inserts Streak Day inside the existing transaction.
-- Exact replay returns original learning/reward plus current authoritative session/Streak projection.
 - Preserve frontend requeue, retry, focus and XP Toast behavior.
+- Persist the complete pending frontend event before transport. Refresh/navigation restores an actionable exact retry using the same event/session/Set/item/rating/revision and cannot create a replacement event before authoritative reconciliation.
 
 **Out of scope:** Scheduler/rating/XP rule changes, automatic completion request, NORMAL or Quiz behavior.
 
-**AC / BR mapping:** Primary SRS ownership: AC-ST-08–11; cross-cutting transaction/recovery ownership: AC-ST-18, AC-ST-24–30, AC-ST-36; BR-ST-006, BR-ST-015–022, BR-ST-039–046; PLAN decisions 7–8.
+**AC / BR mapping:** Primary SRS ownership: AC-ST-08–11; cross-cutting transaction/recovery ownership: AC-ST-18, AC-ST-24–30, AC-ST-36; BR-ST-006, BR-ST-015–022, BR-ST-039–046; PLAN decisions 7–8 and receipt amendment decision 12.
 
-**Focused verification:** Pure/mocked Learning tests during implementation; DB concurrency/rollback and broader regression in TASK-244.
+**Focused verification:** Pure/mocked Learning tests cover two same-owner sessions attempting the same `AGAIN` UUID and receiving `409 LEARNING_SESSION_EVENT_CONFLICT`, a foreign USER attempting to replay a UUID owned by another USER/session and receiving concealed `404 LEARNING_SESSION_NOT_FOUND`, multiple accepted `AGAIN` events remaining unresolved, exact/mismatched/stale receipt replay, constraint-specific `P2002`, sessionless compatibility and lost response followed by actual browser reload using the same complete event payload. DB concurrency/rollback and broader regression remain in TASK-244.
 
-**Risks / rollback:** Highest risk is partial Progress/XP/session writes. The sessionless branch is the rollback-compatible behavior and must not call Streak persistence.
+**Risks / rollback:** Highest risks are partial Progress/XP/receipt/session writes, cross-session UUID reuse and a pending frontend event being replaced after refresh. The sessionless branch is the rollback-compatible behavior and must not create receipts or call Streak persistence.
 
 **Review gate:** Prepares Gate ST-4.
 
@@ -366,18 +374,21 @@ All work uses the current shared worktree unless HUMAN separately authorizes wor
 
 **In scope:**
 
-- Initial queue order/bound, AGAIN requeue, every passing rating and final resolution.
+- Initial queue order/bound, repeated AGAIN requeue, every passing rating and final resolution.
 - Items becoming due after creation remain excluded.
 - Lost response replay, stale revisions, concurrent tabs and cross-session rejection.
-- Atomic rollback at Progress, XP, evidence, completion and Streak writes.
+- Two concurrent same-owner sessions cannot reuse an `AGAIN` or other SRS event UUID; exact same-session receipt collision reconciles while mismatched session/item/rating/revision returns `409 LEARNING_SESSION_EVENT_CONFLICT`. A foreign USER replay attempt for another USER/session's UUID remains concealed as `404 LEARNING_SESSION_NOT_FOUND` and cannot disclose receipt existence.
+- PostgreSQL verifies actual Prisma `P2002` metadata for Progress, receipt, item evidence and completion identities; unidentified constraints remain observable.
+- Atomic rollback at Progress, XP, receipt, evidence, completion and Streak writes; no failed request leaves a receipt without its Progress outcome or vice versa.
 - Positive/zero XP outcomes remain independent from Streak.
 - Sessionless request/response/Progress/XP behavior remains unchanged and creates no Streak Day.
+- Mocked browser regression performs lost response, actual reload/navigation and exact pending-event retry before permitting any replacement rating operation.
 
 **Out of scope:** Quiz integration or full browser regression.
 
 **AC / BR mapping:** Primary SRS verification: AC-ST-08–11; regression/atomic evidence: AC-ST-18, AC-ST-24–30, AC-ST-36; BR-ST-006, BR-ST-015–022, BR-ST-039–046.
 
-**Focused verification:** Consolidated SRS/Streak/XP pure and guarded integration suites; unchanged scheduler suite; one focused mocked browser SRS regression. Avoid a full real-stack run until TASK-249.
+**Focused verification:** Consolidated SRS/Streak/XP pure and guarded integration suites; unchanged scheduler suite; one focused mocked browser SRS regression. The guarded receipt-migration delta must already have refreshed Gate ST-1 evidence. Avoid a full real-stack run until TASK-249.
 
 **Risks / rollback:** Any XP identity, scheduler, revision or rollback regression is blocking and returns to TASK-243.
 
@@ -679,7 +690,7 @@ Formal rule coverage for all 46 rules is confirmed in TASK-251 and TASK-252.
 1. **ST-1:** No database execution before exact migration review and explicit isolated CI TEST authorization.
 2. **ST-2:** No mode integration before Backend lifecycle/auth/concurrency foundation is accepted.
 3. **ST-3:** NORMAL must prove explicit completion and zero Progress/XP before SRS integration proceeds.
-4. **ST-4:** SRS/XP-sensitive transaction evidence requires HUMAN acceptance before Quiz integration.
+4. **ST-4:** SRS/XP-sensitive transaction evidence, including the refreshed receipt migration evidence, cross-session event identity, reload-safe exact retry and receipt rollback, requires HUMAN acceptance before Quiz integration.
 5. **ST-5:** Quiz/XP-sensitive grading/transaction evidence requires HUMAN acceptance before Dashboard integration.
 6. **ST-6:** Focused UI/UX and HUMAN browser approval are required before integrated final verification.
 7. **ST-7:** Formal TEST and REVIEW plus HUMAN acceptance are required before Git publication/merge or shared-environment work.
