@@ -296,30 +296,57 @@ test("Set deletion and revoked public access preserve snapshots but reject new e
   assert.equal(retained.set_id_snapshot, deletedFixture.set.id);
   assert.deepEqual(retained.items.map(({ vocabulary_id: id }) => id), deletedFixture.vocabularyIds);
 
-  const revokedFixture = await createFixture();
-  const topic = await createTopicFixture();
-  await prisma.vOCABULARY_SET.update({
-    where: { id: revokedFixture.set.id },
-    data: { is_public: true, topic_id: topic.id },
-  });
+  const revokedFixture = await createPublicSystemSetFixture();
   const createdByOther = await request("/api/learning-sessions", {
     method: "POST",
     cookie: revokedFixture.otherCookie,
     json: normalCreateBody(revokedFixture),
   });
   assert.equal(createdByOther.status, 201);
+  const sessionId = createdByOther.json.data.session.id;
+  const persistedBeforeRevocation = await readPersistedSession(sessionId);
+  assert.equal(persistedBeforeRevocation.user_id, revokedFixture.other.id);
+  assert.equal(persistedBeforeRevocation.set_id_snapshot, revokedFixture.set.id);
+  assert.deepEqual(
+    persistedBeforeRevocation.items.map(({ vocabulary_id: id }) => id),
+    revokedFixture.vocabularyIds,
+  );
+
   await prisma.vOCABULARY_SET.update({
     where: { id: revokedFixture.set.id },
     data: { is_public: false },
   });
-  const afterRevocation = await reveal(
-    revokedFixture,
-    createdByOther.json.data.session.id,
-    revokedFixture.vocabularyIds[0],
-    randomUUID(),
+  const persistedAfterRevocation = await readPersistedSession(sessionId);
+  assert.equal(persistedAfterRevocation.user_id, revokedFixture.other.id);
+  assert.equal(persistedAfterRevocation.snapshot_size, revokedFixture.vocabularyIds.length);
+  assert.deepEqual(
+    persistedAfterRevocation.items.map(({ vocabulary_id: id }) => id),
+    revokedFixture.vocabularyIds,
   );
+
+  const afterRevocation = await revealWithCookie({
+    cookie: revokedFixture.otherCookie,
+    sessionId,
+    vocabularyId: revokedFixture.vocabularyIds[0],
+    operationId: randomUUID(),
+  });
   assert.equal(afterRevocation.status, 409);
   assert.equal(afterRevocation.json.error.code, "LEARNING_SESSION_INACCESSIBLE");
+
+  const foreignReveal = await revealWithCookie({
+    cookie: revokedFixture.userCookie,
+    sessionId,
+    vocabularyId: revokedFixture.vocabularyIds[0],
+    operationId: randomUUID(),
+  });
+  assert.equal(foreignReveal.status, 404);
+  assert.equal(foreignReveal.json.error.code, "LEARNING_SESSION_NOT_FOUND");
+
+  const rejectedSession = await readPersistedSession(sessionId);
+  assert.equal(rejectedSession.status, "ACTIVE");
+  assert.equal(rejectedSession.completed_at, null);
+  assert.equal(rejectedSession.completion_event_id, null);
+  assert.equal(rejectedSession.items.every((item) => item.evidence === null), true);
 });
 
 test("parallel completed sessions create one Streak day without deadlock", {
@@ -483,6 +510,34 @@ function createTopicFixture() {
   });
 }
 
+async function createPublicSystemSetFixture() {
+  const fixture = await createFixture();
+  const topic = await createTopicFixture();
+  const set = await prisma.vOCABULARY_SET.create({
+    data: {
+      topic_id: topic.id,
+      owner_id: fixture.admin.id,
+      name: `Streak Foundation System Set ${randomUUID()}`,
+      cefr_level: "A1",
+      is_public: true,
+      items: {
+        create: fixture.vocabularyIds.map((vocabularyId, index) => ({
+          vocabulary_id: vocabularyId,
+          position: index + 1,
+        })),
+      },
+    },
+  });
+  return { ...fixture, set };
+}
+
+function readPersistedSession(sessionId) {
+  return prisma.lEARNING_SESSION.findUnique({
+    where: { id: sessionId },
+    include: { items: { orderBy: { position: "asc" } } },
+  });
+}
+
 function normalCreateBody(fixture) {
   return {
     operation_id: randomUUID(),
@@ -528,9 +583,18 @@ function createCompletionReadyNormalSession(fixture) {
 }
 
 function reveal(fixture, sessionId, vocabularyId, operationId) {
+  return revealWithCookie({
+    cookie: fixture.userCookie,
+    sessionId,
+    vocabularyId,
+    operationId,
+  });
+}
+
+function revealWithCookie({ cookie, sessionId, vocabularyId, operationId }) {
   return request(`/api/learning-sessions/${sessionId}/items/${vocabularyId}/reveal`, {
     method: "PUT",
-    cookie: fixture.userCookie,
+    cookie,
     json: { operation_id: operationId },
   });
 }
