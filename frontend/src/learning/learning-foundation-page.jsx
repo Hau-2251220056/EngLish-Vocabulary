@@ -3,7 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LearningApiError, learningService } from "../services/learning-service.js";
+import { LearningSessionApiError, learningSessionService } from "../services/learning-session-service.js";
+import { clearLearningSessionState } from "../session-storage/learning-session-state.js";
 import { showXpRewardToast } from "../components/xp-reward-notification.js";
+import {
+  acknowledgeNormalReveal,
+  canCompleteNormalLearningSession,
+  completeNormalLearningSession,
+  openNormalLearningSession,
+  persistNormalLearningCursor,
+  reconcileNormalLearningSession,
+} from "./normal-learning-session.js";
 import {
   isKeyboardShortcutSafe,
   pendingLearningRating,
@@ -76,6 +86,9 @@ export function LearningFoundationPage() {
   const [revealed, setRevealed] = useState(false);
   const [eventState, setEventState] = useState("idle");
   const [eventError, setEventError] = useState(null);
+  const [normalSession, setNormalSession] = useState(null);
+  const [normalSessionStatus, setNormalSessionStatus] = useState("idle");
+  const [normalRetryVocabularyId, setNormalRetryVocabularyId] = useState(null);
   const [audioError, setAudioError] = useState(null);
   const [announcement, setAnnouncement] = useState("");
   const [focusTarget, setFocusTarget] = useState(null);
@@ -145,12 +158,17 @@ export function LearningFoundationPage() {
   }, [reloadToken, requestedMode, setId, supportsSpeechSynthesis, user.id]);
 
   const allCards = useMemo(() => payload?.cards ?? [], [payload]);
-  const cards = useMemo(
+  const proposedCards = useMemo(
     () => mode === "NORMAL" && runState
       ? currentNormalBatchCards(runState, allCards)
       : allCards,
     [allCards, mode, runState],
   );
+  const cards = useMemo(() => {
+    if (mode !== "NORMAL" || !normalSession?.item_ids?.length) return proposedCards;
+    const byId = new Map(allCards.map((card) => [card.id, card]));
+    return normalSession.item_ids.map((id) => byId.get(id)).filter(Boolean);
+  }, [allCards, mode, normalSession, proposedCards]);
   const summary = useMemo(() => runState ? summarizeLearningRun(runState) : null, [runState]);
   const normalSummary = useMemo(
     () => runState ? summarizeNormalRun(runState) : null,
@@ -164,6 +182,45 @@ export function LearningFoundationPage() {
   const primaryMeaning = useMemo(() => selectPrimaryMeaning(currentCard?.meanings), [currentCard]);
   const retryEvent = runState?.srs.retry_context ?? null;
   const pendingRating = pendingLearningRating(eventState, retryEvent);
+
+  useEffect(() => {
+    if (status !== "ready" || mode !== "NORMAL" || !runState || cards.length === 0) {
+      return undefined;
+    }
+    let active = true;
+    const identity = { userId: user.id, setId, mode: "NORMAL" };
+    void openNormalLearningSession({
+      storage: browserSessionStorage(), identity,
+      vocabularyIds: cards.map(({ id }) => id),
+      service: learningSessionService,
+      randomUuid: () => window.crypto.randomUUID(),
+    }).then((sessionState) => {
+      if (!active) return;
+      setNormalSession(sessionState);
+      setNormalSessionStatus(sessionState?.view_state ?? "error");
+      if (sessionState?.view_state === "COMPLETED") {
+        let completedState = selectNormalCard(runState, cards.at(-1).id, cards);
+        completedState = completeNormalBatch(completedState);
+        persist(completedState);
+        requestFocus("summary");
+      } else if (sessionState?.view_state === "ACTIVE") {
+        const byId = new Map(allCards.map((card) => [card.id, card]));
+        const authoritativeCards = sessionState.item_ids.map((id) => byId.get(id)).filter(Boolean);
+        persist(selectNormalCard(runState, sessionState.cursor_vocabulary_id, authoritativeCards));
+      } else if (sessionState?.view_state === "EXPIRED") {
+        setEventError("Phiên học đã hết hạn. Hãy bắt đầu lại nhóm từ để tiếp tục.");
+      } else if (sessionState?.view_state === "INACCESSIBLE") {
+        setEventError("Bộ từ không còn khả dụng cho phiên này. Hãy quay lại hoặc bắt đầu lại sau khi có quyền truy cập.");
+      }
+    }).catch(() => {
+      if (!active) return;
+      setNormalSessionStatus("error");
+      setEventError("Chưa thể chuẩn bị phiên học. Vui lòng thử lại.");
+    });
+    return () => { active = false; };
+  // Batch identity owns the Backend session; cursor changes must not recreate it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, status, setId, user.id, cards.map(({ id }) => id).join(":")]);
 
   useEffect(() => {
     if (!focusTarget) return;
@@ -213,6 +270,7 @@ export function LearningFoundationPage() {
     modeTransitionRef.current = true;
     setEventError(null);
     setPendingMode(nextMode);
+    if (nextMode === "NORMAL") setNormalSessionStatus("idle");
     setRevealed(false);
     setAnnouncement(`Đã chuyển sang ${nextMode === "SRS" ? "Ôn tập SRS" : "Ôn tập thường"}.`);
   }
@@ -222,6 +280,34 @@ export function LearningFoundationPage() {
     setRevealed(true);
     setAnnouncement("Đã hiện nghĩa và ví dụ của từ hiện tại.");
     requestFocus("answer");
+  }
+
+  async function revealNormalAnswer(retry = false) {
+    if ((!retry && revealed) || mode !== "NORMAL" || !currentCard || !normalSession
+      || normalSession.view_state !== "ACTIVE" || eventState === "pending") return;
+    if (!revealed) revealAnswer();
+    setEventState("pending");
+    setEventError(null);
+    setNormalRetryVocabularyId(currentCard.id);
+    try {
+      const accepted = await acknowledgeNormalReveal({
+        storage: browserSessionStorage(),
+        identity: { userId: user.id, setId, mode: "NORMAL" },
+        state: normalSession,
+        vocabularyId: currentCard.id,
+        service: learningSessionService,
+        randomUuid: () => window.crypto.randomUUID(),
+      });
+      setNormalSession(accepted);
+      setNormalSessionStatus(accepted.view_state);
+      setNormalRetryVocabularyId(null);
+      setEventState("idle");
+      setAnnouncement("Đã ghi nhận thẻ được lật. Bạn có thể tiếp tục.");
+    } catch (error) {
+      if (await reconcileTerminalNormalMutation(error)) return;
+      setEventState("error");
+      setEventError("Chưa thể ghi nhận lần lật thẻ. Hãy thử lại trước khi hoàn thành phiên.");
+    }
   }
 
   function showCardFront() {
@@ -235,8 +321,9 @@ export function LearningFoundationPage() {
     const interaction = resolveFlashcardInteraction(revealed, trigger);
     if (!interaction.shouldFlip) return;
     if (interaction.nextRevealed) {
-      if (interaction.shouldPlayPronunciation) revealWithPronunciation(revealAnswer, playPronunciation);
-      else revealAnswer();
+      const reveal = mode === "NORMAL" ? () => void revealNormalAnswer() : revealAnswer;
+      if (interaction.shouldPlayPronunciation) revealWithPronunciation(reveal, playPronunciation);
+      else reveal();
     } else showCardFront();
   }
 
@@ -250,22 +337,87 @@ export function LearningFoundationPage() {
     if (!target || !runState || eventState === "pending") return;
     cancelPronunciation();
     persist(selectNormalCard(runState, target.id, cards));
+    if (normalSession?.view_state === "ACTIVE") {
+      try {
+        setNormalSession(persistNormalLearningCursor({
+          storage: browserSessionStorage(), state: normalSession, vocabularyId: target.id,
+        }));
+      } catch {
+        setEventState("error");
+        setEventError("Ch\u01b0a th\u1ec3 l\u01b0u v\u1ecb tr\u00ed th\u1ebb. H\u00e3y gi\u1eef trang n\u00e0y m\u1edf v\u00e0 th\u1eed l\u1ea1i.");
+        return;
+      }
+    }
     setRevealed(false);
     setAudioError(null);
     setAnnouncement(`Đã chuyển đến thẻ ${targetIndex + 1} trên ${cards.length}.`);
     requestFocus("card");
   }
 
-  function finishNormalBatch() {
-    if (mode !== "NORMAL" || !runState || currentIndex !== cards.length - 1) return;
+  async function finishNormalBatch() {
+    if (mode !== "NORMAL" || !runState || !normalSession
+      || !canCompleteNormalLearningSession(normalSession) || eventState === "pending") return;
     cancelPronunciation();
-    const nextState = completeNormalBatch(runState);
-    if (nextState === runState) return;
-    persist(nextState);
-    setRevealed(false);
-    setAudioError(null);
-    setAnnouncement("Đã hoàn thành phiên học hiện tại.");
-    requestFocus("summary");
+    setEventState("pending");
+    setEventError(null);
+    try {
+      const result = await completeNormalLearningSession({
+        storage: browserSessionStorage(),
+        identity: { userId: user.id, setId, mode: "NORMAL" },
+        state: normalSession,
+        service: learningSessionService,
+        randomUuid: () => window.crypto.randomUUID(),
+      });
+      setNormalSession(result.session_state);
+      setNormalSessionStatus("COMPLETED");
+      let nextState = selectNormalCard(runState, cards.at(-1).id, cards);
+      nextState = completeNormalBatch(nextState);
+      persist(nextState);
+      setRevealed(false);
+      setAudioError(null);
+      setEventState("idle");
+      setAnnouncement(`Đã hoàn thành phiên học. Chuỗi hiện tại ${result.streak.current_streak} ngày.`);
+      requestFocus("summary");
+    } catch (error) {
+      if (await reconcileTerminalNormalMutation(error)) return;
+      setEventState("error");
+      setEventError("Chưa thể hoàn thành phiên. Dữ liệu đã ghi nhận được giữ nguyên để bạn thử lại.");
+    }
+  }
+
+  async function reconcileTerminalNormalMutation(error) {
+    if (!(error instanceof LearningSessionApiError)
+      || !["LEARNING_SESSION_EXPIRED", "LEARNING_SESSION_INACCESSIBLE"].includes(error.code)
+      || !normalSession) return false;
+    try {
+      const reconciled = await reconcileNormalLearningSession({
+        storage: browserSessionStorage(),
+        identity: { userId: user.id, setId, mode: "NORMAL" },
+        state: normalSession,
+        service: learningSessionService,
+      });
+      const expectedViewState = error.code === "LEARNING_SESSION_EXPIRED"
+        ? "EXPIRED" : "INACCESSIBLE";
+      if (reconciled.view_state !== expectedViewState) {
+        throw new TypeError("Terminal Learning Session reconciliation did not confirm the rejection.");
+      }
+      setNormalSession(reconciled);
+      setNormalSessionStatus(reconciled.view_state);
+      setNormalRetryVocabularyId(null);
+      setEventState("idle");
+      setEventError(reconciled.view_state === "EXPIRED"
+        ? "Phi\u00ean h\u1ecdc \u0111\u00e3 h\u1ebft h\u1ea1n. H\u00e3y b\u1eaft \u0111\u1ea7u l\u1ea1i nh\u00f3m t\u1eeb \u0111\u1ec3 ti\u1ebfp t\u1ee5c."
+        : "B\u1ed9 t\u1eeb kh\u00f4ng c\u00f2n kh\u1ea3 d\u1ee5ng cho phi\u00ean n\u00e0y. H\u00e3y quay l\u1ea1i ho\u1eb7c b\u1eaft \u0111\u1ea7u l\u1ea1i sau khi c\u00f3 quy\u1ec1n truy c\u1eadp.");
+      setAnnouncement(reconciled.view_state === "EXPIRED"
+        ? "Phi\u00ean h\u1ecdc \u0111\u00e3 h\u1ebft h\u1ea1n. C\u1ea7n b\u1eaft \u0111\u1ea7u l\u1ea1i."
+        : "Phi\u00ean h\u1ecdc kh\u00f4ng c\u00f2n truy c\u1eadp \u0111\u01b0\u1ee3c.");
+      requestFocus("mode");
+      return true;
+    } catch {
+      setEventState("error");
+      setEventError("Tráº¡ng thÃ¡i phiÃªn Ä‘Ã£ thay Ä‘á»•i nhÆ°ng chÆ°a thá»ƒ Ä‘á»“ng bá»™. HÃ£y táº£i láº¡i trang.");
+      return true;
+    }
   }
 
   function continueNormalBatch() {
@@ -273,6 +425,9 @@ export function LearningFoundationPage() {
     const nextState = continueNormalRun(runState);
     if (nextState === runState) return;
     persist(nextState);
+    clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+    setNormalSession(null);
+    setNormalSessionStatus("idle");
     setRevealed(false);
     setAudioError(null);
     setAnnouncement("Đã chuyển sang nhóm từ tiếp theo.");
@@ -332,7 +487,12 @@ export function LearningFoundationPage() {
       setStatus("loading");
       setReloadToken((value) => value + 1);
     } else {
+      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+      setNormalSession(null);
+      setNormalSessionStatus("idle");
       persist(restartNormalRun(runState, allCards));
+      setStatus("loading");
+      setReloadToken((value) => value + 1);
       setRevealed(false);
       setAnnouncement("Đã trở về thẻ đầu tiên.");
       requestFocus("card");
@@ -463,7 +623,7 @@ export function LearningFoundationPage() {
           <progress className="h-[0.45rem] w-full overflow-hidden rounded-full border-0 bg-slate-200 accent-[var(--accent-primary)]" value={mode === "SRS" ? summary.completed_count : currentIndex + 1} max={mode === "SRS" ? summary.total : cards.length}>{mode === "SRS" ? summary.completed_count : currentIndex + 1}/{mode === "SRS" ? summary.total : cards.length}</progress>
         </section>
         <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
-        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
+        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void revealNormalAnswer(true)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <div key={`${mode}:${currentCard.id}`} className="learning-flip-stage relative grid min-h-[22rem] w-full shrink-0 cursor-pointer self-center lg:min-h-96 max-[700px]:min-h-56" onClick={handleCardClick}>
           <div className={`learning-card-flipper relative grid min-h-0 min-w-0 rounded-3xl border border-[#b9dcf6] bg-white shadow-[0_16px_36px_rgb(30_41_59/8%)] focus-within:ring-1 focus-within:ring-[var(--accent-primary-focus)] max-[700px]:rounded-[1.1rem] ${revealed ? "is-revealed" : ""}`}>
@@ -500,7 +660,7 @@ export function LearningFoundationPage() {
               </div>
             </section>
           </div>
-          {pendingMode ? <div className="absolute inset-0 z-10 grid place-items-center rounded-3xl bg-white/85 text-[var(--accent-primary-pressed)] backdrop-blur-[1px]" role="status" aria-live="polite"><span className="inline-flex items-center gap-2 font-extrabold"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> Đang chuyển chế độ…</span></div> : null}
+          {pendingMode || (mode === "NORMAL" && normalSessionStatus === "idle") ? <div className="absolute inset-0 z-10 grid place-items-center rounded-3xl bg-white/85 text-[var(--accent-primary-pressed)] backdrop-blur-[1px]" role="status" aria-live="polite"><span className="inline-flex items-center gap-2 font-extrabold"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> {pendingMode ? "Đang chuyển chế độ…" : "Đang chuẩn bị phiên học…"}</span></div> : null}
         </div>
         <div className="mt-3 grid min-h-[3.35rem] shrink-0 place-items-center">
           {mode === "SRS" ? revealed ? (
@@ -514,7 +674,7 @@ export function LearningFoundationPage() {
               })}
             </section>
           ) : <p className="m-0 text-sm text-slate-500">Lật thẻ để chọn mức độ ghi nhớ.</p> : (
-            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode)}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button>{currentIndex === cards.length - 1 ? <button type="button" className={NEXT_BUTTON_CLASSES} onClick={finishNormalBatch} disabled={Boolean(pendingMode)}>Hoàn thành phiên</button> : <button type="button" className={NEXT_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex + 1)} disabled={Boolean(pendingMode)}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button>}</nav>
+            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button>{currentIndex === cards.length - 1 ? <button type="button" className={NEXT_BUTTON_CLASSES} onClick={finishNormalBatch} disabled={Boolean(pendingMode) || eventState === "pending" || !canCompleteNormalLearningSession(normalSession)}>Hoàn thành phiên</button> : <button type="button" className={NEXT_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex + 1)} disabled={Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button>}</nav>
           )}
         </div>
         </div>
