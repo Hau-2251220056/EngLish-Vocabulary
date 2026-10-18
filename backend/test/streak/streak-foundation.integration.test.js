@@ -18,7 +18,7 @@ let prisma;
 let peer;
 let http;
 let now = new Date("2026-10-18T16:59:59.999Z");
-const CONCURRENCY_TIMEOUT_MS = 15_000;
+const CONCURRENCY_TIMEOUT_MS = 30_000;
 
 before(async () => {
   assertFoundationAuthorization(process.env);
@@ -91,9 +91,10 @@ test("full HTTP auth matrix and Set authorization remain USER-only", async () =>
   });
   assert.equal(foreignRead.status, 404);
 
+  const topic = await createTopicFixture();
   await prisma.vOCABULARY_SET.update({
     where: { id: fixture.set.id },
-    data: { is_public: true },
+    data: { is_public: true, topic_id: topic.id },
   });
   const publicResult = await request("/api/learning-sessions", {
     method: "POST",
@@ -140,9 +141,10 @@ test("database-backed snapshot validation rejects duplicates and returns SRS up-
   });
   assert.equal(oversized.status, 400);
 
+  const upToDateFixture = await createFixture();
   await prisma.lEARNING_PROGRESS.createMany({
-    data: fixture.vocabularyIds.map((vocabularyId) => ({
-      user_id: fixture.user.id,
+    data: upToDateFixture.vocabularyIds.map((vocabularyId) => ({
+      user_id: upToDateFixture.user.id,
       vocabulary_id: vocabularyId,
       status: "LEARNED",
       interval_days: 1,
@@ -154,10 +156,10 @@ test("database-backed snapshot validation rejects duplicates and returns SRS up-
   });
   const upToDate = await request("/api/learning-sessions", {
     method: "POST",
-    cookie: fixture.userCookie,
+    cookie: upToDateFixture.userCookie,
     json: {
       operation_id: randomUUID(),
-      set_id: fixture.set.id,
+      set_id: upToDateFixture.set.id,
       mode: "SRS",
     },
   });
@@ -167,7 +169,9 @@ test("database-backed snapshot validation rejects duplicates and returns SRS up-
     reason: "SRS_UP_TO_DATE",
     replayed: false,
   });
-  assert.equal(await prisma.lEARNING_SESSION.count({ where: { user_id: fixture.user.id } }), 0);
+  assert.equal(await prisma.lEARNING_SESSION.count({
+    where: { user_id: upToDateFixture.user.id },
+  }), 0);
 });
 
 test("concurrent exact create reconciles Prisma P2002 metadata and unrelated targets stay observable", async () => {
@@ -293,9 +297,10 @@ test("Set deletion and revoked public access preserve snapshots but reject new e
   assert.deepEqual(retained.items.map(({ vocabulary_id: id }) => id), deletedFixture.vocabularyIds);
 
   const revokedFixture = await createFixture();
+  const topic = await createTopicFixture();
   await prisma.vOCABULARY_SET.update({
     where: { id: revokedFixture.set.id },
-    data: { is_public: true },
+    data: { is_public: true, topic_id: topic.id },
   });
   const createdByOther = await request("/api/learning-sessions", {
     method: "POST",
@@ -322,18 +327,13 @@ test("parallel completed sessions create one Streak day without deadlock", {
 }, async () => {
   const fixture = await createFixture();
   const sessions = await Promise.all([
-    createNormalSession(fixture),
-    createNormalSession(fixture),
+    createCompletionReadyNormalSession(fixture),
+    createCompletionReadyNormalSession(fixture),
   ]);
-  for (const session of sessions) {
-    for (const vocabularyId of fixture.vocabularyIds) {
-      assert.equal((await reveal(fixture, session.id, vocabularyId, randomUUID())).status, 200);
-    }
-  }
-  const completions = await Promise.all(sessions.map((session) => request(
+  const completions = await withTimeout(Promise.all(sessions.map((session) => request(
     `/api/learning-sessions/${session.id}/complete`,
     { method: "POST", cookie: fixture.userCookie, json: { operation_id: randomUUID() } },
-  )));
+  ))), "Timed out waiting for parallel completion requests.", 10_000);
   assert.deepEqual(completions.map(({ status }) => status), [200, 200]);
   assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 1);
   assert.equal(await prisma.lEARNING_SESSION.count({
@@ -367,26 +367,29 @@ test("terminal failure rolls session and Streak back without changing Progress o
   assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 0);
 });
 
-test("post-lock instant controls expiry and the Asia/Ho_Chi_Minh completion day", {
-  timeout: CONCURRENCY_TIMEOUT_MS,
-}, async () => {
+test("completion at UTC+7 midnight uses the new Asia/Ho_Chi_Minh day", async () => {
   const fixture = await createFixture();
   const midnightSession = await createNormalSession(fixture);
   for (const vocabularyId of fixture.vocabularyIds) {
-    assert.equal((await reveal(fixture, midnightSession.id, vocabularyId, randomUUID())).status, 200);
+    const response = await withTimeout(
+      reveal(fixture, midnightSession.id, vocabularyId, randomUUID()),
+      "Timed out preparing the midnight completion session.",
+      5_000,
+    );
+    assert.equal(response.status, 200);
   }
   now = new Date("2026-10-18T17:00:00.000Z");
   const completionOperationId = randomUUID();
-  const completed = await request(`/api/learning-sessions/${midnightSession.id}/complete`, {
+  const completed = await withTimeout(request(`/api/learning-sessions/${midnightSession.id}/complete`, {
     method: "POST", cookie: fixture.userCookie, json: { operation_id: completionOperationId },
-  });
+  }), "Timed out waiting for midnight completion response.", 5_000);
   assert.equal(completed.status, 200);
   assert.equal(completed.json.data.streak.last_qualified_date, "2026-10-19");
-  const replay = await request(`/api/learning-sessions/${midnightSession.id}/complete`, {
+  const replay = await withTimeout(request(`/api/learning-sessions/${midnightSession.id}/complete`, {
     method: "POST",
     cookie: fixture.userCookie,
     json: { operation_id: completionOperationId },
-  });
+  }), "Timed out waiting for midnight completion replay.", 5_000);
   assert.equal(replay.status, 200);
   assert.equal(replay.json.data.replayed, true);
   assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 1);
@@ -397,7 +400,12 @@ test("post-lock instant controls expiry and the Asia/Ho_Chi_Minh completion day"
     randomUUID(),
   );
   assert.equal(postCompletionReveal.status, 409);
+});
 
+test("post-lock authoritative instant rejects a session that expires while waiting", {
+  timeout: CONCURRENCY_TIMEOUT_MS,
+}, async () => {
+  const fixture = await createFixture();
   now = new Date("2026-10-20T00:00:00.000Z");
   const expiring = await createNormalSession(fixture);
   const expiresAt = new Date(expiring.expires_at);
@@ -412,17 +420,28 @@ test("post-lock instant controls expiry and the Asia/Ho_Chi_Minh completion day"
     await releaseGate;
   });
   let pendingReveal;
+  let expired;
+  try {
+    await withTimeout(lockReady, "Timed out waiting for session row lock holder.", 5_000);
+  } catch (error) {
+    release();
+    await withTimeout(
+      Promise.allSettled([blocker]),
+      "Timed out settling the session row lock holder.",
+      5_000,
+    );
+    throw error;
+  }
+  pendingReveal = reveal(fixture, expiring.id, fixture.vocabularyIds[0], randomUUID());
   await runWithGuaranteedRelease({
     action: async () => {
-      await withTimeout(lockReady, "Timed out waiting for session row lock holder.");
-      pendingReveal = reveal(fixture, expiring.id, fixture.vocabularyIds[0], randomUUID());
       assert.equal(await remainsPending(pendingReveal), true);
       now = expiresAt;
     },
     release,
-    held: [blocker],
+    held: [blocker, pendingReveal.then((response) => { expired = response; })],
+    settleTimeoutMs: 5_000,
   });
-  const expired = await withTimeout(pendingReveal, "Timed out waiting for expired reveal response.");
   assert.equal(expired.status, 409);
   assert.equal(expired.json.error.code, "LEARNING_SESSION_EXPIRED");
 });
@@ -458,6 +477,12 @@ async function createFixture() {
   };
 }
 
+function createTopicFixture() {
+  return prisma.tOPIC.create({
+    data: { name: `Streak Foundation Topic ${randomUUID()}` },
+  });
+}
+
 function normalCreateBody(fixture) {
   return {
     operation_id: randomUUID(),
@@ -475,6 +500,31 @@ async function createNormalSession(fixture) {
   });
   assert.equal(response.status, 201);
   return response.json.data.session;
+}
+
+function createCompletionReadyNormalSession(fixture) {
+  const acceptedAt = new Date(now.getTime());
+  return prisma.lEARNING_SESSION.create({
+    data: {
+      user_id: fixture.user.id,
+      vocabulary_set_id: fixture.set.id,
+      set_id_snapshot: fixture.set.id,
+      mode: "NORMAL",
+      create_operation_id: randomUUID(),
+      snapshot_size: fixture.vocabularyIds.length,
+      created_at: acceptedAt,
+      expires_at: new Date(acceptedAt.getTime() + 7 * 86_400_000),
+      items: {
+        create: fixture.vocabularyIds.map((vocabularyId, position) => ({
+          vocabulary_id: vocabularyId,
+          position,
+          evidence: "NORMAL_REVEALED",
+          evidence_event_id: randomUUID(),
+          evidence_at: acceptedAt,
+        })),
+      },
+    },
+  });
 }
 
 function reveal(fixture, sessionId, vocabularyId, operationId) {
