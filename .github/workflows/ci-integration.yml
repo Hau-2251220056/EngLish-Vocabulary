@@ -15,6 +15,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_streak_foundation_harness:
+        description: Run the reviewed Streak Backend foundation integration harness
+        required: true
+        default: false
+        type: boolean
       streak_approved_target_identity:
         description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
         required: false
