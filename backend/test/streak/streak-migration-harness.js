@@ -21,6 +21,11 @@ import {
 
 const STREAK_MIGRATION = "20261017000000_add_streak_v1";
 const SRS_RECEIPT_MIGRATION = "20261018000000_add_streak_srs_receipt";
+const POSTGRES_IDENTIFIER_MAX_BYTES = 63;
+const SRS_RECEIPT_INDEX_DECLARED_NAME =
+  "LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_idx";
+const SRS_RECEIPT_INDEX_CATALOG_NAME =
+  SRS_RECEIPT_INDEX_DECLARED_NAME.slice(0, POSTGRES_IDENTIFIER_MAX_BYTES);
 const FORCED_FAILURE = `
 
 -- Harness-only failure injected into a temporary migration copy.
@@ -742,12 +747,27 @@ async function verifySchemaObjects(prisma) {
     "LEARNING_SESSION_ITEM_session_id_vocabulary_id_key",
     "LEARNING_SESSION_ITEM_session_id_position_key",
     "STREAK_DAY_user_id_activity_date_key",
-    "LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_idx",
+    SRS_RECEIPT_INDEX_CATALOG_NAME,
   ];
   const indexes = await prisma.$queryRawUnsafe(
     `SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (${expectedIndexes.map((name) => `'${name}'`).join(",")}) ORDER BY indexname`,
   );
   assert.deepEqual(indexes.map(({ indexname }) => indexname), [...expectedIndexes].sort());
+
+  const receiptIndexes = await prisma.$queryRawUnsafe(
+    `SELECT index_class.relname AS index_name, table_class.relname AS table_name, access_method.amname AS index_type, index_metadata.indisunique AS is_unique, index_metadata.indisvalid AS is_valid, index_metadata.indisready AS is_ready, index_metadata.indexprs IS NULL AS has_no_expressions, index_metadata.indpred IS NULL AS has_no_predicate, array_agg(attribute.attname::text ORDER BY key_column.ordinality) AS columns FROM pg_index index_metadata JOIN pg_class index_class ON index_class.oid = index_metadata.indexrelid JOIN pg_class table_class ON table_class.oid = index_metadata.indrelid JOIN pg_namespace namespace ON namespace.oid = table_class.relnamespace JOIN pg_am access_method ON access_method.oid = index_class.relam JOIN LATERAL unnest(index_metadata.indkey) WITH ORDINALITY AS key_column(attnum, ordinality) ON true JOIN pg_attribute attribute ON attribute.attrelid = table_class.oid AND attribute.attnum = key_column.attnum WHERE namespace.nspname = current_schema() AND index_class.relname = '${SRS_RECEIPT_INDEX_CATALOG_NAME}' GROUP BY index_class.relname, table_class.relname, access_method.amname, index_metadata.indisunique, index_metadata.indisvalid, index_metadata.indisready, index_metadata.indexprs, index_metadata.indpred`,
+  );
+  assert.deepEqual(receiptIndexes, [{
+    index_name: SRS_RECEIPT_INDEX_CATALOG_NAME,
+    table_name: "LEARNING_SESSION_SRS_RECEIPT",
+    index_type: "btree",
+    is_unique: false,
+    is_valid: true,
+    is_ready: true,
+    has_no_expressions: true,
+    has_no_predicate: true,
+    columns: ["session_item_id", "accepted_revision"],
+  }]);
 
   const defaults = await prisma.$queryRawUnsafe(
     `SELECT table_name, column_default FROM information_schema.columns WHERE table_schema = current_schema() AND column_name = 'created_at' AND table_name IN ('LEARNING_SESSION', 'STREAK_DAY') ORDER BY table_name`,

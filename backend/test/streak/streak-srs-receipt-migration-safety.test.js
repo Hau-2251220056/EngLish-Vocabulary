@@ -16,6 +16,10 @@ const harnessPath = fileURLToPath(new URL(
   "./streak-migration-harness.js",
   import.meta.url,
 ));
+const receiptIndexDeclaredName =
+  "LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_idx";
+const receiptIndexCatalogName =
+  "LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_";
 
 test("receipt schema and additive SQL retain the approved narrow identity contract", async () => {
   const [schema, baseline, receipt] = await Promise.all([
@@ -51,6 +55,26 @@ test("receipt migration is a separate forward transaction and baseline remains b
   assert.doesNotMatch(receipt, /DROP\s+(?:TABLE|TYPE|SCHEMA)/i);
 });
 
+test("receipt index parity accounts for PostgreSQL identifier truncation without weakening metadata checks", async () => {
+  const [receipt, harness] = await Promise.all([
+    readFile(receiptPath, "utf8"),
+    readFile(harnessPath, "utf8"),
+  ]);
+
+  assert.equal(Buffer.byteLength(receiptIndexDeclaredName, "utf8"), 66);
+  assert.equal(Buffer.byteLength(receiptIndexCatalogName, "utf8"), 63);
+  assert.equal(receiptIndexDeclaredName.slice(0, 63), receiptIndexCatalogName);
+  assert.match(receipt, new RegExp(receiptIndexDeclaredName));
+  assert.match(harness, /const POSTGRES_IDENTIFIER_MAX_BYTES = 63/);
+  assert.match(harness, /SRS_RECEIPT_INDEX_DECLARED_NAME\.slice\(0, POSTGRES_IDENTIFIER_MAX_BYTES\)/);
+  assert.match(harness, /table_name: "LEARNING_SESSION_SRS_RECEIPT"/);
+  assert.match(harness, /index_type: "btree"/);
+  assert.match(harness, /is_unique: false/);
+  assert.match(harness, /columns: \["session_item_id", "accepted_revision"\]/);
+  assert.match(harness, /index_metadata\.indexprs IS NULL AS has_no_expressions/);
+  assert.match(harness, /index_metadata\.indpred IS NULL AS has_no_predicate/);
+});
+
 test("guarded migration harness applies and verifies the receipt delta after the baseline", async () => {
   const harness = await readFile(harnessPath, "utf8");
   assert.match(harness, /const SRS_RECEIPT_MIGRATION = "20261018000000_add_streak_srs_receipt"/);
@@ -63,7 +87,7 @@ test("guarded migration harness applies and verifies the receipt delta after the
   assert.match(harness, /LEARNING_SESSION_SRS_RECEIPT_rating_check/);
   assert.match(harness, /LEARNING_SESSION_SRS_RECEIPT_revision_check/);
   assert.match(harness, /LEARNING_SESSION_SRS_RECEIPT_session_item_id_fkey/);
-  assert.match(harness, /LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_idx/);
+  assert.match(harness, /SRS_RECEIPT_INDEX_CATALOG_NAME/);
   assert.match(harness, /SELECT COUNT\(\*\) FROM "LEARNING_SESSION_SRS_RECEIPT"/);
   assert.match(harness, /await insertSrsReceipt/);
   assert.match(harness, /DELETE FROM "LEARNING_SESSION_ITEM"/);
