@@ -20,6 +20,7 @@ import {
 } from "./streak-migration-safety.js";
 
 const STREAK_MIGRATION = "20261017000000_add_streak_v1";
+const SRS_RECEIPT_MIGRATION = "20261018000000_add_streak_srs_receipt";
 const FORCED_FAILURE = `
 
 -- Harness-only failure injected into a temporary migration copy.
@@ -35,6 +36,11 @@ const migrationsPath = path.join(backendDirectory, "prisma", "migrations");
 const productionMigrationPath = path.join(
   migrationsPath,
   STREAK_MIGRATION,
+  "migration.sql",
+);
+const receiptMigrationPath = path.join(
+  migrationsPath,
+  SRS_RECEIPT_MIGRATION,
   "migration.sql",
 );
 const prismaCli = path.join(
@@ -123,28 +129,63 @@ async function runVerificationHarness() {
       runIdentity.attempt,
       suffix,
     ),
+    baselineRollback: buildSchemaName(
+      "rollback",
+      runIdentity.runId,
+      runIdentity.attempt,
+      randomBytes(4).toString("hex"),
+    ),
   });
 
   await proveSchemaCapability(schemas.capability);
   console.log("Streak migration harness capability check: PASS");
   await createHarnessSchema(schemas.clean);
   await createHarnessSchema(schemas.rollback);
+  await createHarnessSchema(schemas.baselineRollback);
 
-  const baseline = await prepareMigrationCopy("baseline", {
+  const legacy = await prepareMigrationCopy("legacy", {
     includeStreak: false,
+    includeReceipt: false,
+  });
+  const streakBaseline = await prepareMigrationCopy("streak-baseline", {
+    includeStreak: true,
+    includeReceipt: false,
   });
   const complete = await prepareMigrationCopy("complete", {
     includeStreak: true,
+    includeReceipt: true,
   });
-  const rollback = await prepareMigrationCopy("rollback", {
+  const receiptRollback = await prepareMigrationCopy("receipt-rollback", {
     includeStreak: true,
-    injectFailure: true,
+    includeReceipt: true,
+    injectReceiptFailure: true,
+  });
+  const streakRollback = await prepareMigrationCopy("streak-rollback", {
+    includeStreak: true,
+    includeReceipt: false,
+    injectStreakFailure: true,
   });
 
-  await verifyCleanMigration(schemas.clean, baseline, complete);
-  console.log("Streak clean migration, no-backfill and constraints: PASS");
-  await verifyLaterDdlRollback(schemas.rollback, baseline, rollback);
-  console.log("Streak later-DDL rollback: PASS");
+  await verifyCleanReceiptMigration(
+    schemas.clean,
+    legacy,
+    streakBaseline,
+    complete,
+  );
+  console.log("Streak receipt delta clean migration, no-backfill and constraints: PASS");
+  await verifyReceiptMigrationRollback(
+    schemas.rollback,
+    legacy,
+    streakBaseline,
+    receiptRollback,
+  );
+  console.log("Streak receipt delta rollback: PASS");
+  await verifyBaselineStreakRollback(
+    schemas.baselineRollback,
+    legacy,
+    streakRollback,
+  );
+  console.log("Streak baseline later-DDL rollback: PASS");
   console.log("Streak migration harness: PASS");
 }
 
@@ -266,17 +307,34 @@ async function cleanupCurrentRunSchemas() {
   }
 }
 
-async function prepareMigrationCopy(name, { includeStreak, injectFailure = false }) {
+async function prepareMigrationCopy(
+  name,
+  {
+    includeStreak,
+    includeReceipt,
+    injectReceiptFailure = false,
+    injectStreakFailure = false,
+  },
+) {
+  assert.equal(includeReceipt && !includeStreak, false);
+  assert.equal(injectReceiptFailure && !includeReceipt, false);
+  assert.equal(injectStreakFailure && !includeStreak, false);
+  assert.equal(injectReceiptFailure && injectStreakFailure, false);
   const root = path.join(temporaryDirectory, name);
   const copiedMigrations = path.join(root, "migrations");
   await cp(migrationsPath, copiedMigrations, {
     recursive: true,
     filter: (source) =>
-      includeStreak || !source.includes(path.join(migrationsPath, STREAK_MIGRATION)),
+      (includeStreak
+        || !source.includes(path.join(migrationsPath, STREAK_MIGRATION)))
+      && (includeReceipt
+        || !source.includes(path.join(migrationsPath, SRS_RECEIPT_MIGRATION))),
   });
 
   const sourceSql = await readFile(productionMigrationPath, "utf8");
   const sourceHash = sha256(sourceSql);
+  const receiptSourceSql = await readFile(receiptMigrationPath, "utf8");
+  const receiptSourceHash = sha256(receiptSourceSql);
   if (includeStreak) {
     const copiedMigration = path.join(
       copiedMigrations,
@@ -285,7 +343,7 @@ async function prepareMigrationCopy(name, { includeStreak, injectFailure = false
     );
     const copiedSql = await readFile(copiedMigration, "utf8");
     assert.equal(sha256(copiedSql), sourceHash);
-    if (injectFailure) {
+    if (injectStreakFailure) {
       const commitMatches = copiedSql.match(/^COMMIT;\s*$/gim) ?? [];
       assert.equal(commitMatches.length, 1);
       const injectedSql = copiedSql.replace(
@@ -293,6 +351,24 @@ async function prepareMigrationCopy(name, { includeStreak, injectFailure = false
         `${FORCED_FAILURE}\nCOMMIT;`,
       );
       await writeFile(copiedMigration, injectedSql, "utf8");
+    }
+  }
+  if (includeReceipt) {
+    const copiedReceiptMigration = path.join(
+      copiedMigrations,
+      SRS_RECEIPT_MIGRATION,
+      "migration.sql",
+    );
+    const copiedReceiptSql = await readFile(copiedReceiptMigration, "utf8");
+    assert.equal(sha256(copiedReceiptSql), receiptSourceHash);
+    if (injectReceiptFailure) {
+      const commitMatches = copiedReceiptSql.match(/^COMMIT;\s*$/gim) ?? [];
+      assert.equal(commitMatches.length, 1);
+      const injectedSql = copiedReceiptSql.replace(
+        /^COMMIT;\s*$/im,
+        `${FORCED_FAILURE}\nCOMMIT;`,
+      );
+      await writeFile(copiedReceiptMigration, injectedSql, "utf8");
     }
   }
 
@@ -312,25 +388,34 @@ async function prepareMigrationCopy(name, { includeStreak, injectFailure = false
     "utf8",
   );
   assert.equal(sha256(await readFile(productionMigrationPath, "utf8")), sourceHash);
-  return Object.freeze({ configPath, sourceHash });
+  assert.equal(sha256(await readFile(receiptMigrationPath, "utf8")), receiptSourceHash);
+  return Object.freeze({ configPath, sourceHash, receiptSourceHash });
 }
 
-async function verifyCleanMigration(schemaName, baseline, complete) {
-  await migrateDeploy(schemaName, baseline.configPath);
+async function verifyCleanReceiptMigration(
+  schemaName,
+  legacy,
+  streakBaseline,
+  complete,
+) {
+  await migrateDeploy(schemaName, legacy.configPath);
   const fixture = await seedLegacyFixture(schemaName);
-  const before = await readLegacySnapshot(schemaName);
+  const legacyBefore = await readLegacySnapshot(schemaName);
+
+  await migrateDeploy(schemaName, streakBaseline.configPath);
+  assert.deepEqual(await readLegacySnapshot(schemaName), legacyBefore);
+  await seedExistingStreakFixture(schemaName, fixture);
+  const beforeReceipt = await readPreReceiptSnapshot(schemaName);
 
   await migrateDeploy(schemaName, complete.configPath);
   await migrateStatus(schemaName, complete.configPath);
 
-  assert.deepEqual(await readLegacySnapshot(schemaName), before);
+  assert.deepEqual(await readPreReceiptSnapshot(schemaName), beforeReceipt);
   await withSchemaClient(schemaName, async (prisma) => {
-    assert.equal(await scalarCount(prisma, 'SELECT COUNT(*) FROM "LEARNING_SESSION"'), 0);
     assert.equal(
-      await scalarCount(prisma, 'SELECT COUNT(*) FROM "LEARNING_SESSION_ITEM"'),
+      await scalarCount(prisma, 'SELECT COUNT(*) FROM "LEARNING_SESSION_SRS_RECEIPT"'),
       0,
     );
-    assert.equal(await scalarCount(prisma, 'SELECT COUNT(*) FROM "STREAK_DAY"'), 0);
     assert.equal(
       await scalarCount(
         prisma,
@@ -338,21 +423,69 @@ async function verifyCleanMigration(schemaName, baseline, complete) {
       ),
       1,
     );
+    assert.equal(
+      await scalarCount(
+        prisma,
+        `SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name = '${SRS_RECEIPT_MIGRATION}' AND finished_at IS NOT NULL`,
+      ),
+      1,
+    );
     await verifySchemaObjects(prisma);
-    await verifyConstraintFailures(prisma, fixture);
-    await verifyDeletionBehavior(prisma, fixture);
+    const constraintSessionId = await verifyConstraintFailures(prisma, fixture);
+    await verifyDeletionBehavior(prisma, fixture, constraintSessionId);
   });
   assert.equal(sha256(await readFile(productionMigrationPath, "utf8")), complete.sourceHash);
+  assert.equal(
+    sha256(await readFile(receiptMigrationPath, "utf8")),
+    complete.receiptSourceHash,
+  );
 }
 
-async function verifyLaterDdlRollback(schemaName, baseline, rollback) {
-  await migrateDeploy(schemaName, baseline.configPath);
+async function verifyReceiptMigrationRollback(
+  schemaName,
+  legacy,
+  streakBaseline,
+  receiptRollback,
+) {
+  await migrateDeploy(schemaName, legacy.configPath);
+  const fixture = await seedLegacyFixture(schemaName);
+  await migrateDeploy(schemaName, streakBaseline.configPath);
+  await seedExistingStreakFixture(schemaName, fixture);
+  const beforeReceipt = await readPreReceiptSnapshot(schemaName);
+  assert.equal(
+    await migrateDeploy(schemaName, receiptRollback.configPath, true),
+    false,
+  );
+  assert.deepEqual(await readPreReceiptSnapshot(schemaName), beforeReceipt);
+  await assertReceiptObjectsAbsent(schemaName);
+  assert.equal(
+    sha256(await readFile(productionMigrationPath, "utf8")),
+    receiptRollback.sourceHash,
+  );
+  assert.equal(
+    sha256(await readFile(receiptMigrationPath, "utf8")),
+    receiptRollback.receiptSourceHash,
+  );
+}
+
+async function verifyBaselineStreakRollback(schemaName, legacy, streakRollback) {
+  await migrateDeploy(schemaName, legacy.configPath);
   await seedLegacyFixture(schemaName);
-  const before = await readLegacySnapshot(schemaName);
-  assert.equal(await migrateDeploy(schemaName, rollback.configPath, true), false);
-  assert.deepEqual(await readLegacySnapshot(schemaName), before);
+  const beforeStreak = await readLegacySnapshot(schemaName);
+  assert.equal(
+    await migrateDeploy(schemaName, streakRollback.configPath, true),
+    false,
+  );
+  assert.deepEqual(await readLegacySnapshot(schemaName), beforeStreak);
   await assertStreakObjectsAbsent(schemaName);
-  assert.equal(sha256(await readFile(productionMigrationPath, "utf8")), rollback.sourceHash);
+  assert.equal(
+    sha256(await readFile(productionMigrationPath, "utf8")),
+    streakRollback.sourceHash,
+  );
+  assert.equal(
+    sha256(await readFile(receiptMigrationPath, "utf8")),
+    streakRollback.receiptSourceHash,
+  );
 }
 
 async function seedLegacyFixture(schemaName) {
@@ -410,6 +543,70 @@ async function readLegacySnapshot(schemaName) {
   }));
 }
 
+async function seedExistingStreakFixture(schemaName, fixture) {
+  const streakFixture = Object.freeze({
+    sessionId: randomUUID(),
+    itemId: randomUUID(),
+    createOperationId: randomUUID(),
+    evidenceEventId: randomUUID(),
+    completionEventId: randomUUID(),
+    streakDayId: randomUUID(),
+  });
+  await withSchemaClient(schemaName, async (prisma) => {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "LEARNING_SESSION" ("id", "user_id", "vocabulary_set_id", "set_id_snapshot", "mode", "status", "create_operation_id", "snapshot_size", "created_at", "expires_at", "completed_at", "completion_event_id") VALUES ('${streakFixture.sessionId}', '${fixture.userA}', '${fixture.setId}', '${fixture.setId}', 'NORMAL', 'COMPLETED', '${streakFixture.createOperationId}', 1, '2026-10-15T00:00:00.000'::timestamp, '2026-10-22T00:00:00.000'::timestamp, '2026-10-16T00:00:00.000'::timestamp, '${streakFixture.completionEventId}')`,
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "LEARNING_SESSION_ITEM" ("id", "session_id", "vocabulary_id", "position", "evidence", "evidence_event_id", "evidence_at") VALUES ('${streakFixture.itemId}', '${streakFixture.sessionId}', '${fixture.vocabularyA}', 0, 'NORMAL_REVEALED', '${streakFixture.evidenceEventId}', '2026-10-16T00:00:00.000'::timestamp)`,
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "STREAK_DAY" ("id", "user_id", "activity_date", "first_session_id", "created_at") VALUES ('${streakFixture.streakDayId}', '${fixture.userA}', '2026-10-16', '${streakFixture.sessionId}', '2026-10-16T00:00:00.000'::timestamp)`,
+    );
+  });
+  return streakFixture;
+}
+
+async function readPreReceiptSnapshot(schemaName) {
+  return withSchemaClient(schemaName, async (prisma) => ({
+    legacy: await readLegacySnapshot(schemaName),
+    sessions: await prisma.$queryRawUnsafe(
+      'SELECT "id"::text AS id, "user_id"::text AS user_id, "vocabulary_set_id"::text AS vocabulary_set_id, "set_id_snapshot"::text AS set_id_snapshot, "mode"::text AS mode, "status"::text AS status, "create_operation_id"::text AS create_operation_id, "snapshot_size", "created_at"::text AS created_at, "expires_at"::text AS expires_at, "completed_at"::text AS completed_at, "completion_event_id"::text AS completion_event_id FROM "LEARNING_SESSION" ORDER BY "id"',
+    ),
+    items: await prisma.$queryRawUnsafe(
+      'SELECT "id"::text AS id, "session_id"::text AS session_id, "vocabulary_id"::text AS vocabulary_id, "position", "evidence"::text AS evidence, "evidence_event_id"::text AS evidence_event_id, "evidence_at"::text AS evidence_at FROM "LEARNING_SESSION_ITEM" ORDER BY "id"',
+    ),
+    streakDays: await prisma.$queryRawUnsafe(
+      'SELECT "id"::text AS id, "user_id"::text AS user_id, "activity_date"::text AS activity_date, "first_session_id"::text AS first_session_id, "created_at"::text AS created_at FROM "STREAK_DAY" ORDER BY "id"',
+    ),
+  }));
+}
+
+async function assertReceiptObjectsAbsent(schemaName) {
+  await withSchemaClient(schemaName, async (prisma) => {
+    assert.equal(
+      await scalarCount(
+        prisma,
+        `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'LEARNING_SESSION_SRS_RECEIPT'`,
+      ),
+      0,
+    );
+    assert.equal(
+      await scalarCount(
+        prisma,
+        `SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name = '${STREAK_MIGRATION}' AND finished_at IS NOT NULL`,
+      ),
+      1,
+    );
+    assert.equal(
+      await scalarCount(
+        prisma,
+        `SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name = '${SRS_RECEIPT_MIGRATION}' AND finished_at IS NOT NULL`,
+      ),
+      0,
+    );
+  });
+}
+
 async function assertStreakObjectsAbsent(schemaName) {
   await withSchemaClient(schemaName, async (prisma) => {
     for (const table of ["LEARNING_SESSION", "LEARNING_SESSION_ITEM", "STREAK_DAY"]) {
@@ -432,6 +629,36 @@ async function assertStreakObjectsAbsent(schemaName) {
 }
 
 async function verifySchemaObjects(prisma) {
+  const receiptColumns = await prisma.$queryRawUnsafe(
+    `SELECT column_name, data_type, udt_name, is_nullable, character_maximum_length, datetime_precision FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'LEARNING_SESSION_SRS_RECEIPT' ORDER BY ordinal_position`,
+  );
+  assert.deepEqual(receiptColumns, [
+    {
+      column_name: "event_id", data_type: "uuid", udt_name: "uuid",
+      is_nullable: "NO", character_maximum_length: null, datetime_precision: null,
+    },
+    {
+      column_name: "session_item_id", data_type: "uuid", udt_name: "uuid",
+      is_nullable: "NO", character_maximum_length: null, datetime_precision: null,
+    },
+    {
+      column_name: "rating", data_type: "character varying", udt_name: "varchar",
+      is_nullable: "NO", character_maximum_length: 5, datetime_precision: null,
+    },
+    {
+      column_name: "expected_revision", data_type: "integer", udt_name: "int4",
+      is_nullable: "NO", character_maximum_length: null, datetime_precision: null,
+    },
+    {
+      column_name: "accepted_revision", data_type: "integer", udt_name: "int4",
+      is_nullable: "NO", character_maximum_length: null, datetime_precision: null,
+    },
+    {
+      column_name: "accepted_at", data_type: "timestamp without time zone", udt_name: "timestamp",
+      is_nullable: "NO", character_maximum_length: null, datetime_precision: 3,
+    },
+  ]);
+
   const expectedEnums = Object.freeze({
     LEARNING_SESSION_MODE: ["NORMAL", "SRS", "QUIZ"],
     LEARNING_SESSION_STATUS: ["ACTIVE", "COMPLETED"],
@@ -462,6 +689,9 @@ async function verifySchemaObjects(prisma) {
     "LEARNING_SESSION_ITEM_session_id_fkey",
     "STREAK_DAY_user_id_fkey",
     "STREAK_DAY_first_session_id_fkey",
+    "LEARNING_SESSION_SRS_RECEIPT_rating_check",
+    "LEARNING_SESSION_SRS_RECEIPT_revision_check",
+    "LEARNING_SESSION_SRS_RECEIPT_session_item_id_fkey",
   ];
   const constraints = await prisma.$queryRawUnsafe(
     `SELECT conname, contype, confdeltype, confupdtype FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND conname IN (${constraintNames.map((name) => `'${name}'`).join(",")}) ORDER BY conname`,
@@ -498,6 +728,10 @@ async function verifySchemaObjects(prisma) {
     delete: "n",
     update: "c",
   });
+  assert.deepEqual(
+    fkActions.get("LEARNING_SESSION_SRS_RECEIPT_session_item_id_fkey"),
+    { delete: "c", update: "c" },
+  );
 
   const expectedIndexes = [
     "LEARNING_SESSION_user_id_create_operation_id_key",
@@ -508,6 +742,7 @@ async function verifySchemaObjects(prisma) {
     "LEARNING_SESSION_ITEM_session_id_vocabulary_id_key",
     "LEARNING_SESSION_ITEM_session_id_position_key",
     "STREAK_DAY_user_id_activity_date_key",
+    "LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_idx",
   ];
   const indexes = await prisma.$queryRawUnsafe(
     `SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (${expectedIndexes.map((name) => `'${name}'`).join(",")}) ORDER BY indexname`,
@@ -556,7 +791,7 @@ async function verifyConstraintFailures(prisma, fixture) {
     createdAt,
     expiresAt,
   });
-  await insertItem(prisma, {
+  const firstItemId = await insertItem(prisma, {
     sessionId,
     vocabularyId: fixture.vocabularyA,
     position: 0,
@@ -573,6 +808,28 @@ async function verifyConstraintFailures(prisma, fixture) {
       position: 10,
     }),
   );
+
+  const receiptEventId = randomUUID();
+  await insertSrsReceipt(prisma, {
+    eventId: receiptEventId,
+    sessionItemId: firstItemId,
+    rating: "AGAIN",
+    expectedRevision: 0,
+    acceptedRevision: 1,
+    acceptedAt: createdAt,
+  });
+  await expectRejected(() => insertSrsReceipt(prisma, {
+    eventId: randomUUID(), sessionItemId: firstItemId, rating: "INVALID",
+    expectedRevision: 1, acceptedRevision: 2, acceptedAt: createdAt,
+  }));
+  await expectRejected(() => insertSrsReceipt(prisma, {
+    eventId: randomUUID(), sessionItemId: firstItemId, rating: "GOOD",
+    expectedRevision: 1, acceptedRevision: 3, acceptedAt: createdAt,
+  }));
+  await expectRejected(() => insertSrsReceipt(prisma, {
+    eventId: receiptEventId, sessionItemId: firstItemId, rating: "AGAIN",
+    expectedRevision: 0, acceptedRevision: 1, acceptedAt: createdAt,
+  }));
   await expectRejected(() =>
     prisma.$executeRawUnsafe(
       `UPDATE "LEARNING_SESSION_ITEM" SET "evidence" = 'NORMAL_REVEALED' WHERE "session_id" = '${sessionId}' AND "position" = 0`,
@@ -598,9 +855,10 @@ async function verifyConstraintFailures(prisma, fixture) {
       `INSERT INTO "STREAK_DAY" ("id", "user_id", "activity_date", "first_session_id") VALUES ('${randomUUID()}', '${fixture.userA}', '2026-10-17', '${sessionId}')`,
     ),
   );
+  return sessionId;
 }
 
-async function verifyDeletionBehavior(prisma, fixture) {
+async function verifyDeletionBehavior(prisma, fixture, sessionId) {
   await prisma.$executeRawUnsafe(
     `DELETE FROM "VOCABULARY_SET_ITEM" WHERE "id" = '${fixture.setItemId}'`,
   );
@@ -608,16 +866,26 @@ async function verifyDeletionBehavior(prisma, fixture) {
     `DELETE FROM "VOCABULARY_SET" WHERE "id" = '${fixture.setId}'`,
   );
   const [session] = await prisma.$queryRawUnsafe(
-    `SELECT "vocabulary_set_id", "set_id_snapshot"::text AS set_id_snapshot FROM "LEARNING_SESSION" WHERE "user_id" = '${fixture.userA}'`,
+    `SELECT "vocabulary_set_id", "set_id_snapshot"::text AS set_id_snapshot FROM "LEARNING_SESSION" WHERE "id" = '${sessionId}'`,
   );
   assert.equal(session.vocabulary_set_id, null);
   assert.equal(session.set_id_snapshot, fixture.setId);
   assert.equal(
     await scalarCount(
       prisma,
-      `SELECT COUNT(*) FROM "LEARNING_SESSION_ITEM" WHERE "session_id" IN (SELECT "id" FROM "LEARNING_SESSION" WHERE "user_id" = '${fixture.userA}')`,
+      `SELECT COUNT(*) FROM "LEARNING_SESSION_ITEM" WHERE "session_id" = '${sessionId}'`,
     ),
     2,
+  );
+  const [receipt] = await prisma.$queryRawUnsafe(
+    'SELECT "session_item_id"::text AS session_item_id FROM "LEARNING_SESSION_SRS_RECEIPT" LIMIT 1',
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "LEARNING_SESSION_ITEM" WHERE "id" = '${receipt.session_item_id}'`,
+  );
+  assert.equal(
+    await scalarCount(prisma, 'SELECT COUNT(*) FROM "LEARNING_SESSION_SRS_RECEIPT"'),
+    0,
   );
   await expectRejected(() =>
     prisma.$executeRawUnsafe(`DELETE FROM "USER" WHERE "id" = '${fixture.userA}'`),
@@ -634,8 +902,19 @@ async function insertSession(
 }
 
 async function insertItem(prisma, { sessionId, vocabularyId, position }) {
+  const id = randomUUID();
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "LEARNING_SESSION_ITEM" ("id", "session_id", "vocabulary_id", "position") VALUES ('${randomUUID()}', '${sessionId}', '${vocabularyId}', ${position})`,
+    `INSERT INTO "LEARNING_SESSION_ITEM" ("id", "session_id", "vocabulary_id", "position") VALUES ('${id}', '${sessionId}', '${vocabularyId}', ${position})`,
+  );
+  return id;
+}
+
+async function insertSrsReceipt(
+  prisma,
+  { eventId, sessionItemId, rating, expectedRevision, acceptedRevision, acceptedAt },
+) {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "LEARNING_SESSION_SRS_RECEIPT" ("event_id", "session_item_id", "rating", "expected_revision", "accepted_revision", "accepted_at") VALUES ('${eventId}', '${sessionItemId}', '${rating}', ${expectedRevision}, ${acceptedRevision}, '${acceptedAt}'::timestamp)`,
   );
 }
 

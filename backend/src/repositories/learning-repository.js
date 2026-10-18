@@ -186,7 +186,7 @@ export function createLearningRepository(prisma) {
 
     withTransaction(callback) {
       return prisma.$transaction(
-        async (transaction) => callback(createLearningRepository(transaction)),
+        async (transaction) => callback(createLearningRepository(transaction), transaction),
         { maxWait: 10_000, timeout: 30_000 },
       );
     },

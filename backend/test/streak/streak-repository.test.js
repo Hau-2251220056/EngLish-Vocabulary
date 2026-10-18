@@ -80,6 +80,34 @@ test("repository scopes reads by owner and exposes session-before-item lock orde
   assert.match(calls[2].sql, /LEARNING_SESSION_ITEM[\s\S]*ORDER BY "position" ASC[\s\S]*FOR UPDATE/);
 });
 
+test("SRS receipts use global event identity and the caller transaction", async () => {
+  const calls = [];
+  const repository = createLearningSessionRepository(fakeTransaction(calls));
+  const acceptedAt = new Date("2026-10-18T03:00:00.000Z");
+  const eventId = "77777777-7777-4777-8777-777777777777";
+
+  await repository.findSrsReceipt(eventId);
+  assert.deepEqual(calls.at(-1).args.where, { event_id: eventId });
+
+  await repository.recordSrsReceipt({
+    item: { id: "item-1" },
+    eventId,
+    rating: "AGAIN",
+    expectedRevision: 0,
+    acceptedRevision: 1,
+    acceptedAt,
+  });
+  assert.equal(calls.at(-1).name, "receipt.create");
+  assert.deepEqual(calls.at(-1).args.data, {
+    event_id: eventId,
+    session_item_id: "item-1",
+    rating: "AGAIN",
+    expected_revision: 0,
+    accepted_revision: 1,
+    accepted_at: acceptedAt,
+  });
+});
+
 test("creation and evidence identities replay only the exact original payload", () => {
   const existing = activeSession();
   assert.equal(
@@ -421,6 +449,16 @@ function fakeTransaction(calls) {
       async updateMany(args) {
         calls.push({ name: "item.updateMany", args });
         return { count: 1 };
+      },
+    },
+    lEARNING_SESSION_SRS_RECEIPT: {
+      async findUnique(args) {
+        calls.push({ name: "receipt.findUnique", args });
+        return null;
+      },
+      async create(args) {
+        calls.push({ name: "receipt.create", args });
+        return args.data;
       },
     },
     sTREAK_DAY: {

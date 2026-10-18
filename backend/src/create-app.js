@@ -122,6 +122,8 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   const learningRepository = createLearningRepository(prisma);
   const learningService = createLearningService({
     learningRepository,
+    createSessionRepository: createLearningSessionRepository,
+    createStreakRepository,
     ...(learningNow ? { now: learningNow } : {}),
   });
   const learningController = createLearningController({ learningService });

@@ -36,6 +36,28 @@ const SESSION_SELECT = Object.freeze({
   },
 });
 
+const SRS_RECEIPT_SELECT = Object.freeze({
+  event_id: true,
+  session_item_id: true,
+  rating: true,
+  expected_revision: true,
+  accepted_revision: true,
+  accepted_at: true,
+  session_item: {
+    select: {
+      id: true,
+      session_id: true,
+      vocabulary_id: true,
+      session: {
+        select: {
+          user_id: true,
+          mode: true,
+        },
+      },
+    },
+  },
+});
+
 export class LearningSessionPersistenceError extends Error {
   constructor(code, message) {
     super(message);
@@ -106,7 +128,37 @@ export function createLearningSessionRepository(transaction) {
     findEvidenceReplay(evidenceEventId) {
       return transaction.lEARNING_SESSION_ITEM.findUnique({
         where: { evidence_event_id: evidenceEventId },
-        select: SESSION_SELECT.items.select,
+        select: {
+          ...SESSION_SELECT.items.select,
+          session: { select: { user_id: true } },
+        },
+      });
+    },
+
+    findSrsReceipt(eventId) {
+      return transaction.lEARNING_SESSION_SRS_RECEIPT.findUnique({
+        where: { event_id: eventId },
+        select: SRS_RECEIPT_SELECT,
+      });
+    },
+
+    recordSrsReceipt({ item, eventId, rating, expectedRevision, acceptedRevision, acceptedAt }) {
+      if (!item?.id) {
+        throw persistenceError(
+          "LEARNING_SESSION_ITEM_MISMATCH",
+          "SRS receipt requires an authoritative Session Item.",
+        );
+      }
+      return transaction.lEARNING_SESSION_SRS_RECEIPT.create({
+        data: {
+          event_id: eventId,
+          session_item_id: item.id,
+          rating,
+          expected_revision: expectedRevision,
+          accepted_revision: acceptedRevision,
+          accepted_at: cloneInstant(acceptedAt, "acceptedAt"),
+        },
+        select: SRS_RECEIPT_SELECT,
       });
     },
 
@@ -364,6 +416,7 @@ function requireTransactionClient(transaction) {
     || typeof transaction !== "object"
     || !transaction.lEARNING_SESSION
     || !transaction.lEARNING_SESSION_ITEM
+    || !transaction.lEARNING_SESSION_SRS_RECEIPT
     || typeof transaction.$queryRaw !== "function"
   ) {
     throw new TypeError("A caller-provided Prisma transaction client is required.");

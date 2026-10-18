@@ -210,7 +210,7 @@ export function createStreakService({ withTransaction, createStreakRepository, n
   });
 }
 
-async function readStreakProjection(repository, userId, instant) {
+export async function readStreakProjection(repository, userId, instant) {
   const today = toApplicationDate(instant);
   const dates = await repository.listActivityDatesThrough(userId, today);
   return projectCurrentStreak(dates, instant);
@@ -349,7 +349,7 @@ function revealResult(session, item, instant, replayed, alreadyAcknowledged) {
   };
 }
 
-function toSessionProjection(session, evaluatedAt) {
+export function toSessionProjection(session, evaluatedAt) {
   const items = session.items.map((item) => ({
     vocabulary_id: item.vocabulary_id,
     position: item.position,

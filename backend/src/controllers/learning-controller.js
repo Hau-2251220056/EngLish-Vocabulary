@@ -47,6 +47,10 @@ function handleKnownLearningError(error, res, next) {
     LEARNING_SET_EMPTY: 409,
     LEARNING_SET_ITEM_CHANGED: 409,
     LEARNING_PROGRESS_CHANGED: 409,
+    LEARNING_SESSION_NOT_FOUND: 404,
+    LEARNING_SESSION_INACCESSIBLE: 409,
+    LEARNING_SESSION_EXPIRED: 409,
+    LEARNING_SESSION_EVENT_CONFLICT: 409,
   };
   const status = statusByCode[error?.code];
   if (!status) {

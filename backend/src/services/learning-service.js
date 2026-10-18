@@ -10,6 +10,12 @@ import {
   projectXpLevel,
 } from "./xp-level-service.js";
 import { isXpRewardCollisionError } from "../repositories/xp-reward-repository.js";
+import {
+  assertSnapshotIntegrity,
+} from "../repositories/learning-session-repository.js";
+import { completeLearningSessionAtomically } from "./learning-session-persistence.js";
+import { captureOperationTime, projectSessionLifecycle } from "./learning-session-domain.js";
+import { readStreakProjection, toSessionProjection } from "./learning-session-service.js";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -35,7 +41,12 @@ export class LearningServiceError extends Error {
   }
 }
 
-export function createLearningService({ learningRepository, now = () => new Date() }) {
+export function createLearningService({
+  learningRepository,
+  createSessionRepository,
+  createStreakRepository,
+  now = () => new Date(),
+}) {
   return {
     async getLearningSet(userId, setId, input = {}) {
       validateUuid(userId);
@@ -135,6 +146,30 @@ export function createLearningService({ learningRepository, now = () => new Date
     async recordMeaningfulEvent(userId, input) {
       validateUuid(userId);
       const event = validateEventInput(input);
+      if (event.session_id) {
+        if (typeof createSessionRepository !== "function"
+          || typeof createStreakRepository !== "function") {
+          throw new TypeError("Session-aware Learning dependencies are required.");
+        }
+        try {
+          return await recordSessionAwareSrsEvent({
+            learningRepository, createSessionRepository, createStreakRepository,
+            userId, event, now,
+          });
+        } catch (error) {
+          if (isSrsReceiptCollision(error) || isEvidenceEventCollision(error)) {
+            return recordSessionAwareSrsEvent({
+              learningRepository, createSessionRepository, createStreakRepository,
+              userId, event, now,
+            });
+          }
+          if (isProgressIdentityCollision(error) || error?.code === "P2034"
+            || isXpRewardCollisionError(error)) {
+            throw learningProgressChangedError();
+          }
+          throw error;
+        }
+      }
       const acceptedAt = captureNow(now);
       try {
         return await learningRepository.withTransaction(async (repository) => {
@@ -253,6 +288,213 @@ export function createLearningService({ learningRepository, now = () => new Date
         throw error;
       }
     },
+  };
+}
+
+async function recordSessionAwareSrsEvent({
+  learningRepository, createSessionRepository, createStreakRepository, userId, event, now,
+}) {
+  return learningRepository.withTransaction(async (repository, transaction) => {
+    const sessions = createSessionRepository(transaction);
+    const streaks = createStreakRepository(transaction);
+    const session = await sessions.lockOwnedSession(event.session_id, userId);
+    if (!session) throw sessionNotFoundError();
+    if (session.mode !== "SRS" || session.set_id_snapshot !== event.set_id) {
+      throw sessionEventConflictError();
+    }
+    const lockedItems = await sessions.lockSessionItems(session.id);
+    assertSnapshotIntegrity(session.snapshot_size, lockedItems);
+    const item = lockedItems.find(({ vocabulary_id: vocabularyId }) => (
+      vocabularyId === event.vocabulary_id
+    ));
+    if (!item) throw sessionEventConflictError();
+
+    const resolvingEvidence = event.rating === "AGAIN" ? null : `SRS_${event.rating}`;
+    const receipt = await sessions.findSrsReceipt(event.event_id);
+    if (receipt) {
+      return replaySessionAwareSrsEvent({
+        repository, streaks, session, lockedItems, item, receipt,
+        userId, event, resolvingEvidence, now,
+      });
+    }
+    const existingEvidence = await sessions.findEvidenceReplay(event.event_id);
+    if (existingEvidence) {
+      if (existingEvidence.session?.user_id !== userId) throw sessionNotFoundError();
+      throw sessionEventConflictError();
+    }
+
+    if (!await repository.lockAccessibleSetForSessionSnapshot(event.set_id, userId)) {
+      throw sessionInaccessibleError();
+    }
+    for (const candidate of [...lockedItems].sort((left, right) => (
+      left.vocabulary_id.localeCompare(right.vocabulary_id)
+    ))) {
+      if (!await repository.lockSetItem(event.set_id, candidate.vocabulary_id)) {
+        throw sessionInaccessibleError();
+      }
+    }
+    await repository.lockProgressIdentity(userId, event.vocabulary_id);
+    const current = await repository.findProgress(userId, event.vocabulary_id);
+    const serializedReceipt = await sessions.findSrsReceipt(event.event_id);
+    if (serializedReceipt) {
+      return replaySessionAwareSrsEvent({
+        repository, streaks, session, lockedItems, item, receipt: serializedReceipt,
+        userId, event, resolvingEvidence, now, progressAlreadyLocked: true,
+      });
+    }
+    if (current?.last_event_id === event.event_id) {
+      throw sessionEventConflictError();
+    }
+    const acceptedAt = captureNow(now);
+
+    const lifecycle = projectSessionLifecycle(session, acceptedAt);
+    if (lifecycle === "EXPIRED") throw sessionExpiredError();
+    if (item.evidence !== null || lifecycle !== "ACTIVE") throw sessionEventConflictError();
+    const result = await applyAcceptedSrsMutation(repository, userId, event, acceptedAt, current);
+    await sessions.recordSrsReceipt({
+      item,
+      eventId: event.event_id,
+      rating: event.rating,
+      expectedRevision: event.expected_revision,
+      acceptedRevision: result.revision,
+      acceptedAt,
+    });
+    if (!resolvingEvidence) {
+      return { ...result, session: toSessionProjection({ ...session, items: lockedItems }, acceptedAt) };
+    }
+
+    const recorded = await sessions.recordEvidence({
+      session,
+      item,
+      evidence: resolvingEvidence,
+      eventId: event.event_id,
+      acceptedAt,
+    });
+    if (recorded.count !== 1) throw sessionEventConflictError();
+    const resolvedItems = lockedItems.map((candidate) => candidate.id === item.id ? {
+      ...candidate,
+      evidence: resolvingEvidence,
+      evidence_event_id: event.event_id,
+      evidence_at: acceptedAt,
+    } : candidate);
+    if (!resolvedItems.every(({ evidence }) => evidence !== null)) {
+      return { ...result, session: toSessionProjection({ ...session, items: resolvedItems }, acceptedAt) };
+    }
+
+    const completion = await completeLearningSessionAtomically({
+      sessionRepository: sessions,
+      streakRepository: streaks,
+      sessionId: session.id,
+      userId,
+      completionEventId: event.event_id,
+      captureTime: () => captureOperationTime(() => acceptedAt),
+    });
+    return {
+      ...result,
+      session: toSessionProjection(completion.session, acceptedAt),
+      streak: await readStreakProjection(streaks, userId, acceptedAt),
+    };
+  });
+}
+
+async function replaySessionAwareSrsEvent({
+  repository, streaks, session, lockedItems, item, receipt,
+  userId, event, resolvingEvidence, now, progressAlreadyLocked = false,
+}) {
+  if (receipt.session_item?.session?.user_id !== userId) throw sessionNotFoundError();
+  if (
+    receipt.session_item.session.mode !== "SRS"
+    || receipt.session_item.session_id !== session.id
+    || receipt.session_item_id !== item.id
+    || receipt.session_item.vocabulary_id !== event.vocabulary_id
+    || receipt.rating !== event.rating
+    || receipt.expected_revision !== event.expected_revision
+  ) {
+    throw sessionEventConflictError();
+  }
+  if (!progressAlreadyLocked) {
+    await repository.lockProgressIdentity(userId, event.vocabulary_id);
+  }
+  const current = await repository.findProgress(userId, event.vocabulary_id);
+  if (
+    current?.last_event_id !== event.event_id
+    || current.revision !== receipt.accepted_revision
+  ) {
+    throw learningProgressChangedError();
+  }
+  if (resolvingEvidence) {
+    if (item.evidence_event_id !== event.event_id || item.evidence !== resolvingEvidence) {
+      throw sessionEventConflictError();
+    }
+  } else if (item.evidence !== null || item.evidence_event_id !== null) {
+    throw sessionEventConflictError();
+  }
+  const evaluatedAt = captureNow(now);
+  return attachSessionResult(
+    await toAcceptedEventResult(repository, userId, event, current, true),
+    session, lockedItems, streaks, userId, evaluatedAt,
+  );
+}
+
+async function applyAcceptedSrsMutation(repository, userId, event, acceptedAt, current) {
+  if (current && !evaluateProgress(current, acceptedAt).is_eligible) {
+    throw learningProgressChangedError();
+  }
+  if ((!current && event.expected_revision !== 0)
+    || (current && current.revision !== event.expected_revision)) {
+    throw learningProgressChangedError();
+  }
+  const initialReward = await repository.findRewardByIdentity(
+    userId, event.vocabulary_id, XP_REWARD_TYPES.SRS_INITIAL, 0,
+  );
+  const rewardCandidate = deriveSrsRewardCandidate({
+    user_id: userId,
+    vocabulary_id: event.vocabulary_id,
+    rating: event.rating,
+    progress: current,
+    has_initial_reward: Boolean(initialReward),
+    accepted_at: acceptedAt,
+  });
+  const transition = calculateRatingTransition(current, event.rating, acceptedAt);
+  const data = {
+    status: transition.status,
+    interval_days: transition.interval_days,
+    next_review_at: transition.next_review_at,
+    last_reviewed_at: transition.last_reviewed_at,
+    last_event_id: event.event_id,
+  };
+  if (!current) {
+    const created = await repository.createProgress({
+      user_id: userId,
+      vocabulary_id: event.vocabulary_id,
+      ...data,
+      review_count: 1,
+      revision: 1,
+    });
+    return completeAcceptedEvent(repository, userId, event, created, rewardCandidate);
+  }
+  const updated = await repository.updateProgressAtRevision(current.id, event.expected_revision, {
+    ...data,
+    review_count: { increment: 1 },
+    revision: { increment: 1 },
+  });
+  if (updated.count !== 1) throw learningProgressChangedError();
+  return completeAcceptedEvent(
+    repository,
+    userId,
+    event,
+    await repository.findProgress(userId, event.vocabulary_id),
+    rewardCandidate,
+  );
+}
+
+async function attachSessionResult(result, session, items, streaks, userId, acceptedAt) {
+  const projected = toSessionProjection({ ...session, items }, acceptedAt);
+  if (projected.state !== "COMPLETED") return { ...result, session: projected };
+  return {
+    ...result,
+    session: projected,
+    streak: await readStreakProjection(streaks, userId, acceptedAt),
   };
 }
 
@@ -394,9 +636,10 @@ function validateUuid(value) {
 
 function validateEventInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw validationError();
+  const fields = Object.keys(input);
   if (
-    Object.keys(input).length !== EVENT_FIELDS.size
-    || Object.keys(input).some((field) => !EVENT_FIELDS.has(field))
+    (fields.length !== EVENT_FIELDS.size && fields.length !== EVENT_FIELDS.size + 1)
+    || fields.some((field) => !EVENT_FIELDS.has(field) && field !== "session_id")
     || [...EVENT_FIELDS].some((field) => !Object.hasOwn(input, field))
   ) {
     throw validationError();
@@ -404,6 +647,7 @@ function validateEventInput(input) {
   validateUuid(input.event_id);
   validateUuid(input.set_id);
   validateUuid(input.vocabulary_id);
+  if (Object.hasOwn(input, "session_id")) validateUuid(input.session_id);
   if (
     !Number.isSafeInteger(input.expected_revision)
     || input.expected_revision < 0
@@ -478,4 +722,60 @@ function learningProgressChangedError() {
     "LEARNING_PROGRESS_CHANGED",
     "Learning progress changed. Refresh before trying again.",
   );
+}
+
+function sessionNotFoundError() {
+  return new LearningServiceError(
+    "LEARNING_SESSION_NOT_FOUND",
+    "Learning session was not found.",
+  );
+}
+
+function sessionInaccessibleError() {
+  return new LearningServiceError(
+    "LEARNING_SESSION_INACCESSIBLE",
+    "Learning session is no longer accessible.",
+  );
+}
+
+function sessionExpiredError() {
+  return new LearningServiceError(
+    "LEARNING_SESSION_EXPIRED",
+    "Learning session has expired.",
+  );
+}
+
+function sessionEventConflictError() {
+  return new LearningServiceError(
+    "LEARNING_SESSION_EVENT_CONFLICT",
+    "Learning session event conflicts with accepted evidence.",
+  );
+}
+
+function prismaUniqueTarget(error) {
+  if (error?.code !== "P2002") return "";
+  return Array.isArray(error.meta?.target)
+    ? error.meta.target.join(",")
+    : String(error.meta?.target ?? error.meta?.constraint ?? "");
+}
+
+function isSrsReceiptCollision(error) {
+  const target = prismaUniqueTarget(error);
+  return target.includes("LEARNING_SESSION_SRS_RECEIPT_pkey")
+    || (error?.meta?.modelName === "LEARNING_SESSION_SRS_RECEIPT"
+      && target.split(",").includes("event_id"));
+}
+
+function isEvidenceEventCollision(error) {
+  const target = prismaUniqueTarget(error);
+  return target.includes("LEARNING_SESSION_ITEM_evidence_event_id_key")
+    || (error?.meta?.modelName === "LEARNING_SESSION_ITEM"
+      && target.split(",").includes("evidence_event_id"));
+}
+
+function isProgressIdentityCollision(error) {
+  const target = prismaUniqueTarget(error);
+  return target.includes("LEARNING_PROGRESS_user_id_vocabulary_id_key")
+    || (error?.meta?.modelName === "LEARNING_PROGRESS"
+      && target.includes("user_id") && target.includes("vocabulary_id"));
 }
