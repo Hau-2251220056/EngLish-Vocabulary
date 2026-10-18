@@ -109,6 +109,62 @@ test("Learning mutation accepts authoritative original, replay, zero and MAX rew
   }
 });
 
+test("session-aware SRS validates identity, evidence and terminal Streak without changing legacy shape", async () => {
+  const request = {
+    event_id: reward.source_event_id,
+    session_id: SESSION_ID,
+    set_id: SET_ID,
+    vocabulary_id: VOCABULARY_ID,
+    expected_revision: 0,
+    rating: "GOOD",
+  };
+  const completed = srsSession({
+    state: "COMPLETED",
+    completed_at: NOW,
+    completed_items: 1,
+    evidence: "SRS_GOOD",
+  });
+  const value = { ...ratingProgress, vocabulary_id: VOCABULARY_ID, session: completed, streak };
+  const service = createLearningService({ async post() { return { data: { data: value } }; } });
+  assert.deepEqual(await service.recordMeaningfulEvent(request), value);
+
+  for (const malformed of [
+    { ...value, session: { ...completed, id: "99999999-9999-4999-8999-999999999999" } },
+    { ...value, session: { ...completed, mode: "NORMAL" } },
+    { ...value, session: srsSession({ evidence: null }) },
+    { ...value, streak: undefined },
+  ]) {
+    await assert.rejects(
+      createLearningService({ async post() { return { data: { data: malformed } }; } })
+        .recordMeaningfulEvent(request),
+      { code: "INVALID_LEARNING_RESPONSE" },
+    );
+  }
+});
+
+test("session-aware AGAIN requires unresolved evidence and nonterminal responses omit Streak", async () => {
+  const request = {
+    event_id: reward.source_event_id,
+    session_id: SESSION_ID,
+    set_id: SET_ID,
+    vocabulary_id: VOCABULARY_ID,
+    expected_revision: 0,
+    rating: "AGAIN",
+  };
+  const value = { ...ratingProgress, vocabulary_id: VOCABULARY_ID, session: srsSession() };
+  assert.deepEqual(await createLearningService({
+    async post() { return { data: { data: value } }; },
+  }).recordMeaningfulEvent(request), value);
+  await assert.rejects(createLearningService({
+    async post() { return { data: { data: { ...value, streak } } }; },
+  }).recordMeaningfulEvent(request), { code: "INVALID_LEARNING_RESPONSE" });
+  await assert.rejects(createLearningService({
+    async post() { throw new Error("transport must not run"); },
+  }).recordMeaningfulEvent({ ...request, session_id: "not-a-uuid" }), {
+    code: "INVALID_LEARNING_RATING",
+  });
+});
+
 test("NORMAL reads preserve server-authored identity, word and order without issuing writes", async () => {
   const calls = [];
   const duplicateWordSet = {
@@ -184,6 +240,9 @@ function createClient(calls) {
 }
 
 const NOW = "2026-10-04T03:15:00.000Z";
+const SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const SET_ID = "44444444-4444-4444-8444-444444444444";
+const VOCABULARY_ID = "55555555-5555-4555-8555-555555555555";
 const xpLevel = Object.freeze({ total_xp: 50, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false });
 const reward = Object.freeze({ source_event_id: "22222222-2222-4222-8222-222222222222", xp_earned: 3, replayed: false, ...xpLevel });
 const previews = Object.freeze({ AGAIN: { kind: "SESSION_REQUEUE", interval_days: null }, HARD: { kind: "SCHEDULED", interval_days: 1 }, GOOD: { kind: "SCHEDULED", interval_days: 3 }, EASY: { kind: "SCHEDULED", interval_days: 7 } });
@@ -195,3 +254,12 @@ Object.freeze(normalCard);
 const normalSet = Object.freeze({ id: "s", name: "Set", mode: "NORMAL", total_items: 1, cards: [normalCard] });
 const ratingProgress = Object.freeze({ vocabulary_id: "v", status: "LEARNED", effective_status: "LEARNED", stage: 1, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: 1, reward });
 const learningProgress = Object.freeze({ evaluated_at: NOW, xp_level: xpLevel, summary: { total_started: 1, learning: 0, learned: 1, needs_review: 0 }, items: [{ vocabulary: { id: "v", word: "book", phonetic: null }, status: "LEARNED", review_count: 1, last_reviewed_at: NOW, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z" }], pagination: { page: 1, page_size: 20, total_items: 1, total_pages: 1 }, filter: { status: null } });
+const streak = Object.freeze({ current_streak: 1, completed_today: true, last_qualified_date: "2026-10-04", timezone: "Asia/Ho_Chi_Minh", evaluated_at: NOW });
+function srsSession({ state = "ACTIVE", completed_at = null, completed_items = 0, evidence = null } = {}) {
+  return {
+    id: SESSION_ID, set_id: SET_ID, mode: "SRS", state,
+    created_at: "2026-10-04T03:00:00.000Z", expires_at: "2026-10-11T03:00:00.000Z",
+    completed_at, snapshot_size: 1, completed_items,
+    items: [{ vocabulary_id: VOCABULARY_ID, position: 0, evidence }],
+  };
+}

@@ -82,7 +82,9 @@ test("SRS completion and up-to-date UI use the approved status and explicit cont
 
 test("SRS feedback sends only backend reward data to the shared Toast and never persists it", async () => {
   const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /const \{ reward, \.\.\.progress \} = await learningService\.recordMeaningfulEvent\(nextAttempt\)/);
+  assert.match(source, /const accepted = await learningService\.recordMeaningfulEvent\(nextAttempt\)/);
+  assert.match(source, /const \{ reward, session \} = accepted/);
+  assert.match(source, /session_id: srsSession\.session_id/);
   assert.match(source, /applySrsRating\(pendingState, currentCard\.id, rating, progress\)/);
   assert.match(source, /showXpRewardToast\(reward, shownXpRewardEventsRef\.current\)/);
   assert.doesNotMatch(source, /applySrsRating\([^\n]*reward/);

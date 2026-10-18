@@ -96,6 +96,30 @@ test("zero and replayed SRS responses never announce XP", async ({ page }) => {
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 });
 
+test("SRS lost response retry preserves the exact event and session identity", async ({ page }) => {
+  const calls = await installLearningMock(page, { failEventOnce: true });
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).click();
+  await expect(page.getByRole("alert")).toContainText("thử lại");
+  const original = { ...calls.events[0] };
+  await page.reload();
+  await expect(page.getByRole("alert")).toContainText("chưa xác định kết quả");
+  await page.getByRole("alert").getByRole("button", { name: "Thử lại" }).click();
+  expect(calls.events).toHaveLength(2);
+  expect(calls.events[1]).toEqual(original);
+  expect(calls.events[1].session_id).toBe(SESSION_ID);
+});
+
+test("SRS terminal mutation rejection reconciles authoritative expiry", async ({ page }) => {
+  const terminal = await installLearningMock(page, { eventTerminalCode: "LEARNING_SESSION_EXPIRED" });
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).click();
+  await expect(page.getByRole("alert")).toContainText("Phiên SRS đã hết hạn");
+  expect(terminal.events).toHaveLength(1);
+});
+
 test("NORMAL preserves browsing and never submits a rating", async ({ page }) => {
   const calls = await installLearningMock(page);
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
@@ -133,6 +157,7 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
   const calls = await installLearningMock(page);
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
 
   for (let number = 1; number <= 4; number += 1) {
     await page.getByRole("heading", { name: `word-${number}` }).press("Space");
@@ -150,7 +175,8 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
-  expect(calls.sessions.filter(({ method, pathname }) => method === "POST" && pathname === "/api/learning-sessions")).toHaveLength(1);
+  expect(calls.sessions.filter(({ method, pathname, body }) => method === "POST"
+    && pathname === "/api/learning-sessions" && body.mode === "NORMAL")).toHaveLength(1);
 });
 
 test("NORMAL retries a lost reveal with the same operation and resumes its persisted cursor", async ({ page }) => {
@@ -178,7 +204,9 @@ test("NORMAL retries a lost reveal with the same operation and resumes its persi
 test("NORMAL reveal expiry reconciles terminal state and preserves keyboard focus recovery", async ({ page }) => {
   const calls = await installLearningMock(page, { revealTerminalCode: "LEARNING_SESSION_EXPIRED" });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBe(1);
   await page.getByRole("group").first().getByRole("button").nth(1).click();
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
@@ -188,7 +216,9 @@ test("NORMAL reveal expiry reconciles terminal state and preserves keyboard focu
 test("NORMAL completion access revocation reconciles inaccessible without evidence mutation", async ({ page }) => {
   const calls = await installLearningMock(page, { cardCount: 1, completeTerminalCode: "LEARNING_SESSION_INACCESSIBLE" });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBe(1);
   await page.getByRole("group").first().getByRole("button").nth(1).click();
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("navigation").getByRole("button").nth(1).click();
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
@@ -317,7 +347,7 @@ test("old two-outcome storage fails closed and accepted state resumes after relo
 
 test("a completed v3 review remains completed until explicit continuation", async ({ page }) => {
   await seedSettledSession(page);
-  await installLearningMock(page);
+  await installLearningMock(page, { initialSession: completedSrsProjection(4) });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
@@ -326,7 +356,7 @@ test("a completed v3 review remains completed until explicit continuation", asyn
 
 test("a completed v3 review can explicitly continue into the up-to-date state", async ({ page }) => {
   await seedSettledSession(page);
-  await installLearningMock(page, { upToDate: true });
+  await installLearningMock(page, { upToDate: true, initialSession: completedSrsProjection(4) });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
@@ -536,15 +566,27 @@ async function expectEqualNavigationButtons(previous, next) {
 async function installLearningMock(page, options = {}) {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const calls = { reads: [], events: [], sessions: [] };
-  let session = null;
+  let session = options.initialSession ?? null;
   let revealFailures = options.failRevealOnce ? 1 : 0;
+  let eventFailures = options.failEventOnce ? 1 : 0;
   await page.route("**/api/learning-sessions**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const body = request.postData() ? request.postDataJSON() : {};
     calls.sessions.push({ method: request.method(), pathname: url.pathname, body });
     if (request.method() === "POST" && url.pathname === "/api/learning-sessions") {
-      session = normalSessionProjection(body.vocabulary_ids);
+      const srsUpToDate = typeof options.upToDate === "function"
+        ? options.upToDate(calls) : options.upToDate;
+      if (body.mode === "SRS" && srsUpToDate === true) {
+        await route.fulfill({ status: 200, json: { success: true, data: {
+          session: null, reason: "SRS_UP_TO_DATE", replayed: false,
+        } } });
+        return;
+      }
+      const ids = body.mode === "SRS"
+        ? Array.from({ length: options.cardCount ?? 4 }, (_, index) => vocabularyId(index + 1))
+        : body.vocabulary_ids;
+      session = learningSessionProjection(body.mode, ids);
       await route.fulfill({ status: 201, json: { success: true, data: { session, replayed: false } } });
       return;
     }
@@ -598,7 +640,39 @@ async function installLearningMock(page, options = {}) {
   await page.route("**/api/learning/events", async (route) => {
     const body = route.request().postDataJSON();
     calls.events.push(body);
+    if (eventFailures > 0) {
+      eventFailures -= 1;
+      await route.fulfill({ status: 503, json: failure("LEARNING_REQUEST_FAILED") });
+      return;
+    }
+    if (options.eventTerminalCode) {
+      session = terminalSession(session, options.eventTerminalCode);
+      await route.fulfill({ status: 409, json: failure(options.eventTerminalCode) });
+      return;
+    }
     const response = options.onEvent ? await options.onEvent(body) : { status: 200, json: successRating(body) };
+    if (response.status === 200 && response.json?.data && body.session_id === session?.id) {
+      const evidence = body.rating === "AGAIN" ? null : `SRS_${body.rating}`;
+      if (evidence) {
+        session = { ...session, items: session.items.map((item) => (
+          item.vocabulary_id === body.vocabulary_id ? { ...item, evidence } : item
+        )) };
+        const completedItems = session.items.filter((item) => item.evidence !== null).length;
+        session = {
+          ...session,
+          completed_items: completedItems,
+          ...(completedItems === session.snapshot_size
+            ? { state: "COMPLETED", completed_at: NOW } : {}),
+        };
+      }
+      response.json.data.session = session;
+      if (session.state === "COMPLETED") {
+        response.json.data.streak = {
+          current_streak: 1, completed_today: true, last_qualified_date: "2026-10-04",
+          timezone: "Asia/Ho_Chi_Minh", evaluated_at: NOW,
+        };
+      }
+    }
     await route.fulfill(response);
   });
   return calls;
@@ -611,12 +685,27 @@ function terminalSession(session, code) {
   return { ...session, state: "EXPIRED" };
 }
 
-function normalSessionProjection(vocabularyIds) {
+function learningSessionProjection(mode, vocabularyIds) {
   return {
-    id: SESSION_ID, set_id: SET_ID, mode: "NORMAL", state: "ACTIVE",
+    id: SESSION_ID, set_id: SET_ID, mode, state: "ACTIVE",
     created_at: "2026-10-04T00:00:00.000Z", expires_at: "2026-10-11T00:00:00.000Z",
     completed_at: null, snapshot_size: vocabularyIds.length, completed_items: 0,
     items: vocabularyIds.map((vocabulary_id, position) => ({ vocabulary_id, position, evidence: null })),
+  };
+}
+
+function completedSrsProjection(cardCount) {
+  return {
+    ...learningSessionProjection(
+      "SRS",
+      Array.from({ length: cardCount }, (_, index) => vocabularyId(index + 1)),
+    ),
+    state: "COMPLETED",
+    completed_at: NOW,
+    completed_items: cardCount,
+    items: Array.from({ length: cardCount }, (_, index) => ({
+      vocabulary_id: vocabularyId(index + 1), position: index, evidence: "SRS_GOOD",
+    })),
   };
 }
 
@@ -669,6 +758,17 @@ async function seedSettledSession(page) {
         snapshot_ids: [], batches: [], active_batch_index: null,
         current_vocabulary_id: null, batch_status: "COMPLETED", run_status: "COMPLETED",
       },
+    }));
+    sessionStorage.setItem("elvocab.backend-learning-session:v2:user-1:10000000-0000-4000-8000-000000000001:SRS_FLASHCARD", JSON.stringify({
+      version: 2,
+      user_id: "user-1",
+      set_id: "10000000-0000-4000-8000-000000000001",
+      mode: "SRS",
+      session_id: "20000000-0000-4000-8000-000000000001",
+      creation_operation_id: "70000000-0000-4000-8000-000000000001",
+      expires_at: "2026-10-11T00:00:00.000Z",
+      cursor_vocabulary_id: "30000000-0000-4000-8000-000000000001",
+      view_state: "COMPLETED",
     }));
   });
 }

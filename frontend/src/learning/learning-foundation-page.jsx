@@ -15,6 +15,11 @@ import {
   reconcileNormalLearningSession,
 } from "./normal-learning-session.js";
 import {
+  acceptSrsRatingProjection,
+  openSrsLearningSession,
+  reconcileSrsLearningSession,
+} from "./srs-learning-session.js";
+import {
   isKeyboardShortcutSafe,
   pendingLearningRating,
   resolveFlashcardInteraction,
@@ -30,6 +35,7 @@ import {
   currentSrsVocabularyId,
   loadLearningRunState,
   reconcileLearningRunState,
+  reconcileSrsSessionRun,
   restartNormalRun,
   restartSrsRun,
   saveLearningRunState,
@@ -89,6 +95,8 @@ export function LearningFoundationPage() {
   const [normalSession, setNormalSession] = useState(null);
   const [normalSessionStatus, setNormalSessionStatus] = useState("idle");
   const [normalRetryVocabularyId, setNormalRetryVocabularyId] = useState(null);
+  const [srsSession, setSrsSession] = useState(null);
+  const [srsSessionStatus, setSrsSessionStatus] = useState("idle");
   const [audioError, setAudioError] = useState(null);
   const [announcement, setAnnouncement] = useState("");
   const [focusTarget, setFocusTarget] = useState(null);
@@ -123,6 +131,7 @@ export function LearningFoundationPage() {
         setPayload(freshPayload);
         setRunState(nextState);
         setMode(requestedMode);
+        if (requestedMode === "SRS") setSrsSessionStatus("loading");
         setPendingMode(null);
         modeTransitionRef.current = false;
         setRevealed(false);
@@ -165,10 +174,11 @@ export function LearningFoundationPage() {
     [allCards, mode, runState],
   );
   const cards = useMemo(() => {
-    if (mode !== "NORMAL" || !normalSession?.item_ids?.length) return proposedCards;
+    const sessionItems = mode === "NORMAL" ? normalSession?.item_ids : srsSession?.item_ids;
+    if (!sessionItems?.length) return proposedCards;
     const byId = new Map(allCards.map((card) => [card.id, card]));
-    return normalSession.item_ids.map((id) => byId.get(id)).filter(Boolean);
-  }, [allCards, mode, normalSession, proposedCards]);
+    return sessionItems.map((id) => byId.get(id)).filter(Boolean);
+  }, [allCards, mode, normalSession, proposedCards, srsSession]);
   const summary = useMemo(() => runState ? summarizeLearningRun(runState) : null, [runState]);
   const normalSummary = useMemo(
     () => runState ? summarizeNormalRun(runState) : null,
@@ -221,6 +231,41 @@ export function LearningFoundationPage() {
   // Batch identity owns the Backend session; cursor changes must not recreate it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, status, setId, user.id, cards.map(({ id }) => id).join(":")]);
+
+  useEffect(() => {
+    if (status !== "ready" || mode !== "SRS" || !runState) return undefined;
+    let active = true;
+    const identity = { userId: user.id, setId, mode: "SRS" };
+    void openSrsLearningSession({
+      storage: browserSessionStorage(), identity,
+      service: learningSessionService,
+      randomUuid: () => window.crypto.randomUUID(),
+    }).then((sessionState) => {
+      if (!active) return;
+      setSrsSession(sessionState);
+      setSrsSessionStatus(sessionState?.view_state ?? "UP_TO_DATE");
+      if (!sessionState) return;
+      const reconciledRun = reconcileSrsSessionRun(runState, sessionState);
+      persist(reconciledRun);
+      if (reconciledRun.srs.retry_context && sessionState.view_state === "ACTIVE") {
+        setEventState("error");
+        setEventError("Có một đánh giá chưa xác định kết quả. Hãy thử lại đúng thao tác trước khi tiếp tục.");
+      }
+      if (sessionState.view_state === "COMPLETED") requestFocus("summary");
+      else if (sessionState.view_state === "EXPIRED") {
+        setEventError("Phiên SRS đã hết hạn. Hãy bắt đầu lại để tiếp tục ôn tập.");
+      } else if (sessionState.view_state === "INACCESSIBLE") {
+        setEventError("Bộ từ không còn khả dụng cho phiên SRS này.");
+      }
+    }).catch(() => {
+      if (!active) return;
+      setSrsSessionStatus("error");
+      setEventError("Chưa thể chuẩn bị phiên SRS. Vui lòng thử lại.");
+    });
+    return () => { active = false; };
+  // The Backend session owns the immutable SRS queue for this Set.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, status, setId, user.id]);
 
   useEffect(() => {
     if (!focusTarget) return;
@@ -435,18 +480,38 @@ export function LearningFoundationPage() {
   }
 
   async function submitRating(rating, attempt = null) {
-    if (mode !== "SRS" || !currentCard || !runState || eventState === "pending") return;
+    if (mode !== "SRS" || !currentCard || !runState || eventState === "pending"
+      || srsSession?.view_state !== "ACTIVE") return;
+    if (!attempt && retryEvent) return;
     const nextAttempt = attempt ?? {
       event_id: window.crypto.randomUUID(), set_id: setId,
+      session_id: srsSession.session_id,
       vocabulary_id: currentCard.id, expected_revision: currentCard.progress.revision, rating,
     };
     let pendingState = setSrsRetryContext(runState, nextAttempt);
-    persist(pendingState);
+    if (!saveLearningRunState(browserSessionStorage(), pendingState)) {
+      setEventState("error");
+      setEventError("Chưa thể lưu thao tác đánh giá để thử lại an toàn. Vui lòng tải lại trang.");
+      return;
+    }
+    setRunState(pendingState);
     setEventState("pending");
     setEventError(null);
     setAnnouncement(`Đang ghi nhận: ${RATING_LABELS[rating]}.`);
     try {
-      const { reward, ...progress } = await learningService.recordMeaningfulEvent(nextAttempt);
+      const accepted = await learningService.recordMeaningfulEvent(nextAttempt);
+      const { reward, session } = accepted;
+      const progress = Object.fromEntries(Object.entries(accepted).filter(([field]) => (
+        !["reward", "session", "streak"].includes(field)
+      )));
+      const acceptedSession = acceptSrsRatingProjection({
+        storage: browserSessionStorage(),
+        identity: { userId: user.id, setId, mode: "SRS" },
+        state: srsSession,
+        backendSession: session,
+      });
+      setSrsSession(acceptedSession);
+      setSrsSessionStatus(acceptedSession.view_state);
       setPayload((current) => ({
         ...current,
         cards: current.cards.map((card) => card.id === currentCard.id
@@ -454,7 +519,11 @@ export function LearningFoundationPage() {
       }));
       const nextState = applySrsRating(pendingState, currentCard.id, rating, progress);
       const nextSummary = summarizeLearningRun(nextState);
-      persist(nextState);
+      if (!saveLearningRunState(browserSessionStorage(), nextState)) {
+        setRunState(pendingState);
+        throw new TypeError("Accepted SRS result could not be persisted.");
+      }
+      setRunState(nextState);
       cancelPronunciation();
       setRevealed(false);
       setAudioError(null);
@@ -470,10 +539,39 @@ export function LearningFoundationPage() {
         && ["LEARNING_PROGRESS_CHANGED", "LEARNING_SET_ITEM_CHANGED"].includes(error.code)) {
         setEventState("conflict");
         setEventError("Phiên SRS đã thay đổi. Hãy làm mới để tiếp tục với dữ liệu hiện tại.");
-      } else {
+      } else if (await reconcileTerminalSrsMutation(error)) return;
+      else {
         setEventState("error");
         setEventError("Chưa thể ghi nhận đánh giá. Thẻ vẫn được giữ để bạn thử lại.");
       }
+    }
+  }
+
+  async function reconcileTerminalSrsMutation(error) {
+    if (!(error instanceof LearningApiError)
+      || !["LEARNING_SESSION_EXPIRED", "LEARNING_SESSION_INACCESSIBLE"].includes(error.code)
+      || !srsSession) return false;
+    try {
+      const reconciled = await reconcileSrsLearningSession({
+        storage: browserSessionStorage(),
+        identity: { userId: user.id, setId, mode: "SRS" },
+        state: srsSession,
+        service: learningSessionService,
+      });
+      const expected = error.code === "LEARNING_SESSION_EXPIRED" ? "EXPIRED" : "INACCESSIBLE";
+      if (reconciled.view_state !== expected) throw new TypeError("Unexpected SRS session state.");
+      setSrsSession(reconciled);
+      setSrsSessionStatus(expected);
+      setEventState("idle");
+      setEventError(expected === "EXPIRED"
+        ? "Phiên SRS đã hết hạn. Hãy bắt đầu lại để tiếp tục ôn tập."
+        : "Bộ từ không còn khả dụng cho phiên SRS này.");
+      requestFocus("mode");
+      return true;
+    } catch {
+      setEventState("error");
+      setEventError("Trạng thái phiên SRS đã thay đổi nhưng chưa thể đồng bộ. Hãy tải lại trang.");
+      return true;
     }
   }
 
@@ -484,6 +582,9 @@ export function LearningFoundationPage() {
       if (summary.presentation_count > 0
         && !window.confirm("Bắt đầu lại phiên SRS? Tiến độ đã lưu sẽ không bị xóa.")) return;
       restartSrsRef.current = true;
+      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "SRS" });
+      setSrsSession(null);
+      setSrsSessionStatus("idle");
       setStatus("loading");
       setReloadToken((value) => value + 1);
     } else {
@@ -502,6 +603,9 @@ export function LearningFoundationPage() {
   function continueSrsReview() {
     if (mode !== "SRS" || !runState || !summary.completed) return;
     restartSrsRef.current = true;
+    clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "SRS" });
+    setSrsSession(null);
+    setSrsSessionStatus("idle");
     setStatus("loading");
     setReloadToken((value) => value + 1);
   }
@@ -547,7 +651,8 @@ export function LearningFoundationPage() {
     if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
   }
 
-  if (status !== "ready" || !payload || !runState || !summary) {
+  if (status !== "ready" || !payload || !runState || !summary
+    || (mode === "SRS" && srsSessionStatus === "loading")) {
     return <LearningPageState status={status} onRetry={retryLoad} returnTo={returnTo} />;
   }
 
@@ -623,7 +728,7 @@ export function LearningFoundationPage() {
           <progress className="h-[0.45rem] w-full overflow-hidden rounded-full border-0 bg-slate-200 accent-[var(--accent-primary)]" value={mode === "SRS" ? summary.completed_count : currentIndex + 1} max={mode === "SRS" ? summary.total : cards.length}>{mode === "SRS" ? summary.completed_count : currentIndex + 1}/{mode === "SRS" ? summary.total : cards.length}</progress>
         </section>
         <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
-        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void revealNormalAnswer(true)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
+        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void revealNormalAnswer(true)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <div key={`${mode}:${currentCard.id}`} className="learning-flip-stage relative grid min-h-[22rem] w-full shrink-0 cursor-pointer self-center lg:min-h-96 max-[700px]:min-h-56" onClick={handleCardClick}>
           <div className={`learning-card-flipper relative grid min-h-0 min-w-0 rounded-3xl border border-[#b9dcf6] bg-white shadow-[0_16px_36px_rgb(30_41_59/8%)] focus-within:ring-1 focus-within:ring-[var(--accent-primary-focus)] max-[700px]:rounded-[1.1rem] ${revealed ? "is-revealed" : ""}`}>
@@ -670,7 +775,7 @@ export function LearningFoundationPage() {
                 const subLabel = rating === "AGAIN"
                   ? "Trong phiên này"
                   : RATING_INTERVAL_LABELS[preview.interval_days];
-                return <button key={rating} type="button" className={`${RATING_BUTTON_CLASSES[rating]} relative h-14 min-w-0 w-full flex-col gap-0.5 rounded-xl bg-white px-2 py-2 shadow-none`} aria-label={`${label}, ${subLabel}`} onClick={() => void submitRating(rating)} disabled={eventState === "pending" || Boolean(pendingMode)} aria-busy={pendingRating === rating}>{pendingRating === rating ? <LoaderCircle className="absolute right-2 top-2 size-4 animate-spin" aria-hidden="true" /> : null}<span className="font-extrabold leading-tight">{label}</span><span className="text-[0.72rem] font-semibold leading-tight opacity-80">{subLabel}</span></button>;
+                return <button key={rating} type="button" className={`${RATING_BUTTON_CLASSES[rating]} relative h-14 min-w-0 w-full flex-col gap-0.5 rounded-xl bg-white px-2 py-2 shadow-none`} aria-label={`${label}, ${subLabel}`} onClick={() => void submitRating(rating)} disabled={eventState === "pending" || Boolean(pendingMode) || Boolean(retryEvent) || srsSessionStatus !== "ACTIVE"} aria-busy={pendingRating === rating}>{pendingRating === rating ? <LoaderCircle className="absolute right-2 top-2 size-4 animate-spin" aria-hidden="true" /> : null}<span className="font-extrabold leading-tight">{label}</span><span className="text-[0.72rem] font-semibold leading-tight opacity-80">{subLabel}</span></button>;
               })}
             </section>
           ) : <p className="m-0 text-sm text-slate-500">Lật thẻ để chọn mức độ ghi nhớ.</p> : (

@@ -1,11 +1,13 @@
 import { httpClient } from "./http-client.js";
 import { isRewardProjection, isXpLevelProjection } from "./xp-level-response.js";
+import { requireSessionProjection, requireStreakProjection } from "./learning-session-service.js";
 
 const LEARNING_ENDPOINT = "/api/learning";
 const MODES = new Set(["SRS", "NORMAL"]);
 const RATINGS = new Set(["AGAIN", "HARD", "GOOD", "EASY"]);
 const SRS_INTERVALS = new Set([1, 3, 7, 14, 30]);
 const PROGRESS_STATUSES = new Set(["LEARNING", "LEARNED", "NEEDS_REVIEW"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class LearningApiError extends Error {
   constructor({ kind, code, message, status }) {
@@ -33,10 +35,13 @@ export function createLearningService(client = httpClient) {
     },
 
     async recordMeaningfulEvent(input) {
-      if (!isRecord(input) || !RATINGS.has(input.rating)) throw invalidRatingError();
+      if (!isRecord(input) || !RATINGS.has(input.rating)
+        || (Object.hasOwn(input, "session_id") && !UUID_PATTERN.test(input.session_id))) {
+        throw invalidRatingError();
+      }
       try {
         const response = await client.post(`${LEARNING_ENDPOINT}/events`, input);
-        return requireRatingProgress(response.data?.data);
+        return requireRatingProgress(response.data?.data, input);
       } catch (error) {
         throw mapLearningError(error);
       }
@@ -98,7 +103,7 @@ function isLearningCard(value) {
     && isNonNegativeInteger(value.progress.revision);
 }
 
-function requireRatingProgress(value) {
+function requireRatingProgress(value, request) {
   if (
     !isRecord(value) || typeof value.vocabulary_id !== "string"
     || typeof value.status !== "string" || typeof value.effective_status !== "string"
@@ -108,6 +113,34 @@ function requireRatingProgress(value) {
     || !isNonNegativeInteger(value.review_count) || !isNonNegativeInteger(value.revision)
     || !isRewardProjection(value.reward)
   ) throw invalidResponseError();
+  if (request.session_id === undefined) {
+    if (Object.hasOwn(value, "session") || Object.hasOwn(value, "streak")) {
+      throw invalidResponseError();
+    }
+    return value;
+  }
+  if (typeof request.session_id !== "string") throw invalidRatingError();
+  let session;
+  try {
+    session = requireSessionProjection(value.session);
+  } catch {
+    throw invalidResponseError();
+  }
+  const expectedEvidence = request.rating === "AGAIN" ? null : `SRS_${request.rating}`;
+  const item = session.items.find(({ vocabulary_id: id }) => id === request.vocabulary_id);
+  if (session.id !== request.session_id || session.set_id !== request.set_id
+    || session.mode !== "SRS" || !item || item.evidence !== expectedEvidence) {
+    throw invalidResponseError();
+  }
+  if (session.state === "COMPLETED") {
+    try {
+      requireStreakProjection(value.streak);
+    } catch {
+      throw invalidResponseError();
+    }
+  } else if (Object.hasOwn(value, "streak")) {
+    throw invalidResponseError();
+  }
   return value;
 }
 

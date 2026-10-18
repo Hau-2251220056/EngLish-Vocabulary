@@ -4,6 +4,7 @@ import {
   applySrsRating, clearLearningRunStateNamespace, completeNormalBatch,
   continueNormalRun, createLearningRunState, currentNormalBatchCards,
   currentSrsVocabularyId, loadLearningRunState, reconcileLearningRunState,
+  reconcileSrsSessionRun,
   restartNormalRun, restartSrsRun, saveLearningRunState, selectLearningMode,
   selectNormalCard, setSrsRetryContext, summarizeLearningRun, summarizeNormalRun,
 } from "../src/learning/learning-run-state.js";
@@ -31,6 +32,27 @@ test("AGAIN requeues after three presentations and never leaves duplicates", () 
   assert.deepEqual(state.srs.queue, ["one", "five"]);
   state = applySrsRating(state, "one", "AGAIN", { revision: 2 });
   assert.equal(state.srs.queue.filter((id) => id === "one").length, 1);
+});
+
+test("Backend SRS snapshot is authoritative while unresolved AGAIN queue order survives reconciliation", () => {
+  let state = createLearningRunState("u", "s", payload("SRS", ["one", "two", "outside"]));
+  state = applySrsRating(state, "one", "AGAIN", { revision: 1 });
+  const reconciled = reconcileSrsSessionRun(state, {
+    mode: "SRS",
+    view_state: "ACTIVE",
+    item_ids: ["one", "two"],
+    acknowledged_ids: [],
+  });
+  assert.deepEqual(reconciled.srs.initial_ids, ["one", "two"]);
+  assert.deepEqual(reconciled.srs.queue, ["two", "one"]);
+  const completed = reconcileSrsSessionRun(reconciled, {
+    mode: "SRS",
+    view_state: "COMPLETED",
+    item_ids: ["one", "two"],
+    acknowledged_ids: ["one", "two"],
+  });
+  assert.equal(completed.srs.status, "COMPLETED");
+  assert.deepEqual(completed.srs.queue, []);
 });
 
 test("AGAIN uses tail for zero to two remaining cards", () => {
@@ -156,7 +178,14 @@ test("passing ratings retain authoritative progress and complete only accepted q
 test("SRS restoration preserves retry identity without replay and reconciles stale active IDs without additions", () => {
   const storage = createStorage();
   let state = createLearningRunState("resume-user", "resume-set", payload("SRS", ["one", "two"]));
-  state = setSrsRetryContext(state, { event_id: "event-1", vocabulary_id: "one", expected_revision: 0, rating: "GOOD" });
+  state = setSrsRetryContext(state, {
+    event_id: "event-1",
+    session_id: "session-1",
+    set_id: "resume-set",
+    vocabulary_id: "one",
+    expected_revision: 0,
+    rating: "GOOD",
+  });
   saveLearningRunState(storage, state);
   const restored = loadLearningRunState(storage, "resume-user", "resume-set");
   assert.deepEqual(restored.srs.retry_context, state.srs.retry_context);

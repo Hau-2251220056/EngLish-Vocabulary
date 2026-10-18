@@ -115,6 +115,28 @@ export function applySrsRating(state, vocabularyId, rating, authoritativeProgres
   };
 }
 
+export function reconcileSrsSessionRun(state, sessionState) {
+  if (!state || sessionState?.mode !== "SRS") return state;
+  const initialIds = [...sessionState.item_ids];
+  const passedIds = initialIds.filter((id) => sessionState.acknowledged_ids.includes(id));
+  const unresolved = initialIds.filter((id) => !passedIds.includes(id));
+  const preservedQueue = state.srs.queue.filter((id) => unresolved.includes(id));
+  const queue = uniqueStrings([...preservedQueue, ...unresolved]);
+  const status = sessionState.view_state === "COMPLETED" ? "COMPLETED"
+    : sessionState.view_state === "ACTIVE" && queue.length > 0 ? "ACTIVE" : state.srs.status;
+  return {
+    ...state,
+    srs: {
+      ...state.srs,
+      initial_ids: initialIds,
+      queue,
+      passed_ids: passedIds,
+      retry_context: sanitizeRetry(state.srs.retry_context, queue[0]),
+      status,
+    },
+  };
+}
+
 export function setSrsRetryContext(state, context) {
   return { ...state, srs: { ...state.srs, retry_context: context } };
 }
@@ -287,6 +309,8 @@ function isSrsRetryContext(value, currentId) {
   return value === null || Boolean(
     value && typeof value === "object" && !Array.isArray(value)
     && isNonEmptyString(value.event_id)
+    && isNonEmptyString(value.session_id)
+    && isNonEmptyString(value.set_id)
     && value.vocabulary_id === currentId
     && Number.isSafeInteger(value.expected_revision) && value.expected_revision >= 0
     && SRS_RATINGS.has(value.rating),
