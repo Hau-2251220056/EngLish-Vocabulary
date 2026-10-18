@@ -179,3 +179,41 @@ test("cleanup failure reports but does not hide the primary assertion", async ()
     return true;
   });
 });
+
+test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts", async () => {
+  const [source, harness] = await Promise.all([
+    readFile(new URL("./streak-foundation.integration.test.js", import.meta.url), "utf8"),
+    readFile(new URL("./streak-foundation-harness.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(harness, /streak-foundation\.integration\.test\.js/);
+  for (const contract of [
+    "sessionless SRS preserves legacy Progress and XP without session artifacts",
+    "SRS snapshot is authoritatively ordered, unique and bounded to ten eligible items",
+    "Prisma exposes exact unique-constraint metadata for SRS transaction identities",
+    "AGAIN receipts stay unresolved and passing ratings complete atomically without duplicate replay",
+    "receipt replay conceals foreign ownership, conflicts across sessions and rejects stale events",
+    "immutable SRS snapshot excludes an item that becomes due after creation",
+    "concurrent final ratings serialize exact replay and reject a competing event",
+    "session-aware SRS waits for the shared advisory lock and releases after commit",
+    "injected terminal Streak failure rolls Progress XP receipt evidence and completion back",
+  ]) {
+    assert.match(source, new RegExp(contract));
+  }
+  assert.match(source, /function settleConcurrentRequests\(/);
+  assert.match(source, /runContendedSrsRequests\(\{/);
+  assert.match(source, /waitForBlockingChain\(holderPid, 2,/);
+  assert.match(source, /assertPrismaUniqueViolation/);
+  for (const constraint of [
+    "LEARNING_PROGRESS_user_id_vocabulary_id_key",
+    "LEARNING_SESSION_SRS_RECEIPT_pkey",
+    "LEARNING_SESSION_ITEM_evidence_event_id_key",
+    "LEARNING_SESSION_user_id_completion_event_id_key",
+    "VOCABULARY_SET_ITEM_vocabulary_set_id_vocabulary_id_key",
+  ]) {
+    assert.match(source, new RegExp(constraint));
+  }
+  assert.match(source, /WITH RECURSIVE blocked\(pid\)/);
+  assert.match(source, /assert\.deepEqual\(await rejectedOperationState\(fixture\), beforeStale\)/);
+  assert.match(source, /Timed out settling the SRS advisory-lock holder/);
+  assert.match(source, /Promise\.allSettled\(promises\)/);
+});

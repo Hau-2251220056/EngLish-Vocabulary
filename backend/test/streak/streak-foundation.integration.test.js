@@ -8,6 +8,7 @@ import { createQuizRepository } from "../../src/repositories/quiz-repository.js"
 import { createStreakRepository } from "../../src/repositories/streak-repository.js";
 import { captureOperationTime } from "../../src/services/learning-session-domain.js";
 import { completeLearningSessionAtomically } from "../../src/services/learning-session-persistence.js";
+import { createLearningService } from "../../src/services/learning-service.js";
 import { createSessionFixture, createUserFixture } from "../helpers/auth-fixtures.js";
 import { startHttpTestServer } from "../helpers/http-test-server.js";
 import { assertFoundationAuthorization } from "./streak-foundation-safety.js";
@@ -564,6 +565,466 @@ test("post-lock authoritative instant rejects a session that expires while waiti
   assert.equal(expired.json.error.code, "LEARNING_SESSION_EXPIRED");
 });
 
+test("sessionless SRS preserves legacy Progress and XP without session artifacts", async () => {
+  const fixture = await createFixture();
+  const response = await postSrsEvent(fixture.userCookie, srsEvent({
+    setId: fixture.set.id,
+    vocabularyId: fixture.vocabularyIds[0],
+    rating: "GOOD",
+  }));
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.reward.xp_earned, 3);
+  assert.equal(await prisma.lEARNING_PROGRESS.count({ where: { user_id: fixture.user.id } }), 1);
+  assert.equal(await prisma.xP_REWARD.count({ where: { user_id: fixture.user.id } }), 1);
+  assert.equal(await prisma.lEARNING_SESSION.count({ where: { user_id: fixture.user.id } }), 0);
+  assert.equal(await prisma.lEARNING_SESSION_SRS_RECEIPT.count(), 0);
+  assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 0);
+});
+
+test("SRS snapshot is authoritatively ordered, unique and bounded to ten eligible items", async () => {
+  const fixture = await createFixture();
+  const extraVocabulary = await Promise.all(Array.from({ length: 10 }, (_, index) =>
+    prisma.vOCABULARY.create({
+      data: { word: `streak-srs-bound-${index}-${randomUUID()}` },
+    })));
+  await prisma.vOCABULARY_SET_ITEM.createMany({
+    data: extraVocabulary.map(({ id }, index) => ({
+      vocabulary_set_id: fixture.set.id,
+      vocabulary_id: id,
+      position: index + 3,
+    })),
+  });
+  const allVocabularyIds = [...fixture.vocabularyIds, ...extraVocabulary.map(({ id }) => id)];
+  const dueVocabularyIds = [allVocabularyIds[4], allVocabularyIds[11]];
+  await prisma.lEARNING_PROGRESS.createMany({
+    data: dueVocabularyIds.map((vocabularyId) => ({
+      user_id: fixture.user.id,
+      vocabulary_id: vocabularyId,
+      status: "LEARNED",
+      review_count: 1,
+      revision: 1,
+      last_reviewed_at: new Date(now.getTime() - 86_400_000),
+      next_review_at: new Date(now.getTime() - 1),
+      interval_days: 1,
+    })),
+  });
+
+  const session = await createSrsSession(fixture);
+  const snapshotIds = session.items.map(({ vocabulary_id: vocabularyId }) => vocabularyId);
+  assert.equal(session.snapshot_size, 10);
+  assert.equal(session.items.length, 10);
+  assert.equal(new Set(snapshotIds).size, 10);
+  assert.deepEqual(session.items.map(({ position }) => position), Array.from({ length: 10 }, (_, index) => index));
+  assert.deepEqual(snapshotIds, [
+    ...dueVocabularyIds,
+    ...allVocabularyIds.filter((vocabularyId) => !dueVocabularyIds.includes(vocabularyId)).slice(0, 8),
+  ]);
+});
+
+test("Prisma exposes exact unique-constraint metadata for SRS transaction identities", async () => {
+  const fixture = await createFixture();
+  const [firstSession, secondSession] = await Promise.all([
+    createSrsSession(fixture),
+    createSrsSession(fixture),
+  ]);
+  const [persistedFirstSession, persistedSecondSession] = await Promise.all([
+    readPersistedSession(firstSession.id),
+    readPersistedSession(secondSession.id),
+  ]);
+
+  await prisma.lEARNING_PROGRESS.create({
+    data: {
+      user_id: fixture.user.id,
+      vocabulary_id: fixture.vocabularyIds[0],
+      status: "LEARNING",
+    },
+  });
+  await assertPrismaUniqueViolation(
+    () => prisma.lEARNING_PROGRESS.create({
+      data: {
+        user_id: fixture.user.id,
+        vocabulary_id: fixture.vocabularyIds[0],
+        status: "LEARNING",
+      },
+    }),
+    {
+      model: "LEARNING_PROGRESS",
+      constraint: "LEARNING_PROGRESS_user_id_vocabulary_id_key",
+      columns: ["user_id", "vocabulary_id"],
+    },
+  );
+
+  const receiptEventId = randomUUID();
+  await prisma.lEARNING_SESSION_SRS_RECEIPT.create({
+    data: {
+      event_id: receiptEventId,
+      session_item_id: persistedFirstSession.items[0].id,
+      rating: "AGAIN",
+      expected_revision: 0,
+      accepted_revision: 1,
+      accepted_at: now,
+    },
+  });
+  await assertPrismaUniqueViolation(
+    () => prisma.lEARNING_SESSION_SRS_RECEIPT.create({
+      data: {
+        event_id: receiptEventId,
+        session_item_id: persistedSecondSession.items[0].id,
+        rating: "GOOD",
+        expected_revision: 0,
+        accepted_revision: 1,
+        accepted_at: now,
+      },
+    }),
+    {
+      model: "LEARNING_SESSION_SRS_RECEIPT",
+      constraint: "LEARNING_SESSION_SRS_RECEIPT_pkey",
+      columns: ["event_id"],
+    },
+  );
+
+  const evidenceEventId = randomUUID();
+  await prisma.lEARNING_SESSION_ITEM.update({
+    where: { id: persistedFirstSession.items[0].id },
+    data: { evidence: "SRS_GOOD", evidence_event_id: evidenceEventId, evidence_at: now },
+  });
+  await assertPrismaUniqueViolation(
+    () => prisma.lEARNING_SESSION_ITEM.update({
+      where: { id: persistedSecondSession.items[0].id },
+      data: { evidence: "SRS_HARD", evidence_event_id: evidenceEventId, evidence_at: now },
+    }),
+    {
+      model: "LEARNING_SESSION_ITEM",
+      constraint: "LEARNING_SESSION_ITEM_evidence_event_id_key",
+      columns: ["evidence_event_id"],
+    },
+  );
+
+  const completionEventId = randomUUID();
+  await markSessionCompleted(firstSession.id, completionEventId);
+  await assertPrismaUniqueViolation(
+    () => markSessionCompleted(secondSession.id, completionEventId),
+    {
+      model: "LEARNING_SESSION",
+      constraint: "LEARNING_SESSION_user_id_completion_event_id_key",
+      columns: ["user_id", "completion_event_id"],
+    },
+  );
+
+  const unrelatedSession = await createSrsSession(await createFixture());
+  const unrelatedEvent = srsEvent({
+    sessionId: unrelatedSession.id,
+    setId: unrelatedSession.set_id,
+    vocabularyId: unrelatedSession.items[0].vocabulary_id,
+    rating: "AGAIN",
+  });
+  const unrelatedFixture = await prisma.lEARNING_SESSION.findUniqueOrThrow({
+    where: { id: unrelatedSession.id },
+    select: { user_id: true, vocabulary_set_id: true },
+  });
+  const service = createLearningService({
+    learningRepository: createLearningRepository(prisma),
+    createSessionRepository: (transaction) => {
+      const repository = createLearningSessionRepository(transaction);
+      return Object.freeze({
+        ...repository,
+        async recordSrsReceipt(input) {
+          await transaction.vOCABULARY_SET_ITEM.create({
+            data: {
+              vocabulary_set_id: unrelatedFixture.vocabulary_set_id,
+              vocabulary_id: unrelatedSession.items[0].vocabulary_id,
+              position: 99,
+            },
+          });
+          return repository.recordSrsReceipt(input);
+        },
+      });
+    },
+    createStreakRepository: (transaction) => createStreakRepository(transaction),
+    now: () => now,
+  });
+  const unrelatedCollision = await captureRejection(() =>
+    service.recordMeaningfulEvent(unrelatedFixture.user_id, unrelatedEvent));
+  assert.equal(unrelatedCollision.code, "P2002");
+  assertUniqueTarget(unrelatedCollision, {
+    model: "VOCABULARY_SET_ITEM",
+    constraint: "VOCABULARY_SET_ITEM_vocabulary_set_id_vocabulary_id_key",
+    columns: ["vocabulary_set_id", "vocabulary_id"],
+  });
+  assert.notEqual(unrelatedCollision.code, "LEARNING_PROGRESS_CHANGED");
+});
+
+test("AGAIN receipts stay unresolved and passing ratings complete atomically without duplicate replay", async () => {
+  const fixture = await createFixture();
+  const session = await createSrsSession(fixture);
+  const [first, final] = session.items;
+
+  const again = srsEvent({
+    sessionId: session.id, setId: fixture.set.id,
+    vocabularyId: first.vocabulary_id, rating: "AGAIN",
+  });
+  const againResponse = await postSrsEvent(fixture.userCookie, again);
+  assert.equal(againResponse.status, 200, againResponse.text);
+  assert.equal(againResponse.json.data.reward.xp_earned, 0);
+  assert.equal(await receiptCount(session.id), 1);
+  const afterAgain = await srsState(fixture.user.id, session.id);
+  assert.equal(afterAgain.user.total_xp, 0);
+  assert.equal(afterAgain.rewards.length, 0);
+  assert.equal(afterAgain.session.status, "ACTIVE");
+  assert.equal((await readSessionItem(session.id, first.vocabulary_id)).evidence, null);
+  assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 0);
+
+  const firstPass = srsEvent({
+    sessionId: session.id, setId: fixture.set.id,
+    vocabularyId: first.vocabulary_id, expectedRevision: 1, rating: "GOOD",
+  });
+  assert.equal((await postSrsEvent(fixture.userCookie, firstPass)).status, 200);
+  assert.equal((await readSessionItem(session.id, first.vocabulary_id)).evidence, "SRS_GOOD");
+
+  const finalPass = srsEvent({
+    sessionId: session.id, setId: fixture.set.id,
+    vocabularyId: final.vocabulary_id, rating: "EASY",
+  });
+  const completed = await postSrsEvent(fixture.userCookie, finalPass);
+  assert.equal(completed.status, 200, completed.text);
+  assert.equal(completed.json.data.session.state, "COMPLETED");
+  assert.equal(completed.json.data.streak.completed_today, true);
+  const beforeReplay = await srsState(fixture.user.id, session.id);
+  assert.equal(beforeReplay.receipts.length, 3);
+  assert.equal(beforeReplay.rewards.length, 2);
+  assert.equal(beforeReplay.progress.length, 2);
+  assert.equal(beforeReplay.days.length, 1);
+  assert.equal(beforeReplay.session.completion_event_id, finalPass.event_id);
+  assert.deepEqual(
+    beforeReplay.session.items.map(({ evidence }) => evidence),
+    ["SRS_GOOD", "SRS_EASY"],
+  );
+
+  const replay = await postSrsEvent(fixture.userCookie, finalPass);
+  assert.equal(replay.status, 200, replay.text);
+  assert.equal(replay.json.data.replayed, true);
+  assert.deepEqual(await srsState(fixture.user.id, session.id), beforeReplay);
+});
+
+test("receipt replay conceals foreign ownership, conflicts across sessions and rejects stale events", async () => {
+  const fixture = await createFixture();
+  const firstSession = await createSrsSession(fixture);
+  const secondSession = await createSrsSession(fixture);
+  const vocabularyId = firstSession.items[0].vocabulary_id;
+  const firstEvent = srsEvent({
+    sessionId: firstSession.id, setId: fixture.set.id,
+    vocabularyId, rating: "AGAIN",
+  });
+  assert.equal((await postSrsEvent(fixture.userCookie, firstEvent)).status, 200);
+
+  const beforeForeign = await rejectedOperationState(fixture);
+  const foreign = await postSrsEvent(fixture.otherCookie, firstEvent);
+  assert.equal(foreign.status, 404);
+  assert.equal(foreign.json.error.code, "LEARNING_SESSION_NOT_FOUND");
+  assert.deepEqual(await rejectedOperationState(fixture), beforeForeign);
+
+  const beforeCrossSession = await rejectedOperationState(fixture);
+  const crossSession = await postSrsEvent(fixture.userCookie, {
+    ...firstEvent,
+    session_id: secondSession.id,
+  });
+  assert.equal(crossSession.status, 409);
+  assert.equal(crossSession.json.error.code, "LEARNING_SESSION_EVENT_CONFLICT");
+  assert.deepEqual(await rejectedOperationState(fixture), beforeCrossSession);
+
+  const laterEvent = srsEvent({
+    sessionId: firstSession.id, setId: fixture.set.id,
+    vocabularyId, expectedRevision: 1, rating: "AGAIN",
+  });
+  assert.equal((await postSrsEvent(fixture.userCookie, laterEvent)).status, 200);
+  const beforeStale = await rejectedOperationState(fixture);
+  const stale = await postSrsEvent(fixture.userCookie, firstEvent);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.json.error.code, "LEARNING_PROGRESS_CHANGED");
+  assert.deepEqual(await rejectedOperationState(fixture), beforeStale);
+  assert.equal(await receiptCount(firstSession.id), 2);
+});
+
+test("immutable SRS snapshot excludes an item that becomes due after creation", async () => {
+  const fixture = await createFixture();
+  const futureVocabulary = await prisma.vOCABULARY.create({
+    data: { word: `streak-future-${randomUUID()}` },
+  });
+  await prisma.vOCABULARY_SET_ITEM.create({
+    data: {
+      vocabulary_set_id: fixture.set.id,
+      vocabulary_id: futureVocabulary.id,
+      position: 3,
+    },
+  });
+  await prisma.lEARNING_PROGRESS.create({
+    data: {
+      user_id: fixture.user.id,
+      vocabulary_id: futureVocabulary.id,
+      status: "LEARNED",
+      review_count: 1,
+      revision: 1,
+      last_reviewed_at: now,
+      next_review_at: new Date(now.getTime() + 86_400_000),
+      interval_days: 1,
+    },
+  });
+  const session = await createSrsSession(fixture);
+  assert.equal(session.items.some(({ vocabulary_id: id }) => id === futureVocabulary.id), false);
+  await prisma.lEARNING_PROGRESS.update({
+    where: {
+      user_id_vocabulary_id: {
+        user_id: fixture.user.id,
+        vocabulary_id: futureVocabulary.id,
+      },
+    },
+    data: { next_review_at: new Date(now.getTime() - 1) },
+  });
+  const excluded = await postSrsEvent(fixture.userCookie, srsEvent({
+    sessionId: session.id, setId: fixture.set.id,
+    vocabularyId: futureVocabulary.id, expectedRevision: 1, rating: "GOOD",
+  }));
+  assert.equal(excluded.status, 409);
+  assert.equal(excluded.json.error.code, "LEARNING_SESSION_EVENT_CONFLICT");
+  assert.equal(await receiptCount(session.id), 0);
+});
+
+test("concurrent final ratings serialize exact replay and reject a competing event", {
+  timeout: CONCURRENCY_TIMEOUT_MS,
+}, async () => {
+  const exactFixture = await createFixture();
+  const exactSession = await createSrsSession(exactFixture);
+  await acceptFirstSrsItem(exactFixture, exactSession);
+  const exactFinal = srsEvent({
+    sessionId: exactSession.id, setId: exactFixture.set.id,
+    vocabularyId: exactSession.items[1].vocabulary_id, rating: "HARD",
+  });
+  const exactResponses = await runContendedSrsRequests({
+    fixture: exactFixture,
+    session: exactSession,
+    vocabularyId: exactSession.items[1].vocabulary_id,
+    requests: [exactFinal, exactFinal],
+    label: "exact concurrent SRS replay",
+  });
+  assert.deepEqual(exactResponses.map(({ status }) => status), [200, 200]);
+  assert.deepEqual(exactResponses.map(({ json }) => json.data.replayed).sort(), [false, true]);
+  const exactState = await srsState(exactFixture.user.id, exactSession.id);
+  assert.equal(exactState.receipts.length, 2);
+  assert.equal(exactState.rewards.length, 2);
+  assert.equal(exactState.progress.length, 2);
+  assert.equal(exactState.days.length, 1);
+  assert.equal(exactState.user.total_xp, 6);
+  assert.equal(exactState.session.status, "COMPLETED");
+  assert.equal(exactState.session.items[1].evidence, "SRS_HARD");
+  assert.equal(exactState.receipts.filter(({ event_id: eventId }) => eventId === exactFinal.event_id).length, 1);
+
+  const competingFixture = await createFixture();
+  const competingSession = await createSrsSession(competingFixture);
+  await acceptFirstSrsItem(competingFixture, competingSession);
+  const competingBase = {
+    sessionId: competingSession.id,
+    setId: competingFixture.set.id,
+    vocabularyId: competingSession.items[1].vocabulary_id,
+    rating: "GOOD",
+  };
+  const competingEvents = [srsEvent(competingBase), srsEvent(competingBase)];
+  const competingResponses = await runContendedSrsRequests({
+    fixture: competingFixture,
+    session: competingSession,
+    vocabularyId: competingSession.items[1].vocabulary_id,
+    requests: competingEvents,
+    label: "competing concurrent SRS events",
+  });
+  assert.deepEqual(competingResponses.map(({ status }) => status).sort(), [200, 409]);
+  const rejected = competingResponses.find(({ status }) => status === 409);
+  assert.equal(rejected.json.error.code, "LEARNING_SESSION_EVENT_CONFLICT");
+  const competingState = await srsState(competingFixture.user.id, competingSession.id);
+  assert.equal(competingState.receipts.length, 2);
+  assert.equal(competingState.rewards.length, 2);
+  assert.equal(competingState.progress.length, 2);
+  assert.equal(competingState.days.length, 1);
+  assert.equal(competingState.user.total_xp, 6);
+  assert.equal(competingState.session.status, "COMPLETED");
+  assert.equal(competingState.session.items[1].evidence, "SRS_GOOD");
+  assert.equal(
+    competingState.receipts.filter(({ event_id: eventId }) => (
+      competingEvents.some(({ event_id: candidate }) => candidate === eventId)
+    )).length,
+    1,
+  );
+});
+
+test("session-aware SRS waits for the shared advisory lock and releases after commit", {
+  timeout: CONCURRENCY_TIMEOUT_MS,
+}, async () => {
+  const fixture = await createFixture();
+  const session = await createSrsSession(fixture);
+  const vocabularyId = session.items[0].vocabulary_id;
+  let release;
+  let locked;
+  const releaseGate = new Promise((resolve) => { release = resolve; });
+  const lockReady = new Promise((resolve) => { locked = resolve; });
+  const holder = peer.$transaction(async (transaction) => {
+    await createLearningRepository(transaction).lockProgressIdentity(fixture.user.id, vocabularyId);
+    locked();
+    await releaseGate;
+  });
+  try {
+    await withTimeout(lockReady, "Timed out waiting for SRS advisory-lock holder.", 5_000);
+  } catch (error) {
+    release();
+    await withTimeout(
+      Promise.allSettled([holder]),
+      "Timed out settling the SRS advisory-lock holder.",
+      5_000,
+    );
+    throw error;
+  }
+  const pending = postSrsEvent(fixture.userCookie, srsEvent({
+    sessionId: session.id, setId: fixture.set.id, vocabularyId, rating: "AGAIN",
+  }));
+  let accepted;
+  await runWithGuaranteedRelease({
+    action: async () => assert.equal(await remainsPending(pending), true),
+    release,
+    held: [holder, pending.then((response) => { accepted = response; })],
+    settleTimeoutMs: 5_000,
+  });
+  assert.equal(accepted.status, 200, accepted.text);
+  await peer.$transaction((transaction) =>
+    createLearningRepository(transaction).lockProgressIdentity(fixture.user.id, vocabularyId));
+});
+
+test("injected terminal Streak failure rolls Progress XP receipt evidence and completion back", async () => {
+  const fixture = await createFixture();
+  const session = await createSrsSession(fixture);
+  await acceptFirstSrsItem(fixture, session);
+  const before = await srsState(fixture.user.id, session.id);
+  const service = createLearningService({
+    learningRepository: createLearningRepository(prisma),
+    createSessionRepository: (transaction) => createLearningSessionRepository(transaction),
+    createStreakRepository: (transaction) => {
+      const repository = createStreakRepository(transaction);
+      return Object.freeze({
+        ...repository,
+        async insertDayForCompletedSession() {
+          throw new Error("injected terminal Streak persistence failure");
+        },
+      });
+    },
+    now: () => now,
+  });
+  const finalEvent = srsEvent({
+    sessionId: session.id, setId: fixture.set.id,
+    vocabularyId: session.items[1].vocabulary_id, rating: "GOOD",
+  });
+  await assert.rejects(
+    service.recordMeaningfulEvent(fixture.user.id, finalEvent),
+    /injected terminal Streak persistence failure/,
+  );
+  assert.deepEqual(await srsState(fixture.user.id, session.id), before);
+});
+
 async function createFixture() {
   const user = await createUserFixture(prisma, { display_name: "Streak Foundation User" });
   const other = await createUserFixture(prisma, { display_name: "Streak Foundation Other" });
@@ -593,6 +1054,142 @@ async function createFixture() {
     otherCookie: `session_id=${otherSession.rawToken}`,
     adminCookie: `session_id=${adminSession.rawToken}`,
   };
+}
+
+async function createSrsSession(fixture) {
+  const response = await request("/api/learning-sessions", {
+    method: "POST",
+    cookie: fixture.userCookie,
+    json: { operation_id: randomUUID(), set_id: fixture.set.id, mode: "SRS" },
+  });
+  assert.equal(response.status, 201, response.text);
+  assert.equal(response.json.data.session.mode, "SRS");
+  return response.json.data.session;
+}
+
+function markSessionCompleted(sessionId, completionEventId) {
+  return prisma.lEARNING_SESSION.update({
+    where: { id: sessionId },
+    data: {
+      status: "COMPLETED",
+      completed_at: now,
+      completion_event_id: completionEventId,
+    },
+  });
+}
+
+async function captureRejection(action) {
+  try {
+    await action();
+  } catch (error) {
+    return error;
+  }
+  assert.fail("Expected operation to reject.");
+}
+
+async function assertPrismaUniqueViolation(action, expected) {
+  const error = await captureRejection(action);
+  assert.equal(error?.code, "P2002");
+  assertUniqueTarget(error, expected);
+  return error;
+}
+
+function assertUniqueTarget(error, { model, constraint, columns }) {
+  const target = Array.isArray(error?.meta?.target)
+    ? error.meta.target.join(",")
+    : String(error?.meta?.target ?? error?.meta?.constraint ?? "");
+  const modelMatches = error?.meta?.modelName === model;
+  const constraintMatches = target.includes(constraint);
+  const columnsMatch = modelMatches && columns.every((column) => target.includes(column));
+  assert.equal(
+    constraintMatches || columnsMatch,
+    true,
+    `Unexpected Prisma unique target for ${model}: ${target}`,
+  );
+}
+
+function srsEvent({
+  eventId = randomUUID(), sessionId, setId, vocabularyId,
+  expectedRevision = 0, rating,
+}) {
+  return {
+    event_id: eventId,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    set_id: setId,
+    vocabulary_id: vocabularyId,
+    expected_revision: expectedRevision,
+    rating,
+  };
+}
+
+function postSrsEvent(cookie, json) {
+  return request("/api/learning/events", { method: "POST", cookie, json });
+}
+
+async function acceptFirstSrsItem(fixture, session) {
+  const response = await postSrsEvent(fixture.userCookie, srsEvent({
+    sessionId: session.id,
+    setId: fixture.set.id,
+    vocabularyId: session.items[0].vocabulary_id,
+    rating: "GOOD",
+  }));
+  assert.equal(response.status, 200, response.text);
+}
+
+function receiptCount(sessionId) {
+  return prisma.lEARNING_SESSION_SRS_RECEIPT.count({
+    where: { session_item: { session_id: sessionId } },
+  });
+}
+
+function readSessionItem(sessionId, vocabularyId) {
+  return prisma.lEARNING_SESSION_ITEM.findUniqueOrThrow({
+    where: { session_id_vocabulary_id: { session_id: sessionId, vocabulary_id: vocabularyId } },
+  });
+}
+
+async function srsState(userId, sessionId) {
+  const [user, progress, rewards, session, receipts, days] = await Promise.all([
+    prisma.uSER.findUniqueOrThrow({ where: { id: userId }, select: { total_xp: true } }),
+    prisma.lEARNING_PROGRESS.findMany({ where: { user_id: userId }, orderBy: { vocabulary_id: "asc" } }),
+    prisma.xP_REWARD.findMany({ where: { user_id: userId }, orderBy: { id: "asc" } }),
+    prisma.lEARNING_SESSION.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { items: { orderBy: { position: "asc" } } },
+    }),
+    prisma.lEARNING_SESSION_SRS_RECEIPT.findMany({
+      where: { session_item: { session_id: sessionId } },
+      orderBy: { event_id: "asc" },
+    }),
+    prisma.sTREAK_DAY.findMany({ where: { user_id: userId }, orderBy: { activity_date: "asc" } }),
+  ]);
+  return { user, progress, rewards, session, receipts, days };
+}
+
+async function srsUserState(userId) {
+  const [user, progress, rewards, sessions, receipts, days] = await Promise.all([
+    prisma.uSER.findUniqueOrThrow({ where: { id: userId }, select: { total_xp: true } }),
+    prisma.lEARNING_PROGRESS.findMany({ where: { user_id: userId }, orderBy: { vocabulary_id: "asc" } }),
+    prisma.xP_REWARD.findMany({ where: { user_id: userId }, orderBy: { id: "asc" } }),
+    prisma.lEARNING_SESSION.findMany({
+      where: { user_id: userId },
+      orderBy: { id: "asc" },
+      include: { items: { orderBy: { position: "asc" } } },
+    }),
+    prisma.lEARNING_SESSION_SRS_RECEIPT.findMany({
+      where: { session_item: { session: { user_id: userId } } },
+      orderBy: { event_id: "asc" },
+    }),
+    prisma.sTREAK_DAY.findMany({ where: { user_id: userId }, orderBy: { activity_date: "asc" } }),
+  ]);
+  return { user, progress, rewards, sessions, receipts, days };
+}
+
+async function rejectedOperationState(fixture) {
+  return Promise.all([
+    srsUserState(fixture.user.id),
+    srsUserState(fixture.other.id),
+  ]);
 }
 
 function createTopicFixture() {
@@ -721,6 +1318,85 @@ async function withTimeout(promise, message, timeoutMs = 2_000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function settleConcurrentRequests(promises, message) {
+  try {
+    return await withTimeout(Promise.all(promises), message, 10_000);
+  } catch (primaryError) {
+    try {
+      await withTimeout(
+        Promise.allSettled(promises),
+        `${message} Requests did not settle after failure.`,
+        5_000,
+      );
+    } catch (settlementError) {
+      throw new AggregateError([primaryError, settlementError], message);
+    }
+    throw primaryError;
+  }
+}
+
+async function runContendedSrsRequests({ fixture, session, vocabularyId, requests, label }) {
+  let release;
+  let signalLocked;
+  const releaseGate = new Promise((resolve) => { release = resolve; });
+  const lockReady = new Promise((resolve) => { signalLocked = resolve; });
+  let holderPid;
+  const holder = peer.$transaction(async (transaction) => {
+    const [backend] = await transaction.$queryRaw`SELECT pg_backend_pid()::integer AS pid`;
+    holderPid = backend.pid;
+    await createLearningRepository(transaction).lockProgressIdentity(fixture.user.id, vocabularyId);
+    signalLocked();
+    await releaseGate;
+  });
+  try {
+    await withTimeout(lockReady, `Timed out acquiring the ${label} barrier.`, 5_000);
+  } catch (error) {
+    release();
+    await withTimeout(
+      Promise.allSettled([holder]),
+      `Timed out settling the failed ${label} barrier.`,
+      5_000,
+    );
+    throw error;
+  }
+  const pendingRequests = requests.map((event) => postSrsEvent(fixture.userCookie, event));
+  await runWithGuaranteedRelease({
+    action: async () => {
+      await waitForBlockingChain(holderPid, 2, `Timed out establishing ${label} contention.`);
+      assert.deepEqual(
+        await Promise.all(pendingRequests.map((requestPromise) => remainsPending(requestPromise))),
+        [true, true],
+      );
+    },
+    release,
+    held: [holder, ...pendingRequests],
+    settleTimeoutMs: 10_000,
+  });
+  return settleConcurrentRequests(pendingRequests, `Timed out settling ${label}.`);
+}
+
+async function waitForBlockingChain(holderPid, expectedCount, message) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const [row] = await prisma.$queryRaw`
+      WITH RECURSIVE blocked(pid) AS (
+        SELECT activity.pid
+        FROM pg_stat_activity AS activity
+        WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        UNION
+        SELECT activity.pid
+        FROM pg_stat_activity AS activity
+        JOIN blocked AS prior ON prior.pid = ANY(pg_blocking_pids(activity.pid))
+      )
+      SELECT COUNT(DISTINCT pid)::integer AS count
+      FROM blocked
+    `;
+    if (row.count >= expectedCount) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(message);
 }
 
 async function legacyState(userId) {
