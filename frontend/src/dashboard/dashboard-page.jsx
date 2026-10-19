@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BookOpenCheck,
   CheckCircle2,
+  Flame,
   FolderOpen,
   LibraryBig,
   Plus,
@@ -14,6 +15,7 @@ import { Link } from "react-router-dom";
 import dashboardLearningIllustration from "../assets/images/banner.png";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { learningService } from "../services/learning-service.js";
+import { learningSessionService } from "../services/learning-session-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
 import "./dashboard-page.css";
@@ -34,13 +36,15 @@ const SET_ICON_STYLES = [
 ];
 const loadProgress = () =>
   learningService.getLearningProgress({ page: 1, page_size: 1 });
+const loadCurrentStreak = () => learningSessionService.getCurrentStreak();
 const loadMySets = () => vocabularySetService.listMySets();
 
 export function DashboardPage() {
   const { user } = useAuthentication();
   const isUser = user.role === "USER";
-  const progress = useDashboardSource(isUser, loadProgress);
-  const mySets = useDashboardSource(isUser, loadMySets);
+  const progress = useDashboardSource(isUser, loadProgress, "progress");
+  const streak = useDashboardSource(isUser, loadCurrentStreak, "streak");
+  const mySets = useDashboardSource(isUser, loadMySets, "sets");
 
   if (!isUser) return <DashboardAdminLanding displayName={user.display_name} />;
 
@@ -59,6 +63,8 @@ export function DashboardPage() {
         {(data) => <ProgressSummary summary={data.summary} xpLevel={data.xp_level} />}
       </DashboardSection>
 
+      <StreakSummary source={streak} />
+
       <DashboardSection
         action={mySets.status !== "success" || mySets.data.length > 0 ? <Link to="/my/vocabulary-sets">Xem tất cả</Link> : null}
         errorMessage="Không thể tải bộ từ riêng. Vui lòng thử lại."
@@ -71,6 +77,98 @@ export function DashboardPage() {
       </DashboardSection>
 
     </section>
+  );
+}
+
+function StreakSummary({ source }) {
+  const titleId = "dashboard-streak-title";
+  const headingRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!retryRequestedRef.current || source.status === "loading") return;
+    if (source.status === "error") retryButtonRef.current?.focus();
+    if (source.status === "success") headingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [source.status]);
+
+  function retry() {
+    retryRequestedRef.current = true;
+    source.retry();
+  }
+
+  const hasValue = source.data !== null;
+
+  return (
+    <section
+      aria-busy={source.status === "loading"}
+      aria-labelledby={titleId}
+      className="dashboard-streak-section mt-7 min-w-0 max-w-[28rem]"
+    >
+      <h2
+        className="m-0 rounded-sm text-[clamp(1.2rem,2vw,1.45rem)] tracking-[-0.025em] text-[var(--color-heading)] outline-none focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-4 focus-visible:outline-[#3b5bdb]/30"
+        id={titleId}
+        ref={headingRef}
+        tabIndex={-1}
+      >
+        Chuỗi học tập
+      </h2>
+
+      {source.status === "loading" ? (
+        <div className="mt-4" aria-live="polite" role="status">
+          <span className="sr-only">Đang tải chuỗi học tập…</span>
+          <span className="block min-h-[8.5rem] animate-pulse rounded-[var(--radius-xl)] bg-[#fff1e8] motion-reduce:animate-none" aria-hidden="true" />
+        </div>
+      ) : null}
+
+      {source.status === "success" ? <StreakCard onRefresh={retry} streak={source.data} /> : null}
+
+      {source.status === "error" ? (
+        <div className="mt-4 rounded-[var(--radius-xl)] border border-[#f2cfd5] bg-[#fffafb] p-4" role="alert">
+          {hasValue ? <StreakCard stale streak={source.data} /> : (
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-md bg-[#ffe4e8] text-[#c62035] [&_svg]:size-[1.4rem]" aria-hidden="true"><AlertTriangle /></span>
+              <div>
+                <h3 className="m-0 text-[0.95rem] text-[var(--color-heading)]">Không thể tải chuỗi học tập</h3>
+                <p className="mb-0 mt-1 text-[0.84rem] leading-normal text-[var(--color-muted)]">Dữ liệu chuỗi chưa khả dụng. Vui lòng thử lại.</p>
+              </div>
+            </div>
+          )}
+          <button className={`mt-3 inline-flex min-h-11 cursor-pointer items-center gap-[0.45rem] rounded-md border-0 bg-[var(--color-primary)] px-[0.9rem] py-[0.55rem] font-[inherit] text-[0.82rem] font-extrabold text-white [&_svg]:size-4 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>
+            <RefreshCw aria-hidden="true" /> Thử lại chuỗi học tập
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function StreakCard({ onRefresh, stale = false, streak }) {
+  const status = streak.completed_today
+    ? "Bạn đã duy trì chuỗi hôm nay."
+    : streak.current_streak > 0
+      ? "Hãy hoàn thành một hoạt động đủ điều kiện hôm nay để tiếp tục chuỗi."
+      : "Bắt đầu lại chuỗi bằng một hoạt động học đủ điều kiện.";
+
+  return (
+    <div className={`${stale ? "mt-0 border-0 bg-transparent p-0 shadow-none" : "mt-4 border border-[#f3d8c5] bg-[linear-gradient(135deg,#fffaf5,#fff1e8)] p-4 shadow-[var(--shadow-sm)]"} min-w-0 rounded-[var(--radius-xl)]`}>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-lg)] bg-[#ffe1cc] text-[#c95316] [&_svg]:size-6" aria-hidden="true"><Flame /></span>
+          <p className="m-0 text-[clamp(1.45rem,3vw,1.8rem)] font-extrabold leading-none text-[var(--color-heading)]" aria-label={`Chuỗi hiện tại ${streak.current_streak} ngày`}>
+            {streak.current_streak} <span className="text-[0.85rem] font-bold text-[var(--color-muted)]">ngày</span>
+          </p>
+        </div>
+        {onRefresh ? (
+          <button className={`grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border border-[#e8c9b6] bg-white text-[#9b481f] hover:bg-[#fff8f3] [&_svg]:size-4 ${FOCUS_CLASSES}`} type="button" onClick={onRefresh} aria-label="Làm mới chuỗi học tập">
+            <RefreshCw aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <p className="mb-0 mt-3 text-[0.86rem] font-semibold leading-relaxed text-[#6e4b3a]" aria-live="polite">{status}</p>
+      {stale ? <p className="mb-0 mt-2 text-[0.8rem] font-bold text-[#9a3342]">Dữ liệu gần nhất có thể đã cũ.</p> : null}
+    </div>
   );
 }
 
@@ -340,7 +438,7 @@ function MySetsSummary({ sets }) {
   );
 }
 
-function useDashboardSource(enabled, loader) {
+function useDashboardSource(enabled, loader, key) {
   const [retryToken, setRetryToken] = useState(0);
   const [state, setState] = useState({ data: null, status: enabled ? "loading" : "idle" });
   const requestIdRef = useRef(0);
@@ -369,5 +467,5 @@ function useDashboardSource(enabled, loader) {
     setRetryToken((value) => value + 1);
   }
 
-  return { ...state, key: loader === loadProgress ? "progress" : "sets", retry };
+  return { ...state, key, retry };
 }

@@ -79,6 +79,10 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
     userApiCalls += 1;
     await route.abort("failed");
   });
+  await page.route("**/api/users/me/streak", async (route) => {
+    userApiCalls += 1;
+    await route.abort("failed");
+  });
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: `Xin chào, ${publicAdmin.display_name}.` })).toBeVisible();
@@ -87,6 +91,88 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
   await expect(page.getByRole("heading", { name: "Tóm tắt học tập" })).toHaveCount(0);
   await page.waitForTimeout(100);
   expect(userApiCalls).toBe(0);
+});
+
+test("USER Streak card renders completed, pending, and broken states from backend projections", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  let projection = streakResponse({ current_streak: 4, completed_today: true, last_qualified_date: "2026-10-19" });
+  await page.route("**/api/users/me/streak", (route) => route.fulfill(projection));
+
+  await page.goto("/dashboard");
+  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
+  await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
+  await expect(streak).toContainText("Bạn đã duy trì chuỗi hôm nay.");
+
+  projection = streakResponse({ current_streak: 4, completed_today: false, last_qualified_date: "2026-10-18" });
+  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
+  await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
+  await expect(streak).toContainText("hoàn thành một hoạt động đủ điều kiện hôm nay");
+
+  projection = streakResponse({ current_streak: 0, completed_today: false, last_qualified_date: "2026-10-16" });
+  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
+  await expect(streak.getByLabel("Chuỗi hiện tại 0 ngày")).toBeVisible();
+  await expect(streak).toContainText("Bắt đầu lại chuỗi");
+  await expect(streak).not.toContainText("2026-10-16");
+});
+
+test("initial Streak failure never renders successful zero data", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  await page.route("**/api/users/me/streak", (route) => route.fulfill({
+    status: 500,
+    json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
+  }));
+
+  await page.goto("/dashboard");
+  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
+  await expect(streak.getByRole("alert")).toContainText("Không thể tải chuỗi học tập");
+  await expect(streak.getByLabel(/Chuỗi hiện tại/)).toHaveCount(0);
+  await expect(streak.getByRole("button", { name: "Thử lại chuỗi học tập" })).toBeVisible();
+});
+
+test("Streak failure stays independent, preserves stale data, and supports keyboard retry", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  const retry = deferredRoutes();
+  let calls = 0;
+  let response = "success";
+  await page.route("**/api/users/me/streak", async (route) => {
+    calls += 1;
+    if (response === "success") {
+      await route.fulfill(streakResponse({ current_streak: 3, completed_today: false, last_qualified_date: "2026-10-18" }));
+    } else if (response === "error") {
+      await route.fulfill({ status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } });
+    } else {
+      await retry.handle(route);
+    }
+  });
+
+  await page.goto("/dashboard");
+  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
+  await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
+
+  response = "error";
+  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
+  await expect(streak.getByRole("alert")).toContainText("Dữ liệu gần nhất có thể đã cũ.");
+  await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ riêng" })).toBeVisible();
+
+  response = "pending";
+  const retryButton = streak.getByRole("button", { name: "Thử lại chuỗi học tập" });
+  await retryButton.focus();
+  const callsBeforeRetry = calls;
+  await page.keyboard.press("Enter");
+  await expect(streak.getByRole("status")).toContainText("Đang tải chuỗi học tập");
+  await expect.poll(() => calls).toBe(callsBeforeRetry + 1);
+  await retry.fulfill(streakResponse({ current_streak: 4, completed_today: true, last_qualified_date: "2026-10-19" }));
+  await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chuỗi học tập" })).toBeFocused();
 });
 
 test("an unmounted Dashboard request cannot replace a newer visit", async ({ page }) => {
@@ -312,6 +398,23 @@ function setsResponse() {
         setSummary("set-3", "Set three", 5),
         setSummary("set-4", "Set four", 1),
       ],
+    },
+  };
+}
+
+function streakResponse(overrides = {}) {
+  return {
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        current_streak: 0,
+        completed_today: false,
+        last_qualified_date: null,
+        timezone: "Asia/Ho_Chi_Minh",
+        evaluated_at: "2026-10-19T09:00:00.000Z",
+        ...overrides,
+      },
     },
   };
 }

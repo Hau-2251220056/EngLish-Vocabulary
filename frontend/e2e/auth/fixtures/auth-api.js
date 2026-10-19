@@ -65,6 +65,21 @@ export async function installAuthApiMock(page, handlers = {}) {
   await page.route("**/api/my/vocabulary-sets", (route) =>
     route.fulfill({ status: 200, json: { success: true, data: [] } }),
   );
+  await page.route("**/api/users/me/streak", (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        success: true,
+        data: {
+          current_streak: 0,
+          completed_today: false,
+          last_qualified_date: null,
+          timezone: "Asia/Ho_Chi_Minh",
+          evaluated_at: "2026-10-19T09:00:00.000Z",
+        },
+      },
+    }),
+  );
 
   await page.route("**/api/auth/**", async (route) => {
     const request = route.request();

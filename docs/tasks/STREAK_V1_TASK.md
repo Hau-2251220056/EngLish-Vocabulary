@@ -709,3 +709,22 @@ Formal rule coverage for all 46 rules is confirmed in TASK-251 and TASK-252.
 ## 9. TASK readiness
 
 This document maps all 19 tasks to the HUMAN-approved PLAN, all 36 acceptance criteria and all 46 business rules. It is ready for HUMAN TASK review. Implementation must not start until HUMAN explicitly approves this decomposition and authorizes the relevant task/gate.
+
+## 10. Implementation checkpoint evidence
+
+### Gate ST-5 — HUMAN ACCEPTED (2026-10-19)
+
+- **Accepted commit:** `c176c4c6a3d6bf1aafa8c6a4f0c785ca75421182` on `feature/streak-v1`.
+- **Guarded CI TEST evidence:** GitHub Actions run `39232678286`, attempt `1`; Trust Gate `PASS`; Streak Foundation Verification `PASS`; PostgreSQL integration `26/26 PASS`; Integration Summary `PASS`.
+- **Run-owned isolation:** schema `elvocab_streak_foundation_39232678286_1_bc5e47b7`; cleanup accepted through the fail-closed harness path, which cannot emit its PostgreSQL verification `PASS` marker when owned-schema cleanup fails.
+- **Independent evidence review:** `READY FOR HUMAN ACCEPTANCE`; no remaining ST-5 evidence blocker.
+- **Accepted gate scope:** Quiz/XP-sensitive grading and transaction evidence, zero-correct completion, replay/concurrency/rollback coverage and sessionless compatibility required by TASK-246.
+- **Sequence effect:** Gate ST-5 acceptance satisfies the gate prerequisite for TASK-247. It does not itself authorize TASK-247 implementation, Git publication, database activity, deployment or any later gate.
+
+### TASK-247 — IMPLEMENTED / INDEPENDENT REVIEW PASS (2026-10-19)
+
+- **Implementation scope:** Compact USER Dashboard Streak card using the existing authenticated Streak read service, with ADMIN isolation and no Level/XP redesign.
+- **Focused verification:** frontend unit/service tests `8/8 PASS`; mocked Dashboard browser tests `16/16 PASS`; ESLint `PASS`; production build `PASS`.
+- **Responsive evidence:** mocked browser checks at `320`, `375`, `667` landscape, `768`, `1024` and `1440` CSS pixels.
+- **Independent implementation review:** `PASS`; no BLOCKER, MAJOR or MINOR findings.
+- **Sequence effect:** TASK-247 is ready for TASK-248 preparation. TASK-248 focused frontend/UI verification and HUMAN Gate ST-6 browser/visual acceptance remain `PENDING`; this checkpoint does not record HUMAN UI/UX approval.
