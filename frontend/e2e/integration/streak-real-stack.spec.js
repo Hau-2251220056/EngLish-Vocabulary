@@ -73,8 +73,19 @@ test("NORMAL, SRS and zero-correct Quiz qualify once while Speaking remains non-
 
   await page.goto(`/learn/vocabulary-sets/${normalSet.id}`);
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  const normalNavigation = page.getByRole("navigation", { name: "Điều hướng thẻ" });
+  await expect(normalNavigation).toBeVisible();
+  await expect(page.getByRole("status").filter({
+    hasText: /Đang (?:chuyển chế độ|chuẩn bị phiên học)…/,
+  })).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const finishNormal = normalNavigation.getByRole("button", { name: "Hoàn thành phiên" });
+  await expect(finishNormal).toBeVisible();
+  await expect(finishNormal).toBeDisabled();
   await page.getByRole("heading", { name: normalVocabulary.word }).press("Space");
-  await page.getByRole("button", { name: "Hoàn thành phiên" }).click();
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Đã ghi nhận thẻ được lật");
+  await expect(finishNormal).toBeEnabled();
+  await finishNormal.click();
   await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Chuỗi hiện tại 1 ngày");
   await expectStreak(page, { current: 1, days: 1, sessions: 1 });
