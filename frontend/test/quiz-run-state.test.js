@@ -37,7 +37,7 @@ test("accepted Quiz persistence whitelists progress and never stores reward feed
   saveQuizRunState(storage, state);
   const serialized = storage.getItem([...Array(storage.length).keys()]
     .map((index) => storage.key(index))
-    .find((key) => key.startsWith("elvocab.quiz.run.v2:")));
+    .find((key) => key.startsWith("elvocab.quiz.run.v3:")));
   assert.equal(serialized.includes("reward"), false);
   assert.equal(serialized.includes("xp_earned"), false);
   assert.deepEqual(state.accepted["word-1"], {
@@ -59,6 +59,19 @@ test("same-tab storage restores accepted progress and an identical pending reque
   assert.equal(restored.run_id, RUN);
   assert.equal(restored.pending_attempt.event_id, "event-restore");
   assert.equal(restored.pending_attempt.selected_choice_id, "choice-word-1");
+});
+
+test("v3 storage explicitly retires incompatible historical v2 Quiz records", () => {
+  const storage = memoryStorage();
+  storage.setItem("elvocab.quiz.active.v2:version-user:version-set:MULTIPLE_CHOICE", JSON.stringify({ run_id: RUN }));
+  storage.setItem(`elvocab.quiz.run.v2:version-user:version-set:MULTIPLE_CHOICE:${RUN}`, JSON.stringify({
+    version: 2, user_id: "version-user", set_id: "version-set", quiz_type: TYPE, run_id: RUN,
+  }));
+  assert.equal(loadQuizRunState(storage, "version-user", "version-set", TYPE), null);
+  const current = createQuizRunState("version-user", "version-set", TYPE, ["word-1"], () => RUN);
+  assert.equal(saveQuizRunState(storage, current), true);
+  assert.ok([...Array(storage.length).keys()].map((index) => storage.key(index))
+    .some((key) => key.startsWith("elvocab.quiz.run.v3:")));
 });
 
 test("restart creates a fresh run and the next selection creates a fresh event", () => {

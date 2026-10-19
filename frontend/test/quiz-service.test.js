@@ -15,6 +15,24 @@ test("Quiz service sends sole type and exact selected-choice contract", async ()
   assert.equal(JSON.stringify(calls).includes("/api/learning/events"), false);
 });
 
+test("session-aware Quiz serializes matching session identity and rejects mismatches before transport", async () => {
+  const calls = [];
+  const service = createQuizService({
+    async get(url, config) { calls.push(["GET", url, config]); return { data: { data: payload() } }; },
+    async post(url, body) { calls.push(["POST", url, body]); return { data: { data: result(body) } }; },
+  });
+  await service.getQuestions("set", RUN, ["word"], RUN);
+  await service.submitAnswer({ ...answer(), session_id: RUN });
+  assert.deepEqual(calls[0][2].params, {
+    type: "MULTIPLE_CHOICE", run_id: RUN, vocabulary_ids: "word", session_id: RUN,
+  });
+  assert.equal(calls[1][2].session_id, RUN);
+
+  await assert.rejects(service.getQuestions("set", RUN, ["word"], "other-session"), { code: "INVALID_QUIZ_REQUEST" });
+  await assert.rejects(service.submitAnswer({ ...answer(), session_id: "other-session" }), { code: "INVALID_QUIZ_REQUEST" });
+  assert.equal(calls.length, 2);
+});
+
 test("bounded Quiz reads serialize exact ordered IDs and reject partial or reordered responses", async () => {
   const requested = ["word-2", "word-1"];
   const calls = [];

@@ -133,7 +133,12 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     userAuthorizationMiddleware,
   });
   const quizRepository = createQuizRepository(prisma);
-  const quizService = createQuizService({ quizRepository });
+  const quizService = createQuizService({
+    quizRepository,
+    createSessionRepository: createLearningSessionRepository,
+    createStreakRepository,
+    ...(learningNow ? { now: learningNow } : {}),
+  });
   const quizController = createQuizController({ quizService });
   const quizRouter = createQuizRouter({
     quizController,

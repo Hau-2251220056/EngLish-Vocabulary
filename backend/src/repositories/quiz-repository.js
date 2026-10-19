@@ -126,7 +126,7 @@ export function createQuizRepository(prisma) {
 
     withTransaction(callback) {
       return prisma.$transaction(
-        async (transaction) => callback(createQuizRepository(transaction)),
+        async (transaction) => callback(createQuizRepository(transaction), transaction),
         { maxWait: 10_000, timeout: 30_000 },
       );
     },

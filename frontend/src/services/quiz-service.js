@@ -1,5 +1,6 @@
 import { httpClient } from "./http-client.js";
 import { isRewardProjection } from "./xp-level-response.js";
+import { requireSessionProjection, requireStreakProjection } from "./learning-session-service.js";
 
 const ENDPOINT = "/api/quiz";
 const TYPE = "MULTIPLE_CHOICE";
@@ -11,12 +12,17 @@ export class QuizApiError extends Error {
 
 export function createQuizService(client = httpClient) {
   return {
-    async getQuestions(setId, runId, vocabularyIds = null) {
+    async getQuestions(setId, runId, vocabularyIds = null, sessionId = null) {
       requireString(setId); requireString(runId);
+      if (sessionId !== null) {
+        requireString(sessionId);
+        if (sessionId !== runId) throw validationError();
+      }
       const boundedIds = vocabularyIds === null ? null : requireVocabularyIds(vocabularyIds);
       try {
         const params = { type: TYPE, run_id: runId };
         if (boundedIds) params.vocabulary_ids = boundedIds.join(",");
+        if (sessionId) params.session_id = sessionId;
         const response = await client.get(`${ENDPOINT}/sets/${encodeURIComponent(setId)}/questions`, { params });
         return requireQuestionPayload(response.data?.data, {
           runId,
@@ -33,10 +39,12 @@ export function createQuizService(client = httpClient) {
 }
 
 function serializeAnswer(input) {
-  if (!isRecord(input) || Object.keys(input).some((field) => !ANSWER_FIELDS.includes(field))) throw validationError();
+  if (!isRecord(input) || Object.keys(input).some((field) => !ANSWER_FIELDS.includes(field) && field !== "session_id")) throw validationError();
   const body = {};
   for (const field of ANSWER_FIELDS) { if (!Object.hasOwn(input, field)) throw validationError(); body[field] = input[field]; }
   for (const field of ["event_id", "set_id", "vocabulary_id", "run_id", "question_revision", "selected_choice_id"]) requireString(body[field]);
+  if (Object.hasOwn(input, "session_id")) { requireString(input.session_id); body.session_id = input.session_id; }
+  if (body.session_id && body.session_id !== body.run_id) throw validationError();
   if (body.quiz_type !== TYPE || !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 0) throw validationError();
   return body;
 }
@@ -66,6 +74,8 @@ function requireAnswerResult(value) {
     || value.quiz_type !== TYPE || typeof value.is_correct !== "boolean" || typeof value.selected_choice_id !== "string"
     || typeof value.correct_choice_id !== "string" || !isProgress(value.progress)
     || !isRewardProjection(value.reward)) throw invalidResponseError();
+  if (Object.hasOwn(value, "session")) requireSessionProjection(value.session);
+  if (Object.hasOwn(value, "streak")) requireStreakProjection(value.streak);
   return value;
 }
 function isProgress(value) { return isRecord(value) && typeof value.status === "string" && Number.isSafeInteger(value.review_count) && Number.isSafeInteger(value.revision); }

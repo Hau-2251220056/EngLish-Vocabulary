@@ -36,6 +36,9 @@ function handleKnownQuizError(error, res, next) {
     QUIZ_CHOICE_CHANGED: 409,
     QUIZ_RETRY_CONFLICT: 409,
     QUIZ_PROGRESS_CONFLICT: 409,
+    LEARNING_SESSION_NOT_FOUND: 404,
+    LEARNING_SESSION_EXPIRED: 409,
+    LEARNING_SESSION_EVENT_CONFLICT: 409,
   };
   const status = statusByCode[error?.code];
   if (!status) {

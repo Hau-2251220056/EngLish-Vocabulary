@@ -209,6 +209,64 @@ test("exact body and active type are validated before transaction", async () => 
   assert.equal(harness.transactionCount(), 0);
 });
 
+test("session-aware Quiz uses session id as run id and completes on the accepted final answer", async () => {
+  const harness = createHarness();
+  const dependencies = createSessionDependencies([uuid("q")]);
+  const service = createQuizService({ quizRepository: harness.repository,
+    createSessionRepository: dependencies.createSessionRepository,
+    createStreakRepository: dependencies.createStreakRepository,
+    now: () => new Date("2026-10-15T03:00:00.000Z") });
+  const payload = await service.getQuestions(USER, SET, { type: "MULTIPLE_CHOICE",
+    run_id: RUN, session_id: RUN, vocabulary_ids: uuid("q") });
+  assert.equal(payload.run_id, RUN);
+  const question = payload.questions[0];
+  const request = { ...answer(question, correctChoice(question).choice_id), session_id: RUN };
+  const result = await service.recordAnswer(USER, request);
+  assert.equal(result.session.state, "COMPLETED");
+  assert.equal(result.session.items[0].evidence, "QUIZ_CORRECT");
+  assert.equal(result.streak.current_streak, 1);
+  assert.equal(dependencies.session.completion_event_id, request.event_id);
+  assert.deepEqual(dependencies.streakDates, ["2026-10-15"]);
+  const replay = await service.recordAnswer(USER, request);
+  assert.equal(replay.reward.replayed, true);
+  assert.deepEqual(dependencies.streakDates, ["2026-10-15"]);
+});
+
+test("session-aware incorrect answer records evidence and rejects identity or snapshot escape", async () => {
+  const harness = createHarness();
+  const dependencies = createSessionDependencies([uuid("q")]);
+  const service = createQuizService({ quizRepository: harness.repository,
+    createSessionRepository: dependencies.createSessionRepository,
+    createStreakRepository: dependencies.createStreakRepository,
+    now: () => new Date("2026-10-15T03:00:00.000Z") });
+  const question = (await service.getQuestions(USER, SET, { type: "MULTIPLE_CHOICE",
+    run_id: RUN, session_id: RUN, vocabulary_ids: uuid("q") })).questions[0];
+  const wrong = question.choices.find(({ choice_id }) => choice_id !== correctChoice(question).choice_id);
+  const request = { ...answer(question, wrong.choice_id), session_id: RUN };
+  const result = await service.recordAnswer(USER, request);
+  assert.equal(result.is_correct, false);
+  assert.equal(result.session.items[0].evidence, "QUIZ_INCORRECT");
+  assert.equal(result.reward.xp_earned, 0);
+
+  await assert.rejects(service.recordAnswer(USER, { ...request, event_id: randomUUID(),
+    run_id: OTHER }), { code: "LEARNING_SESSION_EVENT_CONFLICT" });
+  await assert.rejects(service.recordAnswer(USER, { ...request, event_id: randomUUID(),
+    vocabulary_id: OTHER }), { code: "LEARNING_SESSION_EVENT_CONFLICT" });
+});
+
+test("sessionless Quiz remains compatible and never touches session factories", async () => {
+  const harness = createHarness();
+  let sessionCalls = 0;
+  const service = createQuizService({ quizRepository: harness.repository,
+    createSessionRepository() { sessionCalls += 1; throw new Error("unexpected session access"); },
+    createStreakRepository() { throw new Error("unexpected Streak access"); } });
+  const question = await loadQuestion(service);
+  const result = await service.recordAnswer(USER, answer(question, correctChoice(question).choice_id));
+  assert.equal(result.session, undefined);
+  assert.equal(result.streak, undefined);
+  assert.equal(sessionCalls, 0);
+});
+
 async function loadQuestion(service) {
   return (await service.getQuestions(USER, SET, { type: "MULTIPLE_CHOICE", run_id: RUN })).questions[0];
 }
@@ -220,8 +278,8 @@ function answer(question, choiceId, { expectedRevision = 0 } = {}) {
 }
 
 function createHarness({ accessible = true, forceCasConflict = false, incrementError = null,
-  progressRows = [], rewardError = null, rewards = [], totalXp = 0 } = {}) {
-  const set = fixtureSet();
+  progressRows = [], rewardError = null, rewards = [], totalXp = 0, set: suppliedSet = null } = {}) {
+  const set = suppliedSet ?? fixtureSet();
   const external = [vocabulary("e1", "sleep", "ngủ"), vocabulary("e2", "eat", "ăn"), vocabulary("e3", "walk", "đi bộ")];
   let committed = new Map(progressRows.map((row) => [row.user_id, structuredClone(row)]));
   let committedRewards = structuredClone(rewards);
@@ -298,5 +356,44 @@ function assertReward(result, earned, total, replayed) {
   assert.equal(result.reward.replayed, replayed); assert.equal(result.reward.level, 1);
   assert.equal(result.reward.level_min_xp, 0); assert.equal(result.reward.next_level_xp, 50);
   assert.equal(result.reward.is_max_level, false);
+}
+function createSessionDependencies(vocabularyIds, overrides = {}) {
+  const items = vocabularyIds.map((vocabulary_id, position) => ({ id: uuid(`session-item-${position}`),
+    session_id: RUN, vocabulary_id, position, evidence: null, evidence_event_id: null,
+    evidence_at: null }));
+  const session = { id: RUN, user_id: USER, vocabulary_set_id: SET, set_id_snapshot: SET,
+    mode: "QUIZ", status: overrides.status ?? "ACTIVE", snapshot_size: items.length,
+    created_at: new Date("2026-10-15T00:00:00.000Z"),
+    expires_at: overrides.expires_at ?? new Date("2026-10-22T00:00:00.000Z"),
+    completed_at: null, completion_event_id: null, items };
+  const streakDates = [];
+  return { session, items, streakDates,
+    createSessionRepository: () => ({
+      lockOwnedSession: async (id, userId) => id === RUN && userId === USER ? session : null,
+      lockSessionItems: async () => items,
+      findEvidenceReplay: async (eventId) => {
+        const item = items.find(({ evidence_event_id: id }) => id === eventId);
+        return item ? { ...item, session: { user_id: USER } } : null;
+      },
+      recordEvidence: async ({ item, evidence, eventId, acceptedAt }) => {
+        Object.assign(item, { evidence, evidence_event_id: eventId, evidence_at: acceptedAt });
+        return { count: 1 };
+      },
+      findCompletionReplay: async (userId, eventId) => session.user_id === userId
+        && session.completion_event_id === eventId ? session : null,
+      completeSession: async ({ completionEventId, acceptedAt }) => {
+        Object.assign(session, { status: "COMPLETED", completion_event_id: completionEventId,
+          completed_at: acceptedAt });
+        return { count: 1 };
+      },
+    }),
+    createStreakRepository: () => ({
+      insertDayForCompletedSession: async ({ activityDate }) => {
+        const inserted = !streakDates.includes(activityDate);
+        if (inserted) streakDates.push(activityDate);
+        return { inserted };
+      },
+      listActivityDatesThrough: async () => [...streakDates].reverse(),
+    }) };
 }
 function uuid(seed) { const value = [...seed].reduce((sum, char) => sum + char.codePointAt(0), 500); return `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`; }

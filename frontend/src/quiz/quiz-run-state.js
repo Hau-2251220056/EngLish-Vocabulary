@@ -1,10 +1,11 @@
 import { advanceOrderedSessionBatch, completeOrderedSessionBatch, createOrderedSessionRun, currentOrderedSessionBatch, reconcileOrderedSessionRun } from "../session-storage/ordered-session-run.js";
 import { clearSessionNamespace, readSessionValue, writeSessionValue } from "../session-storage/resilient-session-store.js";
 
-const STORAGE_PREFIX = "elvocab.quiz.run.v2:";
-const ACTIVE_PREFIX = "elvocab.quiz.active.v2:";
-const LEGACY_PREFIXES = ["elvocab.quiz.run.v1:", "elvocab.quiz.active.v1:"];
-const VERSION = 2;
+const STORAGE_PREFIX = "elvocab.quiz.run.v3:";
+const ACTIVE_PREFIX = "elvocab.quiz.active.v3:";
+const LEGACY_PREFIXES = ["elvocab.quiz.run.v1:", "elvocab.quiz.active.v1:",
+  "elvocab.quiz.run.v2:", "elvocab.quiz.active.v2:"];
+const VERSION = 3;
 const QUIZ_TYPES = new Set(["MULTIPLE_CHOICE"]);
 
 export function createQuizRunState(userId, setId, quizType, vocabularyIds = null, createRunId = defaultRunId) {
@@ -16,9 +17,54 @@ export function createQuizRunState(userId, setId, quizType, vocabularyIds = null
   const initialized = Array.isArray(vocabularyIds);
   const orderedRun = createOrderedSessionRun(initialized ? vocabularyIds : []);
   return { version: VERSION, user_id: userId, set_id: setId, quiz_type: quizType,
-    session_initialized: initialized, ordered_run: orderedRun, run_id: createRunId(),
+    session_initialized: initialized, session_bound: false, ordered_run: orderedRun, run_id: createRunId(),
     current_vocabulary_id: orderedRun.current_vocabulary_id, questions: [], accepted: {},
     pending_attempt: null, completed_result: null, request_state: "idle", error_code: null };
+}
+
+export function bindQuizLearningSession(state, session) {
+  requireStateIdentity(state);
+  const batchIds = currentQuizBatchIds(state);
+  const sessionIds = session?.items?.map(({ vocabulary_id: id }) => id) ?? [];
+  if (session?.mode !== "QUIZ" || session.set_id !== state.set_id
+    || !sameOrderedIds(batchIds, sessionIds) || typeof session.id !== "string") {
+    throw new TypeError("Quiz Learning Session does not match the active batch.");
+  }
+  return { ...state, run_id: session.id, session_bound: true };
+}
+
+export function reconcileQuizLearningSession(state, session) {
+  requireStateIdentity(state);
+  const batchIds = currentQuizBatchIds(state);
+  const sessionIds = session?.items?.map(({ vocabulary_id: id }) => id) ?? [];
+  if (!state.session_bound || session?.id !== state.run_id || session.mode !== "QUIZ"
+    || session.set_id !== state.set_id || !sameOrderedIds(batchIds, sessionIds)) {
+    throw new TypeError("Quiz Learning Session does not match the persisted run.");
+  }
+  if (state.ordered_run.batch_status === "COMPLETED" && session.state !== "COMPLETED") {
+    throw new TypeError("Completed Quiz result is not confirmed by the Backend session.");
+  }
+  const accepted = { ...state.accepted };
+  for (const item of session.items) {
+    if (item.evidence === null || state.pending_attempt?.vocabulary_id === item.vocabulary_id) continue;
+    const question = state.questions.find(({ vocabulary_id: id }) => id === item.vocabulary_id);
+    if (!question) throw new TypeError("Quiz evidence cannot be reconciled without its persisted question.");
+    accepted[item.vocabulary_id] = {
+      question_revision: question.question_revision,
+      is_correct: item.evidence === "QUIZ_CORRECT",
+      progress_revision: Math.max(question.progress_revision + 1,
+        accepted[item.vocabulary_id]?.progress_revision ?? 0),
+    };
+  }
+  const complete = session.state === "COMPLETED"
+    && batchIds.every((id) => accepted[id] || state.pending_attempt?.vocabulary_id === id);
+  const orderedRun = complete && !state.pending_attempt
+    ? completeOrderedSessionBatch(state.ordered_run) : state.ordered_run;
+  return { ...state, accepted, ordered_run: orderedRun,
+    current_vocabulary_id: orderedRun.batch_status === "COMPLETED"
+      ? null : firstUnacceptedId(batchIds, accepted),
+    completed_result: orderedRun.batch_status === "COMPLETED"
+      ? resultSummary(batchIds, accepted) : null };
 }
 
 export function reconcileQuizMembership(state, authorizedVocabularyIds) {
@@ -87,7 +133,8 @@ export function beginQuizAnswer(state, vocabularyId, selectedChoiceId, createEve
   if (!question || state.accepted[vocabularyId] || state.pending_attempt || state.ordered_run.batch_status !== "ACTIVE") return state;
   return { ...state, pending_attempt: { event_id: createEventId(), set_id: state.set_id, vocabulary_id: vocabularyId,
     run_id: state.run_id, question_revision: question.question_revision, quiz_type: state.quiz_type,
-    expected_revision: question.progress_revision, selected_choice_id: selectedChoiceId },
+    expected_revision: question.progress_revision, selected_choice_id: selectedChoiceId,
+    ...(state.session_bound ? { session_id: state.run_id } : {}) },
   request_state: "submitting", error_code: null };
 }
 
@@ -162,7 +209,7 @@ export function clearQuizRunStateNamespace(storage) {
 }
 
 function resetCurrentQuizRun(state, orderedRun, runId) {
-  return { ...state, ordered_run: orderedRun, run_id: runId, current_vocabulary_id: orderedRun.current_vocabulary_id,
+  return { ...state, ordered_run: orderedRun, run_id: runId, session_bound: false, current_vocabulary_id: orderedRun.current_vocabulary_id,
     questions: [], accepted: {}, pending_attempt: null, completed_result: null, request_state: "idle", error_code: null };
 }
 function toStoredQuestion(question) { return { vocabulary_id: question.vocabulary_id, position: question.position,
@@ -181,11 +228,12 @@ function isPendingAttempt(value, state) { return Boolean(value && typeof value =
   && typeof value.vocabulary_id === "string" && value.run_id === state.run_id
   && typeof value.question_revision === "string" && value.quiz_type === state.quiz_type
   && Number.isSafeInteger(value.expected_revision) && value.expected_revision >= 0
-  && typeof value.selected_choice_id === "string" && value.selected_choice_id.length > 0); }
+  && typeof value.selected_choice_id === "string" && value.selected_choice_id.length > 0
+  && (!state.session_bound || value.session_id === state.run_id)); }
 function isStoredState(value, userId, setId, quizType, runId) {
   try { return Boolean(value && typeof value === "object" && !Array.isArray(value) && value.version === VERSION
     && value.user_id === userId && value.set_id === setId && value.quiz_type === quizType && value.run_id === runId
-    && typeof value.session_initialized === "boolean" && Array.isArray(value.questions)
+    && typeof value.session_initialized === "boolean" && typeof value.session_bound === "boolean" && Array.isArray(value.questions)
     && value.accepted && typeof value.accepted === "object" && !Array.isArray(value.accepted)
     && currentOrderedSessionBatch(value.ordered_run)
     && (!value.pending_attempt || isPendingAttempt(value.pending_attempt, value))); } catch { return false; }
