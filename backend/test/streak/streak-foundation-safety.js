@@ -415,50 +415,79 @@ export async function runWithGuaranteedRelease({
   }
 
   const cleanupErrors = [];
+  const cleanupDiagnostics = [];
   try {
     release();
   } catch (error) {
     cleanupErrors.push(error);
+    cleanupDiagnostics.push(releaseFailureDiagnostic(error));
   }
-  const settled = await Promise.allSettled(held.map((entry) => boundedSettlement(
-    normalizeHeldOperation(entry),
+  const settled = await Promise.allSettled(held.map((entry, index) => settleHeldOperation(
+    entry,
+    index,
     settleTimeoutMs,
   )));
-  cleanupErrors.push(...settled
-    .filter(({ status }) => status === "rejected")
-    .map(({ reason }) => reason));
+  for (const outcome of settled) {
+    if (outcome.status !== "rejected") continue;
+    cleanupErrors.push(outcome.reason.cleanupError ?? outcome.reason);
+    cleanupDiagnostics.push(outcome.reason.cleanupDiagnostic);
+  }
+
+  const cleanupSummary = boundedCleanupSummary(cleanupDiagnostics);
 
   if (primaryError) {
     if (cleanupErrors.length > 0) {
       throw new AggregateError(
         [primaryError, ...cleanupErrors],
-        `Primary operation failed: ${primaryError.message}`,
+        `Primary operation failed: ${primaryError.message}; cleanup=${cleanupSummary}`,
       );
     }
     throw primaryError;
   }
   if (cleanupErrors.length > 0) {
-    throw new AggregateError(cleanupErrors, "Held operation cleanup failed.");
+    throw new AggregateError(cleanupErrors, `Held operation cleanup failed: ${cleanupSummary}.`);
   }
   return result;
 }
 
-function normalizeHeldOperation(entry) {
+function normalizeHeldOperation(entry, index) {
+  const positionalLabel = `operation-${index + 1}`;
   if (entry && typeof entry.then === "function") {
-    return { label: null, promise: entry };
+    return { label: null, diagnosticLabel: positionalLabel, promise: entry };
   }
   assert.equal(typeof entry, "object");
-  assert.match(entry.label, /^[a-z0-9-]{1,32}$/);
+  assert.match(entry.label, /^(?:holder|request-[1-9][0-9]?)$/);
   assert.equal(typeof entry.promise?.then, "function");
-  return { label: entry.label, promise: entry.promise };
+  return { label: entry.label, diagnosticLabel: entry.label, promise: entry.promise };
 }
 
-async function boundedSettlement({ label, promise }, timeoutMs) {
+class AnonymousHeldSettlementFailure {
+  constructor(cleanupError, cleanupDiagnostic) {
+    this.cleanupError = cleanupError;
+    this.cleanupDiagnostic = cleanupDiagnostic;
+  }
+}
+
+async function settleHeldOperation(entry, index, timeoutMs) {
+  let normalized;
+  try {
+    normalized = normalizeHeldOperation(entry, index);
+  } catch (error) {
+    throw new AnonymousHeldSettlementFailure(
+      error,
+      `operation-${index + 1}=rejected(${safeFailureIdentity(error)})`,
+    );
+  }
+  return boundedSettlement(normalized, timeoutMs);
+}
+
+async function boundedSettlement({ label, diagnosticLabel, promise }, timeoutMs) {
   assert.equal(Number.isInteger(timeoutMs) && timeoutMs > 0, true);
   let timer;
   const timeoutError = new Error(label
     ? `Timed out settling held operation ${label}.`
     : "Timed out settling a held concurrency operation.");
+  timeoutError.cleanupDiagnostic = `${diagnosticLabel}=timeout`;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(
       () => reject(timeoutError),
@@ -468,11 +497,52 @@ async function boundedSettlement({ label, promise }, timeoutMs) {
   try {
     return await Promise.race([promise, timeout]);
   } catch (error) {
-    if (!label || error === timeoutError) throw error;
-    const name = /^[A-Za-z][A-Za-z0-9]*$/.test(error?.name ?? "") ? error.name : "Error";
-    const code = /^[A-Za-z0-9_-]{1,32}$/.test(error?.code ?? "") ? ` code=${error.code}` : "";
-    throw new Error(`Held operation ${label} rejected (${name}${code}).`);
+    if (error === timeoutError) throw error;
+    const identity = safeFailureIdentity(error);
+    if (!label) {
+      throw new AnonymousHeldSettlementFailure(
+        error,
+        `${diagnosticLabel}=rejected(${identity})`,
+      );
+    }
+    const sanitized = new Error(`Held operation ${label} rejected (${identity}).`);
+    sanitized.cleanupDiagnostic = `${diagnosticLabel}=rejected(${identity})`;
+    throw sanitized;
   } finally {
     clearTimeout(timer);
   }
+}
+
+function releaseFailureDiagnostic(error) {
+  return `release=release-failed(${safeFailureIdentity(error)})`;
+}
+
+function safeFailureIdentity(error) {
+  const untrustedName = readUntrustedErrorProperty(error, "name");
+  const untrustedCode = readUntrustedErrorProperty(error, "code");
+  const name = typeof untrustedName === "string"
+    && /^[A-Za-z][A-Za-z0-9]*$/.test(untrustedName)
+    ? untrustedName
+    : "Error";
+  const code = typeof untrustedCode === "string"
+    && /^[A-Za-z0-9_-]{1,32}$/.test(untrustedCode)
+    ? ` code=${untrustedCode}`
+    : "";
+  return `${name}${code}`;
+}
+
+function readUntrustedErrorProperty(error, property) {
+  try {
+    return error?.[property];
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedCleanupSummary(diagnostics) {
+  const maximumEntries = 8;
+  const rendered = diagnostics.slice(0, maximumEntries);
+  const omitted = diagnostics.length - rendered.length;
+  if (omitted > 0) rendered.push(`additional=${omitted}`);
+  return rendered.join("; ");
 }

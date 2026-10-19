@@ -230,6 +230,10 @@ test("cleanup failure reports but does not hide the primary assertion", async ()
     assert.equal(error instanceof AggregateError, true);
     assert.equal(error.errors[0], primary);
     assert.equal(error.errors[1], cleanup);
+    assert.equal(
+      error.message,
+      "Primary operation failed: primary assertion; cleanup=operation-1=rejected(Error)",
+    );
     return true;
   });
 });
@@ -249,6 +253,11 @@ test("labeled held operations report sanitized rejection and settlement timeout 
     assert.equal(error.errors[0], primary);
     assert.equal(error.errors[1].message, "Held operation request-1 rejected (Error code=P2034).");
     assert.equal(error.errors[1].message.includes("secret"), false);
+    assert.equal(
+      error.message,
+      "Primary operation failed: primary assertion; cleanup=request-1=rejected(Error code=P2034)",
+    );
+    assert.equal(error.message.includes("secret"), false);
     return true;
   });
 
@@ -261,9 +270,235 @@ test("labeled held operations report sanitized rejection and settlement timeout 
   }), (error) => {
     assert.equal(error instanceof AggregateError, true);
     assert.equal(error.errors[1].message, "Timed out settling held operation holder.");
+    assert.equal(
+      error.message,
+      "Primary operation failed: primary assertion; cleanup=holder=timeout",
+    );
     return true;
   });
   assert.equal(released, true);
+});
+
+test("successful primary reports every cleanup failure with bounded sanitized identities", async () => {
+  const observed = [];
+  const sensitive = Object.assign(new Error("postgresql://secret SELECT private_sql fixture-id"), {
+    code: "P2034",
+  });
+  const maliciousCode = Object.assign(new Error("credential-value"), {
+    name: "Unsafe Name",
+    code: "P2028 secret-url",
+  });
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => "ok",
+    release: () => { observed.push("release"); },
+    held: [
+      { label: "holder", promise: Promise.reject(sensitive).finally(() => observed.push("holder")) },
+      { label: "request-1", promise: Promise.reject(maliciousCode).finally(() => observed.push("request-1")) },
+      { label: "request-2", promise: new Promise(() => {}).finally(() => observed.push("request-2")) },
+    ],
+    settleTimeoutMs: 10,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors.length, 3);
+    assert.equal(error.errors[0].message, "Held operation holder rejected (Error code=P2034).");
+    assert.equal(error.errors[1].message, "Held operation request-1 rejected (Error).");
+    assert.equal(error.errors[2].message, "Timed out settling held operation request-2.");
+    assert.equal(
+      error.message,
+      "Held operation cleanup failed: holder=rejected(Error code=P2034); request-1=rejected(Error); request-2=timeout.",
+    );
+    for (const privateValue of ["secret", "private_sql", "fixture-id", "credential-value", "secret-url"]) {
+      assert.equal(error.message.includes(privateValue), false);
+    }
+    return true;
+  });
+  assert.deepEqual(observed.slice(0, 3).sort(), ["holder", "release", "request-1"]);
+});
+
+test("release failure summary is sanitized and held cleanup still completes", async () => {
+  const releaseError = Object.assign(new Error("postgresql://secret release payload"), {
+    code: "P2034",
+  });
+  let heldSettled = false;
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => "ok",
+    release: () => { throw releaseError; },
+    held: [Promise.resolve().then(() => { heldSettled = true; })],
+    settleTimeoutMs: 100,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors.length, 1);
+    assert.equal(error.errors[0], releaseError);
+    assert.equal(error.message, "Held operation cleanup failed: release=release-failed(Error code=P2034).");
+    assert.equal(error.message.includes("secret"), false);
+    return true;
+  });
+  assert.equal(heldSettled, true);
+});
+
+test("hostile release error properties cannot interrupt held settlement", async () => {
+  for (const hostileProperty of ["name", "code"]) {
+    const releaseError = new Error("postgresql://secret release payload");
+    Object.defineProperty(releaseError, hostileProperty, {
+      configurable: true,
+      get() { throw new Error(`sensitive-${hostileProperty}`); },
+    });
+    const settled = [];
+    await assert.rejects(runWithGuaranteedRelease({
+      action: async () => "ok",
+      release: () => { throw releaseError; },
+      held: [
+        Promise.resolve().then(() => settled.push("before")),
+        Promise.resolve().then(() => settled.push("after")),
+      ],
+      settleTimeoutMs: 100,
+    }), (error) => {
+      assert.equal(error instanceof AggregateError, true);
+      assert.deepEqual(error.errors, [releaseError]);
+      assert.equal(
+        error.message,
+        "Held operation cleanup failed: release=release-failed(Error).",
+      );
+      assert.equal(error.message.includes("secret"), false);
+      assert.equal(error.message.includes(`sensitive-${hostileProperty}`), false);
+      return true;
+    });
+    assert.deepEqual(settled, ["before", "after"]);
+  }
+});
+
+test("hostile held rejection and malformed metadata remain isolated and sanitized", async () => {
+  const hostileRejection = new Proxy(new Error("postgresql://secret held payload"), {
+    get(target, property, receiver) {
+      if (property === "name" || property === "code") throw new Error(`sensitive-${String(property)}`);
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const hostileValidationError = {};
+  Object.defineProperties(hostileValidationError, {
+    name: { get() { throw new Error("sensitive-validation-name"); } },
+    code: { get() { throw new Error("sensitive-validation-code"); } },
+  });
+  const malformedEntry = {
+    get label() { throw hostileValidationError; },
+    promise: Promise.resolve(),
+  };
+  const settled = [];
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => "ok",
+    release: () => {},
+    held: [
+      Promise.resolve().then(() => settled.push("before")),
+      Promise.reject(hostileRejection),
+      malformedEntry,
+      Promise.resolve().then(() => settled.push("after")),
+    ],
+    settleTimeoutMs: 100,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors.length, 2);
+    assert.equal(error.errors[0], hostileRejection);
+    assert.equal(error.errors[1], hostileValidationError);
+    assert.equal(
+      error.message,
+      "Held operation cleanup failed: operation-2=rejected(Error); operation-3=rejected(Error).",
+    );
+    for (const sensitive of ["secret", "sensitive-name", "sensitive-code", "sensitive-validation"]) {
+      assert.equal(error.message.includes(sensitive), false);
+    }
+    return true;
+  });
+  assert.deepEqual(settled, ["before", "after"]);
+});
+
+test("primary failure remains aggregated with hostile cleanup metadata", async () => {
+  const primary = new Error("primary assertion");
+  const cleanup = new Proxy(new Error("postgresql://secret cleanup payload"), {
+    get(target, property, receiver) {
+      if (property === "name" || property === "code") throw new Error("sensitive-accessor");
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => { throw primary; },
+    release: () => {},
+    held: [Promise.reject(cleanup)],
+    settleTimeoutMs: 100,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors[0], primary);
+    assert.equal(error.errors[1], cleanup);
+    assert.equal(
+      error.message,
+      "Primary operation failed: primary assertion; cleanup=operation-1=rejected(Error)",
+    );
+    assert.equal(error.message.includes("secret"), false);
+    assert.equal(error.message.includes("sensitive-accessor"), false);
+    return true;
+  });
+});
+
+test("cleanup summary is capped while every held failure remains preserved", async () => {
+  const failures = Array.from({ length: 12 }, (_, index) => new Error(`private-${index + 1}`));
+  const settled = [];
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => "ok",
+    release: () => {},
+    held: failures.map((failure, index) => Promise.reject(failure)
+      .finally(() => settled.push(index + 1))),
+    settleTimeoutMs: 100,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors.length, 12);
+    assert.deepEqual(error.errors, failures);
+    assert.equal(
+      error.message,
+      "Held operation cleanup failed: operation-1=rejected(Error); operation-2=rejected(Error); operation-3=rejected(Error); operation-4=rejected(Error); operation-5=rejected(Error); operation-6=rejected(Error); operation-7=rejected(Error); operation-8=rejected(Error); additional=4.",
+    );
+    for (const failure of failures) assert.equal(error.message.includes(failure.message), false);
+    return true;
+  });
+  assert.deepEqual(settled.sort((left, right) => left - right), Array.from({ length: 12 }, (_, index) => index + 1));
+});
+
+test("malformed held entries are isolated at every position while valid neighbors settle", async () => {
+  for (const malformedIndex of [0, 1, 2]) {
+    const released = { value: false };
+    let releaseGate;
+    const gate = new Promise((resolve) => { releaseGate = resolve; });
+    const settled = [];
+    const validationErrors = [];
+    const entries = [0, 1, 2].map((index) => {
+      if (index === malformedIndex) return { label: "unsafe-label", promise: Promise.resolve() };
+      return gate.then(() => {
+        assert.equal(released.value, true);
+        settled.push(index);
+      });
+    });
+    await assert.rejects(runWithGuaranteedRelease({
+      action: async () => { throw new Error("primary assertion"); },
+      release: () => {
+        released.value = true;
+        releaseGate();
+      },
+      held: entries,
+      settleTimeoutMs: 100,
+    }), (error) => {
+      assert.equal(error instanceof AggregateError, true);
+      assert.equal(error.errors.length, 2);
+      assert.equal(error.errors[0].message, "primary assertion");
+      assert.equal(error.errors[1].name, "AssertionError");
+      validationErrors.push(error.errors[1]);
+      assert.equal(
+        error.message,
+        `Primary operation failed: primary assertion; cleanup=operation-${malformedIndex + 1}=rejected(AssertionError code=ERR_ASSERTION)`,
+      );
+      assert.equal(error.message.includes("unsafe-label"), false);
+      return true;
+    });
+    assert.equal(validationErrors.length, 1);
+    assert.deepEqual(settled.sort(), [0, 1, 2].filter((index) => index !== malformedIndex));
+  }
 });
 
 test("foundation cleanup attempts eligible resources in order and skips absent resources", async () => {
