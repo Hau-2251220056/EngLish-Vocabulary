@@ -1724,7 +1724,7 @@ async function waitForBlockingChain(holderPid, expectedCount, message) {
     message,
     readSample: (remainingMs) => readBlockingChain(holderPid, expectedCount, remainingMs),
     describeRows: (rows) => describeContentionWaitStates(rows, expectedCount),
-    observationDeadlineMs: 5_000,
+    observationDeadlineMs: 10_000,
     maximumSamples: 200,
     minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   });

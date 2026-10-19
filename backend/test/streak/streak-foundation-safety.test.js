@@ -643,6 +643,61 @@ test("contention observer policy reserves the hosted-CI closure lifecycle budget
   ), true);
 });
 
+test("extended contention observation survives request-arrival delay and remains bounded", async () => {
+  let currentTime = 0;
+  const observedBudgets = [];
+  let reads = 0;
+  const summary = await observeBoundedContention({
+    expectedCount: 2,
+    message: "delayed contention",
+    readSample: async (remainingMs) => {
+      observedBudgets.push(remainingMs);
+      reads += 1;
+      currentTime += reads < 3 ? 2_500 : 500;
+      return reads < 3 ? [] : [{}, {}];
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+    observationDeadlineMs: 10_000,
+    maximumSamples: 200,
+    minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  });
+  assert.deepEqual(summary, {
+    attempts: 3,
+    successfulSamples: 3,
+    insufficientSamples: 2,
+    retryableP2028Failures: 0,
+  });
+  assert.deepEqual(observedBudgets, [10_000, 7_475, 4_950]);
+  assert.equal(observedBudgets.every(
+    (budget) => budget >= CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  ), true);
+  assert.equal(currentTime > 5_000, true);
+
+  currentTime = 0;
+  const emptyBudgets = [];
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "bounded empty contention",
+    readSample: async (remainingMs) => {
+      emptyBudgets.push(remainingMs);
+      currentTime += 2_500;
+      return [];
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+    observationDeadlineMs: 10_000,
+    maximumSamples: 200,
+    minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  }), /samples=3; successful_samples=3; insufficient_samples=3/);
+  assert.deepEqual(emptyBudgets, [10_000, 7_475, 4_950]);
+  assert.equal(emptyBudgets.every(
+    (budget) => budget >= CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  ), true);
+});
+
 test("bounded contention counts successful insufficient observations and caps repeated P2028", async () => {
   await assert.rejects(observeBoundedContention({
     expectedCount: 2,
@@ -930,7 +985,7 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   assert.ok(observerStart >= 0 && observerEnd > observerStart);
   const contentionObserver = source.slice(observerStart, observerEnd);
   assert.match(contentionObserver, /observeBoundedContention\(\{/);
-  assert.match(contentionObserver, /observationDeadlineMs: 5_000/);
+  assert.match(contentionObserver, /observationDeadlineMs: 10_000/);
   assert.match(contentionObserver, /maximumSamples: 200/);
   assert.match(contentionObserver, /minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS/);
   assert.match(contentionObserver, /contentionObserverTransactionPolicy\(remainingMs\)/);
