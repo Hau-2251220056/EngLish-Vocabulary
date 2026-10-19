@@ -22,6 +22,7 @@
     "test:streak-foundation:safety": "node --test --test-concurrency=1 test/streak/streak-foundation-safety.test.js test/streak/streak-integrated-workflow-safety.test.js",
     "test:streak-foundation:ci": "node test/streak/streak-foundation-harness.js",
     "test:streak-integrated:ci": "node test/streak/streak-integrated-harness.js",
+    "test:streak-integrated:history:ci": "node test/streak/streak-integrated-history-verification.js",
     "test:vocabulary": "node --env-file=.env.test --test --test-concurrency=1 test/vocabulary/vocabulary.test.js",
     "test:learning": "node --env-file=.env.test --test --test-concurrency=1 test/learning/learning.test.js",
     "test:quiz": "node --env-file=.env.test --test --test-concurrency=1 test/quiz/quiz-read.test.js test/quiz/quiz-answer.test.js test/quiz/quiz.integration.test.js",

@@ -1,0 +1,102 @@
+name: TASK-249 Historical Integrated Schema Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorize_read_only_verification:
+        description: Affirmatively authorize read-only historical integrated-schema verification
+        required: true
+        default: false
+        type: boolean
+      approved_target_identity:
+        description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
+        required: true
+        type: string
+      historical_run_id:
+        description: Exact historical TASK-249 GitHub run ID
+        required: true
+        type: string
+      historical_run_attempt:
+        description: Exact historical TASK-249 GitHub run attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elvocab-ci-test-db
+  cancel-in-progress: false
+
+jobs:
+  verify-historical-integrated-schema:
+    name: Verify Historical TASK-249 Schema
+    if: inputs.authorize_read_only_verification == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: "true"
+      NODE_ENV: test
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_INTEGRATED_HISTORY_VERIFY_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.approved_target_identity }}
+      STREAK_INTEGRATED_APPROVED_RUN_ID: "39278326097"
+      STREAK_INTEGRATED_APPROVED_RUN_ATTEMPT: "1"
+      STREAK_INTEGRATED_TARGET_RUN_ID: ${{ inputs.historical_run_id }}
+      STREAK_INTEGRATED_TARGET_RUN_ATTEMPT: ${{ inputs.historical_run_attempt }}
+
+    steps:
+      - name: Require authorized read-only historical target
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.CI, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.STREAK_INTEGRATED_HISTORY_VERIFY_ALLOW, 'true');
+          assert.equal(environment.TEST_DATABASE_ALLOW_RESET, undefined);
+          assert.equal(environment.STREAK_MIGRATION_CLEANUP_ALLOW, undefined);
+          assert.match(environment.GITHUB_REPOSITORY ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+          assert.match(environment.GITHUB_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.GITHUB_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          assert.match(environment.STREAK_INTEGRATED_TARGET_RUN_ID ?? '', /^[1-9][0-9]*$/);
+          assert.match(environment.STREAK_INTEGRATED_TARGET_RUN_ATTEMPT ?? '', /^[1-9][0-9]*$/);
+          assert.equal(environment.STREAK_INTEGRATED_APPROVED_RUN_ID, '39278326097');
+          assert.equal(environment.STREAK_INTEGRATED_APPROVED_RUN_ATTEMPT, '1');
+          assert.equal(environment.STREAK_INTEGRATED_TARGET_RUN_ID, environment.STREAK_INTEGRATED_APPROVED_RUN_ID);
+          assert.equal(environment.STREAK_INTEGRATED_TARGET_RUN_ATTEMPT, environment.STREAK_INTEGRATED_APPROVED_RUN_ATTEMPT);
+          const target = environment.CI_TEST_DATABASE_IDENTITY ?? '';
+          const approved = environment.STREAK_MIGRATION_APPROVED_TARGET_IDENTITY ?? '';
+          assert.match(target, /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$/);
+          assert.equal(target, approved);
+          const parsed = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(parsed.protocol === 'postgresql:' || parsed.protocol === 'postgres:', true);
+          assert.equal(`${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`, target);
+          NODE
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Verify historical integrated schema without mutation
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-integrated:history:ci

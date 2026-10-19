@@ -1,11 +1,115 @@
 import assert from "node:assert/strict";
 import {
   assertHarnessAuthorization,
+  assertPositiveDecimalId,
   assertRunIdentity,
 } from "./streak-migration-safety.js";
 
 const INTEGRATED_SCHEMA = /^elvocab_streak_integrated_([0-9]+)_([0-9]+)_[a-f0-9]{8}$/;
 const MARKER_PREFIX = "elvocab-streak-integrated:v1:";
+export const APPROVED_INTEGRATED_HISTORY_TARGET = Object.freeze({
+  runId: "39278326097",
+  attempt: "1",
+});
+
+export class IntegratedHistoryVerificationError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "IntegratedHistoryVerificationError";
+    this.code = code;
+  }
+}
+
+export function assertIntegratedHistoryVerificationAuthorization(environment) {
+  const { targetIdentity } = assertHarnessAuthorization(environment);
+  assert.equal(environment.NODE_ENV, "test");
+  assert.equal(environment.STREAK_INTEGRATED_HISTORY_VERIFY_ALLOW, "true");
+  assert.notEqual(environment.TEST_DATABASE_ALLOW_RESET, "true");
+  assert.equal(environment.STREAK_INTEGRATED_HARNESS_ALLOW, undefined);
+  assert.equal(environment.STREAK_MIGRATION_CLEANUP_ALLOW, undefined);
+  const workflowIdentity = assertRunIdentity({
+    repository: environment.GITHUB_REPOSITORY ?? "",
+    runId: environment.GITHUB_RUN_ID ?? "",
+    attempt: environment.GITHUB_RUN_ATTEMPT ?? "",
+  });
+  const targetIdentityForRun = Object.freeze({
+    repository: workflowIdentity.repository,
+    runId: assertPositiveDecimalId(
+      environment.STREAK_INTEGRATED_TARGET_RUN_ID,
+      "STREAK_INTEGRATED_TARGET_RUN_ID",
+    ),
+    attempt: assertPositiveDecimalId(
+      environment.STREAK_INTEGRATED_TARGET_RUN_ATTEMPT,
+      "STREAK_INTEGRATED_TARGET_RUN_ATTEMPT",
+    ),
+  });
+  assert.equal(
+    environment.STREAK_INTEGRATED_APPROVED_RUN_ID,
+    APPROVED_INTEGRATED_HISTORY_TARGET.runId,
+  );
+  assert.equal(
+    environment.STREAK_INTEGRATED_APPROVED_RUN_ATTEMPT,
+    APPROVED_INTEGRATED_HISTORY_TARGET.attempt,
+  );
+  assert.equal(targetIdentityForRun.runId, APPROVED_INTEGRATED_HISTORY_TARGET.runId);
+  assert.equal(targetIdentityForRun.attempt, APPROVED_INTEGRATED_HISTORY_TARGET.attempt);
+  return Object.freeze({ targetIdentity, workflowIdentity, targetIdentityForRun });
+}
+
+export function integratedHistoryDiscoveryPattern(runId, attempt) {
+  assertPositiveDecimalId(runId, "historical integrated run ID");
+  assertPositiveDecimalId(attempt, "historical integrated run attempt");
+  return `elvocab\\_streak\\_integrated\\_${runId}\\_${attempt}\\_%`;
+}
+
+export function verifyHistoricalIntegratedCandidates(rows, expectedIdentity) {
+  assert.ok(Array.isArray(rows));
+  const identity = assertRunIdentity(expectedIdentity);
+  if (rows.length === 0) return Object.freeze({ status: "ABSENT" });
+  if (rows.length !== 1) {
+    throw new IntegratedHistoryVerificationError(
+      "INVALID_OR_AMBIGUOUS_CANDIDATES",
+      "Historical integrated schema candidates are invalid or ambiguous.",
+    );
+  }
+
+  const row = rows[0];
+  let schemaName;
+  try {
+    schemaName = assertIntegratedSchemaName(row?.nspname ?? "");
+    const [, runId, attempt] = schemaName.match(INTEGRATED_SCHEMA);
+    assert.equal(runId, identity.runId);
+    assert.equal(attempt, identity.attempt);
+  } catch {
+    throw new IntegratedHistoryVerificationError(
+      "INVALID_OR_AMBIGUOUS_CANDIDATES",
+      "Historical integrated schema candidate has an invalid identity.",
+    );
+  }
+
+  if (typeof row.marker !== "string" || row.marker.length === 0) {
+    throw new IntegratedHistoryVerificationError(
+      "OWNERSHIP_MARKER_MISSING",
+      "Historical integrated schema ownership marker is missing.",
+    );
+  }
+
+  let ownership;
+  try {
+    ownership = decodeMarker(row.marker);
+    assert.equal(ownership.repository, identity.repository);
+    assert.equal(ownership.run_id, identity.runId);
+    assert.equal(ownership.run_attempt, identity.attempt);
+    assert.equal(ownership.schema_name, schemaName);
+  } catch {
+    throw new IntegratedHistoryVerificationError(
+      "OWNERSHIP_MARKER_MISMATCH",
+      "Historical integrated schema ownership marker does not match the target.",
+    );
+  }
+
+  return Object.freeze({ status: "OWNED_SCHEMA_PRESENT", schemaName, ownership });
+}
 
 export function assertIntegratedAuthorization(environment) {
   const { targetIdentity } = assertHarnessAuthorization(environment);
