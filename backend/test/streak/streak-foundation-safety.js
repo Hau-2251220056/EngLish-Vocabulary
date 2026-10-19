@@ -92,11 +92,18 @@ export function assertFoundationSchemaOwnership({
   return ownership;
 }
 
-export async function runSanitizedContentionObserver(action, prismaErrorTypes) {
+export async function runSanitizedContentionObserver(
+  action,
+  prismaErrorTypes,
+  { now = Date.now } = {},
+) {
   assert.equal(typeof action, "function");
   assertPrismaObserverErrorTypes(prismaErrorTypes);
+  assert.equal(typeof now, "function");
+  const startedAt = now();
+  const phase = createContentionObserverPhaseTracker();
   try {
-    return await action();
+    return await action(phase);
   } catch (error) {
     const identity = identifyPrismaObserverError(error, prismaErrorTypes);
     if (!identity) throw error;
@@ -105,18 +112,111 @@ export async function runSanitizedContentionObserver(action, prismaErrorTypes) {
       ? error.code
       : null;
     const retryable = identity.name === "PrismaClientKnownRequestError" && code === "P2028";
-    throw new SanitizedContentionObserverError(identity.name, code, retryable);
+    throw new SanitizedContentionObserverError(
+      identity.name,
+      code,
+      retryable,
+      phase.current(),
+      contentionObserverElapsedBucket(now() - startedAt),
+    );
   }
 }
 
 export class SanitizedContentionObserverError extends Error {
-  constructor(safeName, safeCode, retryable) {
+  constructor(safeName, safeCode, retryable, safePhase = null, elapsedBucket = null) {
     const code = safeCode ? ` code=${safeCode}` : "";
     super(`Contention observer failed (${safeName}${code}).`);
     this.name = "SanitizedContentionObserverError";
     this.safeName = safeName;
     this.safeCode = safeCode;
     this.retryable = retryable === true;
+    this.safePhase = safePhase;
+    this.elapsedBucket = elapsedBucket;
+  }
+}
+
+export function describeContentionWaitStates(rows, expectedCount) {
+  assert.equal(Array.isArray(rows), true);
+  assert.equal(Number.isInteger(expectedCount) && expectedCount > 0, true);
+  return rows.slice(0, expectedCount).map((row, index) => ({
+    role: `blocked-${index + 1}`,
+    depth: Number.isInteger(row.depth) && row.depth >= 1 && row.depth <= expectedCount
+      ? row.depth
+      : null,
+    state_category: postgresStateCategory(row.state),
+    wait_category: postgresWaitCategory(row.wait_event_type),
+    wait_event_present: row.wait_event !== null && row.wait_event !== undefined,
+    blocking_count: Array.isArray(row.blocking_pids)
+      ? Math.min(row.blocking_pids.filter(Number.isInteger).length, expectedCount)
+      : 0,
+  }));
+}
+
+function createContentionObserverPhaseTracker() {
+  let phase = "transaction-acquisition";
+  const transition = (expected, next) => {
+    assert.equal(phase, expected);
+    phase = next;
+  };
+  return Object.freeze({
+    callbackEntered: () => transition("transaction-acquisition", "transaction-callback-entered"),
+    statementTimeoutStarted: () => transition(
+      "transaction-callback-entered",
+      "statement-timeout-started",
+    ),
+    statementTimeoutCompleted: () => transition(
+      "statement-timeout-started",
+      "statement-timeout-completed",
+    ),
+    blockingQueryStarted: () => transition(
+      "statement-timeout-completed",
+      "blocking-query-started",
+    ),
+    blockingQueryCompleted: () => transition(
+      "blocking-query-started",
+      "blocking-query-completed",
+    ),
+    callbackReturned: () => transition("blocking-query-completed", "transaction-closure"),
+    current: () => phase,
+  });
+}
+
+function contentionObserverElapsedBucket(elapsedMs) {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return "unknown";
+  if (elapsedMs < 50) return "under-50ms";
+  if (elapsedMs < 150) return "50-149ms";
+  if (elapsedMs < 400) return "150-399ms";
+  if (elapsedMs < 750) return "400-749ms";
+  return "750ms-or-more";
+}
+
+function postgresStateCategory(value) {
+  switch (value) {
+    case "active": return "active";
+    case "idle": return "idle";
+    case "idle in transaction": return "idle-in-transaction";
+    case "idle in transaction (aborted)": return "idle-in-transaction-aborted";
+    case "fastpath function call": return "fastpath-function-call";
+    case "disabled": return "disabled";
+    default: return "unknown";
+  }
+}
+
+function postgresWaitCategory(value) {
+  switch (value) {
+    case null:
+    case undefined: return "none";
+    case "Activity": return "activity";
+    case "BufferPin": return "buffer-pin";
+    case "Client": return "client";
+    case "Extension": return "extension";
+    case "InjectionPoint": return "injection-point";
+    case "IO": return "io";
+    case "IPC": return "ipc";
+    case "Lock": return "lock";
+    case "LWLock": return "lwlock";
+    case "Timeout": return "timeout";
+    default: return "unknown";
   }
 }
 
@@ -197,6 +297,9 @@ export async function observeBoundedContention({
   assert.equal(typeof describeRows, "function");
   const deadline = now() + observationDeadlineMs;
   let samples = 0;
+  let successfulSamples = 0;
+  let insufficientSamples = 0;
+  let retryableP2028Failures = 0;
   let maximumObserved = 0;
   let lastWaitStates = [];
   let lastObserverError = null;
@@ -210,9 +313,12 @@ export async function observeBoundedContention({
     } catch (error) {
       if (!(error instanceof SanitizedContentionObserverError) || !error.retryable) throw error;
       samples += 1;
+      retryableP2028Failures += 1;
       lastObserverError = {
         name: error.safeName,
         ...(error.safeCode ? { code: error.safeCode } : {}),
+        ...(error.safePhase ? { phase: error.safePhase } : {}),
+        ...(error.elapsedBucket ? { elapsed: error.elapsedBucket } : {}),
       };
       if (deadline - now() < minimumLifecycleBudgetMs) break;
       await pause(25);
@@ -220,9 +326,18 @@ export async function observeBoundedContention({
     }
 
     samples += 1;
+    successfulSamples += 1;
     maximumObserved = Math.max(maximumObserved, rows.length);
     lastWaitStates = describeRows(rows);
-    if (rows.length >= expectedCount) return;
+    if (rows.length >= expectedCount) {
+      return Object.freeze({
+        attempts: samples,
+        successfulSamples,
+        insufficientSamples,
+        retryableP2028Failures,
+      });
+    }
+    insufficientSamples += 1;
     if (deadline - now() < minimumLifecycleBudgetMs) break;
     await pause(25);
   }
@@ -231,7 +346,7 @@ export async function observeBoundedContention({
     ? `; observer_error=${JSON.stringify(lastObserverError)}`
     : "";
   throw new Error(
-    `${message} maximum_observed=${maximumObserved}; samples=${samples}; wait_states=${JSON.stringify(lastWaitStates)}${observerError}`,
+    `${message} maximum_observed=${maximumObserved}; samples=${samples}; successful_samples=${successfulSamples}; insufficient_samples=${insufficientSamples}; retryable_p2028_failures=${retryableP2028Failures}; wait_states=${JSON.stringify(lastWaitStates)}${observerError}`,
   );
 }
 

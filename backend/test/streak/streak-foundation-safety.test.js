@@ -8,6 +8,7 @@ import {
   buildFoundationObserverDatabaseUrl,
   buildFoundationSchemaContext,
   connectFoundationObserver,
+  describeContentionWaitStates,
   FoundationObserverSetupError,
   observeBoundedContention,
   runFoundationCleanup,
@@ -442,6 +443,50 @@ test("contention observer rejection exposes only a validated name and code", asy
   );
 });
 
+test("contention observer reports bounded lifecycle phases without sensitive error text", async () => {
+  const cases = [
+    ["transaction-acquisition", () => {}],
+    ["statement-timeout-started", (phase) => {
+      phase.callbackEntered();
+      phase.statementTimeoutStarted();
+    }],
+    ["blocking-query-started", (phase) => {
+      phase.callbackEntered();
+      phase.statementTimeoutStarted();
+      phase.statementTimeoutCompleted();
+      phase.blockingQueryStarted();
+    }],
+    ["transaction-closure", (phase) => {
+      phase.callbackEntered();
+      phase.statementTimeoutStarted();
+      phase.statementTimeoutCompleted();
+      phase.blockingQueryStarted();
+      phase.blockingQueryCompleted();
+      phase.callbackReturned();
+    }],
+  ];
+  for (const [expectedPhase, advancePhase] of cases) {
+    const sensitive = Object.assign(new SimulatedPrismaClientKnownRequestError(
+      "postgresql://secret@database.invalid SELECT private_sql fixture-user-id",
+    ), { code: "P2028" });
+    const times = [0, 149];
+    await assert.rejects(runSanitizedContentionObserver((phase) => {
+      advancePhase(phase);
+      throw sensitive;
+    }, simulatedPrismaErrorTypes, {
+      now: () => times.shift(),
+    }), (error) => {
+      assert.equal(error.safePhase, expectedPhase);
+      assert.equal(error.elapsedBucket, "50-149ms");
+      assert.equal(error.retryable, true);
+      for (const privateValue of ["secret", "database.invalid", "SELECT", "fixture-user-id"]) {
+        assert.equal(error.message.includes(privateValue), false);
+      }
+      return true;
+    });
+  }
+});
+
 test("contention observer propagates programming and unknown errors without retry classification", async () => {
   for (const rejected of [
     new TypeError("invalid observer result"),
@@ -522,7 +567,7 @@ test("bounded contention observation retries sanitized P2028 and can then succee
     new SimulatedPrismaClientKnownRequestError("postgresql://secret SELECT private_sql"),
     { code: "P2028" },
   );
-  await observeBoundedContention({
+  const summary = await observeBoundedContention({
     expectedCount: 2,
     message: "contention timeout",
     readSample: async (remainingMs) => {
@@ -539,6 +584,144 @@ test("bounded contention observation retries sanitized P2028 and can then succee
     pause: async (milliseconds) => { currentTime += milliseconds; },
   });
   assert.equal(reads, 2);
+  assert.deepEqual(summary, {
+    attempts: 2,
+    successfulSamples: 1,
+    insufficientSamples: 0,
+    retryableP2028Failures: 1,
+  });
+});
+
+test("bounded contention counts successful insufficient observations and caps repeated P2028", async () => {
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "insufficient contention",
+    readSample: async () => [],
+    describeRows: (rows) => rows,
+    now: () => 0,
+    pause: async () => {},
+    maximumSamples: 1,
+  }), (error) => {
+    assert.match(error.message, /samples=1; successful_samples=1; insufficient_samples=1; retryable_p2028_failures=0/);
+    return true;
+  });
+
+  const sensitive = Object.assign(new SimulatedPrismaClientKnownRequestError(
+    "postgresql://secret@database.invalid SELECT private_sql fixture-user-id",
+  ), { code: "P2028" });
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "retryable contention",
+    readSample: async () => runSanitizedContentionObserver(
+      (phase) => {
+        phase.callbackEntered();
+        phase.statementTimeoutStarted();
+        throw sensitive;
+      },
+      simulatedPrismaErrorTypes,
+      { now: (() => { const times = [0, 49]; return () => times.shift(); })() },
+    ),
+    describeRows: (rows) => rows,
+    now: () => 0,
+    pause: async () => {},
+    maximumSamples: 3,
+  }), (error) => {
+    assert.match(error.message, /samples=3; successful_samples=0; insufficient_samples=0; retryable_p2028_failures=3/);
+    assert.match(error.message, /observer_error=\{"name":"PrismaClientKnownRequestError","code":"P2028","phase":"statement-timeout-started","elapsed":"under-50ms"\}/);
+    for (const privateValue of ["secret", "database.invalid", "SELECT", "fixture-user-id"]) {
+      assert.equal(error.message.includes(privateValue), false);
+    }
+    return true;
+  });
+});
+
+test("contention timeout diagnostics replace backend identifiers with bounded counts", async () => {
+  const rows = [
+    {
+      pid: 73124,
+      depth: 73125,
+      state: "secret credential",
+      wait_event_type: "postgresql://secret@database.invalid",
+      wait_event: "fixture-user-id",
+      blocking_pids: [73123, 73122, 73121, 73120],
+    },
+    {
+      pid: 83124,
+      depth: 2,
+      state: "active",
+      wait_event_type: "Lock",
+      wait_event: "advisory",
+      blocking_pids: [83123],
+    },
+  ];
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 3,
+    message: "sanitized contention",
+    readSample: async () => rows,
+    describeRows: (sample) => describeContentionWaitStates(sample, 3),
+    now: () => 0,
+    pause: async () => {},
+    maximumSamples: 1,
+  }), (error) => {
+    assert.match(error.message, /"depth":null,"state_category":"unknown","wait_category":"unknown","wait_event_present":true,"blocking_count":3/);
+    assert.match(error.message, /"depth":2,"state_category":"active","wait_category":"lock","wait_event_present":true,"blocking_count":1/);
+    for (const privateValue of [
+      "73124", "73125", "73123", "73122", "73121", "73120",
+      "83124", "83123", "secret credential", "database.invalid", "fixture-user-id", "advisory",
+    ]) {
+      assert.equal(error.message.includes(privateValue), false);
+    }
+    assert.match(error.message, /samples=1; successful_samples=1; insufficient_samples=1; retryable_p2028_failures=0/);
+    return true;
+  });
+  assert.deepEqual(rows[0], {
+    pid: 73124,
+    depth: 73125,
+    state: "secret credential",
+    wait_event_type: "postgresql://secret@database.invalid",
+    wait_event: "fixture-user-id",
+    blocking_pids: [73123, 73122, 73121, 73120],
+  });
+
+  const success = await observeBoundedContention({
+    expectedCount: 1,
+    message: "contention timeout",
+    readSample: async () => rows,
+    describeRows: (sample) => describeContentionWaitStates(sample, 1),
+    now: () => 0,
+    pause: async () => {},
+  });
+  assert.deepEqual(success, {
+    attempts: 1,
+    successfulSamples: 1,
+    insufficientSamples: 0,
+    retryableP2028Failures: 0,
+  });
+
+  let rejectHeld;
+  const held = new Promise((_, reject) => { rejectHeld = reject; });
+  await assert.rejects(runWithGuaranteedRelease({
+    action: () => observeBoundedContention({
+      expectedCount: 3,
+      message: "sanitized contention",
+      readSample: async () => rows,
+      describeRows: (sample) => describeContentionWaitStates(sample, 3),
+      now: () => 0,
+      pause: async () => {},
+      maximumSamples: 1,
+    }),
+    release: () => rejectHeld(Object.assign(new Error(
+      "postgresql://secret@database.invalid fixture-user-id 73124",
+    ), { code: "P2028" })),
+    held: [{ label: "holder", promise: held }],
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    const diagnostic = [error.message, ...error.errors.map((nested) => nested.message)].join(" ");
+    for (const privateValue of ["73124", "database.invalid", "fixture-user-id"]) {
+      assert.equal(diagnostic.includes(privateValue), false);
+    }
+    return true;
+  });
 });
 
 test("bounded contention observation stops before unsafe budget and reports only safe errors", async () => {
@@ -559,8 +742,8 @@ test("bounded contention observation stops before unsafe budget and reports only
     now: () => currentTime,
     pause: async (milliseconds) => { currentTime += milliseconds; },
   }), (error) => {
-    assert.match(error.message, /maximum_observed=0; samples=3; wait_states=\[\]/);
-    assert.match(error.message, /observer_error=\{"name":"PrismaClientKnownRequestError","code":"P2028"\}/);
+    assert.match(error.message, /maximum_observed=0; samples=3; successful_samples=0; insufficient_samples=0; retryable_p2028_failures=3; wait_states=\[\]/);
+    assert.match(error.message, /observer_error=\{"name":"PrismaClientKnownRequestError","code":"P2028","phase":"transaction-acquisition","elapsed":"under-50ms"\}/);
     for (const privateValue of ["secret", "database.invalid", "fixture-user-id", "SELECT"]) {
       assert.equal(error.message.includes(privateValue), false);
     }
@@ -705,13 +888,19 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   assert.match(contentionObserver, /const statementTimeoutMs = Math\.min\(150,/);
   assert.match(contentionObserver, /wait_event_type/);
   assert.match(contentionObserver, /wait_event/);
-  assert.match(contentionObserver, /blocking_pids/);
+  assert.match(contentionObserver, /describeContentionWaitStates\(rows, expectedCount\)/);
   assert.match(contentionObserver, /label: "holder"/);
   assert.match(contentionObserver, /label: `request-\$\{index \+ 1\}`/);
   assert.match(contentionObserver, /SELECT set_config\(/);
   assert.match(contentionObserver, /'statement_timeout'/);
   assert.match(contentionObserver, /\{ maxWait, timeout \}/);
   assert.match(contentionObserver, /runSanitizedContentionObserver/);
+  assert.match(contentionObserver, /phase\.callbackEntered\(\)/);
+  assert.match(contentionObserver, /phase\.statementTimeoutStarted\(\)/);
+  assert.match(contentionObserver, /phase\.statementTimeoutCompleted\(\)/);
+  assert.match(contentionObserver, /phase\.blockingQueryStarted\(\)/);
+  assert.match(contentionObserver, /phase\.blockingQueryCompleted\(\)/);
+  assert.match(contentionObserver, /phase\.callbackReturned\(\)/);
   assert.match(contentionObserver, /observer\.\$transaction/);
   assert.doesNotMatch(contentionObserver, /prisma\.\$transaction/);
   assert.doesNotMatch(contentionObserver, /activity\.query/);

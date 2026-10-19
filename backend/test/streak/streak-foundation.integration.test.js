@@ -16,6 +16,7 @@ import {
   assertFoundationAuthorization,
   buildFoundationObserverDatabaseUrl,
   connectFoundationObserver,
+  describeContentionWaitStates,
 } from "./streak-foundation-safety.js";
 import {
   observeBoundedContention,
@@ -1720,16 +1721,7 @@ async function waitForBlockingChain(holderPid, expectedCount, message) {
     expectedCount,
     message,
     readSample: (remainingMs) => readBlockingChain(holderPid, expectedCount, remainingMs),
-    describeRows: (rows) => rows.map((row, index) => ({
-      role: `blocked-${index + 1}`,
-      depth: Number.isInteger(row.depth) ? row.depth : null,
-      state: safePostgresWaitValue(row.state),
-      wait_event_type: safePostgresWaitValue(row.wait_event_type),
-      wait_event: safePostgresWaitValue(row.wait_event),
-      blocking_pids: Array.isArray(row.blocking_pids)
-        ? row.blocking_pids.filter(Number.isInteger).slice(0, expectedCount)
-        : [],
-    })),
+    describeRows: (rows) => describeContentionWaitStates(rows, expectedCount),
     observationDeadlineMs: 5_000,
     maximumSamples: 200,
     minimumLifecycleBudgetMs: 750,
@@ -1741,13 +1733,17 @@ function readBlockingChain(holderPid, expectedCount, remainingMs) {
   const maxWait = Math.min(150, remainingMs - 600);
   const timeout = Math.min(400, remainingMs - maxWait - 200);
   const statementTimeoutMs = Math.min(150, timeout - 150);
-  return runSanitizedContentionObserver(() => observer.$transaction(async (transaction) => {
+  return runSanitizedContentionObserver((phase) => observer.$transaction(async (transaction) => {
+    phase.callbackEntered();
+    phase.statementTimeoutStarted();
     await transaction.$queryRaw`SELECT set_config(
       'statement_timeout',
       ${`${statementTimeoutMs}ms`},
       true
     )`;
-    return transaction.$queryRaw`
+    phase.statementTimeoutCompleted();
+    phase.blockingQueryStarted();
+    const rows = await transaction.$queryRaw`
       WITH RECURSIVE blocked(pid, depth, path) AS (
         SELECT activity.pid, 1, ARRAY[activity.pid]
         FROM pg_stat_activity AS activity
@@ -1774,6 +1770,9 @@ function readBlockingChain(holderPid, expectedCount, remainingMs) {
       ORDER BY blocked.depth ASC, activity.pid ASC
       LIMIT ${expectedCount}
     `;
+    phase.blockingQueryCompleted();
+    phase.callbackReturned();
+    return rows;
   }, { maxWait, timeout }), prismaObserverErrorTypes);
 }
 
@@ -1782,13 +1781,6 @@ function labeledContentionOperations(holder, requests) {
     { label: "holder", promise: holder },
     ...requests.map((promise, index) => ({ label: `request-${index + 1}`, promise })),
   ];
-}
-
-function safePostgresWaitValue(value) {
-  if (value === null) return null;
-  return typeof value === "string" && /^[A-Za-z0-9 _-]{1,64}$/.test(value)
-    ? value
-    : "REDACTED";
 }
 
 async function legacyState(userId) {
