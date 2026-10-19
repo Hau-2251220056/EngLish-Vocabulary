@@ -14,6 +14,7 @@ import { createSessionFixture, createUserFixture } from "../helpers/auth-fixture
 import { startHttpTestServer } from "../helpers/http-test-server.js";
 import { assertFoundationAuthorization } from "./streak-foundation-safety.js";
 import {
+  observeBoundedContention,
   runSanitizedContentionObserver,
   runWithGuaranteedRelease,
 } from "./streak-foundation-safety.js";
@@ -22,16 +23,23 @@ let database;
 let prisma;
 let peer;
 let http;
+let prismaObserverErrorTypes;
 let now = new Date("2026-10-18T16:59:59.999Z");
 const CONCURRENCY_TIMEOUT_MS = 30_000;
 const CONTROLLED_CONTENTION_TIMEOUT_MS = 60_000;
 
 before(async () => {
   assertFoundationAuthorization(process.env);
-  const [{ createTestDatabase }, { PrismaClient }] = await Promise.all([
+  const [{ createTestDatabase }, { Prisma, PrismaClient }] = await Promise.all([
     import("../helpers/test-database.js"),
     import("../../src/generated/prisma/client.ts"),
   ]);
+  prismaObserverErrorTypes = {
+    PrismaClientKnownRequestError: Prisma.PrismaClientKnownRequestError,
+    PrismaClientUnknownRequestError: Prisma.PrismaClientUnknownRequestError,
+    PrismaClientRustPanicError: Prisma.PrismaClientRustPanicError,
+    PrismaClientInitializationError: Prisma.PrismaClientInitializationError,
+  };
   const expectedSchema = process.env.STREAK_FOUNDATION_SCHEMA_NAME;
   const expectedSchemaMarker = process.env.STREAK_FOUNDATION_SCHEMA_MARKER;
   assert.equal(typeof expectedSchema, "string");
@@ -1694,19 +1702,11 @@ async function runContendedQuizRequests({ fixture, vocabularyId, requests, label
 }
 
 async function waitForBlockingChain(holderPid, expectedCount, message) {
-  const deadline = Date.now() + 5_000;
-  const maximumSamples = 200;
-  const minimumObserverBudgetMs = 100;
-  let samples = 0;
-  let maximumObserved = 0;
-  let lastWaitStates = [];
-  while (samples < maximumSamples) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs < minimumObserverBudgetMs) break;
-    const rows = await readBlockingChain(holderPid, expectedCount, remainingMs);
-    samples += 1;
-    maximumObserved = Math.max(maximumObserved, rows.length);
-    lastWaitStates = rows.map((row, index) => ({
+  return observeBoundedContention({
+    expectedCount,
+    message,
+    readSample: (remainingMs) => readBlockingChain(holderPid, expectedCount, remainingMs),
+    describeRows: (rows) => rows.map((row, index) => ({
       role: `blocked-${index + 1}`,
       depth: Number.isInteger(row.depth) ? row.depth : null,
       state: safePostgresWaitValue(row.state),
@@ -1715,19 +1715,18 @@ async function waitForBlockingChain(holderPid, expectedCount, message) {
       blocking_pids: Array.isArray(row.blocking_pids)
         ? row.blocking_pids.filter(Number.isInteger).slice(0, expectedCount)
         : [],
-    }));
-    if (rows.length >= expectedCount) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(
-    `${message} maximum_observed=${maximumObserved}; samples=${samples}; wait_states=${JSON.stringify(lastWaitStates)}`,
-  );
+    })),
+    observationDeadlineMs: 5_000,
+    maximumSamples: 200,
+    minimumLifecycleBudgetMs: 750,
+  });
 }
 
 function readBlockingChain(holderPid, expectedCount, remainingMs) {
-  const maxWait = Math.min(200, Math.max(1, Math.floor(remainingMs / 3)));
-  const timeout = Math.max(1, remainingMs - maxWait);
-  const statementTimeoutMs = Math.min(500, Math.max(1, timeout - 50));
+  assert.equal(remainingMs >= 750, true);
+  const maxWait = Math.min(150, remainingMs - 600);
+  const timeout = Math.min(400, remainingMs - maxWait - 200);
+  const statementTimeoutMs = Math.min(150, timeout - 150);
   return runSanitizedContentionObserver(() => prisma.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT set_config(
       'statement_timeout',
@@ -1761,7 +1760,7 @@ function readBlockingChain(holderPid, expectedCount, remainingMs) {
       ORDER BY blocked.depth ASC, activity.pid ASC
       LIMIT ${expectedCount}
     `;
-  }, { maxWait, timeout }));
+  }, { maxWait, timeout }), prismaObserverErrorTypes);
 }
 
 function labeledContentionOperations(holder, requests) {

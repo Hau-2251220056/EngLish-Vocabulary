@@ -6,9 +6,22 @@ import {
   assertFoundationAuthorization,
   assertFoundationSchemaOwnership,
   buildFoundationSchemaContext,
+  observeBoundedContention,
   runSanitizedContentionObserver,
   runWithGuaranteedRelease,
 } from "./streak-foundation-safety.js";
+
+class SimulatedPrismaClientKnownRequestError extends Error {}
+class SimulatedPrismaClientUnknownRequestError extends Error {}
+class SimulatedPrismaClientRustPanicError extends Error {}
+class SimulatedPrismaClientInitializationError extends Error {}
+
+const simulatedPrismaErrorTypes = {
+  PrismaClientKnownRequestError: SimulatedPrismaClientKnownRequestError,
+  PrismaClientUnknownRequestError: SimulatedPrismaClientUnknownRequestError,
+  PrismaClientRustPanicError: SimulatedPrismaClientRustPanicError,
+  PrismaClientInitializationError: SimulatedPrismaClientInitializationError,
+};
 
 const approved = Object.freeze({
   CI: "true",
@@ -214,11 +227,11 @@ test("labeled held operations report sanitized rejection and settlement timeout 
 });
 
 test("contention observer rejection exposes only a validated name and code", async () => {
-  const rejected = Object.assign(new Error(
+  const rejected = Object.assign(new SimulatedPrismaClientKnownRequestError(
     "postgresql://secret@database.invalid fixture-user-id SELECT private_sql",
   ), { name: "PrismaClientKnownRequestError", code: "P2028" });
   await assert.rejects(
-    runSanitizedContentionObserver(async () => { throw rejected; }),
+    runSanitizedContentionObserver(async () => { throw rejected; }, simulatedPrismaErrorTypes),
     (error) => {
       assert.equal(
         error.message,
@@ -231,6 +244,175 @@ test("contention observer rejection exposes only a validated name and code", asy
       return true;
     },
   );
+});
+
+test("contention observer propagates programming and unknown errors without retry classification", async () => {
+  for (const rejected of [
+    new TypeError("invalid observer result"),
+    new Error("unknown programming failure"),
+  ]) {
+    await assert.rejects(
+      runSanitizedContentionObserver(async () => { throw rejected; }, simulatedPrismaErrorTypes),
+      (error) => error === rejected,
+    );
+  }
+});
+
+test("forged and malformed Prisma-shaped errors cannot acquire retry eligibility", async () => {
+  const forged = Object.assign(new TypeError("programming defect"), {
+    name: "PrismaClientKnownRequestError",
+    code: "P2028",
+  });
+  const malformed = {
+    name: "PrismaClientKnownRequestError",
+    code: "P2028",
+    message: "postgresql://secret SELECT private_sql",
+  };
+  for (const rejected of [forged, malformed]) {
+    await assert.rejects(
+      runSanitizedContentionObserver(
+        async () => { throw rejected; },
+        simulatedPrismaErrorTypes,
+      ),
+      (error) => error === rejected && error.retryable !== true,
+    );
+  }
+});
+
+test("recognized non-retryable Prisma observer failures are sanitized and fail immediately", async () => {
+  let reads = 0;
+  const rejected = Object.assign(new SimulatedPrismaClientKnownRequestError(
+    "postgresql://secret@database.invalid fixture-user-id SELECT private_sql",
+  ), { name: "PrismaClientKnownRequestError", code: "P2024" });
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "contention timeout",
+    readSample: async () => {
+      reads += 1;
+      return runSanitizedContentionObserver(async () => { throw rejected; }, simulatedPrismaErrorTypes);
+    },
+    describeRows: (rows) => rows,
+    now: () => 0,
+    pause: async () => {},
+  }), (error) => {
+    assert.equal(error.message, "Contention observer failed (PrismaClientKnownRequestError code=P2024).");
+    assert.equal(error.retryable, false);
+    for (const sensitive of ["secret", "database.invalid", "fixture-user-id", "SELECT"]) {
+      assert.equal(error.message.includes(sensitive), false);
+    }
+    return true;
+  });
+  assert.equal(reads, 1);
+
+  const unknownRequest = new SimulatedPrismaClientUnknownRequestError(
+    "postgresql://another-secret private_sql",
+  );
+  await assert.rejects(
+    runSanitizedContentionObserver(async () => { throw unknownRequest; }, simulatedPrismaErrorTypes),
+    (error) => {
+      assert.equal(error.message, "Contention observer failed (PrismaClientUnknownRequestError).");
+      assert.equal(error.retryable, false);
+      assert.equal(error.message.includes("another-secret"), false);
+      assert.equal(error.message.includes("private_sql"), false);
+      return true;
+    },
+  );
+});
+
+test("bounded contention observation retries sanitized P2028 and can then succeed", async () => {
+  let currentTime = 0;
+  let reads = 0;
+  const sensitive = Object.assign(
+    new SimulatedPrismaClientKnownRequestError("postgresql://secret SELECT private_sql"),
+    { code: "P2028" },
+  );
+  await observeBoundedContention({
+    expectedCount: 2,
+    message: "contention timeout",
+    readSample: async (remainingMs) => {
+      assert.equal(remainingMs >= 750, true);
+      reads += 1;
+      currentTime += 100;
+      if (reads === 1) {
+        return runSanitizedContentionObserver(async () => { throw sensitive; }, simulatedPrismaErrorTypes);
+      }
+      return [{}, {}];
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+  });
+  assert.equal(reads, 2);
+});
+
+test("bounded contention observation stops before unsafe budget and reports only safe errors", async () => {
+  let currentTime = 0;
+  const observedBudgets = [];
+  const sensitive = Object.assign(new SimulatedPrismaClientKnownRequestError(
+    "postgresql://secret@database.invalid fixture-user-id SELECT private_sql",
+  ), { code: "P2028" });
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "contention timeout",
+    readSample: async (remainingMs) => {
+      observedBudgets.push(remainingMs);
+      currentTime += 1_500;
+      return runSanitizedContentionObserver(async () => { throw sensitive; }, simulatedPrismaErrorTypes);
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+  }), (error) => {
+    assert.match(error.message, /maximum_observed=0; samples=3; wait_states=\[\]/);
+    assert.match(error.message, /observer_error=\{"name":"PrismaClientKnownRequestError","code":"P2028"\}/);
+    for (const privateValue of ["secret", "database.invalid", "fixture-user-id", "SELECT"]) {
+      assert.equal(error.message.includes(privateValue), false);
+    }
+    return true;
+  });
+  assert.deepEqual(observedBudgets, [5_000, 3_475, 1_950]);
+  assert.equal(observedBudgets.every((budget) => budget >= 750), true);
+});
+
+test("bounded contention observation failure still releases held operations", async () => {
+  let released = false;
+  let currentTime = 0;
+  const observation = () => observeBoundedContention({
+    expectedCount: 2,
+    message: "contention timeout",
+    readSample: async () => {
+      currentTime += 4_500;
+      return [];
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+  });
+  await assert.rejects(runWithGuaranteedRelease({
+    action: observation,
+    release: () => { released = true; },
+  }), /contention timeout/);
+  assert.equal(released, true);
+});
+
+test("bounded contention observation propagates programming errors from the real sanitizer composition", async () => {
+  const programmingError = new TypeError("invalid observer result");
+  let reads = 0;
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "contention timeout",
+    readSample: async () => {
+      reads += 1;
+      return runSanitizedContentionObserver(
+        async () => { throw programmingError; },
+        simulatedPrismaErrorTypes,
+      );
+    },
+    describeRows: (rows) => rows,
+    now: () => 0,
+    pause: async () => {},
+  }), (error) => error === programmingError);
+  assert.equal(reads, 1);
 });
 
 test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts", async () => {
@@ -306,9 +488,14 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   const observerEnd = source.indexOf("async function legacyState(", observerStart);
   assert.ok(observerStart >= 0 && observerEnd > observerStart);
   const contentionObserver = source.slice(observerStart, observerEnd);
-  assert.match(contentionObserver, /const maximumSamples = 200/);
-  assert.match(contentionObserver, /const minimumObserverBudgetMs = 100/);
-  assert.match(contentionObserver, /maximumObserved = Math\.max\(maximumObserved, rows\.length\)/);
+  assert.match(contentionObserver, /observeBoundedContention\(\{/);
+  assert.match(contentionObserver, /observationDeadlineMs: 5_000/);
+  assert.match(contentionObserver, /maximumSamples: 200/);
+  assert.match(contentionObserver, /minimumLifecycleBudgetMs: 750/);
+  assert.match(contentionObserver, /remainingMs >= 750/);
+  assert.match(contentionObserver, /const maxWait = Math\.min\(150,/);
+  assert.match(contentionObserver, /const timeout = Math\.min\(400,/);
+  assert.match(contentionObserver, /const statementTimeoutMs = Math\.min\(150,/);
   assert.match(contentionObserver, /wait_event_type/);
   assert.match(contentionObserver, /wait_event/);
   assert.match(contentionObserver, /blocking_pids/);

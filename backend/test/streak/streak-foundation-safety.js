@@ -6,6 +6,12 @@ import {
 
 const FOUNDATION_SCHEMA = /^elvocab_streak_foundation_([0-9]+)_([0-9]+)_[a-f0-9]{8}$/;
 const FOUNDATION_MARKER_PREFIX = "elvocab-streak-foundation:v1:";
+const PRISMA_OBSERVER_ERROR_NAMES = [
+  "PrismaClientKnownRequestError",
+  "PrismaClientUnknownRequestError",
+  "PrismaClientRustPanicError",
+  "PrismaClientInitializationError",
+];
 
 export function assertFoundationAuthorization(environment) {
   assertHarnessAuthorization(environment);
@@ -59,15 +65,100 @@ export function assertFoundationSchemaOwnership({
   return ownership;
 }
 
-export async function runSanitizedContentionObserver(action) {
+export async function runSanitizedContentionObserver(action, prismaErrorTypes) {
   assert.equal(typeof action, "function");
+  assertPrismaObserverErrorTypes(prismaErrorTypes);
   try {
     return await action();
   } catch (error) {
-    const name = /^[A-Za-z][A-Za-z0-9]*$/.test(error?.name ?? "") ? error.name : "Error";
-    const code = /^[A-Za-z0-9_-]{1,32}$/.test(error?.code ?? "") ? ` code=${error.code}` : "";
-    throw new Error(`Contention observer failed (${name}${code}).`);
+    const identity = identifyPrismaObserverError(error, prismaErrorTypes);
+    if (!identity) throw error;
+    const code = identity.name === "PrismaClientKnownRequestError"
+      && /^[A-Za-z0-9_-]{1,32}$/.test(error?.code ?? "")
+      ? error.code
+      : null;
+    const retryable = identity.name === "PrismaClientKnownRequestError" && code === "P2028";
+    throw new SanitizedContentionObserverError(identity.name, code, retryable);
   }
+}
+
+export class SanitizedContentionObserverError extends Error {
+  constructor(safeName, safeCode, retryable) {
+    const code = safeCode ? ` code=${safeCode}` : "";
+    super(`Contention observer failed (${safeName}${code}).`);
+    this.name = "SanitizedContentionObserverError";
+    this.safeName = safeName;
+    this.safeCode = safeCode;
+    this.retryable = retryable === true;
+  }
+}
+
+function assertPrismaObserverErrorTypes(types) {
+  assert.equal(typeof types, "object");
+  assert.deepEqual(Object.keys(types).sort(), [...PRISMA_OBSERVER_ERROR_NAMES].sort());
+  for (const name of PRISMA_OBSERVER_ERROR_NAMES) assert.equal(typeof types[name], "function");
+}
+
+function identifyPrismaObserverError(error, types) {
+  for (const name of PRISMA_OBSERVER_ERROR_NAMES) {
+    if (error instanceof types[name]) return { name };
+  }
+  return null;
+}
+
+export async function observeBoundedContention({
+  expectedCount,
+  message,
+  readSample,
+  describeRows,
+  now = Date.now,
+  pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  observationDeadlineMs = 5_000,
+  maximumSamples = 200,
+  minimumLifecycleBudgetMs = 750,
+}) {
+  assert.equal(Number.isInteger(expectedCount) && expectedCount > 0, true);
+  assert.equal(typeof message, "string");
+  assert.equal(typeof readSample, "function");
+  assert.equal(typeof describeRows, "function");
+  const deadline = now() + observationDeadlineMs;
+  let samples = 0;
+  let maximumObserved = 0;
+  let lastWaitStates = [];
+  let lastObserverError = null;
+
+  while (samples < maximumSamples) {
+    const remainingMs = deadline - now();
+    if (remainingMs < minimumLifecycleBudgetMs) break;
+    let rows;
+    try {
+      rows = await readSample(remainingMs);
+    } catch (error) {
+      if (!(error instanceof SanitizedContentionObserverError) || !error.retryable) throw error;
+      samples += 1;
+      lastObserverError = {
+        name: error.safeName,
+        ...(error.safeCode ? { code: error.safeCode } : {}),
+      };
+      if (deadline - now() < minimumLifecycleBudgetMs) break;
+      await pause(25);
+      continue;
+    }
+
+    samples += 1;
+    maximumObserved = Math.max(maximumObserved, rows.length);
+    lastWaitStates = describeRows(rows);
+    if (rows.length >= expectedCount) return;
+    if (deadline - now() < minimumLifecycleBudgetMs) break;
+    await pause(25);
+  }
+
+  const observerError = lastObserverError
+    ? `; observer_error=${JSON.stringify(lastObserverError)}`
+    : "";
+  throw new Error(
+    `${message} maximum_observed=${maximumObserved}; samples=${samples}; wait_states=${JSON.stringify(lastWaitStates)}${observerError}`,
+  );
 }
 
 function assertFoundationSchemaName(schemaName) {
