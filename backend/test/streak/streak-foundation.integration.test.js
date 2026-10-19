@@ -9,6 +9,7 @@ import { createStreakRepository } from "../../src/repositories/streak-repository
 import { captureOperationTime } from "../../src/services/learning-session-domain.js";
 import { completeLearningSessionAtomically } from "../../src/services/learning-session-persistence.js";
 import { createLearningService } from "../../src/services/learning-service.js";
+import { createQuizService } from "../../src/services/quiz-service.js";
 import { createSessionFixture, createUserFixture } from "../helpers/auth-fixtures.js";
 import { startHttpTestServer } from "../helpers/http-test-server.js";
 import { assertFoundationAuthorization } from "./streak-foundation-safety.js";
@@ -1025,6 +1026,265 @@ test("injected terminal Streak failure rolls Progress XP receipt evidence and co
   assert.deepEqual(await srsState(fixture.user.id, session.id), before);
 });
 
+test("zero-correct multi-item Quiz completes once and exact final replay is immutable", async () => {
+  const fixture = await createQuizFixture();
+  const session = await createQuizSession(fixture, fixture.userCookie);
+  const questions = await readSessionQuiz(fixture, session, fixture.userCookie);
+  const first = quizAnswer(fixture, session, questions[0], wrongChoice(questions[0], fixture), randomUUID());
+  const firstResult = await postQuizAnswer(fixture.userCookie, first);
+  assert.equal(firstResult.status, 200, firstResult.text);
+  assert.equal(firstResult.json.data.is_correct, false);
+  assert.equal(firstResult.json.data.session.state, "ACTIVE");
+  assert.equal(firstResult.json.data.session.completed_items, 1);
+  assert.equal(Object.hasOwn(firstResult.json.data, "streak"), false);
+
+  const final = quizAnswer(fixture, session, questions[1], wrongChoice(questions[1], fixture), randomUUID());
+  const completed = await postQuizAnswer(fixture.userCookie, final);
+  assert.equal(completed.status, 200, completed.text);
+  assert.equal(completed.json.data.is_correct, false);
+  assert.equal(completed.json.data.reward.xp_earned, 0);
+  assert.equal(completed.json.data.session.state, "COMPLETED");
+  assert.equal(completed.json.data.streak.current_streak, 1);
+  const beforeReplay = await quizState(fixture.user.id, session.id);
+  assert.equal(beforeReplay.user.total_xp, 0);
+  assert.equal(beforeReplay.rewards.length, 0);
+  assert.equal(beforeReplay.session.status, "COMPLETED");
+  assert.deepEqual(beforeReplay.session.items.map(({ evidence }) => evidence),
+    ["QUIZ_INCORRECT", "QUIZ_INCORRECT"]);
+  assert.deepEqual(beforeReplay.session.items.map(({ evidence_event_id: eventId }) => eventId),
+    [first.event_id, final.event_id]);
+  assert.equal(beforeReplay.days.length, 1);
+  const progressByVocabulary = new Map(beforeReplay.progress.map((row) => [row.vocabulary_id, row]));
+  for (const accepted of [first, final]) {
+    const progress = progressByVocabulary.get(accepted.vocabulary_id);
+    assert.ok(progress);
+    assert.equal(progress.status, "LEARNING");
+    assert.equal(progress.revision, 1);
+    assert.equal(progress.review_count, 1);
+    assert.equal(progress.last_event_id, accepted.event_id);
+  }
+  const replay = await postQuizAnswer(fixture.userCookie, final);
+  assert.equal(replay.status, 200, replay.text);
+  assert.equal(replay.json.data.reward.replayed, true);
+  assert.deepEqual(await quizState(fixture.user.id, session.id), beforeReplay);
+  assertQuizError(await postQuizAnswer(fixture.userCookie, {
+    ...final, event_id: randomUUID(), expected_revision: 1,
+  }), 409, "LEARNING_SESSION_EVENT_CONFLICT");
+  assert.deepEqual(await quizState(fixture.user.id, session.id), beforeReplay);
+
+  const retake = await createQuizSession(fixture, fixture.userCookie);
+  assert.notEqual(retake.id, session.id);
+  assert.equal(retake.state, "ACTIVE");
+  assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 1);
+});
+
+test("Quiz event identity is session-bound, foreign-concealed, and terminal sessions reject mutation", async () => {
+  const fixture = await createQuizFixture();
+  const firstSession = await createQuizSession(fixture, fixture.userCookie);
+  const secondSession = await createQuizSession(fixture, fixture.userCookie);
+  const otherSession = await createQuizSession(fixture, fixture.otherCookie);
+  const firstQuestions = await readSessionQuiz(fixture, firstSession, fixture.userCookie);
+  const secondQuestions = await readSessionQuiz(fixture, secondSession, fixture.userCookie);
+  const otherQuestions = await readSessionQuiz(fixture, otherSession, fixture.otherCookie);
+  const eventId = randomUUID();
+  const accepted = quizAnswer(fixture, firstSession, firstQuestions[0], correctChoice(firstQuestions[0], fixture), eventId);
+  assertQuizError(await postQuizAnswer(fixture.userCookie, {
+    ...accepted, run_id: randomUUID(), event_id: randomUUID(),
+  }), 409, "LEARNING_SESSION_EVENT_CONFLICT");
+  assert.equal((await postQuizAnswer(fixture.userCookie, accepted)).status, 200);
+
+  const crossSession = quizAnswer(fixture, secondSession, secondQuestions[0], correctChoice(secondQuestions[0], fixture), eventId);
+  assertQuizError(await postQuizAnswer(fixture.userCookie, crossSession), 409, "LEARNING_SESSION_EVENT_CONFLICT");
+  const foreign = quizAnswer(fixture, otherSession, otherQuestions[0], correctChoice(otherQuestions[0], fixture), eventId);
+  assertQuizError(await postQuizAnswer(fixture.otherCookie, foreign), 404, "LEARNING_SESSION_NOT_FOUND");
+
+  await prisma.lEARNING_SESSION.update({ where: { id: secondSession.id }, data: {
+    expires_at: new Date(now.getTime() - 1),
+  } });
+  assertQuizError(await postQuizAnswer(fixture.userCookie, {
+    ...crossSession, event_id: randomUUID(),
+  }), 409, "LEARNING_SESSION_EXPIRED");
+  assert.deepEqual((await quizState(fixture.user.id, secondSession.id)).session.items.map(({ evidence }) => evidence), [null, null]);
+});
+
+test("concurrent exact final Quiz submissions award XP and Streak exactly once", {
+  timeout: CONCURRENCY_TIMEOUT_MS,
+}, async () => {
+  const fixture = await createQuizFixture();
+  const session = await createQuizSession(fixture, fixture.userCookie);
+  const questions = await readSessionQuiz(fixture, session, fixture.userCookie);
+  const first = quizAnswer(fixture, session, questions[0], correctChoice(questions[0], fixture), randomUUID());
+  assert.equal((await postQuizAnswer(fixture.userCookie, first)).status, 200);
+  const final = quizAnswer(fixture, session, questions[1], correctChoice(questions[1], fixture), randomUUID());
+  const responses = await runContendedQuizRequests({
+    fixture,
+    vocabularyId: final.vocabulary_id,
+    requests: [final, final],
+    label: "exact concurrent Quiz replay",
+  });
+  assert.deepEqual(responses.map(({ status }) => status), [200, 200]);
+  assert.equal(responses.filter(({ json }) => json.data.reward.replayed === false).length, 1);
+  assert.equal(responses.filter(({ json }) => json.data.reward.replayed === true).length, 1);
+  const state = await quizState(fixture.user.id, session.id);
+  assert.equal(state.session.status, "COMPLETED");
+  assert.equal(state.days.length, 1);
+  assert.equal(state.rewards.length, 2);
+  assert.equal(state.user.total_xp, 6);
+  assert.equal(state.progress.length, 2);
+  assert.deepEqual(state.session.items.map(({ evidence }) => evidence),
+    ["QUIZ_CORRECT", "QUIZ_CORRECT"]);
+  assert.deepEqual(state.session.items.map(({ evidence_event_id: eventId }) => eventId),
+    [first.event_id, final.event_id]);
+  const exactProgress = new Map(state.progress.map((row) => [row.vocabulary_id, row]));
+  for (const accepted of [first, final]) {
+    assert.equal(exactProgress.get(accepted.vocabulary_id).revision, 1);
+    assert.equal(exactProgress.get(accepted.vocabulary_id).review_count, 1);
+    assert.equal(exactProgress.get(accepted.vocabulary_id).last_event_id, accepted.event_id);
+  }
+
+  const competingSession = await createQuizSession(fixture, fixture.userCookie);
+  const competingQuestions = await readSessionQuiz(fixture, competingSession, fixture.userCookie);
+  const competingFirst = quizAnswer(fixture, competingSession,
+    competingQuestions[0], correctChoice(competingQuestions[0], fixture), randomUUID());
+  assert.equal((await postQuizAnswer(fixture.userCookie, competingFirst)).status, 200);
+  const competingFinal = quizAnswer(fixture, competingSession, competingQuestions[1],
+    correctChoice(competingQuestions[1], fixture), randomUUID());
+  const competingEvents = [competingFinal, { ...competingFinal, event_id: randomUUID() }];
+  const competingResponses = await runContendedQuizRequests({
+    fixture,
+    vocabularyId: competingFinal.vocabulary_id,
+    requests: competingEvents,
+    label: "competing concurrent Quiz events",
+  });
+  assert.deepEqual(competingResponses.map(({ status }) => status).sort(), [200, 409]);
+  const competingState = await quizState(fixture.user.id, competingSession.id);
+  assert.equal(competingState.session.status, "COMPLETED");
+  assert.equal(competingState.days.length, 1);
+  assert.equal(competingState.rewards.length, 2);
+  assert.equal(competingState.user.total_xp, 6);
+  assert.equal(competingState.progress.length, 2);
+  assert.deepEqual(competingState.session.items.map(({ evidence }) => evidence),
+    ["QUIZ_CORRECT", "QUIZ_CORRECT"]);
+  const acceptedFinal = competingResponses.find(({ status }) => status === 200);
+  assert.deepEqual(competingState.session.items.map(({ evidence_event_id: eventId }) => eventId), [
+    competingFirst.event_id,
+    acceptedFinal.json.data.reward.source_event_id,
+  ]);
+  const competingProgress = new Map(competingState.progress.map((row) => [row.vocabulary_id, row]));
+  assert.equal(competingProgress.get(competingFirst.vocabulary_id).revision, 2);
+  assert.equal(competingProgress.get(competingFirst.vocabulary_id).review_count, 2);
+  assert.equal(competingProgress.get(competingFirst.vocabulary_id).last_event_id, competingFirst.event_id);
+  assert.equal(competingProgress.get(competingFinal.vocabulary_id).revision, 2);
+  assert.equal(competingProgress.get(competingFinal.vocabulary_id).review_count, 2);
+  assert.equal(competingProgress.get(competingFinal.vocabulary_id).last_event_id,
+    acceptedFinal.json.data.reward.source_event_id);
+});
+
+test("injected terminal Quiz Streak failure rolls Progress XP evidence completion and day back", async () => {
+  const fixture = await createQuizFixture();
+  const session = await createQuizSession(fixture, fixture.userCookie);
+  const questions = await readSessionQuiz(fixture, session, fixture.userCookie);
+  const first = quizAnswer(fixture, session, questions[0], correctChoice(questions[0], fixture), randomUUID());
+  assert.equal((await postQuizAnswer(fixture.userCookie, first)).status, 200);
+  const before = await quizState(fixture.user.id, session.id);
+  const service = createQuizService({
+    quizRepository: createQuizRepository(prisma),
+    createSessionRepository: createLearningSessionRepository,
+    createStreakRepository: (transaction) => ({
+      ...createStreakRepository(transaction),
+      async insertDayForCompletedSession() { throw new Error("injected Quiz terminal Streak failure"); },
+    }),
+    now: () => now,
+  });
+  const final = quizAnswer(fixture, session, questions[1], correctChoice(questions[1], fixture), randomUUID());
+  await assert.rejects(service.recordAnswer(fixture.user.id, final), /injected Quiz terminal Streak failure/);
+  assert.deepEqual(await quizState(fixture.user.id, session.id), before);
+});
+
+async function createQuizFixture() {
+  const fixture = await createFixture();
+  const topic = await createTopicFixture();
+  const labels = ["meaning one", "meaning two", "meaning three", "meaning four", "meaning five"];
+  const vocabulary = await Promise.all(labels.map((meaning, index) => prisma.vOCABULARY.create({
+    data: {
+      word: `streak-quiz-${index}-${randomUUID()}`,
+      meanings: { create: [{ part_of_speech: "verb", meaning_vi: meaning, cefr_level: "A1" }] },
+    },
+  })));
+  const set = await prisma.vOCABULARY_SET.create({ data: {
+    owner_id: fixture.admin.id,
+    topic_id: topic.id,
+    name: `Streak Quiz ${randomUUID()}`,
+    is_public: true,
+    items: { create: vocabulary.slice(0, 2).map(({ id }, position) => ({
+      vocabulary_id: id, position: position + 1,
+    })) },
+  } });
+  return { ...fixture, set, quizVocabulary: vocabulary, quizLabels: labels };
+}
+
+async function createQuizSession(fixture, cookie) {
+  const response = await request("/api/learning-sessions", { method: "POST", cookie, json: {
+    operation_id: randomUUID(), set_id: fixture.set.id, mode: "QUIZ",
+    vocabulary_ids: fixture.quizVocabulary.slice(0, 2).map(({ id }) => id),
+  } });
+  assert.equal(response.status, 201, response.text);
+  return response.json.data.session;
+}
+
+async function readSessionQuiz(fixture, session, cookie) {
+  const ids = session.items.map(({ vocabulary_id: id }) => id).join("%2C");
+  const response = await request(`/api/quiz/sets/${fixture.set.id}/questions?type=MULTIPLE_CHOICE&run_id=${session.id}&session_id=${session.id}&vocabulary_ids=${ids}`, { cookie });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json.data.run_id, session.id);
+  return response.json.data.questions;
+}
+
+function correctChoice(question, fixture) {
+  const index = fixture.quizVocabulary.findIndex(({ id }) => id === question.vocabulary_id);
+  return question.choices.find(({ label }) => label === fixture.quizLabels[index]).choice_id;
+}
+
+function wrongChoice(question, fixture) {
+  const correct = correctChoice(question, fixture);
+  return question.choices.find(({ choice_id }) => choice_id !== correct).choice_id;
+}
+
+function quizAnswer(fixture, session, question, selectedChoiceId, eventId) {
+  return {
+    event_id: eventId,
+    session_id: session.id,
+    set_id: fixture.set.id,
+    vocabulary_id: question.vocabulary_id,
+    run_id: session.id,
+    question_revision: question.question_revision,
+    quiz_type: "MULTIPLE_CHOICE",
+    expected_revision: question.progress.revision,
+    selected_choice_id: selectedChoiceId,
+  };
+}
+
+function postQuizAnswer(cookie, json) {
+  return request("/api/quiz/answers", { method: "POST", cookie, json });
+}
+
+function assertQuizError(response, status, code) {
+  assert.equal(response.status, status, response.text);
+  assert.equal(response.json?.error?.code, code);
+}
+
+async function quizState(userId, sessionId) {
+  const [user, progress, rewards, session, days] = await Promise.all([
+    prisma.uSER.findUniqueOrThrow({ where: { id: userId }, select: { total_xp: true } }),
+    prisma.lEARNING_PROGRESS.findMany({ where: { user_id: userId }, orderBy: { vocabulary_id: "asc" } }),
+    prisma.xP_REWARD.findMany({ where: { user_id: userId }, orderBy: { id: "asc" } }),
+    prisma.lEARNING_SESSION.findUniqueOrThrow({ where: { id: sessionId },
+      include: { items: { orderBy: { position: "asc" } } } }),
+    prisma.sTREAK_DAY.findMany({ where: { user_id: userId }, orderBy: { activity_date: "asc" } }),
+  ]);
+  return { user, progress, rewards, session, days };
+}
+
 async function createFixture() {
   const user = await createUserFixture(prisma, { display_name: "Streak Foundation User" });
   const other = await createUserFixture(prisma, { display_name: "Streak Foundation Other" });
@@ -1362,6 +1622,46 @@ async function runContendedSrsRequests({ fixture, session, vocabularyId, request
     throw error;
   }
   const pendingRequests = requests.map((event) => postSrsEvent(fixture.userCookie, event));
+  await runWithGuaranteedRelease({
+    action: async () => {
+      await waitForBlockingChain(holderPid, 2, `Timed out establishing ${label} contention.`);
+      assert.deepEqual(
+        await Promise.all(pendingRequests.map((requestPromise) => remainsPending(requestPromise))),
+        [true, true],
+      );
+    },
+    release,
+    held: [holder, ...pendingRequests],
+    settleTimeoutMs: 10_000,
+  });
+  return settleConcurrentRequests(pendingRequests, `Timed out settling ${label}.`);
+}
+
+async function runContendedQuizRequests({ fixture, vocabularyId, requests, label }) {
+  let release;
+  let signalLocked;
+  const releaseGate = new Promise((resolve) => { release = resolve; });
+  const lockReady = new Promise((resolve) => { signalLocked = resolve; });
+  let holderPid;
+  const holder = peer.$transaction(async (transaction) => {
+    const [backend] = await transaction.$queryRaw`SELECT pg_backend_pid()::integer AS pid`;
+    holderPid = backend.pid;
+    await createQuizRepository(transaction).lockProgressIdentity(fixture.user.id, vocabularyId);
+    signalLocked();
+    await releaseGate;
+  });
+  try {
+    await withTimeout(lockReady, `Timed out acquiring the ${label} barrier.`, 5_000);
+  } catch (error) {
+    release();
+    await withTimeout(
+      Promise.allSettled([holder]),
+      `Timed out settling the failed ${label} barrier.`,
+      5_000,
+    );
+    throw error;
+  }
+  const pendingRequests = requests.map((event) => postQuizAnswer(fixture.userCookie, event));
   await runWithGuaranteedRelease({
     action: async () => {
       await waitForBlockingChain(holderPid, 2, `Timed out establishing ${label} contention.`);

@@ -217,3 +217,28 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
   assert.match(source, /Timed out settling the SRS advisory-lock holder/);
   assert.match(source, /Promise\.allSettled\(promises\)/);
 });
+
+test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL contracts", async () => {
+  const source = await readFile(new URL("./streak-foundation.integration.test.js", import.meta.url), "utf8");
+  for (const contract of [
+    "zero-correct multi-item Quiz completes once and exact final replay is immutable",
+    "Quiz event identity is session-bound, foreign-concealed, and terminal sessions reject mutation",
+    "concurrent exact final Quiz submissions award XP and Streak exactly once",
+    "injected terminal Quiz Streak failure rolls Progress XP evidence completion and day back",
+  ]) assert.match(source, new RegExp(contract));
+  assert.match(source, /createQuizRepository\(prisma\)/);
+  assert.match(source, /createLearningSessionRepository/);
+  assert.match(source, /insertDayForCompletedSession/);
+  assert.match(source, /assert\.deepEqual\(await quizState\(fixture\.user\.id, session\.id\), before\)/);
+  const helperStart = source.indexOf("async function runContendedQuizRequests(");
+  const helperEnd = source.indexOf("async function waitForBlockingChain(", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const quizContentionHelper = source.slice(helperStart, helperEnd);
+  assert.match(quizContentionHelper, /createQuizRepository\(transaction\)\.lockProgressIdentity/);
+  assert.match(quizContentionHelper, /waitForBlockingChain\(holderPid, 2, `Timed out establishing \$\{label\} contention\.`\)/);
+  assert.match(quizContentionHelper, /Promise\.all\(pendingRequests\.map\(\(requestPromise\) => remainsPending\(requestPromise\)\)\)/);
+  assert.match(quizContentionHelper, /runWithGuaranteedRelease\(\{/);
+  assert.match(quizContentionHelper, /held: \[holder, \.\.\.pendingRequests\]/);
+  assert.match(quizContentionHelper, /settleTimeoutMs: 10_000/);
+  assert.match(quizContentionHelper, /settleConcurrentRequests\(pendingRequests, `Timed out settling \$\{label\}\.`\)/);
+});
