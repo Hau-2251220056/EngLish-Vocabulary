@@ -1188,6 +1188,7 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
 test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL contracts", async () => {
   const source = await readFile(new URL("./streak-foundation.integration.test.js", import.meta.url), "utf8");
   for (const contract of [
+    "sessionless Quiz preserves legacy grading Progress and XP without Streak artifacts",
     "zero-correct multi-item Quiz completes once and exact final replay is immutable",
     "Quiz event identity is session-bound, foreign-concealed, and terminal sessions reject mutation",
     "concurrent exact final Quiz submissions award XP and Streak exactly once",

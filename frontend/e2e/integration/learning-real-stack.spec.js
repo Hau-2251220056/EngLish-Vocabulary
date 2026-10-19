@@ -105,6 +105,8 @@ test.afterAll(async () => {
   try {
     const accountIds = [learnerRecord?.id, adminRecord?.id, outsiderRecord?.id]
       .filter(Boolean);
+    await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: accountIds } } });
+    await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: accountIds } } });
     await prisma.xP_REWARD.deleteMany({
       where: { user_id: { in: accountIds } },
     });

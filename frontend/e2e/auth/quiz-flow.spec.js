@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { answerResult, failure, ids, installQuizApiMock, publicAdmin, question, questionPayload, success } from "./fixtures/quiz-api.js";
+import { answerResult, failure, ids, installQuizApiMock, publicAdmin, question, questionPayload, quizSetId, success } from "./fixtures/quiz-api.js";
 
 test.describe("Multiple Choice Quiz mocked flow", () => {
   test("starts directly, completes ordered questions and writes no Learning event", async ({ page }) => {
     const calls = await installQuizApiMock(page);
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
     await expect(page.getByRole("radio")).toHaveCount(4);
     await page.getByRole("radio", { name: /thức dậy/ }).check();
@@ -28,7 +28,7 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
   test("pending blocks duplicates and operational retry reuses identical body", async ({ page }) => {
     let resolve; const pending = new Promise((done) => { resolve = done; });
     const calls = await installQuizApiMock(page, { onAnswer: ({ body, call }) => call === 1 ? pending : success(answerResult(body)) });
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await page.getByRole("radio").first().check(); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
     await expect(page.getByRole("button", { name: "Đang kiểm tra…" })).toBeDisabled();
     expect(calls.answers).toHaveLength(1); resolve({ abort: "failed" });
@@ -43,7 +43,7 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
 test("new Quiz XP uses one Toast without surviving reload or duplicating inline feedback", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await installQuizApiMock(page);
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await page.getByRole("radio").first().check();
     await page.getByRole("button", { name: "Kiểm tra đáp án" }).press("Enter");
 
@@ -87,7 +87,7 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
           return success(response);
         },
       });
-      await page.goto("/quiz/vocabulary-sets/set-flow");
+      await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
       await page.getByRole("radio").first().check();
       await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
       await expect(page.getByTestId("quiz-xp-feedback")).toHaveCount(0);
@@ -99,14 +99,14 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
 
   test("one-shot stale question recovery deliberately retries once", async ({ page }) => {
     const calls = await installQuizApiMock(page, { onQuestions: ({ call, runId }) => call === 1 ? failure(409, "QUIZ_CHOICES_UNAVAILABLE") : success(questionPayload(runId)) });
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
     expect(calls.questions).toHaveLength(2);
   });
 
   test("restart confirms partial progress, starts a fresh run, and is direct after completion", async ({ page }) => {
     const calls = await installQuizApiMock(page, { questions: [question("word-wake", 1, "wake", "thức dậy")] });
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await page.getByRole("radio", { name: /thức dậy/ }).check();
     await page.getByRole("button", { name: "Học lại từ đầu" }).click();
     const dialog = page.getByRole("dialog", { name: "Học lại từ đầu?" });
@@ -133,7 +133,7 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
     const long = "Một nghĩa tiếng Việt rất dài để xác minh nội dung tự xuống dòng an toàn mà không bị cắt hoặc làm tràn ngang toàn bộ trang";
     await installQuizApiMock(page, { questions: [question("long", 1, "an-extraordinarily-long-english-expression-that-wraps", long)] });
     for (const viewport of [{ width: 320, height: 700 }, { width: 375, height: 812 }, { width: 844, height: 390 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
-      await page.setViewportSize(viewport); await page.goto("/quiz/vocabulary-sets/set-flow");
+      await page.setViewportSize(viewport); await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
       const radios = page.getByRole("radio"); await expect(radios).toHaveCount(4);
       const radio = radios.first(); const label = radio.locator("xpath=..");
       const boxes = await radios.evaluateAll((nodes) => nodes.map((node) => { const box = node.parentElement.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; }));
@@ -150,7 +150,7 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
   test("progress animation follows the reduced-motion preference", async ({ page }) => {
     await installQuizApiMock(page);
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/quiz/vocabulary-sets/set-flow");
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     const progressFill = page.getByRole("progressbar").locator("span");
     expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(false);
     await expect(progressFill).toHaveCSS("transition-property", "width");
@@ -161,6 +161,6 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
   });
 
   test("Guest and ADMIN cannot enter USER Quiz", async ({ browser }) => {
-    for (const options of [{ guest: true }, { user: publicAdmin }]) { const context = await browser.newContext(); const page = await context.newPage(); const calls = await installQuizApiMock(page, options); await page.goto("/quiz/vocabulary-sets/set-flow"); await expect(page).toHaveURL(options.guest ? /\/login$/ : /\/dashboard$/); expect(calls.questions).toHaveLength(0); await context.close(); }
+    for (const options of [{ guest: true }, { user: publicAdmin }]) { const context = await browser.newContext(); const page = await context.newPage(); const calls = await installQuizApiMock(page, options); await page.goto(`/quiz/vocabulary-sets/${quizSetId}`); await expect(page).toHaveURL(options.guest ? /\/login$/ : /\/dashboard$/); expect(calls.questions).toHaveLength(0); await context.close(); }
   });
 });

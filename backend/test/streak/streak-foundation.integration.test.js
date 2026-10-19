@@ -608,6 +608,35 @@ test("sessionless SRS preserves legacy Progress and XP without session artifacts
   assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 0);
 });
 
+test("sessionless Quiz preserves legacy grading Progress and XP without Streak artifacts", async () => {
+  const fixture = await createQuizFixture();
+  const runId = randomUUID();
+  const vocabularyIds = fixture.quizVocabulary.slice(0, 2).map(({ id }) => id);
+  const response = await request(
+    `/api/quiz/sets/${fixture.set.id}/questions?type=MULTIPLE_CHOICE&run_id=${runId}&vocabulary_ids=${vocabularyIds.join("%2C")}`,
+    { cookie: fixture.userCookie },
+  );
+  assert.equal(response.status, 200, response.text);
+  const [question] = response.json.data.questions;
+  const answer = await postQuizAnswer(fixture.userCookie, {
+    event_id: randomUUID(),
+    set_id: fixture.set.id,
+    vocabulary_id: question.vocabulary_id,
+    run_id: runId,
+    question_revision: question.question_revision,
+    quiz_type: "MULTIPLE_CHOICE",
+    expected_revision: question.progress.revision,
+    selected_choice_id: correctChoice(question, fixture),
+  });
+  assert.equal(answer.status, 200, answer.text);
+  assert.equal(answer.json.data.is_correct, true);
+  assert.equal(answer.json.data.reward.xp_earned, 3);
+  assert.equal(await prisma.lEARNING_PROGRESS.count({ where: { user_id: fixture.user.id } }), 1);
+  assert.equal(await prisma.xP_REWARD.count({ where: { user_id: fixture.user.id } }), 1);
+  assert.equal(await prisma.lEARNING_SESSION.count({ where: { user_id: fixture.user.id } }), 0);
+  assert.equal(await prisma.sTREAK_DAY.count({ where: { user_id: fixture.user.id } }), 0);
+});
+
 test("SRS snapshot is authoritatively ordered, unique and bounded to ten eligible items", async () => {
   const fixture = await createFixture();
   const extraVocabulary = await Promise.all(Array.from({ length: 10 }, (_, index) =>

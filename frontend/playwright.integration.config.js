@@ -5,6 +5,7 @@ const frontendPort = 4174;
 
 export default defineConfig({
   testDir: "./e2e/integration",
+  testIgnore: "streak-real-stack.spec.js",
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),

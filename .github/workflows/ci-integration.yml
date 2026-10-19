@@ -29,6 +29,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_streak_integrated_verification:
+        description: Run only TASK-249 guarded Backend and real-stack Streak verification
+        required: true
+        default: false
+        type: boolean
       streak_approved_target_identity:
         description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
         required: false
@@ -85,7 +90,8 @@ jobs:
         (inputs.run_xp_migration_harness == true ||
          inputs.run_streak_migration_harness == true ||
          inputs.run_streak_migration_cleanup == true ||
-         inputs.run_streak_foundation_harness == true))
+         inputs.run_streak_foundation_harness == true ||
+         inputs.run_streak_integrated_verification == true))
     outputs:
       configured: ${{ steps.configuration.outputs.configured }}
     runs-on: ubuntu-latest
@@ -167,7 +173,8 @@ jobs:
         (inputs.run_xp_migration_harness == true ||
          inputs.run_streak_migration_harness == true ||
          inputs.run_streak_migration_cleanup == true ||
-         inputs.run_streak_foundation_harness == true)) &&
+         inputs.run_streak_foundation_harness == true ||
+         inputs.run_streak_integrated_verification == true)) &&
       needs.backend-db-integration.result == 'success' &&
       needs.backend-db-integration.outputs.configured == 'true'
     runs-on: ubuntu-latest
@@ -252,7 +259,8 @@ jobs:
       inputs.run_xp_migration_harness == true &&
       inputs.run_streak_migration_harness == false &&
       inputs.run_streak_migration_cleanup == false &&
-      inputs.run_streak_foundation_harness == false
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -327,7 +335,8 @@ jobs:
       inputs.run_xp_migration_harness == true &&
       inputs.run_streak_migration_harness == false &&
       inputs.run_streak_migration_cleanup == false &&
-      inputs.run_streak_foundation_harness == false
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -382,6 +391,7 @@ jobs:
       inputs.run_streak_migration_harness == true &&
       inputs.run_streak_migration_cleanup == false &&
       inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false &&
       inputs.streak_cleanup_target_run_id == '' &&
       inputs.streak_cleanup_target_run_attempt == ''
     runs-on: ubuntu-latest
@@ -442,7 +452,8 @@ jobs:
       inputs.run_xp_migration_harness == false &&
       inputs.run_streak_migration_harness == false &&
       inputs.run_streak_migration_cleanup == true &&
-      inputs.run_streak_foundation_harness == false
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -509,6 +520,7 @@ jobs:
       inputs.run_streak_migration_harness == false &&
       inputs.run_streak_migration_cleanup == false &&
       inputs.run_streak_foundation_harness == true &&
+      inputs.run_streak_integrated_verification == false &&
       inputs.streak_cleanup_target_run_id == '' &&
       inputs.streak_cleanup_target_run_attempt == ''
     runs-on: ubuntu-latest
@@ -573,6 +585,106 @@ jobs:
           TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
         run: npm run test:streak-foundation:ci
 
+  streak-integrated-verification:
+    name: TASK-249 Streak Integrated Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == true &&
+      inputs.streak_cleanup_target_run_id == '' &&
+      inputs.streak_cleanup_target_run_attempt == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_FOUNDATION_HARNESS_ALLOW: "true"
+      STREAK_INTEGRATED_HARNESS_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Require authorized TASK-249 CI TEST configuration
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.CI, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.TEST_DATABASE_ALLOW_RESET, 'true');
+          assert.equal(environment.STREAK_INTEGRATED_HARNESS_ALLOW, 'true');
+          assert.match(environment.GITHUB_REPOSITORY ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+          assert.match(environment.GITHUB_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.GITHUB_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          const target = environment.CI_TEST_DATABASE_IDENTITY ?? '';
+          const approved = environment.STREAK_MIGRATION_APPROVED_TARGET_IDENTITY ?? '';
+          assert.match(target, /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$/);
+          assert.equal(target, approved);
+          const parsed = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(parsed.protocol.startsWith('postgres'), true);
+          assert.equal(`${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`, target);
+          NODE
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        id: backend-install
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run accepted Streak PostgreSQL regression harness
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-foundation:ci
+
+      - name: Run TASK-249 real-stack Streak suite
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-integrated:ci
+
+      - name: Upload TASK-249 failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: task-249-streak-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend/test-results/streak-integration/**
+          if-no-files-found: ignore
+          retention-days: 7
+
   integration-summary:
     name: Summary
     if: always()
@@ -585,6 +697,7 @@ jobs:
       - streak-migration-verification
       - streak-migration-recovery-cleanup
       - streak-foundation-verification
+      - streak-integrated-verification
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -601,12 +714,14 @@ jobs:
           STREAK_VERIFICATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_harness == true }}
           STREAK_CLEANUP_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_cleanup == true }}
           STREAK_FOUNDATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_foundation_harness == true }}
+          STREAK_INTEGRATED_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_integrated_verification == true }}
           STREAK_VERIFICATION_RESULT: ${{ needs.streak-migration-verification.result }}
           STREAK_CLEANUP_RESULT: ${{ needs.streak-migration-recovery-cleanup.result }}
           STREAK_FOUNDATION_RESULT: ${{ needs.streak-foundation-verification.result }}
+          STREAK_INTEGRATED_RESULT: ${{ needs.streak-integrated-verification.result }}
         run: |
           selected_modes=0
-          for mode in "$XP_HARNESS_MODE" "$STREAK_VERIFICATION_MODE" "$STREAK_CLEANUP_MODE" "$STREAK_FOUNDATION_MODE"; do
+          for mode in "$XP_HARNESS_MODE" "$STREAK_VERIFICATION_MODE" "$STREAK_CLEANUP_MODE" "$STREAK_FOUNDATION_MODE" "$STREAK_INTEGRATED_MODE"; do
             if [[ "$mode" == "true" ]]; then
               selected_modes=$((selected_modes + 1))
             fi
@@ -615,6 +730,18 @@ jobs:
             echo "## Guarded Harness Dispatch: FAIL" >> "$GITHUB_STEP_SUMMARY"
             echo "Select exactly one isolated harness operation per dispatch." >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          fi
+
+          if [[ "$STREAK_INTEGRATED_MODE" == "true" ]]; then
+            if [[ "$STREAK_INTEGRATED_RESULT" != "success" ]]; then
+              echo "## TASK-249 Streak Integrated Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $STREAK_INTEGRATED_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## TASK-249 Streak Integrated Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Guarded PostgreSQL regression and focused real-stack Streak verification completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
           if [[ "$STREAK_FOUNDATION_MODE" == "true" ]]; then

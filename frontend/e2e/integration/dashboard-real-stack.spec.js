@@ -63,6 +63,8 @@ test.afterAll(async () => {
   try {
     const userIds = Object.values(records ?? {}).map(({ id }) => id);
     if (userIds.length > 0) {
+      await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: userIds } } });
+      await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: userIds } } });
       await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: userIds } } });
@@ -270,7 +272,7 @@ async function persistedSnapshot() {
 
 async function controlledFixtureCount() {
   const userIds = Object.values(records ?? {}).map(({ id }) => id);
-  const [users, topics, vocabulary, sets, progressRows, rewards, sessions] = await Promise.all([
+  const [users, topics, vocabulary, sets, progressRows, rewards, authSessions, learningSessions, streakDays] = await Promise.all([
     prisma.uSER.count({ where: { email: { endsWith: `@${domain}` } } }),
     prisma.tOPIC.count({ where: { name: { startsWith: prefix } } }),
     prisma.vOCABULARY.count({ where: { word: { startsWith: prefix } } }),
@@ -278,8 +280,10 @@ async function controlledFixtureCount() {
     prisma.lEARNING_PROGRESS.count({ where: { user_id: { in: userIds } } }),
     prisma.xP_REWARD.count({ where: { user_id: { in: userIds } } }),
     prisma.aUTH_SESSION.count({ where: { user_id: { in: userIds } } }),
+    prisma.lEARNING_SESSION.count({ where: { user_id: { in: userIds } } }),
+    prisma.sTREAK_DAY.count({ where: { user_id: { in: userIds } } }),
   ]);
-  return users + topics + vocabulary + sets + progressRows + rewards + sessions;
+  return users + topics + vocabulary + sets + progressRows + rewards + authSessions + learningSessions + streakDays;
 }
 
 async function xpSnapshot(userId) {

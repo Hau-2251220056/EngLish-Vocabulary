@@ -728,3 +728,12 @@ This document maps all 19 tasks to the HUMAN-approved PLAN, all 36 acceptance cr
 - **Responsive evidence:** mocked browser checks at `320`, `375`, `667` landscape, `768`, `1024` and `1440` CSS pixels.
 - **Independent implementation review:** `PASS`; no BLOCKER, MAJOR or MINOR findings.
 - **Sequence effect:** TASK-247 is ready for TASK-248 preparation. TASK-248 focused frontend/UI verification and HUMAN Gate ST-6 browser/visual acceptance remain `PENDING`; this checkpoint does not record HUMAN UI/UX approval.
+
+### Gate ST-6 — HUMAN ACCEPTED (2026-10-19)
+
+- **Accepted commit:** `e19ad638ebf40ef6e1072b92f0cf4224e0d0007e` on `feature/streak-v1`.
+- **TASK-248 automated evidence:** Focused mocked Dashboard browser suite `16/16 PASS`; additional Streak screenshot/effective-200%-equivalent probes `3/3 PASS`; frontend ESLint `PASS`; production build `PASS`.
+- **Focused UI/UX result:** USER/ADMIN isolation, completed-today, pending-today, zero/broken, loading, failure, stale-data, refresh and retry states; keyboard/focus recovery; responsive layout at `320`, `375`, `667` landscape, `768`, `1024` and `1440` CSS pixels; reduced motion; and unchanged Progress, XP, Level and My Sets behavior were verified with no BLOCKER, MAJOR or MINOR findings.
+- **HUMAN visual acceptance:** HUMAN confirmed desktop, mobile, Streak-state and overall-usability review and accepted Gate ST-6 on 2026-10-19.
+- **Evidence limitations preserved:** Chromium and mocked APIs only; effective 200% zoom used an equivalent CSS viewport; no manual screen-reader session; no real authenticated Backend was exercised by TASK-248.
+- **Sequence effect:** Gate ST-6 satisfies the TASK-249 dependency only. It is not formal TEST, release, Git publication, guarded CI TEST, database, migration or deployment approval. TASK-249 implementation and any isolated CI TEST execution require separate explicit HUMAN authorization.

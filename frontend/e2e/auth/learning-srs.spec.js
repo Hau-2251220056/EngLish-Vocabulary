@@ -183,6 +183,15 @@ test("NORMAL retries a lost reveal with the same operation and resumes its persi
   const calls = await installLearningMock(page, { failRevealOnce: true });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await page.getByRole("group").first().getByRole("button").nth(1).click();
+  await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
+    && body.mode === "NORMAL").length).toBe(1);
+  const normalNavigation = page.getByRole("navigation", { name: "Điều hướng thẻ" });
+  const nextCard = normalNavigation.getByRole("button", { name: /Thẻ sau/ });
+  await expect(page.getByRole("status").filter({ hasText: "Đang chuẩn bị phiên học…" })).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(nextCard).toBeVisible();
+  await expect(nextCard).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^(Lại|Khó|Tốt|Dễ),/ })).toHaveCount(0);
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await page.getByRole("alert").getByRole("button").click();
