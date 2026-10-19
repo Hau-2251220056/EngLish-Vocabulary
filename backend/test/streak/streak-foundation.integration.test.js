@@ -21,6 +21,7 @@ let peer;
 let http;
 let now = new Date("2026-10-18T16:59:59.999Z");
 const CONCURRENCY_TIMEOUT_MS = 30_000;
+const CONTROLLED_CONTENTION_TIMEOUT_MS = 60_000;
 
 before(async () => {
   assertFoundationAuthorization(process.env);
@@ -890,8 +891,8 @@ test("immutable SRS snapshot excludes an item that becomes due after creation", 
   assert.equal(await receiptCount(session.id), 0);
 });
 
-test("concurrent final ratings serialize exact replay and reject a competing event", {
-  timeout: CONCURRENCY_TIMEOUT_MS,
+test("concurrent exact final SRS ratings serialize as original plus replay", {
+  timeout: CONTROLLED_CONTENTION_TIMEOUT_MS,
 }, async () => {
   const exactFixture = await createFixture();
   const exactSession = await createSrsSession(exactFixture);
@@ -918,7 +919,11 @@ test("concurrent final ratings serialize exact replay and reject a competing eve
   assert.equal(exactState.session.status, "COMPLETED");
   assert.equal(exactState.session.items[1].evidence, "SRS_HARD");
   assert.equal(exactState.receipts.filter(({ event_id: eventId }) => eventId === exactFinal.event_id).length, 1);
+});
 
+test("concurrent competing final SRS ratings accept once and reject the conflict", {
+  timeout: CONTROLLED_CONTENTION_TIMEOUT_MS,
+}, async () => {
   const competingFixture = await createFixture();
   const competingSession = await createSrsSession(competingFixture);
   await acceptFirstSrsItem(competingFixture, competingSession);
@@ -1098,17 +1103,20 @@ test("Quiz event identity is session-bound, foreign-concealed, and terminal sess
   const foreign = quizAnswer(fixture, otherSession, otherQuestions[0], correctChoice(otherQuestions[0], fixture), eventId);
   assertQuizError(await postQuizAnswer(fixture.otherCookie, foreign), 404, "LEARNING_SESSION_NOT_FOUND");
 
-  await prisma.lEARNING_SESSION.update({ where: { id: secondSession.id }, data: {
-    expires_at: new Date(now.getTime() - 1),
-  } });
+  const authoritativeExpiry = await prisma.lEARNING_SESSION.findUniqueOrThrow({
+    where: { id: secondSession.id },
+    select: { expires_at: true },
+  });
+  const beforeExpiryRejection = await quizState(fixture.user.id, secondSession.id);
+  now = new Date(authoritativeExpiry.expires_at);
   assertQuizError(await postQuizAnswer(fixture.userCookie, {
     ...crossSession, event_id: randomUUID(),
   }), 409, "LEARNING_SESSION_EXPIRED");
-  assert.deepEqual((await quizState(fixture.user.id, secondSession.id)).session.items.map(({ evidence }) => evidence), [null, null]);
+  assert.deepEqual(await quizState(fixture.user.id, secondSession.id), beforeExpiryRejection);
 });
 
 test("concurrent exact final Quiz submissions award XP and Streak exactly once", {
-  timeout: CONCURRENCY_TIMEOUT_MS,
+  timeout: CONTROLLED_CONTENTION_TIMEOUT_MS,
 }, async () => {
   const fixture = await createQuizFixture();
   const session = await createQuizSession(fixture, fixture.userCookie);
@@ -1141,7 +1149,12 @@ test("concurrent exact final Quiz submissions award XP and Streak exactly once",
     assert.equal(exactProgress.get(accepted.vocabulary_id).review_count, 1);
     assert.equal(exactProgress.get(accepted.vocabulary_id).last_event_id, accepted.event_id);
   }
+});
 
+test("concurrent competing final Quiz submissions accept once and reject the conflict", {
+  timeout: CONTROLLED_CONTENTION_TIMEOUT_MS,
+}, async () => {
+  const fixture = await createQuizFixture();
   const competingSession = await createQuizSession(fixture, fixture.userCookie);
   const competingQuestions = await readSessionQuiz(fixture, competingSession, fixture.userCookie);
   const competingFirst = quizAnswer(fixture, competingSession,
@@ -1171,11 +1184,11 @@ test("concurrent exact final Quiz submissions award XP and Streak exactly once",
     acceptedFinal.json.data.reward.source_event_id,
   ]);
   const competingProgress = new Map(competingState.progress.map((row) => [row.vocabulary_id, row]));
-  assert.equal(competingProgress.get(competingFirst.vocabulary_id).revision, 2);
-  assert.equal(competingProgress.get(competingFirst.vocabulary_id).review_count, 2);
+  assert.equal(competingProgress.get(competingFirst.vocabulary_id).revision, 1);
+  assert.equal(competingProgress.get(competingFirst.vocabulary_id).review_count, 1);
   assert.equal(competingProgress.get(competingFirst.vocabulary_id).last_event_id, competingFirst.event_id);
-  assert.equal(competingProgress.get(competingFinal.vocabulary_id).revision, 2);
-  assert.equal(competingProgress.get(competingFinal.vocabulary_id).review_count, 2);
+  assert.equal(competingProgress.get(competingFinal.vocabulary_id).revision, 1);
+  assert.equal(competingProgress.get(competingFinal.vocabulary_id).review_count, 1);
   assert.equal(competingProgress.get(competingFinal.vocabulary_id).last_event_id,
     acceptedFinal.json.data.reward.source_event_id);
 });

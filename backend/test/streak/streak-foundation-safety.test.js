@@ -193,7 +193,8 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
     "AGAIN receipts stay unresolved and passing ratings complete atomically without duplicate replay",
     "receipt replay conceals foreign ownership, conflicts across sessions and rejects stale events",
     "immutable SRS snapshot excludes an item that becomes due after creation",
-    "concurrent final ratings serialize exact replay and reject a competing event",
+    "concurrent exact final SRS ratings serialize as original plus replay",
+    "concurrent competing final SRS ratings accept once and reject the conflict",
     "session-aware SRS waits for the shared advisory lock and releases after commit",
     "injected terminal Streak failure rolls Progress XP receipt evidence and completion back",
   ]) {
@@ -224,8 +225,15 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
     "zero-correct multi-item Quiz completes once and exact final replay is immutable",
     "Quiz event identity is session-bound, foreign-concealed, and terminal sessions reject mutation",
     "concurrent exact final Quiz submissions award XP and Streak exactly once",
+    "concurrent competing final Quiz submissions accept once and reject the conflict",
     "injected terminal Quiz Streak failure rolls Progress XP evidence completion and day back",
   ]) assert.match(source, new RegExp(contract));
+  assert.match(source, /const CONTROLLED_CONTENTION_TIMEOUT_MS = 60_000/);
+  assert.equal((source.match(/timeout: CONTROLLED_CONTENTION_TIMEOUT_MS/g) ?? []).length, 4);
+  assert.match(source, /select: \{ expires_at: true \}/);
+  assert.match(source, /now = new Date\(authoritativeExpiry\.expires_at\)/);
+  assert.match(source, /assert\.deepEqual\(await quizState\(fixture\.user\.id, secondSession\.id\), beforeExpiryRejection\)/);
+  assert.doesNotMatch(source, /expires_at: new Date\(now\.getTime\(\) - 1\)/);
   assert.match(source, /createQuizRepository\(prisma\)/);
   assert.match(source, /createLearningSessionRepository/);
   assert.match(source, /insertDayForCompletedSession/);
