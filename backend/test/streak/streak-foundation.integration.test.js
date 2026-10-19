@@ -15,7 +15,9 @@ import { startHttpTestServer } from "../helpers/http-test-server.js";
 import {
   assertFoundationAuthorization,
   buildFoundationObserverDatabaseUrl,
+  CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   connectFoundationObserver,
+  contentionObserverTransactionPolicy,
   describeContentionWaitStates,
 } from "./streak-foundation-safety.js";
 import {
@@ -1724,15 +1726,12 @@ async function waitForBlockingChain(holderPid, expectedCount, message) {
     describeRows: (rows) => describeContentionWaitStates(rows, expectedCount),
     observationDeadlineMs: 5_000,
     maximumSamples: 200,
-    minimumLifecycleBudgetMs: 750,
+    minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   });
 }
 
 function readBlockingChain(holderPid, expectedCount, remainingMs) {
-  assert.equal(remainingMs >= 750, true);
-  const maxWait = Math.min(150, remainingMs - 600);
-  const timeout = Math.min(400, remainingMs - maxWait - 200);
-  const statementTimeoutMs = Math.min(150, timeout - 150);
+  const { maxWait, timeout, statementTimeoutMs } = contentionObserverTransactionPolicy(remainingMs);
   return runSanitizedContentionObserver((phase) => observer.$transaction(async (transaction) => {
     phase.callbackEntered();
     phase.statementTimeoutStarted();

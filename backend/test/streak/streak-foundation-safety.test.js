@@ -7,13 +7,16 @@ import {
   assertFoundationSchemaOwnership,
   buildFoundationObserverDatabaseUrl,
   buildFoundationSchemaContext,
+  CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   connectFoundationObserver,
+  contentionObserverTransactionPolicy,
   describeContentionWaitStates,
   FoundationObserverSetupError,
   observeBoundedContention,
   runFoundationCleanup,
   runSanitizedContentionObserver,
   runWithGuaranteedRelease,
+  SanitizedContentionObserverError,
 } from "./streak-foundation-safety.js";
 
 class SimulatedPrismaClientKnownRequestError extends Error {}
@@ -592,6 +595,54 @@ test("bounded contention observation retries sanitized P2028 and can then succee
   });
 });
 
+test("contention observer acquisition policy uses a bounded Prisma-default lifecycle budget", async () => {
+  assert.equal(CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS, 2_600);
+  assert.throws(
+    () => contentionObserverTransactionPolicy(2_599),
+    { name: "AssertionError" },
+  );
+  for (const remainingMs of [2_600, 5_000]) {
+    const policy = contentionObserverTransactionPolicy(remainingMs);
+    assert.deepEqual(policy, {
+      maxWait: 2_000,
+      timeout: 400,
+      statementTimeoutMs: 150,
+      completionMarginMs: 200,
+    });
+    assert.equal(policy.maxWait + policy.timeout + policy.completionMarginMs <= remainingMs, true);
+    assert.equal(policy.statementTimeoutMs <= policy.timeout - 150, true);
+  }
+
+  let currentTime = 0;
+  const observedBudgets = [];
+  const retryable = new SanitizedContentionObserverError(
+    "PrismaClientKnownRequestError",
+    "P2028",
+    true,
+    "transaction-acquisition",
+    "750ms-or-more",
+  );
+  await assert.rejects(observeBoundedContention({
+    expectedCount: 2,
+    message: "bounded acquisition",
+    readSample: async (remainingMs) => {
+      observedBudgets.push(remainingMs);
+      contentionObserverTransactionPolicy(remainingMs);
+      currentTime += 2_000;
+      throw retryable;
+    },
+    describeRows: (rows) => rows,
+    now: () => currentTime,
+    pause: async (milliseconds) => { currentTime += milliseconds; },
+    observationDeadlineMs: 5_000,
+    minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  }), /bounded acquisition/);
+  assert.deepEqual(observedBudgets, [5_000, 2_975]);
+  assert.equal(observedBudgets.every(
+    (budget) => budget >= CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
+  ), true);
+});
+
 test("bounded contention counts successful insufficient observations and caps repeated P2028", async () => {
   await assert.rejects(observeBoundedContention({
     expectedCount: 2,
@@ -881,11 +932,8 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   assert.match(contentionObserver, /observeBoundedContention\(\{/);
   assert.match(contentionObserver, /observationDeadlineMs: 5_000/);
   assert.match(contentionObserver, /maximumSamples: 200/);
-  assert.match(contentionObserver, /minimumLifecycleBudgetMs: 750/);
-  assert.match(contentionObserver, /remainingMs >= 750/);
-  assert.match(contentionObserver, /const maxWait = Math\.min\(150,/);
-  assert.match(contentionObserver, /const timeout = Math\.min\(400,/);
-  assert.match(contentionObserver, /const statementTimeoutMs = Math\.min\(150,/);
+  assert.match(contentionObserver, /minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS/);
+  assert.match(contentionObserver, /contentionObserverTransactionPolicy\(remainingMs\)/);
   assert.match(contentionObserver, /wait_event_type/);
   assert.match(contentionObserver, /wait_event/);
   assert.match(contentionObserver, /describeContentionWaitStates\(rows, expectedCount\)/);
