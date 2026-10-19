@@ -13,7 +13,10 @@ import { createQuizService } from "../../src/services/quiz-service.js";
 import { createSessionFixture, createUserFixture } from "../helpers/auth-fixtures.js";
 import { startHttpTestServer } from "../helpers/http-test-server.js";
 import { assertFoundationAuthorization } from "./streak-foundation-safety.js";
-import { runWithGuaranteedRelease } from "./streak-foundation-safety.js";
+import {
+  runSanitizedContentionObserver,
+  runWithGuaranteedRelease,
+} from "./streak-foundation-safety.js";
 
 let database;
 let prisma;
@@ -1644,7 +1647,7 @@ async function runContendedSrsRequests({ fixture, session, vocabularyId, request
       );
     },
     release,
-    held: [holder, ...pendingRequests],
+    held: labeledContentionOperations(holder, pendingRequests),
     settleTimeoutMs: 10_000,
   });
   return settleConcurrentRequests(pendingRequests, `Timed out settling ${label}.`);
@@ -1684,7 +1687,7 @@ async function runContendedQuizRequests({ fixture, vocabularyId, requests, label
       );
     },
     release,
-    held: [holder, ...pendingRequests],
+    held: labeledContentionOperations(holder, pendingRequests),
     settleTimeoutMs: 10_000,
   });
   return settleConcurrentRequests(pendingRequests, `Timed out settling ${label}.`);
@@ -1692,24 +1695,87 @@ async function runContendedQuizRequests({ fixture, vocabularyId, requests, label
 
 async function waitForBlockingChain(holderPid, expectedCount, message) {
   const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    const [row] = await prisma.$queryRaw`
-      WITH RECURSIVE blocked(pid) AS (
-        SELECT activity.pid
-        FROM pg_stat_activity AS activity
-        WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
-        UNION
-        SELECT activity.pid
-        FROM pg_stat_activity AS activity
-        JOIN blocked AS prior ON prior.pid = ANY(pg_blocking_pids(activity.pid))
-      )
-      SELECT COUNT(DISTINCT pid)::integer AS count
-      FROM blocked
-    `;
-    if (row.count >= expectedCount) return;
+  const maximumSamples = 200;
+  const minimumObserverBudgetMs = 100;
+  let samples = 0;
+  let maximumObserved = 0;
+  let lastWaitStates = [];
+  while (samples < maximumSamples) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < minimumObserverBudgetMs) break;
+    const rows = await readBlockingChain(holderPid, expectedCount, remainingMs);
+    samples += 1;
+    maximumObserved = Math.max(maximumObserved, rows.length);
+    lastWaitStates = rows.map((row, index) => ({
+      role: `blocked-${index + 1}`,
+      depth: Number.isInteger(row.depth) ? row.depth : null,
+      state: safePostgresWaitValue(row.state),
+      wait_event_type: safePostgresWaitValue(row.wait_event_type),
+      wait_event: safePostgresWaitValue(row.wait_event),
+      blocking_pids: Array.isArray(row.blocking_pids)
+        ? row.blocking_pids.filter(Number.isInteger).slice(0, expectedCount)
+        : [],
+    }));
+    if (rows.length >= expectedCount) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(message);
+  throw new Error(
+    `${message} maximum_observed=${maximumObserved}; samples=${samples}; wait_states=${JSON.stringify(lastWaitStates)}`,
+  );
+}
+
+function readBlockingChain(holderPid, expectedCount, remainingMs) {
+  const maxWait = Math.min(200, Math.max(1, Math.floor(remainingMs / 3)));
+  const timeout = Math.max(1, remainingMs - maxWait);
+  const statementTimeoutMs = Math.min(500, Math.max(1, timeout - 50));
+  return runSanitizedContentionObserver(() => prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT set_config(
+      'statement_timeout',
+      ${`${statementTimeoutMs}ms`},
+      true
+    )`;
+    return transaction.$queryRaw`
+      WITH RECURSIVE blocked(pid, depth, path) AS (
+        SELECT activity.pid, 1, ARRAY[activity.pid]
+        FROM pg_stat_activity AS activity
+        WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        UNION ALL
+        SELECT activity.pid, prior.depth + 1, prior.path || activity.pid
+        FROM pg_stat_activity AS activity
+        JOIN blocked AS prior ON prior.pid = ANY(pg_blocking_pids(activity.pid))
+        WHERE prior.depth < ${expectedCount}
+          AND NOT activity.pid = ANY(prior.path)
+      )
+      SELECT activity.pid::integer AS pid,
+             blocked.depth::integer AS depth,
+             activity.state,
+             activity.wait_event_type,
+             activity.wait_event,
+             pg_blocking_pids(activity.pid)::integer[] AS blocking_pids
+      FROM (
+        SELECT pid, MIN(depth)::integer AS depth
+        FROM blocked
+        GROUP BY pid
+      ) AS blocked
+      JOIN pg_stat_activity AS activity ON activity.pid = blocked.pid
+      ORDER BY blocked.depth ASC, activity.pid ASC
+      LIMIT ${expectedCount}
+    `;
+  }, { maxWait, timeout }));
+}
+
+function labeledContentionOperations(holder, requests) {
+  return [
+    { label: "holder", promise: holder },
+    ...requests.map((promise, index) => ({ label: `request-${index + 1}`, promise })),
+  ];
+}
+
+function safePostgresWaitValue(value) {
+  if (value === null) return null;
+  return typeof value === "string" && /^[A-Za-z0-9 _-]{1,64}$/.test(value)
+    ? value
+    : "REDACTED";
 }
 
 async function legacyState(userId) {

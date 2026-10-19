@@ -59,6 +59,17 @@ export function assertFoundationSchemaOwnership({
   return ownership;
 }
 
+export async function runSanitizedContentionObserver(action) {
+  assert.equal(typeof action, "function");
+  try {
+    return await action();
+  } catch (error) {
+    const name = /^[A-Za-z][A-Za-z0-9]*$/.test(error?.name ?? "") ? error.name : "Error";
+    const code = /^[A-Za-z0-9_-]{1,32}$/.test(error?.code ?? "") ? ` code=${error.code}` : "";
+    throw new Error(`Contention observer failed (${name}${code}).`);
+  }
+}
+
 function assertFoundationSchemaName(schemaName) {
   assert.match(schemaName, FOUNDATION_SCHEMA);
   assert.notEqual(schemaName, "public");
@@ -108,8 +119,8 @@ export async function runWithGuaranteedRelease({
   } catch (error) {
     cleanupErrors.push(error);
   }
-  const settled = await Promise.allSettled(held.map((promise) => boundedSettlement(
-    promise,
+  const settled = await Promise.allSettled(held.map((entry) => boundedSettlement(
+    normalizeHeldOperation(entry),
     settleTimeoutMs,
   )));
   cleanupErrors.push(...settled
@@ -131,16 +142,36 @@ export async function runWithGuaranteedRelease({
   return result;
 }
 
-function boundedSettlement(promise, timeoutMs) {
+function normalizeHeldOperation(entry) {
+  if (entry && typeof entry.then === "function") {
+    return { label: null, promise: entry };
+  }
+  assert.equal(typeof entry, "object");
+  assert.match(entry.label, /^[a-z0-9-]{1,32}$/);
+  assert.equal(typeof entry.promise?.then, "function");
+  return { label: entry.label, promise: entry.promise };
+}
+
+async function boundedSettlement({ label, promise }, timeoutMs) {
   assert.equal(Number.isInteger(timeoutMs) && timeoutMs > 0, true);
   let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error("Timed out settling a held concurrency operation.")),
-        timeoutMs,
-      );
-    }),
-  ]).finally(() => clearTimeout(timer));
+  const timeoutError = new Error(label
+    ? `Timed out settling held operation ${label}.`
+    : "Timed out settling a held concurrency operation.");
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(timeoutError),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } catch (error) {
+    if (!label || error === timeoutError) throw error;
+    const name = /^[A-Za-z][A-Za-z0-9]*$/.test(error?.name ?? "") ? error.name : "Error";
+    const code = /^[A-Za-z0-9_-]{1,32}$/.test(error?.code ?? "") ? ` code=${error.code}` : "";
+    throw new Error(`Held operation ${label} rejected (${name}${code}).`);
+  } finally {
+    clearTimeout(timer);
+  }
 }

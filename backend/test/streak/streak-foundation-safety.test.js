@@ -6,6 +6,7 @@ import {
   assertFoundationAuthorization,
   assertFoundationSchemaOwnership,
   buildFoundationSchemaContext,
+  runSanitizedContentionObserver,
   runWithGuaranteedRelease,
 } from "./streak-foundation-safety.js";
 
@@ -180,6 +181,58 @@ test("cleanup failure reports but does not hide the primary assertion", async ()
   });
 });
 
+test("labeled held operations report sanitized rejection and settlement timeout identities", async () => {
+  const primary = new Error("primary assertion");
+  const rejected = Object.assign(new Error("postgresql://secret fixture payload"), {
+    code: "P2034",
+  });
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => { throw primary; },
+    release: () => {},
+    held: [{ label: "request-1", promise: Promise.reject(rejected) }],
+    settleTimeoutMs: 100,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors[0], primary);
+    assert.equal(error.errors[1].message, "Held operation request-1 rejected (Error code=P2034).");
+    assert.equal(error.errors[1].message.includes("secret"), false);
+    return true;
+  });
+
+  let released = false;
+  await assert.rejects(runWithGuaranteedRelease({
+    action: async () => { throw primary; },
+    release: () => { released = true; },
+    held: [{ label: "holder", promise: new Promise(() => {}) }],
+    settleTimeoutMs: 10,
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors[1].message, "Timed out settling held operation holder.");
+    return true;
+  });
+  assert.equal(released, true);
+});
+
+test("contention observer rejection exposes only a validated name and code", async () => {
+  const rejected = Object.assign(new Error(
+    "postgresql://secret@database.invalid fixture-user-id SELECT private_sql",
+  ), { name: "PrismaClientKnownRequestError", code: "P2028" });
+  await assert.rejects(
+    runSanitizedContentionObserver(async () => { throw rejected; }),
+    (error) => {
+      assert.equal(
+        error.message,
+        "Contention observer failed (PrismaClientKnownRequestError code=P2028).",
+      );
+      for (const sensitive of ["secret", "database.invalid", "fixture-user-id", "SELECT"]) {
+        assert.equal(error.message.includes(sensitive), false);
+      }
+      assert.equal(Object.hasOwn(error, "cause"), false);
+      return true;
+    },
+  );
+});
+
 test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts", async () => {
   const [source, harness] = await Promise.all([
     readFile(new URL("./streak-foundation.integration.test.js", import.meta.url), "utf8"),
@@ -213,7 +266,7 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
   ]) {
     assert.match(source, new RegExp(constraint));
   }
-  assert.match(source, /WITH RECURSIVE blocked\(pid\)/);
+  assert.match(source, /WITH RECURSIVE blocked\(pid, depth, path\)/);
   assert.match(source, /assert\.deepEqual\(await rejectedOperationState\(fixture\), beforeStale\)/);
   assert.match(source, /Timed out settling the SRS advisory-lock holder/);
   assert.match(source, /Promise\.allSettled\(promises\)/);
@@ -246,7 +299,24 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   assert.match(quizContentionHelper, /waitForBlockingChain\(holderPid, 2, `Timed out establishing \$\{label\} contention\.`\)/);
   assert.match(quizContentionHelper, /Promise\.all\(pendingRequests\.map\(\(requestPromise\) => remainsPending\(requestPromise\)\)\)/);
   assert.match(quizContentionHelper, /runWithGuaranteedRelease\(\{/);
-  assert.match(quizContentionHelper, /held: \[holder, \.\.\.pendingRequests\]/);
+  assert.match(quizContentionHelper, /held: labeledContentionOperations\(holder, pendingRequests\)/);
   assert.match(quizContentionHelper, /settleTimeoutMs: 10_000/);
   assert.match(quizContentionHelper, /settleConcurrentRequests\(pendingRequests, `Timed out settling \$\{label\}\.`\)/);
+  const observerStart = source.indexOf("async function waitForBlockingChain(");
+  const observerEnd = source.indexOf("async function legacyState(", observerStart);
+  assert.ok(observerStart >= 0 && observerEnd > observerStart);
+  const contentionObserver = source.slice(observerStart, observerEnd);
+  assert.match(contentionObserver, /const maximumSamples = 200/);
+  assert.match(contentionObserver, /const minimumObserverBudgetMs = 100/);
+  assert.match(contentionObserver, /maximumObserved = Math\.max\(maximumObserved, rows\.length\)/);
+  assert.match(contentionObserver, /wait_event_type/);
+  assert.match(contentionObserver, /wait_event/);
+  assert.match(contentionObserver, /blocking_pids/);
+  assert.match(contentionObserver, /label: "holder"/);
+  assert.match(contentionObserver, /label: `request-\$\{index \+ 1\}`/);
+  assert.match(contentionObserver, /SELECT set_config\(/);
+  assert.match(contentionObserver, /'statement_timeout'/);
+  assert.match(contentionObserver, /\{ maxWait, timeout \}/);
+  assert.match(contentionObserver, /runSanitizedContentionObserver/);
+  assert.doesNotMatch(contentionObserver, /activity\.query/);
 });
