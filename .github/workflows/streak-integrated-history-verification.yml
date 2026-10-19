@@ -1,0 +1,37 @@
+name: TASK-249 Historical Integrated Schema Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorize_read_only_verification:
+        description: Affirmatively authorize read-only historical integrated-schema verification
+        required: true
+        default: false
+        type: boolean
+      approved_target_identity:
+        description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
+        required: true
+        type: string
+      historical_run_id:
+        description: Exact historical TASK-249 GitHub run ID
+        required: true
+        type: string
+      historical_run_attempt:
+        description: Exact historical TASK-249 GitHub run attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  refuse-default-branch-execution:
+    name: Select feature/streak-v1
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Refuse inert bootstrap execution
+        shell: bash
+        run: |
+          echo "::error::This default-branch bootstrap is inert. Select feature/streak-v1 to run the reviewed verification workflow."
+          exit 1
