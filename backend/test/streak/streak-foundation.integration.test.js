@@ -1024,7 +1024,10 @@ test("session-aware SRS waits for the shared advisory lock and releases after co
   let locked;
   const releaseGate = new Promise((resolve) => { release = resolve; });
   const lockReady = new Promise((resolve) => { locked = resolve; });
+  let holderPid;
   const holder = peer.$transaction(async (transaction) => {
+    const [backend] = await transaction.$queryRaw`SELECT pg_backend_pid()::integer AS pid`;
+    holderPid = backend.pid;
     await createLearningRepository(transaction).lockProgressIdentity(fixture.user.id, vocabularyId);
     locked();
     await releaseGate;
@@ -1045,7 +1048,14 @@ test("session-aware SRS waits for the shared advisory lock and releases after co
   }));
   let accepted;
   await runWithGuaranteedRelease({
-    action: async () => assert.equal(await remainsPending(pending), true),
+    action: async () => {
+      await waitForBlockingChain(
+        holderPid,
+        1,
+        "Timed out establishing session-aware SRS advisory-lock contention.",
+      );
+      assert.equal(await remainsPending(pending), true);
+    },
     release,
     held: [
       { label: "holder", promise: holder },

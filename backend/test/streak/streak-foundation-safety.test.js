@@ -1179,6 +1179,30 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
     sharedLockTestStart,
   );
   const sharedLockTest = source.slice(sharedLockTestStart, sharedLockTestEnd);
+  const assertOrderedFragments = (fragments) => {
+    let priorIndex = -1;
+    for (const fragment of fragments) {
+      const fragmentIndex = sharedLockTest.indexOf(fragment, priorIndex + 1);
+      assert.ok(fragmentIndex > priorIndex, `Missing or out-of-order test #21 fragment: ${fragment}`);
+      priorIndex = fragmentIndex;
+    }
+  };
+  assertOrderedFragments([
+    "const holder = peer.$transaction",
+    "SELECT pg_backend_pid()::integer AS pid",
+    "holderPid = backend.pid",
+    "lockProgressIdentity(fixture.user.id, vocabularyId)",
+  ]);
+  assertOrderedFragments([
+    "const pending = postSrsEvent(",
+    "await runWithGuaranteedRelease({",
+    "await waitForBlockingChain(",
+    "assert.equal(await remainsPending(pending), true)",
+  ]);
+  assert.match(
+    sharedLockTest,
+    /Timed out establishing session-aware SRS advisory-lock contention\./,
+  );
   assert.match(sharedLockTest, /\{ label: "holder", promise: holder \}/);
   assert.match(sharedLockTest, /\{ label: "request-1", promise: pending\.then/);
   assert.match(sharedLockTest, /settleTimeoutMs: 5_000/);
