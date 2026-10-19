@@ -5,8 +5,12 @@ import { assertOwnedTestSchema } from "../helpers/test-database.js";
 import {
   assertFoundationAuthorization,
   assertFoundationSchemaOwnership,
+  buildFoundationObserverDatabaseUrl,
   buildFoundationSchemaContext,
+  connectFoundationObserver,
+  FoundationObserverSetupError,
   observeBoundedContention,
+  runFoundationCleanup,
   runSanitizedContentionObserver,
   runWithGuaranteedRelease,
 } from "./streak-foundation-safety.js";
@@ -36,6 +40,13 @@ const approved = Object.freeze({
   GITHUB_REPOSITORY: "Hau-2251220056/EngLish-Vocabulary",
   GITHUB_RUN_ID: "39050020669",
   GITHUB_RUN_ATTEMPT: "2",
+});
+
+const approvedSchema = "elvocab_streak_foundation_39050020669_2_deadbeef";
+const approvedScoped = Object.freeze({
+  ...approved,
+  TEST_DATABASE_URL: `${approved.TEST_DATABASE_URL}?schema=${approvedSchema}`,
+  STREAK_FOUNDATION_SCHEMA_NAME: approvedSchema,
 });
 
 test("foundation guard accepts only the approved three-way CI TEST identity", () => {
@@ -131,6 +142,31 @@ test("foundation schema identity is derived from the actual GitHub run and exact
   }));
 });
 
+test("dedicated observer URL stays on the authorized run-owned schema with one bounded connection", () => {
+  const observerUrl = new URL(buildFoundationObserverDatabaseUrl(approvedScoped));
+  assert.equal(observerUrl.protocol, "postgresql:");
+  assert.equal(observerUrl.hostname, "ci-db.example.invalid");
+  assert.equal(observerUrl.pathname, "/elvocab_ci");
+  assert.equal(observerUrl.searchParams.get("schema"), approvedSchema);
+  assert.equal(observerUrl.searchParams.get("connection_limit"), "1");
+  assert.equal(observerUrl.searchParams.get("connect_timeout"), "5");
+  assert.equal(observerUrl.searchParams.get("pool_timeout"), "5");
+});
+
+test("dedicated observer URL validation fails closed without exposing connection secrets", () => {
+  for (const environment of [
+    { ...approvedScoped, TEST_DATABASE_URL: "not a database URL containing secret-value" },
+    { ...approvedScoped, TEST_DATABASE_URL: `${approved.TEST_DATABASE_URL}?schema=public` },
+    { ...approvedScoped, TEST_DATABASE_URL: `mysql://user:secret-value@ci-db.example.invalid/elvocab_ci?schema=${approvedSchema}` },
+  ]) {
+    assert.throws(() => buildFoundationObserverDatabaseUrl(environment), (error) => {
+      assert.equal(error.message.includes("secret-value"), false);
+      assert.equal(error.message.includes(approvedScoped.TEST_DATABASE_URL), false);
+      return true;
+    });
+  }
+});
+
 test("fixture reset ownership check refuses wrong schema or marker", async () => {
   const exact = {
     current_schema: "elvocab_streak_foundation_39050020669_2_deadbeef",
@@ -224,6 +260,166 @@ test("labeled held operations report sanitized rejection and settlement timeout 
     return true;
   });
   assert.equal(released, true);
+});
+
+test("foundation cleanup attempts eligible resources in order and skips absent resources", async () => {
+  const calls = [];
+  await runFoundationCleanup({
+    operations: [
+      null,
+      async () => { calls.push("observer"); },
+      undefined,
+      async () => { calls.push("peer"); },
+      async () => { calls.push("database"); },
+    ],
+  });
+  assert.deepEqual(calls, ["observer", "peer", "database"]);
+});
+
+test("foundation cleanup preserves one disconnect failure while completing later cleanup", async () => {
+  const observerFailure = new Error("observer disconnect failed");
+  const calls = [];
+  await assert.rejects(runFoundationCleanup({
+    operations: [
+      async () => { calls.push("observer"); throw observerFailure; },
+      async () => { calls.push("peer"); },
+      async () => { calls.push("database"); },
+    ],
+  }), (error) => error === observerFailure);
+  assert.deepEqual(calls, ["observer", "peer", "database"]);
+});
+
+test("foundation cleanup aggregates two and three disconnect failures without replacement", async () => {
+  for (const failingResources of [
+    ["observer", "peer"],
+    ["observer", "peer", "database"],
+  ]) {
+    const calls = [];
+    const failures = failingResources.map((resource) => new Error(`${resource} failure`));
+    let failureIndex = 0;
+    await assert.rejects(runFoundationCleanup({
+      operations: ["observer", "peer", "database"].map((resource) => async () => {
+        calls.push(resource);
+        if (failingResources.includes(resource)) throw failures[failureIndex++];
+      }),
+    }), (error) => {
+      assert.equal(error instanceof AggregateError, true);
+      assert.deepEqual(error.errors, failures);
+      return true;
+    });
+    assert.deepEqual(calls, ["observer", "peer", "database"]);
+  }
+});
+
+test("foundation cleanup preserves a primary failure with later cleanup failures", async () => {
+  const primaryFailure = new Error("setup failed");
+  const cleanupFailure = new Error("observer cleanup failed");
+  const calls = [];
+  await assert.rejects(runFoundationCleanup({
+    primaryError: primaryFailure,
+    operations: [
+      async () => { calls.push("observer"); throw cleanupFailure; },
+      async () => { calls.push("peer"); },
+    ],
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.deepEqual(error.errors, [primaryFailure, cleanupFailure]);
+    return true;
+  });
+  assert.deepEqual(calls, ["observer", "peer"]);
+});
+
+test("failed observer connect with successful cleanup clears the reference without duplicate disconnect", async () => {
+  const connectionFailure = new Error("observer connection failed");
+  const calls = [];
+  let observerReference;
+  const partialObserver = {
+    async $connect() {
+      calls.push("connect");
+      throw connectionFailure;
+    },
+    async $disconnect() {
+      calls.push("disconnect");
+    },
+  };
+  observerReference = partialObserver;
+  await assert.rejects(connectFoundationObserver(partialObserver, {
+    onDisconnected: () => { observerReference = undefined; },
+  }), (error) => {
+    assert.equal(error instanceof FoundationObserverSetupError, true);
+    assert.equal(error.disconnectCompleted, true);
+    assert.deepEqual(error.errors, [connectionFailure]);
+    return true;
+  });
+  assert.equal(observerReference, undefined);
+  await runFoundationCleanup({
+    operations: [observerReference ? () => observerReference.$disconnect() : null],
+  });
+  assert.deepEqual(calls, ["connect", "disconnect"]);
+});
+
+test("successful observer connection retains its reference for one normal teardown", async () => {
+  const calls = [];
+  let observerReference;
+  const observer = {
+    async $connect() { calls.push("connect"); },
+    async $disconnect() { calls.push("disconnect"); },
+  };
+  observerReference = observer;
+  assert.equal(await connectFoundationObserver(observer, {
+    onDisconnected: () => { observerReference = undefined; },
+  }), observer);
+  assert.equal(observerReference, observer);
+  await runFoundationCleanup({
+    operations: [() => observerReference.$disconnect()],
+  });
+  assert.deepEqual(calls, ["connect", "disconnect"]);
+});
+
+test("failed observer connect and disconnect retains reference for final teardown", async () => {
+  const connectionFailure = new Error("observer connection failed");
+  const immediateDisconnectFailure = new Error("partial observer disconnect failed");
+  const finalDisconnectFailure = new Error("final observer disconnect failed");
+  const calls = [];
+  let disconnectAttempts = 0;
+  let observerReference;
+  const partialObserver = {
+    async $connect() {
+      calls.push("connect");
+      throw connectionFailure;
+    },
+    async $disconnect() {
+      calls.push("disconnect");
+      disconnectAttempts += 1;
+      throw disconnectAttempts === 1 ? immediateDisconnectFailure : finalDisconnectFailure;
+    },
+  };
+  observerReference = partialObserver;
+  let setupFailure;
+  await assert.rejects(connectFoundationObserver(partialObserver, {
+    onDisconnected: () => { observerReference = undefined; },
+  }), (error) => {
+    setupFailure = error;
+    assert.equal(error instanceof FoundationObserverSetupError, true);
+    assert.equal(error.disconnectCompleted, false);
+    assert.deepEqual(error.errors, [connectionFailure, immediateDisconnectFailure]);
+    return true;
+  });
+  assert.equal(observerReference, partialObserver);
+  await assert.rejects(runFoundationCleanup({
+    primaryError: setupFailure,
+    operations: [
+      () => observerReference.$disconnect(),
+      async () => { calls.push("peer"); },
+      async () => { calls.push("database"); },
+    ],
+  }), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.deepEqual(error.errors, [setupFailure, finalDisconnectFailure]);
+    assert.deepEqual(setupFailure.errors, [connectionFailure, immediateDisconnectFailure]);
+    return true;
+  });
+  assert.deepEqual(calls, ["connect", "disconnect", "disconnect", "peer", "database"]);
 });
 
 test("contention observer rejection exposes only a validated name and code", async () => {
@@ -451,6 +647,17 @@ test("guarded foundation suite carries the focused TASK-244 PostgreSQL contracts
   assert.match(source, /WITH RECURSIVE blocked\(pid, depth, path\)/);
   assert.match(source, /assert\.deepEqual\(await rejectedOperationState\(fixture\), beforeStale\)/);
   assert.match(source, /Timed out settling the SRS advisory-lock holder/);
+  const sharedLockTestStart = source.indexOf(
+    'test("session-aware SRS waits for the shared advisory lock and releases after commit"',
+  );
+  const sharedLockTestEnd = source.indexOf(
+    'test("injected terminal Streak failure',
+    sharedLockTestStart,
+  );
+  const sharedLockTest = source.slice(sharedLockTestStart, sharedLockTestEnd);
+  assert.match(sharedLockTest, /\{ label: "holder", promise: holder \}/);
+  assert.match(sharedLockTest, /\{ label: "request-1", promise: pending\.then/);
+  assert.match(sharedLockTest, /settleTimeoutMs: 5_000/);
   assert.match(source, /Promise\.allSettled\(promises\)/);
 });
 
@@ -505,5 +712,21 @@ test("guarded foundation suite carries the focused TASK-246 Quiz PostgreSQL cont
   assert.match(contentionObserver, /'statement_timeout'/);
   assert.match(contentionObserver, /\{ maxWait, timeout \}/);
   assert.match(contentionObserver, /runSanitizedContentionObserver/);
+  assert.match(contentionObserver, /observer\.\$transaction/);
+  assert.doesNotMatch(contentionObserver, /prisma\.\$transaction/);
   assert.doesNotMatch(contentionObserver, /activity\.query/);
+
+  const suiteSetup = source.slice(source.indexOf("before(async () =>"), source.indexOf("afterEach(async () =>"));
+  assert.ok(suiteSetup.indexOf("assertFoundationAuthorization(process.env)") < suiteSetup.indexOf('import("../../src/generated/prisma/client.ts")'));
+  assert.ok(suiteSetup.indexOf('import("../../src/generated/prisma/client.ts")') < suiteSetup.indexOf("buildFoundationObserverDatabaseUrl(process.env)"));
+  assert.match(suiteSetup, /observer = new PrismaClient\(\{ datasourceUrl: observerDatabaseUrl \}\)/);
+  assert.match(suiteSetup, /await connectFoundationObserver\(observer, \{/);
+  assert.match(suiteSetup, /onDisconnected: \(\) => \{ observer = undefined; \}/);
+  const suiteTeardown = source.slice(source.indexOf("after(async () =>"), source.indexOf('test("full HTTP auth matrix'));
+  assert.match(suiteTeardown, /runFoundationCleanup\(\{/);
+  assert.ok(suiteTeardown.indexOf("database.reset()") < suiteTeardown.indexOf("http.close()"));
+  assert.ok(suiteTeardown.indexOf("http.close()") < suiteTeardown.indexOf("observer.$disconnect()"));
+  assert.ok(suiteTeardown.indexOf("observer.$disconnect()") < suiteTeardown.indexOf("peer.$disconnect()"));
+  assert.ok(suiteTeardown.indexOf("peer.$disconnect()") < suiteTeardown.indexOf("database.disconnect()"));
+  assert.doesNotMatch(suiteTeardown, /Promise\.race/);
 });

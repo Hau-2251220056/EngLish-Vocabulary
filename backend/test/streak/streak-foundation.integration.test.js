@@ -12,9 +12,14 @@ import { createLearningService } from "../../src/services/learning-service.js";
 import { createQuizService } from "../../src/services/quiz-service.js";
 import { createSessionFixture, createUserFixture } from "../helpers/auth-fixtures.js";
 import { startHttpTestServer } from "../helpers/http-test-server.js";
-import { assertFoundationAuthorization } from "./streak-foundation-safety.js";
+import {
+  assertFoundationAuthorization,
+  buildFoundationObserverDatabaseUrl,
+  connectFoundationObserver,
+} from "./streak-foundation-safety.js";
 import {
   observeBoundedContention,
+  runFoundationCleanup,
   runSanitizedContentionObserver,
   runWithGuaranteedRelease,
 } from "./streak-foundation-safety.js";
@@ -22,6 +27,7 @@ import {
 let database;
 let prisma;
 let peer;
+let observer;
 let http;
 let prismaObserverErrorTypes;
 let now = new Date("2026-10-18T16:59:59.999Z");
@@ -44,6 +50,11 @@ before(async () => {
   const expectedSchemaMarker = process.env.STREAK_FOUNDATION_SCHEMA_MARKER;
   assert.equal(typeof expectedSchema, "string");
   assert.equal(typeof expectedSchemaMarker, "string");
+  const observerDatabaseUrl = buildFoundationObserverDatabaseUrl(process.env);
+  observer = new PrismaClient({ datasourceUrl: observerDatabaseUrl });
+  await connectFoundationObserver(observer, {
+    onDisconnected: () => { observer = undefined; },
+  });
   database = await createTestDatabase({ expectedSchema, expectedSchemaMarker });
   prisma = database.prisma;
   peer = new PrismaClient();
@@ -73,15 +84,15 @@ afterEach(async () => {
 });
 
 after(async () => {
-  try {
-    if (database) await database.reset();
-  } finally {
-    try { if (http) await http.close(); }
-    finally {
-      try { if (peer) await peer.$disconnect(); }
-      finally { if (database) await database.disconnect(); }
-    }
-  }
+  await runFoundationCleanup({
+    operations: [
+      database ? () => database.reset() : null,
+      http ? () => http.close() : null,
+      observer ? () => observer.$disconnect() : null,
+      peer ? () => peer.$disconnect() : null,
+      database ? () => database.disconnect() : null,
+    ],
+  });
 });
 
 test("full HTTP auth matrix and Set authorization remain USER-only", async () => {
@@ -1004,7 +1015,10 @@ test("session-aware SRS waits for the shared advisory lock and releases after co
   await runWithGuaranteedRelease({
     action: async () => assert.equal(await remainsPending(pending), true),
     release,
-    held: [holder, pending.then((response) => { accepted = response; })],
+    held: [
+      { label: "holder", promise: holder },
+      { label: "request-1", promise: pending.then((response) => { accepted = response; }) },
+    ],
     settleTimeoutMs: 5_000,
   });
   assert.equal(accepted.status, 200, accepted.text);
@@ -1727,7 +1741,7 @@ function readBlockingChain(holderPid, expectedCount, remainingMs) {
   const maxWait = Math.min(150, remainingMs - 600);
   const timeout = Math.min(400, remainingMs - maxWait - 200);
   const statementTimeoutMs = Math.min(150, timeout - 150);
-  return runSanitizedContentionObserver(() => prisma.$transaction(async (transaction) => {
+  return runSanitizedContentionObserver(() => observer.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT set_config(
       'statement_timeout',
       ${`${statementTimeoutMs}ms`},

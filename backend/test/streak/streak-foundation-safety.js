@@ -52,6 +52,33 @@ export function buildFoundationSchemaContext(environment, suffix) {
   });
 }
 
+export function buildFoundationObserverDatabaseUrl(environment) {
+  assertFoundationAuthorization(environment);
+  const expectedSchema = environment.STREAK_FOUNDATION_SCHEMA_NAME;
+  assertFoundationSchemaName(expectedSchema);
+
+  let databaseUrl;
+  try {
+    databaseUrl = new URL(environment.TEST_DATABASE_URL);
+  } catch {
+    throw new Error("Dedicated observer database URL is invalid.");
+  }
+  assert.equal(
+    databaseUrl.protocol === "postgresql:" || databaseUrl.protocol === "postgres:",
+    true,
+    "Dedicated observer requires PostgreSQL.",
+  );
+  assert.equal(
+    databaseUrl.searchParams.get("schema"),
+    expectedSchema,
+    "Dedicated observer schema does not match the authorized run-owned schema.",
+  );
+  databaseUrl.searchParams.set("connection_limit", "1");
+  databaseUrl.searchParams.set("connect_timeout", "5");
+  databaseUrl.searchParams.set("pool_timeout", "5");
+  return databaseUrl.toString();
+}
+
 export function assertFoundationSchemaOwnership({
   schemaName,
   currentSchema,
@@ -91,6 +118,53 @@ export class SanitizedContentionObserverError extends Error {
     this.safeCode = safeCode;
     this.retryable = retryable === true;
   }
+}
+
+export async function runFoundationCleanup({ primaryError, operations }) {
+  assert.equal(Array.isArray(operations), true);
+  const failures = primaryError === undefined ? [] : [primaryError];
+  for (const operation of operations) {
+    if (operation === undefined || operation === null) continue;
+    assert.equal(typeof operation, "function");
+    try {
+      await operation();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Streak foundation cleanup encountered multiple failures.");
+  }
+}
+
+export class FoundationObserverSetupError extends AggregateError {
+  constructor(failures, disconnectCompleted) {
+    super(failures, "Dedicated contention observer setup failed.");
+    this.name = "FoundationObserverSetupError";
+    this.disconnectCompleted = disconnectCompleted === true;
+  }
+}
+
+export async function connectFoundationObserver(observer, { onDisconnected = () => {} } = {}) {
+  assert.equal(typeof observer?.$connect, "function");
+  assert.equal(typeof observer?.$disconnect, "function");
+  assert.equal(typeof onDisconnected, "function");
+  try {
+    await observer.$connect();
+  } catch (primaryError) {
+    const failures = [primaryError];
+    let disconnectCompleted = false;
+    try {
+      await observer.$disconnect();
+      disconnectCompleted = true;
+      onDisconnected();
+    } catch (error) {
+      failures.push(error);
+    }
+    throw new FoundationObserverSetupError(failures, disconnectCompleted);
+  }
+  return observer;
 }
 
 function assertPrismaObserverErrorTypes(types) {
