@@ -12,7 +12,7 @@ const PRISMA_OBSERVER_ERROR_NAMES = [
   "PrismaClientRustPanicError",
   "PrismaClientInitializationError",
 ];
-export const CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS = 2_600;
+export const CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS = 4_000;
 
 export function assertFoundationAuthorization(environment) {
   assertHarnessAuthorization(environment);
@@ -161,9 +161,9 @@ export function contentionObserverTransactionPolicy(remainingMs) {
   );
   // Prisma's documented interactive-transaction acquisition default is 2 seconds.
   const maxWait = 2_000;
-  const timeout = 400;
+  const timeout = 1_500;
   const statementTimeoutMs = 150;
-  const completionMarginMs = 200;
+  const completionMarginMs = 500;
   assert.equal(
     maxWait + timeout + completionMarginMs
       <= CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,

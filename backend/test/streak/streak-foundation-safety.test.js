@@ -595,19 +595,19 @@ test("bounded contention observation retries sanitized P2028 and can then succee
   });
 });
 
-test("contention observer acquisition policy uses a bounded Prisma-default lifecycle budget", async () => {
-  assert.equal(CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS, 2_600);
+test("contention observer policy reserves the hosted-CI closure lifecycle budget", async () => {
+  assert.equal(CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS, 4_000);
   assert.throws(
-    () => contentionObserverTransactionPolicy(2_599),
+    () => contentionObserverTransactionPolicy(3_999),
     { name: "AssertionError" },
   );
-  for (const remainingMs of [2_600, 5_000]) {
+  for (const remainingMs of [4_000, 5_000]) {
     const policy = contentionObserverTransactionPolicy(remainingMs);
     assert.deepEqual(policy, {
       maxWait: 2_000,
-      timeout: 400,
+      timeout: 1_500,
       statementTimeoutMs: 150,
-      completionMarginMs: 200,
+      completionMarginMs: 500,
     });
     assert.equal(policy.maxWait + policy.timeout + policy.completionMarginMs <= remainingMs, true);
     assert.equal(policy.statementTimeoutMs <= policy.timeout - 150, true);
@@ -619,7 +619,7 @@ test("contention observer acquisition policy uses a bounded Prisma-default lifec
     "PrismaClientKnownRequestError",
     "P2028",
     true,
-    "transaction-acquisition",
+    "transaction-closure",
     "750ms-or-more",
   );
   await assert.rejects(observeBoundedContention({
@@ -628,7 +628,7 @@ test("contention observer acquisition policy uses a bounded Prisma-default lifec
     readSample: async (remainingMs) => {
       observedBudgets.push(remainingMs);
       contentionObserverTransactionPolicy(remainingMs);
-      currentTime += 2_000;
+      currentTime += 3_500;
       throw retryable;
     },
     describeRows: (rows) => rows,
@@ -637,7 +637,7 @@ test("contention observer acquisition policy uses a bounded Prisma-default lifec
     observationDeadlineMs: 5_000,
     minimumLifecycleBudgetMs: CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   }), /bounded acquisition/);
-  assert.deepEqual(observedBudgets, [5_000, 2_975]);
+  assert.deepEqual(observedBudgets, [5_000]);
   assert.equal(observedBudgets.every(
     (budget) => budget >= CONTENTION_OBSERVER_MIN_LIFECYCLE_BUDGET_MS,
   ), true);
