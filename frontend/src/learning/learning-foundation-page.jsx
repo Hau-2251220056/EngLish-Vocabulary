@@ -680,10 +680,11 @@ export function LearningFoundationPage() {
     const isFullRunCompleted = normalSummary.full_run_completed;
     return (
       <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
-        <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status">
+        <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status" aria-atomic="true">
           <BookOpenCheck className="mx-auto size-14 rounded-2xl bg-[var(--accent-primary-soft)] p-3 text-[var(--accent-primary-pressed)]" aria-hidden="true" />
           <h1 ref={summaryHeadingRef} tabIndex={-1}>{isFullRunCompleted ? "Hoàn thành bộ từ" : "Hoàn thành phiên"}</h1>
           <p>{isFullRunCompleted ? "Bạn đã hoàn thành toàn bộ lượt học này." : "Nhóm từ hiện tại đã được hoàn thành."}</p>
+          {announcement ? <p className="sr-only">{announcement}</p> : null}
           <div className="flex flex-wrap justify-center gap-3">
             {isFullRunCompleted
               ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={restartRun}>Học lại từ đầu</button>

@@ -167,7 +167,11 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
   const finish = page.getByRole("button", { name: "Hoàn thành phiên" });
   await expect(finish).toBeEnabled();
   await finish.click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
+  const summaryHeading = page.getByRole("heading", { name: "Hoàn thành bộ từ" });
+  const summary = page.getByRole("status").filter({ has: summaryHeading });
+  await expect(summaryHeading).toBeVisible();
+  await expect(summaryHeading).toBeFocused();
+  await expect(summary).toContainText("Chuỗi hiện tại 1 ngày");
   await expect(page.getByRole("alert").filter({ hasText: /XP/ })).toHaveCount(0);
   expect(calls.events).toHaveLength(0);
   expect(calls.sessions.filter(({ method }) => method === "PUT")).toHaveLength(4);

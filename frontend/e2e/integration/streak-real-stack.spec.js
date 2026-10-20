@@ -86,8 +86,11 @@ test("NORMAL, SRS and zero-correct Quiz qualify once while Speaking remains non-
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Đã ghi nhận thẻ được lật");
   await expect(finishNormal).toBeEnabled();
   await finishNormal.click();
-  await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Chuỗi hiện tại 1 ngày");
+  const normalSummaryHeading = page.getByRole("heading", { name: "Hoàn thành bộ từ" });
+  const normalSummary = page.getByRole("status").filter({ has: normalSummaryHeading });
+  await expect(normalSummaryHeading).toBeVisible();
+  await expect(normalSummaryHeading).toBeFocused();
+  await expect(normalSummary).toContainText("Chuỗi hiện tại 1 ngày");
   await expectStreak(page, { current: 1, days: 1, sessions: 1 });
   expect(await progressFor(normalVocabulary.id)).toBeNull();
   expect(await xpSnapshot()).toEqual({ totalXp: 0, rewards: [] });
