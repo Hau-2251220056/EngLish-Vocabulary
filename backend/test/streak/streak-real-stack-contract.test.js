@@ -30,6 +30,15 @@ test("TASK-249 real-stack scenario retains its scoped budget and semantic assert
     scenario,
     /getByTestId\("quiz-feedback"\)\.getByRole\("status"\)[\s\S]*?toHaveText\("Chưa chính xác\. Đáp án đúng đã được đánh dấu\."\)/,
   );
+  assert.doesNotMatch(scenario, /getByText\("Chính xác"\)\.locator\("\.\."\)/);
+  assert.match(
+    scenario,
+    /locator\("dt"\)\.filter\(\{ hasText: \/\^Chính xác\$\/ \}\)\.locator\("xpath=following-sibling::dd\[1\]"\)[\s\S]*?toHaveText\("0"\)/,
+  );
+  assert.match(
+    scenario,
+    /locator\("dt"\)\.filter\(\{ hasText: \/\^Chưa chính xác\$\/ \}\)\.locator\("xpath=following-sibling::dd\[1\]"\)[\s\S]*?toHaveText\("4"\)/,
+  );
   for (const assertion of [
     "Hoàn thành bộ từ",
     "Chuỗi hiện tại 1 ngày",

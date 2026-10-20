@@ -134,8 +134,14 @@ test("NORMAL, SRS and zero-correct Quiz qualify once while Speaking remains non-
     ).toHaveText("Chưa chính xác. Đáp án đúng đã được đánh dấu.");
     await page.getByRole("button", { name: index === quizVocabulary.length - 1 ? "Xem kết quả" : "Câu tiếp theo" }).click();
   }
-  await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeVisible();
-  await expect(page.getByText("Chính xác").locator("..")).toContainText("0");
+  const quizSummary = page.getByRole("heading", { name: "Hoàn thành Quiz" }).locator("..");
+  await expect(quizSummary).toBeVisible();
+  await expect(
+    quizSummary.locator("dt").filter({ hasText: /^Chính xác$/ }).locator("xpath=following-sibling::dd[1]"),
+  ).toHaveText("0");
+  await expect(
+    quizSummary.locator("dt").filter({ hasText: /^Chưa chính xác$/ }).locator("xpath=following-sibling::dd[1]"),
+  ).toHaveText("4");
   expect(await xpSnapshot()).toEqual({
     totalXp: 3,
     rewards: [{ reward_type: "SRS_INITIAL", xp_amount: 3 }],

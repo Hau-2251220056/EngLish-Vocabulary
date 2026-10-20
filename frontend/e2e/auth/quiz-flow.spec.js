@@ -27,7 +27,13 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
 
   test("keeps an authoritative session identity without reloading or losing consecutive feedback", async ({ page }) => {
     const authoritativeSessionId = "20000000-0000-4000-8000-000000000002";
-    const calls = await installQuizApiMock(page, { authoritativeSessionId });
+    const questions = [
+      question("word-wake", 1, "wake", "thức dậy"),
+      question("word-sleep", 2, "sleep", "ngủ"),
+      question("word-walk", 3, "walk", "tản bộ"),
+      question("word-run", 4, "run", "chạy nhanh"),
+    ];
+    const calls = await installQuizApiMock(page, { authoritativeSessionId, questions });
     await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
 
     await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
@@ -40,32 +46,44 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText(
       "Chưa chính xác. Đáp án đúng đã được đánh dấu.",
     );
-    await page.getByRole("button", { name: "Câu tiếp theo" }).click();
-
-    await expect(page.getByRole("heading", { name: "sleep" })).toBeFocused();
-    await page.getByRole("radio", { name: /ăn/ }).check();
-    await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
-    await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText(
-      "Chưa chính xác. Đáp án đúng đã được đánh dấu.",
-    );
-    await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "2");
+    for (let index = 1; index < questions.length; index += 1) {
+      await page.getByRole("button", { name: "Câu tiếp theo" }).click();
+      await expect(page.getByRole("heading", { name: questions[index].prompt.word })).toBeFocused();
+      await page.getByRole("radio", { name: /ăn/ }).check();
+      await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+      await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText(
+        "Chưa chính xác. Đáp án đúng đã được đánh dấu.",
+      );
+    }
+    await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "4");
 
     expect(calls.sessions.filter(({ method }) => method === "GET")).toHaveLength(0);
     expect(calls.questions).toHaveLength(1);
     expect(calls.answers.map(({ session_id: sessionId }) => sessionId)).toEqual([
       authoritativeSessionId,
       authoritativeSessionId,
+      authoritativeSessionId,
+      authoritativeSessionId,
     ]);
     expect(calls.answers.map(({ vocabulary_id: vocabularyId }) => vocabularyId)).toEqual([
       "30000000-0000-4000-8000-000000000001",
       "30000000-0000-4000-8000-000000000002",
+      "30000000-0000-4000-8000-000000000003",
+      "30000000-0000-4000-8000-000000000004",
     ]);
 
     await page.getByRole("button", { name: "Xem kết quả" }).click();
-    await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeFocused();
-    await expect(page.getByText("Tổng số câu").locator("..").getByText("2", { exact: true })).toBeVisible();
-    await expect(page.getByText("Chính xác", { exact: true }).locator("..").getByText("0", { exact: true })).toBeVisible();
-    await expect(page.getByText("Chưa chính xác", { exact: true }).locator("..").getByText("2", { exact: true })).toBeVisible();
+    const quizSummary = page.getByRole("heading", { name: "Hoàn thành Quiz" }).locator("..");
+    await expect(quizSummary.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeFocused();
+    await expect(
+      quizSummary.locator("dt").filter({ hasText: /^Tổng số câu$/ }).locator("xpath=following-sibling::dd[1]"),
+    ).toHaveText("4");
+    await expect(
+      quizSummary.locator("dt").filter({ hasText: /^Chính xác$/ }).locator("xpath=following-sibling::dd[1]"),
+    ).toHaveText("0");
+    await expect(
+      quizSummary.locator("dt").filter({ hasText: /^Chưa chính xác$/ }).locator("xpath=following-sibling::dd[1]"),
+    ).toHaveText("4");
   });
 
   test("pending blocks duplicates and operational retry reuses identical body", async ({ page }) => {
