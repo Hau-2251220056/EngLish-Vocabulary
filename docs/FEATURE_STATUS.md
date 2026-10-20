@@ -679,7 +679,7 @@ The Dashboard must not become a separate source of truth for business data.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
 - Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
-- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 workstream is `DONE`. Streak V1 now implements the compact read-only USER Streak card and remains `IN_PROGRESS` pending TASK-251 formal TEST, TASK-252 formal REVIEW and Gate ST-7. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
+- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 workstream is `DONE`. Streak V1 now implements the compact read-only USER Streak card and remains `IN_PROGRESS` pending TASK-253 Preview TEST migration/deployment and Gate ST-8. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
 ### Dashboard V1 Formal Evidence
@@ -818,8 +818,8 @@ The Backend threshold table is implemented for Levels 1–15 using `25 × L × (
 - Gate ST-6: **HUMAN ACCEPTED** with its recorded Chromium/mocked-API/manual-screen-reader limitations.
 - TASK-249: **HUMAN ACCEPTED — PASS** at commit `189e1da9934758a87d88f19faa97db715376c0b1`; GitHub Actions Run `39394932196`, attempt `1`, passed Trust Gate, Foundation PostgreSQL `27/27` and focused real-stack Playwright `1/1`. Eleven migrations applied successfully to each isolated run-owned schema.
 - Fixture cleanup was verified at fixture level. Foundation marker-validated cleanup and the integrated marker-validated cleanup routine were verified. Independent post-drop PostgreSQL catalog verification of integrated-schema absence was **NOT PERFORMED** and must not be inferred.
-- TASK-250 documentation synchronization: **IN_PROGRESS**, pending Independent Review.
-- TASK-251 formal TEST: **PENDING**. TASK-252 formal REVIEW: **PENDING**. Gate ST-7: **PENDING**.
+- TASK-250 documentation synchronization: **HUMAN ACCEPTED — Published** at commit `1df63db3674dd1cdf10f06da27f900809c1b7ad5`.
+- TASK-251 formal TEST: **HUMAN ACCEPTED — Published** at commit `d1e04081dec59c43d04ec2fa35513275ea322ba3`. TASK-252 formal REVIEW: **HUMAN ACCEPTED — Published** at commit `94d4ee5e01207c820726addb269e132f3e6f056d`. Gate ST-7: **HUMAN ACCEPTED** for the reviewed implementation at `d1e04081dec59c43d04ec2fa35513275ea322ba3`.
 - TASK-253 Preview TEST migration/deployment: **NOT AUTHORIZED / NOT PERFORMED**. Gate ST-8: **PENDING**. No Streak V1 merge/release or Production deployment is recorded.
 - Streak V1 overall remains **IN_PROGRESS**, not `DONE`; accepted isolated CI TEST evidence is not Preview TEST or release acceptance.
 

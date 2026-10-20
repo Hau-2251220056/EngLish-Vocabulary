@@ -8,7 +8,7 @@
 - **Documentation SHA:** `1df63db3674dd1cdf10f06da27f900809c1b7ad5`.
 - **Branch:** `feature/streak-v1`.
 - **Feature status:** `IN_PROGRESS`.
-- **HUMAN acceptance of this report:** **PENDING**.
+- **HUMAN acceptance of this report:** **ACCEPTED**.
 
 This report evaluates the final acceptance wording in [STREAK_V1_SPEC.md](../specs/STREAK_V1_SPEC.md) and the final traceability guidance in [STREAK_V1_TASK.md](../tasks/STREAK_V1_TASK.md). It does not implement a feature, authorize Gate ST-7, authorize shared-environment work, or mark Streak V1 `DONE`.
 
@@ -245,4 +245,4 @@ This is the TASK-251 TEST-stage verdict only. It does not constitute TASK-252 RE
 
 ## 13. HUMAN acceptance status
 
-**PENDING.** HUMAN must accept TASK-251 before TASK-252 may begin. Streak V1 remains `IN_PROGRESS`.
+**HUMAN ACCEPTED.** TASK-251 Formal TEST was accepted and published at commit `d1e04081dec59c43d04ec2fa35513275ea322ba3`. This acceptance does not by itself mark Streak V1 `DONE`; Streak V1 remains `IN_PROGRESS`.
