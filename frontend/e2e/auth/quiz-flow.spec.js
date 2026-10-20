@@ -25,6 +25,49 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     expect(calls.learningEvents).toHaveLength(0);
   });
 
+  test("keeps an authoritative session identity without reloading or losing consecutive feedback", async ({ page }) => {
+    const authoritativeSessionId = "20000000-0000-4000-8000-000000000002";
+    const calls = await installQuizApiMock(page, { authoritativeSessionId });
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
+
+    await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
+    const creation = calls.sessions.find(({ method }) => method === "POST");
+    expect(creation.body.operation_id).not.toBe(authoritativeSessionId);
+    expect(calls.questions).toEqual([expect.objectContaining({ runId: authoritativeSessionId })]);
+
+    await page.getByRole("radio", { name: /ăn/ }).check();
+    await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+    await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText(
+      "Chưa chính xác. Đáp án đúng đã được đánh dấu.",
+    );
+    await page.getByRole("button", { name: "Câu tiếp theo" }).click();
+
+    await expect(page.getByRole("heading", { name: "sleep" })).toBeFocused();
+    await page.getByRole("radio", { name: /ăn/ }).check();
+    await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
+    await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText(
+      "Chưa chính xác. Đáp án đúng đã được đánh dấu.",
+    );
+    await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "2");
+
+    expect(calls.sessions.filter(({ method }) => method === "GET")).toHaveLength(0);
+    expect(calls.questions).toHaveLength(1);
+    expect(calls.answers.map(({ session_id: sessionId }) => sessionId)).toEqual([
+      authoritativeSessionId,
+      authoritativeSessionId,
+    ]);
+    expect(calls.answers.map(({ vocabulary_id: vocabularyId }) => vocabularyId)).toEqual([
+      "30000000-0000-4000-8000-000000000001",
+      "30000000-0000-4000-8000-000000000002",
+    ]);
+
+    await page.getByRole("button", { name: "Xem kết quả" }).click();
+    await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeFocused();
+    await expect(page.getByText("Tổng số câu").locator("..").getByText("2", { exact: true })).toBeVisible();
+    await expect(page.getByText("Chính xác", { exact: true }).locator("..").getByText("0", { exact: true })).toBeVisible();
+    await expect(page.getByText("Chưa chính xác", { exact: true }).locator("..").getByText("2", { exact: true })).toBeVisible();
+  });
+
   test("pending blocks duplicates and operational retry reuses identical body", async ({ page }) => {
     let resolve; const pending = new Promise((done) => { resolve = done; });
     const calls = await installQuizApiMock(page, { onAnswer: ({ body, call }) => call === 1 ? pending : success(answerResult(body)) });

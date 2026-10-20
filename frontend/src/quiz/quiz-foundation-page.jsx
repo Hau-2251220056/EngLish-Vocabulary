@@ -61,7 +61,7 @@ function ActiveQuiz({ onBack, setId, setName, userId }) {
     let active = true;
     loadSession(key, run).then(({ manifest, payload: nextPayload, state: reconciled }) => {
       if (!active) return;
-      completedLoadKeyRef.current = key;
+      completedLoadKeyRef.current = `${reconciled.user_id}:${reconciled.set_id}:${reconciled.run_id}:${loadToken}`;
       if (!run.session_initialized && manifest.cards.length === 0) {
         transitionLockRef.current = false; setDisplayName(manifest.name ?? setName); setLoadState("empty"); return;
       }

@@ -39,7 +39,7 @@ export async function installQuizApiMock(page, options = {}) {
     const url = new URL(request.url());
     if (request.method() === "POST" && url.pathname === "/api/learning-sessions") {
       const body = request.postDataJSON();
-      const session = sessionProjection(body.operation_id, body.set_id, body.vocabulary_ids);
+      const session = sessionProjection(options.authoritativeSessionId ?? body.operation_id, body.set_id, body.vocabulary_ids);
       sessions.set(session.id, session);
       calls.sessions.push({ method: "POST", body });
       await route.fulfill({ status: 201, json: { success: true, data: { session, replayed: false } } });
