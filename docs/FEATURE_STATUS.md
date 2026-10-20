@@ -559,7 +559,7 @@ LEARNED
 ↓
 NEEDS_REVIEW
 
-Flashcard / Learning with SRS V1 is a USER-only Set learning flow with transient client state and backend-authoritative per-`(user_id, vocabulary_id)` progress. SRS is the default mode; NORMAL preserves read-only all-card traversal. The backend owns the four-rating schedule, and immediate retry of the current event ID is idempotent while stale different events are rejected by revision protection. No persistent Learning Session/history or event ledger is introduced.
+Flashcard / Learning with SRS V1 originally shipped with transient client run state and backend-authoritative per-`(user_id, vocabulary_id)` progress but no persistent Learning Session. Streak V1 later supersedes that historical session boundary for qualifying NORMAL/SRS/Quiz groups with Backend-owned sessions, item evidence and daily qualification; it does not introduce a general learning-history/analytics product.
 
 Learning Session V1 is `DONE` and HUMAN approved. NORMAL Flashcard, SRS Flashcard, Quiz and Speaking Practice use resilient USER/Set/mode-isolated same-tab sessions, stable ordered batches of at most 10 distinct Vocabulary IDs, safe Set reconciliation and explicit continuation/restart. Quiz bounded-read authorization remains backend-authoritative, SRS scheduling and mutation integrity are preserved, and Speaking recognition data remains transient. Formal TEST, focused UI/UX review, guarded Backend DB Integration and Real Stack Browser CI, and final REVIEW passed. Live Chrome microphone/vendor-recognition behavior and device-specific audio routing remain deferred manual verification because guarded mocked/browser CI does not establish those device-dependent paths.
 
@@ -586,7 +586,7 @@ Status: DONE
 
 - Authenticated USER learning from a public System Set or owned private Set in explicit Item order.
 - Durable backend-authoritative progress remains unique per `(user_id, vocabulary_id)`, with transactional meaningful events, revision protection and immediate-current-event retry behavior.
-- Same-tab run state remains Learning-owned and transient; no persistent Learning Session/history or event ledger was introduced.
+- At this historical Flashcard V1 closure, same-tab run state was Learning-owned and transient and no persistent Learning Session/history existed. Streak V1 later adds its narrowly scoped authoritative qualifying-session records while frontend recovery state remains transient.
 - The HUMAN-approved Focus Mode Flashcard experience includes deterministic primary-Meaning presentation, accessible interaction, optional stored-audio/native-TTS pronunciation and responsive/reduced-motion behavior.
 
 ### Deferred / Non-blocking
@@ -604,7 +604,7 @@ Status: DONE
 - Approved SPEC, PLAN and TASK are synchronized with the final 1/3/7-day NEW timing revision.
 - TASK-090 through TASK-106 and revision tasks TASK-105A through TASK-105D are complete; all mandatory HUMAN checkpoints through TASK-106 were approved.
 - Formal TEST: PASS. Formal REVIEW: APPROVE. No blocking findings remain.
-- No Prisma schema/migration, package dependency, persistent Learning Session/history or event ledger was added.
+- This SRS V1 milestone itself added no Prisma schema/migration, package dependency or persistent Learning Session/history. The separately approved later Streak V1 migrations supersede only that historical persistence statement.
 
 ### Verified Scope
 
@@ -661,7 +661,7 @@ Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 User Dashboard	DONE	✓	✓	✓	✓	✓	✓
 XP Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
-Streak Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Streak Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -679,7 +679,7 @@ The Dashboard must not become a separate source of truth for business data.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
 - Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
-- The original Dashboard V1 closure excluded XP/Level. The later XP & Level V1 workstream implements the compact USER summary and is `DONE` after TASK-233 formal TEST PASS, TASK-234 formal REVIEW APPROVE and HUMAN Gate 6 acceptance. Streak, Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics and charts remain `TODO` or deferred.
+- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 workstream is `DONE`. Streak V1 now implements the compact read-only USER Streak card and remains `IN_PROGRESS` pending TASK-251 formal TEST, TASK-252 formal REVIEW and Gate ST-7. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
 ### Dashboard V1 Formal Evidence
@@ -713,7 +713,7 @@ Current workflow evidence:
 - Backend, Frontend and documentation implementation is complete, including the HUMAN-approved compact single-column answer presentation and restart behavior.
 - Formal offline TEST and REVIEW are in progress. Database-backed authorization, Progress, idempotency and concurrency verification remains reserved for guarded CI.
 - Quiz runs/results remain transient and add no schema/migration or Quiz Session/Attempt/history persistence.
-- SRS/review queue, XP/Level/Streak/Daily Goal/Achievement, Pronunciation Practice, additional Quiz types and analytics remain deferred.
+- At the Quiz V1 milestone, SRS/review queue, XP/Level/Streak/Daily Goal/Achievement, Pronunciation Practice, additional Quiz types and analytics were outside its scope. Later approved XP/Level and Streak workstreams supersede only those corresponding historical status statements.
 
 4.8 Pronunciation
 
@@ -755,7 +755,7 @@ Pronunciation must not automatically become a third quiz type.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 XP	DONE	✓	✓	✓	✓	PASS	APPROVE
 Level	DONE	✓	✓	✓	✓	PASS	APPROVE
-Streak	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Streak	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 XP Rules
@@ -801,29 +801,31 @@ The Backend threshold table is implemented for Levels 1–15 using `25 × L × (
 - TASK-232 documentation synchronization is HUMAN accepted. TASK-233 formal TEST passed all 26/26 acceptance criteria and is HUMAN accepted. TASK-234 formal REVIEW returned `APPROVE` with no BLOCKER or MAJOR findings; its MINOR-01 stale-status finding is resolved by this synchronization.
 - HUMAN Gate 6 final TEST/REVIEW acceptance is recorded as `ACCEPTED`. XP & Level V1 is `DONE` according to the project workflow.
 - Verified implementation includes USER-only SRS initial/due-review and first-correct Quiz rewards, durable `XP_REWARD` deduplication, no-backfill migration, atomic Progress/reward/XP writes, immediate replay projections, Learning Progress `xp_level`, Dashboard Level/XP/MAX display and transient non-replay feedback.
-- NORMAL Flashcard and Speaking remain zero-XP. Daily Goal bonus, Streak, Achievement, leaderboard and XP-history product surfaces remain deferred.
+- NORMAL Flashcard and Speaking remain zero-XP. At this XP & Level V1 closure, Daily Goal bonus, Streak, Achievement, leaderboard and XP-history product surfaces were outside that workstream; the later Streak V1 workstream supersedes only the Streak status.
 - Evidence references: TASK-233 report `docs/testing/XP_LEVEL_V1_TEST_REPORT.md`; TASK-234 report `docs/reviews/XP_LEVEL_V1_REVIEW_REPORT.md`; GitHub Actions Run #58 for accepted backend DB/real-stack verification; Run #53 for guarded XP migration verification and cleanup.
 - Closure records feature implementation acceptance only. The XP migration has **not** been applied to the Preview TEST DB, and the feature branch has **not** been merged into `dev`; those deployment/integration actions require their own authorization and release controls.
 
-Streak Rules
+### Streak V1 — Active bounded implementation, formal closure pending
 
-The Streak rules below remain conceptual/deferred and are not implemented by XP & Level V1.
+- Exactly NORMAL, SRS and Multiple Choice Quiz can qualify through a completed Backend-owned snapshot. Speaking, login, browsing, opening, abandoning, failing or expiring a session do not qualify.
+- Accepted zero-correct Quiz completion qualifies without invented Quiz XP. Sessionless SRS/Quiz callers retain their approved Progress/XP behavior and never qualify.
+- `STREAK_DAY` deduplicates one USER/application day using authoritative Backend completion time in `Asia/Ho_Chi_Minh`; current Streak is projected rather than stored on USER.
+- V1 has no Daily Goal integration, Streak Freeze, longest Streak, weekly calendar or history/analytics UI. No historical backfill or scheduled retention cleanup was introduced.
 
-Streak is based on qualifying learning activity, not login.
+#### Workflow and evidence status
 
-Qualifying activities may include:
+- Gate ST-5: **HUMAN ACCEPTED**.
+- Gate ST-6: **HUMAN ACCEPTED** with its recorded Chromium/mocked-API/manual-screen-reader limitations.
+- TASK-249: **HUMAN ACCEPTED — PASS** at commit `189e1da9934758a87d88f19faa97db715376c0b1`; GitHub Actions Run `39394932196`, attempt `1`, passed Trust Gate, Foundation PostgreSQL `27/27` and focused real-stack Playwright `1/1`. Eleven migrations applied successfully to each isolated run-owned schema.
+- Fixture cleanup was verified at fixture level. Foundation marker-validated cleanup and the integrated marker-validated cleanup routine were verified. Independent post-drop PostgreSQL catalog verification of integrated-schema absence was **NOT PERFORMED** and must not be inferred.
+- TASK-250 documentation synchronization: **IN_PROGRESS**, pending Independent Review.
+- TASK-251 formal TEST: **PENDING**. TASK-252 formal REVIEW: **PENDING**. Gate ST-7: **PENDING**.
+- TASK-253 Preview TEST migration/deployment: **NOT AUTHORIZED / NOT PERFORMED**. Gate ST-8: **PENDING**. No Streak V1 merge/release or Production deployment is recorded.
+- Streak V1 overall remains **IN_PROGRESS**, not `DONE`; accepted isolated CI TEST evidence is not Preview TEST or release acceptance.
 
-Vocabulary learning
-Flashcard learning
-Quiz
-Pronunciation practice
-Review
+#### Documentation traceability
 
-Multiple qualifying activities on the same calendar day count as one streak day.
-
-Skipping one or more days resets the streak to 1 when the user returns to a qualifying learning activity.
-
-No Streak Freeze is required in v1.
+AC-ST-01–04 / BR-ST-001–008 cover role/mode/exclusion boundaries; AC-ST-05–15 / BR-ST-009–029 cover NORMAL/SRS/Quiz evidence; AC-ST-16–24 / BR-ST-030–038 cover daily projection; AC-ST-25–31 / BR-ST-039–046 cover lifecycle, expiry, concurrency and migration; AC-ST-32 covers the authoritative Streak read; AC-ST-33–34 cover Dashboard accessibility; AC-ST-35–36 preserve exclusions and sessionless compatibility.
 
 Daily Goal Rules
 

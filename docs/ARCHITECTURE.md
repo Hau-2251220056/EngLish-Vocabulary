@@ -481,7 +481,7 @@ Ví dụ:
 /api/learning
 /api/quiz
 /api/progress
-/api/streak
+/api/users/me/streak
 /api/achievements
 /api/community
 /api/admin
@@ -769,11 +769,23 @@ USER learning route
 
 The backend authorizes a public System Set or current-USER-owned private Set, returns Items in explicit position order with complete Vocabulary → Meaning → Example card content, and projects only that USER's progress. Every meaningful event revalidates current Set membership inside the transaction. The backend alone maps outcomes, owns timestamps/counters/revisions and enforces optimistic concurrency.
 
-`LEARNING_PROGRESS` remains identified by `(user_id, vocabulary_id)`, independent of Set, Set Item, Topic or Meaning. There is no persistent server Learning Session, session table or event ledger. `last_event_id` supports only idempotent immediate retry of the current event; delayed/reordered older events are rejected by revision protection.
+`LEARNING_PROGRESS` remains identified by `(user_id, vocabulary_id)`, independent of Set, Set Item, Topic or Meaning. The original Flashcard/SRS architecture used only transient run state and `last_event_id` immediate retry. Streak V1 adds a narrower persistent Backend session boundary for qualifying NORMAL/SRS/Quiz groups: durable identity, immutable snapshot, evidence/receipt, lifecycle, expiry and completion. These records are qualification/replay proof, not a general activity-history or analytics ledger.
 
 The frontend route reuses `ProtectedRoute`, `UserRoute` and `AuthenticatedShell`. It owns a namespaced same-tab run state in `sessionStorage`, reconciles it with fresh server payloads and clears only that namespace on logout/session invalidation. Auth internals do not know Flashcard storage keys, and the frontend never becomes authoritative for durable progress.
 
-Learning Session V1 standardizes this transient frontend boundary across `NORMAL_FLASHCARD`, `SRS_FLASHCARD`, `MULTIPLE_CHOICE_QUIZ` and `SPEAKING_PRACTICE`. Records are versioned and isolated by authenticated USER, Set and stable mode. A small dependency-free adapter writes to `sessionStorage` and retains an in-memory page-lifetime copy; storage access/quota failure falls back to that memory copy without using `localStorage`, cookies, a database or a new Backend session model. Malformed, unsupported-version or wrong-identity state fails closed, and logout/session invalidation clears only ELVocab-owned namespaces.
+Frontend Learning Session V1 still standardizes transient same-tab recovery across `NORMAL_FLASHCARD`, `SRS_FLASHCARD`, `MULTIPLE_CHOICE_QUIZ` and `SPEAKING_PRACTICE`. Records are versioned and isolated by authenticated USER, Set and stable mode. The dependency-free adapter writes to `sessionStorage` with an in-memory fallback; malformed/wrong-identity state fails closed, and logout/session invalidation clears only ELVocab-owned namespaces. This state is never authoritative for Streak: NORMAL/SRS/Quiz reconcile with the Backend session, while Speaking remains entirely outside qualifying persistence.
+
+The active qualifying path follows the existing layered architecture:
+
+```text
+authenticated USER route
+  -> Learning/Quiz controller
+  -> service transaction
+  -> Learning Session + Progress/XP (when applicable) + Streak repositories
+  -> Prisma -> PostgreSQL
+```
+
+The Backend alone owns session timestamps, seven-day expiry, immutable 1–10-item snapshot, accepted evidence and completion. Terminal SRS/Quiz transactions atomically couple their existing Progress/XP effects with receipt/evidence, session completion and same-day Streak insertion; NORMAL couples reveal/completion evidence and Streak insertion but makes no Progress/XP mutation. `STREAK_DAY` stores qualifying `Asia/Ho_Chi_Minh` dates, while `current_streak` is projected on read. The unique USER/date boundary deduplicates concurrent same-day completions.
 
 NORMAL, Quiz and Speaking use immutable ordered exact-ID snapshots split into fixed batches of at most 10. Reconciliation intersects those original batches with fresh authorized membership, excludes additions and removes missing IDs without refill, substitution or reordering. SRS instead takes at most the first 10 distinct cards only after the existing Backend eligibility/order calculation. Client restoration and storage fallback never submit or replay a Quiz answer or SRS rating.
 
@@ -853,7 +865,7 @@ Trong v1:
 
 USER.total_xp lưu tổng XP.
 Level được xác định dựa trên USER.total_xp theo business rules của hệ thống.
-STREAK lưu trạng thái streak hiện tại và streak cao nhất.
+`STREAK_DAY` lưu một ngày qualifying bền vững cho mỗi USER/application day. Backend project current Streak từ các row này; V1 không lưu longest-Streak aggregate.
 USER_ACHIEVEMENT lưu achievement mà user đã đạt.
 
 V1 không yêu cầu XP transaction/history table.
@@ -985,7 +997,7 @@ The materialized data path is `TOPIC -> public VOCABULARY_SET -> VOCABULARY_SET_
 
 Public System discovery/detail routes are separate from completed Topic metadata responses. USER My Sets and ADMIN System management reuse the existing `ProtectedRoute`, `AdminRoute`, `AuthenticatedShell`, session state and role middleware. The only USER-facing Vocabulary access is the authenticated, bounded Set-editor picker; it is not a standalone catalog or detail module.
 
-Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remain outside this contract revision.
+Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remained outside this historical Vocabulary Set contract revision; their later approved workstreams do not alter that milestone's scope.
 
 ### 14.1.1 Set metadata and cover-storage boundary
 

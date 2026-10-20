@@ -69,7 +69,10 @@ USER
 │   ├── LEARNING_PROGRESS
 │   ├── USER_DAILY_PROGRESS
 │   ├── QUIZ_ATTEMPT (future/deferred; not materialized in Quiz V1)
-│   └── STREAK
+│   ├── LEARNING_SESSION
+│   ├── LEARNING_SESSION_ITEM
+│   ├── LEARNING_SESSION_SRS_RECEIPT
+│   └── STREAK_DAY
 │
 ├── Gamification
 │   ├── ACHIEVEMENT
@@ -102,7 +105,10 @@ VOCABULARY_SET_ITEM	Liên kết Vocabulary và Vocabulary Set
 LEARNING_PROGRESS	Tiến độ học của user đối với từng từ
 USER_DAILY_PROGRESS	Tiến độ XP và Daily Goal theo từng ngày
 QUIZ_ATTEMPT	Deferred legacy concept; not materialized by Quiz V1
-STREAK	Theo dõi chuỗi ngày học
+LEARNING_SESSION	Backend-owned qualifying session identity, snapshot and lifecycle
+LEARNING_SESSION_ITEM	Immutable session item and accepted completion evidence
+LEARNING_SESSION_SRS_RECEIPT	SRS session retry/idempotency receipt
+STREAK_DAY	Một qualifying application day của USER
 ACHIEVEMENT	Danh sách thành tích
 USER_ACHIEVEMENT	Thành tích user đã đạt
 COMMUNITY_POST	Bài đăng cộng đồng
@@ -697,7 +703,7 @@ NEEDS_REVIEW
 
 SRS V1 persists only `LEARNING`, `LEARNED` and the legacy-compatible `NEEDS_REVIEW` value. `NEW` is conceptual and is represented by the absence of a `LEARNING_PROGRESS` row. `AGAIN` writes `LEARNING` with `interval_days = null` and `next_review_at = last_reviewed_at` so it is due immediately. `HARD`, `GOOD` and `EASY` write `LEARNED` with exact integer-day schedules on the 1/3/7/14/30-day ladder. Effective due state is derived at read time using `next_review_at <= evaluated_at`; reads do not rewrite stored status.
 
-`review_count` is the count of accepted meaningful ratings for the Vocabulary, not an SRS-only history ledger. Every newly accepted rating increments it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. SRS V1 adds no event history, Learning Session or ledger table, and leaves `ease_factor` unused.
+`review_count` is the count of accepted meaningful ratings for the Vocabulary, not an SRS-only history ledger. Every newly accepted rating increments it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. The original SRS V1 added no event history or session table and left `ease_factor` unused. Streak V1 later supersedes only that historical persistence boundary with the qualifying-session models in section 17; it does not turn Progress into an analytics ledger.
 NEW
 
 User chưa có hoạt động học đối với Vocabulary.
@@ -909,77 +915,95 @@ Không tạo các bảng pronunciation riêng nếu chưa có nhu cầu thực t
 
 Speaking Practice V1 đã được phê duyệt với boundary read-only rõ ràng: không lưu audio, transcript, classification result hoặc attempt; không tạo `PRONUNCIATION_ATTEMPT`; và không ghi Learning Progress, SRS, XP, Level, Streak hay Achievement. Activity chỉ đọc Vocabulary/Set identity đã được authorize qua Learning `NORMAL`. Mọi persistence hoặc pronunciation scoring sau V1 cần SPEC/PLAN, schema và migration approval riêng.
 
-Nếu pronunciation practice được xác định là một qualifying learning activity, Backend có thể cập nhật LEARNING_PROGRESS, XP và Streak theo business rules đã được phê duyệt.
+Speaking Practice is explicitly non-qualifying in Streak V1. Any future change to that boundary requires a separately approved SPEC/PLAN and cannot be inferred from the active schema.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, phải thiết kế migration và cập nhật tài liệu Database trước khi triển khai.
 
-17. STREAK
-17.1. Mục đích
+17. STREAK V1 PERSISTENCE
 
-Theo dõi chuỗi ngày học liên tiếp của User.
+17.1. Mục đích và authority
 
-17.2. Dữ liệu dự kiến
-STREAK
+Backend-owned Learning Sessions prove completion of an immutable NORMAL, SRS or Quiz snapshot. `STREAK_DAY` records at most one qualifying application day per USER. `current_streak` is a read-time projection from retained day rows; it is not a column on `USER`, and V1 has no persisted `longest_streak`.
 
-- id
-- user_id
-- current_streak
-- longest_streak
-- last_activity_date
-- updated_at
+17.2. Enums
 
-Relationship:
+- `LEARNING_SESSION_MODE`: `NORMAL`, `SRS`, `QUIZ`.
+- `LEARNING_SESSION_STATUS`: `ACTIVE`, `COMPLETED`; effective `EXPIRED` is projected when an ACTIVE session reaches `expires_at`.
+- `SESSION_ITEM_EVIDENCE`: `NORMAL_REVEALED`, `SRS_HARD`, `SRS_GOOD`, `SRS_EASY`, `QUIZ_CORRECT`, `QUIZ_INCORRECT`. SRS `AGAIN` intentionally leaves evidence null.
 
-USER 1 ─── 1 STREAK
+17.3. `LEARNING_SESSION`
 
-Một User có một Streak record chính.
+Stores `id`, owner `user_id`, nullable current `vocabulary_set_id`, immutable `set_id_snapshot`, mode/status, idempotent `create_operation_id`, `snapshot_size`, Backend-authored timestamps, nullable completion identity and relations. Constraints enforce snapshot size `1..10`, exact `expires_at = created_at + 7 days`, and consistent ACTIVE versus COMPLETED fields. Unique `(user_id, create_operation_id)` and `(user_id, completion_event_id)` prevent duplicate creation/completion. USER deletion is `RESTRICT`; Set deletion uses `SET NULL` without changing the snapshot scalar.
 
-17.3. Qualifying Learning Activity
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `user_id` | `UUID` | NOT NULL; FK to `USER(id)` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`) |
+| `vocabulary_set_id` | `UUID` | NULL; FK to `VOCABULARY_SET(id)` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`) |
+| `set_id_snapshot` | `UUID` | NOT NULL |
+| `mode` | `LEARNING_SESSION_MODE` | NOT NULL |
+| `status` | `LEARNING_SESSION_STATUS` | NOT NULL; default `ACTIVE` |
+| `create_operation_id` | `UUID` | NOT NULL |
+| `snapshot_size` | `INTEGER` | NOT NULL |
+| `created_at` | `TIMESTAMP(3)` | NOT NULL; default `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')` |
+| `expires_at` | `TIMESTAMP(3)` | NOT NULL |
+| `completed_at` | `TIMESTAMP(3)` | NULL |
+| `completion_event_id` | `UUID` | NULL |
 
-Streak được tính dựa trên hoạt động học hợp lệ.
+Material non-unique indexes: `(user_id, status, expires_at)` and `(vocabulary_set_id)`. The two uniqueness constraints above also create their corresponding unique indexes.
 
-Ví dụ:
+17.4. `LEARNING_SESSION_ITEM`
 
-Học Vocabulary.
-Flashcard learning.
-Quiz.
-Pronunciation Practice.
-Review.
+Stores the immutable Vocabulary identity and position plus optional evidence triple. Positions are `0..9`; `(session_id, vocabulary_id)` and `(session_id, position)` are unique. Evidence, event ID and acceptance timestamp are either all null or all present, and `evidence_event_id` is globally unique. Session deletion cascades only to its owned items.
 
-Không tính:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `session_id` | `UUID` | NOT NULL; FK to `LEARNING_SESSION(id)` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`) |
+| `vocabulary_id` | `UUID` | NOT NULL; immutable snapshot identity (no FK) |
+| `position` | `INTEGER` | NOT NULL |
+| `evidence` | `SESSION_ITEM_EVIDENCE` | NULL |
+| `evidence_event_id` | `UUID` | NULL; unique when present |
+| `evidence_at` | `TIMESTAMP(3)` | NULL |
 
-Login.
-Mở Dashboard.
-Xem Profile.
-Xem Vocabulary Set.
-Chỉ điều hướng trong hệ thống mà không có learning activity.
-17.4. Quy tắc
+There is no additional material non-unique index. The unique constraints on `(session_id, vocabulary_id)`, `(session_id, position)` and `evidence_event_id` create unique indexes.
 
-Nếu User đã có learning activity hôm nay:
+17.5. `LEARNING_SESSION_SRS_RECEIPT`
 
-Không tăng streak thêm lần nữa.
+Stores globally unique `event_id`, exact `session_item_id`, rating, expected/accepted revisions and authoritative acceptance instant. Rating is constrained to `AGAIN`, `HARD`, `GOOD` or `EASY`; revisions are non-negative and `accepted_revision = expected_revision + 1`. The receipt provides session-aware SRS retry/idempotency metadata; it is not qualification evidence or an analytics history. Deleting an owned Session Item cascades to its receipts.
 
-Nếu hôm qua có activity và hôm nay có activity:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `event_id` | `UUID` | NOT NULL; PK; no database default |
+| `session_item_id` | `UUID` | NOT NULL; FK to `LEARNING_SESSION_ITEM(id)` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`) |
+| `rating` | `VARCHAR(5)` | NOT NULL |
+| `expected_revision` | `INTEGER` | NOT NULL |
+| `accepted_revision` | `INTEGER` | NOT NULL |
+| `accepted_at` | `TIMESTAMP(3)` | NOT NULL |
 
-current_streak + 1
+Material non-unique index: `(session_item_id, accepted_revision)`.
 
-Nếu có một hoặc nhiều ngày bị bỏ qua:
+17.6. `STREAK_DAY`
 
-current_streak = 1
+Stores `id`, `user_id`, application `activity_date`, nullable `first_session_id` and `created_at`. Unique `(user_id, activity_date)` is the same-day concurrency/deduplication boundary. USER deletion is `RESTRICT`; deleting a retained session sets `first_session_id` to null without deleting the qualifying day. Application dates come from Backend completion time converted to `Asia/Ho_Chi_Minh`.
 
-Nếu:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `user_id` | `UUID` | NOT NULL; FK to `USER(id)` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`) |
+| `activity_date` | `DATE` | NOT NULL |
+| `first_session_id` | `UUID` | NULL; FK to `LEARNING_SESSION(id)` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`) |
+| `created_at` | `TIMESTAMP(3)` | NOT NULL; default `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')` |
 
-current_streak > longest_streak
+There is no additional material non-unique index. Unique `(user_id, activity_date)` creates the deduplication index.
 
-thì cập nhật:
+17.7. Completion, retention and migration
 
-longest_streak = current_streak
+Terminal Progress/XP where applicable, item evidence, session completion and Streak-day insertion share the approved transaction boundary. NORMAL produces no Progress or XP mutation. Sessionless SRS/Quiz paths create no session evidence or Streak day.
 
-Streak không yêu cầu một mức XP tối thiểu.
+`STREAK_DAY` is durable account-lifetime product state. Sessions, items and receipts are retained in V1 for replay/recovery; no scheduled purge or cron exists. A future account-deletion/anonymization flow must explicitly handle dependent records in a separately approved transaction. The additive migrations created no historical sessions/items/receipts/days and did not reinterpret or modify existing USER, Progress or XP data.
 
-Một ngày chỉ cần có ít nhất một qualifying learning activity.
-
-Phiên bản đầu không có Streak Freeze.
+Speaking, login, browsing, opening or abandoning an activity do not create these records. V1 has no Streak Freeze, Daily Goal integration or longest-Streak aggregate.
 
 18. ACHIEVEMENT
 18.1. Mục đích
@@ -1088,7 +1112,7 @@ Daily Goal
 Streak
 Achievement
 
-Trong implementation hiện tại của XP & Level V1, chỉ XP/Level boundary ở section 21.3 là active. Daily Goal, Streak và Achievement entities/rules trong các section conceptual vẫn deferred.
+XP/Level and Streak now have separate active boundaries. Daily Goal and Achievement remain deferred; active Streak persistence is defined in section 17.
 
 Trong đó:
 
@@ -1096,7 +1120,7 @@ XP được lưu trong USER.total_xp.
 Level được tính từ USER.total_xp.
 Daily Goal được lưu trong USER.daily_xp_goal.
 Daily XP được lưu trong USER_DAILY_PROGRESS.
-Streak được quản lý bởi STREAK.
+Streak days are persisted in `STREAK_DAY`; current Streak is projected by Backend business logic rather than stored as an aggregate row.
 Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 21.1. XP Rules
 
@@ -1224,7 +1248,7 @@ Mô hình quan hệ tổng quát:
               │                   │                    │
               ▼                   ▼                    ▼
      ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-     │ LEARNING_       │ │ USER_DAILY_     │ │     STREAK      │
+     │ LEARNING_       │ │ USER_DAILY_     │ │   STREAK_DAY    │
      │ PROGRESS        │ │ PROGRESS        │ └─────────────────┘
      └────────┬────────┘ └─────────────────┘
               │
@@ -1250,7 +1274,7 @@ Mô hình quan hệ tổng quát:
                                   TOPIC
 
 USER
- ├── QUIZ_ATTEMPT
+ ├── LEARNING_SESSION
  ├── VOCABULARY_SET
  ├── COMMUNITY_POST
  ├── COMMUNITY_COMMENT
@@ -1269,9 +1293,14 @@ USER → AUTH_SESSION	1:N
 USER → LEARNING_PROGRESS	1:N
 VOCABULARY → LEARNING_PROGRESS	1:N
 USER → USER_DAILY_PROGRESS	1:N
-USER → QUIZ_ATTEMPT	1:N
-VOCABULARY → QUIZ_ATTEMPT	1:N
-USER → STREAK	1:1
+USER → QUIZ_ATTEMPT	1:N (future/deferred; not materialized)
+VOCABULARY → QUIZ_ATTEMPT	1:N (future/deferred; not materialized)
+USER → LEARNING_SESSION	1:N
+VOCABULARY_SET → LEARNING_SESSION	1:N through the nullable current relation
+LEARNING_SESSION → LEARNING_SESSION_ITEM	1:N
+LEARNING_SESSION_ITEM → LEARNING_SESSION_SRS_RECEIPT	1:N
+USER → STREAK_DAY	1:N
+LEARNING_SESSION → STREAK_DAY	1:N through nullable `first_session_id`
 TOPIC → VOCABULARY_SET	1:N
 VOCABULARY → VOCABULARY_MEANING	1:N
 VOCABULARY_MEANING → VOCABULARY_EXAMPLE	1:N
@@ -1334,8 +1363,20 @@ QUIZ_ATTEMPT
 user_id
 vocabulary_id
 created_at
-STREAK
-UNIQUE(user_id)
+LEARNING_SESSION
+UNIQUE(user_id, create_operation_id)
+UNIQUE(user_id, completion_event_id)
+
+LEARNING_SESSION_ITEM
+UNIQUE(session_id, vocabulary_id)
+UNIQUE(session_id, position)
+UNIQUE(evidence_event_id)
+
+LEARNING_SESSION_SRS_RECEIPT
+PRIMARY KEY(event_id)
+
+STREAK_DAY
+UNIQUE(user_id, activity_date)
 ACHIEVEMENT
 
 Có thể index:
@@ -1536,7 +1577,7 @@ Level được tính từ USER.total_xp.
 Level tối đa là 15 ở phiên bản đầu.
 Daily Goal được lưu trong USER.daily_xp_goal.
 Daily XP được lưu trong USER_DAILY_PROGRESS.
-Streak được quản lý bởi STREAK.
+Streak days được lưu trong `STREAK_DAY`; current Streak được Backend project khi đọc.
 Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 
 Không tạo bảng XP history/audit cho từng event. `XP_REWARD` là ngoại lệ active tối thiểu để deduplicate các positive reward đã duyệt, không phải transaction-history UI hay general event ledger.
@@ -1724,7 +1765,9 @@ Nếu một bước thất bại, toàn bộ operation phải được rollback 
 
 Không tự động sử dụng transaction cho mọi query đơn giản.
 
-38. Initial Database Scope
+38. Initial Database Scope — Historical Conceptual Draft
+
+The list below records the original project draft and is not the current physical schema inventory. In particular, `QUIZ_ATTEMPT`, `USER_DAILY_PROGRESS`, `STREAK`, Achievement and Community entities may remain deferred, while the active Streak V1 physical models are documented in section 17.
 
 Phiên bản đầu tiên của Database dự kiến gồm:
 
@@ -1739,7 +1782,7 @@ Phiên bản đầu tiên của Database dự kiến gồm:
 9. LEARNING_PROGRESS
 10. USER_DAILY_PROGRESS
 11. QUIZ_ATTEMPT
-12. STREAK
+12. STREAK (superseded by active `LEARNING_SESSION`, `LEARNING_SESSION_ITEM`, `LEARNING_SESSION_SRS_RECEIPT` and `STREAK_DAY`)
 13. ACHIEVEMENT
 14. USER_ACHIEVEMENT
 15. COMMUNITY_POST

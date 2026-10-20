@@ -338,7 +338,7 @@ Sau khi Backend chấp nhận đáp án, lựa chọn đúng được đánh d�
 
 ## 9.3. Transient Quiz Result
 
-Sau mỗi run, hệ thống hiển thị tổng số câu, số câu đúng và số câu sai của run hiện tại. Quiz cập nhật Learning Progress của đúng Vocabulary được hỏi nhưng không tạo Quiz Session, Attempt history, điểm bền vững, XP, Streak hoặc lịch SRS mới.
+Sau mỗi run, hệ thống hiển thị tổng số câu, số câu đúng và số câu sai của run hiện tại. Quiz không tạo Quiz Attempt/history, điểm bền vững hoặc lịch SRS mới. Backend vẫn cập nhật Learning Progress và XP theo các rule đã được phê duyệt. Với caller session-aware, mỗi câu đúng hoặc sai được chấp nhận đều hoàn thành một phần snapshot; câu cuối cùng hoàn thành Learning Session và có thể trả về projection Streak authoritative. Quiz sessionless giữ nguyên Progress/XP cũ nhưng không đủ điều kiện Streak.
 
 Quiz không được tự ý gọi thêm learning/review flow gây cộng thưởng hai lần cho cùng một learning event.
 
@@ -705,7 +705,7 @@ Nếu User thay đổi Daily Goal trong ngày:
 
 # 13.4. Streak
 
-> **Trạng thái:** Deferred. Streak không phải functionality được triển khai bởi XP & Level V1; các quy tắc dưới đây chỉ là product direction cho workflow riêng.
+> **Trạng thái:** Streak V1 đã được triển khai và có TASK-249 integrated verification được HUMAN chấp nhận. Feature tổng thể vẫn `IN_PROGRESS` cho tới formal TEST, formal REVIEW và các HUMAN gate còn lại; trạng thái này không đồng nghĩa Preview/Production deployment.
 
 Streak biểu thị số ngày User có learning activity liên tiếp.
 
@@ -713,13 +713,11 @@ Streak không dựa đơn thuần vào việc đăng nhập.
 
 ## Qualifying Activities
 
-Các hoạt động có thể duy trì Streak:
+Chính xác ba mode có thể tạo qualifying Learning Session:
 
-- Học Vocabulary.
-- Flashcard learning.
-- Review.
-- Quiz.
-- Pronunciation Practice.
+- NORMAL Flashcard: snapshot 1–10 thẻ phải có Backend-accepted reveal cho mọi item và User phải yêu cầu hoàn thành rõ ràng.
+- SRS Flashcard: `AGAIN` vẫn unresolved; mọi item ban đầu chỉ resolve bằng `HARD`, `GOOD` hoặc `EASY` được Backend chấp nhận.
+- Multiple Choice Quiz: mọi câu trong snapshot phải có một câu trả lời được Backend chấp nhận; zero-correct completion vẫn qualify và không tự tạo Quiz XP.
 
 Các thao tác chỉ xem giao diện không được tính:
 
@@ -728,6 +726,8 @@ Các thao tác chỉ xem giao diện không được tính:
 - Xem Profile.
 - Xem Topic.
 - Xem Vocabulary Set mà không thực hiện learning activity.
+- Chỉ mở, bỏ dở, thất bại hoặc để session hết hạn.
+- Speaking Practice.
 
 ## Streak Rules
 
@@ -744,15 +744,15 @@ Nếu User đã được tính Streak trong ngày hiện tại:
 
     Không cộng thêm.
 
-Nếu User bỏ qua một hoặc nhiều ngày:
-
-    Streak reset về 1 khi User quay lại học.
+Application day được Backend xác định từ completion acceptance time theo `Asia/Ho_Chi_Minh` (UTC+7); client không quyết định ngày hoặc timezone. Nếu hôm nay chưa hoàn thành nhưng hôm qua kết thúc chuỗi liên tiếp thì projection giữ nguyên chuỗi đó và `completed_today = false`. Sau một ngày application bị bỏ lỡ hoàn toàn, current Streak đọc là `0`; qualifying completion kế tiếp bắt đầu lại ở `1` mà không xóa lịch sử ngày đã lưu.
 
 Nhiều learning activities trong cùng một ngày chỉ tính là một Streak day.
 
 Streak không yêu cầu một mức XP tối thiểu nếu User đã thực hiện một learning activity hợp lệ.
 
 Version 1 không có Streak Freeze.
+
+Current Streak được Backend project từ durable `STREAK_DAY`, không lưu trên `USER`. V1 không có `longest_streak`, Daily Goal integration, weekly calendar hoặc Streak history/analytics UI.
 
 ---
 
@@ -1057,8 +1057,8 @@ Không phải mọi learning activity đều phải đi qua toàn bộ flow trê
 
 Ví dụ:
 
-- User chỉ review một từ → có thể cập nhật Learning Progress + SRS + XP + Streak.
-- User làm Quiz → cập nhật Quiz Result + Learning Progress + XP + Streak.
+- User gửi một SRS rating → cập nhật Learning Progress/SRS/XP theo rule hiện có; chỉ một session-aware group hoàn thành đầy đủ mới qualify Streak.
+- User trả lời một câu Quiz → cập nhật Quiz Result + Learning Progress + XP theo rule hiện có; chỉ câu trả lời cuối cùng được chấp nhận của một session-aware snapshot hoàn chỉnh mới qualify Streak.
 - Speaking Practice V1 → không cập nhật Pronunciation Result, Learning Progress, SRS, XP hoặc Streak.
 
 Frontend không được thực hiện hai learning flows cho cùng một activity nếu điều đó dẫn tới cộng XP hoặc cập nhật progress hai lần.

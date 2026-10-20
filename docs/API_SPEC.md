@@ -68,6 +68,7 @@ Ví dụ:
 /api/auth/login
 /api/admin/vocabulary
 /api/vocabulary-sets
+```
 
 API sử dụng JSON cho request/response nếu endpoint không quy định khác.
 
@@ -225,8 +226,6 @@ Có thể bao gồm:
     "email": "hau@example.com",
     "total_xp": 320,
     "level": 3,
-    "streak": 7,
-    "longest_streak": 12,
     "daily_xp_goal": 50
   }
 }
@@ -902,7 +901,7 @@ For Quiz V1, `POST /api/quiz/answers` is the only command that evaluates an answ
 
 The Frontend must not also call `POST /api/learning/events` for the same Quiz answer. This prevents duplicate Progress mutation and duplicate `review_count`/`revision` increments.
 
-Quiz updates XP only through XP & Level V1 first-correct reward rules. It does not update Streak, Daily Goal, Achievement or SRS scheduling state.
+Quiz updates XP only through XP & Level V1 first-correct reward rules and does not update Daily Goal, Achievement or SRS scheduling state. A session-aware Quiz records accepted correct/incorrect evidence; its final accepted answer completes the Backend session and returns authoritative Streak state. The legacy sessionless path creates no Streak evidence or day.
 24. Spaced Repetition
 
 Spaced Repetition dùng để xác định Vocabulary cần review.
@@ -1033,7 +1032,7 @@ An accepted response includes question identity, Quiz type, `is_correct`, `selec
 
 32. Transient Quiz Result
 
-The Frontend derives only the transient current-run total/correct/incorrect completion summary. The immediate accepted response may also show concise positive non-replay `+N XP` feedback, but reward feedback is not persisted. No streak, achievement, SRS schedule, durable result/history ID or accuracy record is returned or persisted.
+The Frontend derives only the transient current-run total/correct/incorrect completion summary. The immediate accepted response may also show concise positive non-replay `+N XP` feedback, but reward feedback is not persisted. A terminal session-aware answer additionally returns Backend-authored `session` and `streak` projections. No achievement, SRS schedule, durable Quiz result/history ID or accuracy record is returned or persisted.
 
 33. XP
 
@@ -1186,66 +1185,72 @@ total_xp >= 50
 
 Không hard-code threshold ở frontend.
 
-39. Streak
+39. Learning Session V1 API
 
-> **Deferred contract:** Streak is not implemented by XP & Level V1. The following material is future API/business direction and is not active functionality.
+All contracts in this section require the existing authentication and USER-role middleware. Guest requests use the existing `401` behavior; authenticated non-USER roles use the existing `403` behavior. Session lookups are scoped to the current USER, and foreign/missing identities return the same non-disclosing `404 LEARNING_SESSION_NOT_FOUND`.
 
-Streak đo tính liên tục của learning activity.
+### 39.1 Create session
 
-Không dựa vào login.
+`POST /api/learning-sessions`
 
-39.1 Qualifying Activities
+Request fields are strictly allowlisted. `operation_id`, `set_id` and `mode` are always required; `mode` is `NORMAL`, `SRS` or `QUIZ`. NORMAL/Quiz require `vocabulary_ids` (normally an ordered 1–10-item current group; an empty array is accepted only for an actually empty Set result). SRS forbids the field and Backend selects at most ten eligible items. Unknown fields, invalid UUIDs, duplicates, order/membership mismatch or an invalid mode return `400 LEARNING_SESSION_VALIDATION_ERROR`.
 
-Có thể bao gồm:
+New session success is `201`. Exact `(USER, operation_id)` replay is `200` with `replayed: true`; incompatible reuse conflicts. Empty Set or no eligible SRS item returns `200` with `session: null` and `reason: "EMPTY_SET"` or `"SRS_UP_TO_DATE"`.
 
-Vocabulary learning.
-Flashcard learning.
-Quiz.
-Pronunciation Practice.
-Review.
+The session projection contains `id`, `set_id`, `mode`, effective `state`, Backend timestamps, snapshot/completed counts and ordered item evidence. Backend authors creation and expiry; an ACTIVE session accepts operations only while acceptance time is strictly earlier than `expires_at`.
 
-Dashboard/login/profile/topic viewing không được tính streak.
+Across these endpoints, `400 LEARNING_SESSION_VALIDATION_ERROR` covers invalid fields/identities, `404 LEARNING_SESSION_NOT_FOUND` conceals missing or foreign ownership, and `409` uses the precise `LEARNING_SESSION_OPERATION_CONFLICT`, `LEARNING_SESSION_EVENT_CONFLICT`, `LEARNING_SESSION_INACCESSIBLE` or `LEARNING_SESSION_EXPIRED` code. Existing Authentication/authorization errors remain unchanged.
 
-39.2 Streak Rules
+### 39.2 Read/reconcile session
 
-Nếu User có learning activity:
+`GET /api/learning-sessions/:sessionId`
 
-Yesterday + Today
-→ streak +1
+Returns the owner-scoped authoritative projection with effective `ACTIVE`, `COMPLETED` or `EXPIRED` state. An inaccessible active snapshot returns `can_continue: false` and `restart_reason: "SESSION_INACCESSIBLE"` without protected card content. Reads do not extend expiry or write lifecycle state.
 
-Nếu User đã được tính streak trong hôm nay:
+### 39.3 NORMAL reveal
 
-No additional increment
+`PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal`
 
-Nếu User bỏ qua một hoặc nhiều ngày:
+The body contains only `operation_id`. The Backend validates owner, NORMAL mode, active lifetime, current Set access and exact snapshot membership before storing `NORMAL_REVEALED`. Exact replay and already-acknowledged item behavior are successful idempotent responses; incompatible event reuse conflicts.
 
-Next qualifying activity
-→ streak = 1
+### 39.4 NORMAL completion
 
-Multiple activities trong cùng một ngày chỉ tính:
+`POST /api/learning-sessions/:sessionId/complete`
 
-1 learning day
+The body contains only `operation_id`. Only NORMAL may call this endpoint, and every snapshot item must already have accepted reveal evidence. Success/replay is `200` with authoritative `session`, `streak` and `replayed` fields. Incomplete, expired, inaccessible or mismatched operations fail without a Streak day.
 
-V1 không có Streak Freeze.
+### 39.5 Session-aware SRS
 
-Streak không yêu cầu minimum XP threshold.
+Existing `POST /api/learning/events` accepts optional `session_id`. With it, the Backend validates an unresolved item from the exact SRS session before applying existing Progress/schedule/XP rules. `AGAIN` remains unresolved; `HARD`, `GOOD` and `EASY` resolve the item. Nonterminal responses add `session`; terminal completion also adds `streak`. Omitting `session_id` selects the unchanged sessionless Progress/XP path and creates no session evidence or Streak day.
+
+### 39.6 Session-aware Quiz
+
+`GET /api/quiz/sets/:setId/questions?type=MULTIPLE_CHOICE&run_id=<session-uuid>&session_id=<same-session-uuid>` generates only the immutable session snapshot. `run_id` remains mandatory and both identifiers must be valid UUIDs that are exactly equal; a mismatch is rejected as `409 LEARNING_SESSION_EVENT_CONFLICT`. If optional `vocabulary_ids` is supplied on this session-aware path, it must exactly match the authoritative ordered Session Item snapshot. Legacy `run_id`/`vocabulary_ids` query behavior remains when `session_id` is absent.
+
+`POST /api/quiz/answers` accepts optional `session_id`; when present it must equal `run_id`. Accepted correct and incorrect answers both resolve their snapshot item. Nonterminal responses add `session`; the final distinct accepted answer also returns `streak`. Existing grading, Progress and XP fields remain authoritative. Sessionless questions/answers remain compatible and non-qualifying.
 
 40. Streak API
-40.1 Get Streak
-GET /api/users/me/streak
-Response
+
+### 40.1 Current Streak
+
+`GET /api/users/me/streak`
+
+```json
 {
   "success": true,
   "data": {
-    "current_streak": 7,
-    "longest_streak": 12,
-    "last_activity_date": "2026-09-15"
+    "current_streak": 4,
+    "completed_today": false,
+    "last_qualified_date": "2026-10-16",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "evaluated_at": "2026-10-17T02:00:00.000Z"
   }
 }
+```
 
-Streak được cập nhật bởi backend khi qualifying learning activity xảy ra.
+A USER with no qualifying day receives `current_streak: 0`, `completed_today: false` and `last_qualified_date: null`. The read is side-effect-free. Current Streak is projected from `STREAK_DAY`; the API does not expose `longest_streak` or accept client date/timezone values.
 
-Frontend không tự tăng streak.
+Exactly one daily row may result from any number of completed NORMAL/SRS/Quiz sessions on the same `Asia/Ho_Chi_Minh` application day. Speaking, login, browsing, unfinished/failed/expired sessions and merely opening an activity never qualify. V1 has no Streak Freeze, Daily Goal integration or weekly calendar.
 
 41. Achievement
 
@@ -1291,13 +1296,14 @@ For `USER`, the frontend composes only these completed sources:
 
 - the existing Authentication context for `display_name` and role;
 - `GET /api/learning/progress?page=1&page_size=1` for persisted `total_started`, `learning` and `learned` summary values;
-- `GET /api/my/vocabulary-sets` for the exact owned private Set count and a UI preview of at most the first three records in existing deterministic server order.
+- `GET /api/my/vocabulary-sets` for the exact owned private Set count and a UI preview of at most the first three records in existing deterministic server order;
+- `GET /api/users/me/streak` for the independently loaded authoritative current-Streak projection.
 
-The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. The two USER data sources load and retry independently; a failure in one source must not discard successful data from the other.
+The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. The three USER data sources load and retry independently; a failure in one source must not discard successful data from the others.
 
-Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call either USER-only endpoint. Guest access remains protected by the existing Authentication route behavior.
+Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call any USER-only Dashboard data endpoint. Guest access remains protected by the existing Authentication route behavior.
 
-Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the existing Progress response without another request. It shows total XP, backend-derived Level and progress to the next threshold; at Level 15 it shows `Level 15 — MAX`, omits a next target and continues accepting XP. Streak, Daily Goal, achievement, history, charts and Admin Dashboard behavior remain deferred.
+Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set, Streak day or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the Progress response. Streak V1 adds a separate compact USER card from the Streak read, without a Dashboard endpoint or frontend-calculated increment. Daily Goal, achievement, history, weekly calendar, charts and Admin Dashboard expansion remain deferred.
 
 ### 43.1 Future Dashboard Aggregation — Deferred
 
