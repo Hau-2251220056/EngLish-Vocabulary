@@ -252,6 +252,7 @@ export function LearningFoundationPage() {
         setEventError("Có một đánh giá chưa xác định kết quả. Hãy thử lại đúng thao tác trước khi tiếp tục.");
       }
       if (sessionState.view_state === "COMPLETED") requestFocus("summary");
+      else if (sessionState.view_state === "ACTIVE") requestFocus("card");
       else if (sessionState.view_state === "EXPIRED") {
         setEventError("Phiên SRS đã hết hạn. Hãy bắt đầu lại để tiếp tục ôn tập.");
       } else if (sessionState.view_state === "INACCESSIBLE") {

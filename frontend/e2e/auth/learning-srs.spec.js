@@ -44,6 +44,25 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   ]);
 });
 
+test("focuses the initial SRS card only after the authoritative session becomes active", async ({ page }) => {
+  const calls = await installLearningMock(page, { deferSrsSession: true });
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+
+  await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
+    && body.mode === "SRS").length).toBe(1);
+  const cardHeading = page.getByRole("heading", { name: "word-1" });
+  await expect(cardHeading).toHaveCount(0);
+
+  calls.resolveSrsSession();
+  await expect(cardHeading).toBeVisible();
+  await expect(cardHeading).toBeFocused();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toHaveCount(0);
+
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeFocused();
+});
+
 test("new SRS XP uses one Toast without persistence and reload stays silent", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await installLearningMock(page, { cardCount: 2 });
@@ -579,6 +598,11 @@ async function expectEqualNavigationButtons(previous, next) {
 async function installLearningMock(page, options = {}) {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const calls = { reads: [], events: [], sessions: [] };
+  let resolveSrsSession;
+  const srsSessionReady = options.deferSrsSession
+    ? new Promise((resolve) => { resolveSrsSession = resolve; })
+    : null;
+  calls.resolveSrsSession = () => resolveSrsSession?.();
   let session = options.initialSession ?? null;
   let revealFailures = options.failRevealOnce ? 1 : 0;
   let eventFailures = options.failEventOnce ? 1 : 0;
@@ -600,6 +624,7 @@ async function installLearningMock(page, options = {}) {
         ? Array.from({ length: options.cardCount ?? 4 }, (_, index) => vocabularyId(index + 1))
         : body.vocabulary_ids;
       session = learningSessionProjection(body.mode, ids);
+      if (body.mode === "SRS" && srsSessionReady) await srsSessionReady;
       await route.fulfill({ status: 201, json: { success: true, data: { session, replayed: false } } });
       return;
     }
