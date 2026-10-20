@@ -128,7 +128,9 @@ test("NORMAL, SRS and zero-correct Quiz qualify once while Speaking remains non-
     await expect(page.getByRole("heading", { name: vocabulary.word })).toBeVisible();
     await selectIncorrectChoice(page, vocabulary.meaning);
     await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
-    await expect(page.getByTestId("quiz-feedback").getByRole("status")).toHaveText("Chưa chính xác.");
+    await expect(
+      page.getByTestId("quiz-feedback").getByRole("status"),
+    ).toHaveText("Chưa chính xác. Đáp án đúng đã được đánh dấu.");
     await page.getByRole("button", { name: index === quizVocabulary.length - 1 ? "Xem kết quả" : "Câu tiếp theo" }).click();
   }
   await expect(page.getByRole("heading", { name: "Hoàn thành Quiz" })).toBeVisible();
