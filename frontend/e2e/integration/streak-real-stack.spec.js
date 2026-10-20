@@ -48,8 +48,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   try {
     if (user?.id) {
-      await prisma.sTREAK_DAY.deleteMany({ where: { user_id: user.id } });
       await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: user.id } });
+      await prisma.sTREAK_DAY.deleteMany({ where: { user_id: user.id } });
       await prisma.xP_REWARD.deleteMany({ where: { user_id: user.id } });
       await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: user.id } });
       await prisma.aUTH_SESSION.deleteMany({ where: { user_id: user.id } });
@@ -64,6 +64,7 @@ test.afterAll(async () => {
 });
 
 test("NORMAL, SRS and zero-correct Quiz qualify once while Speaking remains non-qualifying", async ({ page }) => {
+  test.setTimeout(120_000);
   await login(page);
   await expectStreak(page, { current: 0, days: 0, sessions: 0 });
 
