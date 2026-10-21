@@ -213,26 +213,32 @@ test("loading state is accessible and the whole Flashcard shell flips front-back
 test("Flashcard keeps focus stable and pronunciation failures do not block NORMAL navigation", async ({ page }) => {
   await login(page, learner);
   await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  const preparingSession = page.getByRole("status").filter({ hasText: "Đang chuẩn bị phiên học…" });
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
 
-  const stage = page.locator(".learning-flip-stage");
   const frontHeading = page.locator("#learning-card-word");
   const meaningHeading = page.locator(".learning-card-back h3");
+  const learningStatus = page.locator('.sr-only[role="status"]');
   const audioError = page.getByText("Không thể phát âm từ này. Bạn vẫn có thể tiếp tục ôn tập.");
 
+  await expect(preparingSession).toBeVisible();
+  await expect(preparingSession).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(frontHeading).toBeFocused();
   await expect(frontHeading).toHaveCSS("box-shadow", "none");
 
-  await stage.click();
+  await frontHeading.click();
   await expect(meaningHeading).toBeFocused();
   await expect(meaningHeading).toHaveCSS("box-shadow", "none");
   await expect(page.locator(".learning-card-flipper")).not.toHaveCSS("box-shadow", "none");
+  await expect(learningStatus).toContainText("Đã ghi nhận thẻ được lật.");
 
-  await stage.click();
+  await meaningHeading.click();
   await expect(frontHeading).toBeFocused();
   await expect(frontHeading).toHaveCSS("box-shadow", "none");
-  await stage.click();
+  await frontHeading.click();
   await expect(meaningHeading).toBeFocused();
+  await expect(learningStatus).toContainText("Đã ghi nhận thẻ được lật.");
 
   await page.keyboard.press("Space");
   await page.keyboard.press("Space");
