@@ -13,9 +13,190 @@ const viewports = [
   { name: "desktop-1366", width: 1366, height: 768 },
 ];
 
+const toastViewports = [
+  { name: "mobile-320", width: 320, height: 720 },
+  { name: "mobile-375", width: 375, height: 812 },
+  { name: "mobile-390", width: 390, height: 844 },
+  { name: "mobile-430", width: 430, height: 932 },
+  { name: "tablet-768", width: 768, height: 1024 },
+  { name: "desktop-1366", width: 1366, height: 768 },
+];
+
+const mobileAuthViewports = [
+  { name: "mobile-320", width: 320, height: 720 },
+  { name: "mobile-375", width: 375, height: 812 },
+  { name: "mobile-390", width: 390, height: 844 },
+  { name: "mobile-430", width: 430, height: 932 },
+  { name: "tablet-768", width: 768, height: 1024 },
+];
+
 const longNameUser = Object.freeze({
   ...publicUser,
   display_name: "Learner with an intentionally very long display name for responsive coverage",
+});
+
+test("Focused auth refinement review captures the blended grid and external home link", async ({ page }, testInfo) => {
+  await installAuthApiMock(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/login");
+
+  const homeLink = page.getByTestId("auth-home-link");
+  const authCard = page.getByTestId("auth-card");
+  await expect(homeLink).toBeVisible();
+  await expect(authCard.locator('[data-testid="auth-home-link"]')).toHaveCount(0);
+  const gridTreatment = await page.locator(".learning-grid").evaluate((panel) => ({
+    background: getComputedStyle(panel).backgroundImage,
+    mask: getComputedStyle(panel, "::before").maskImage,
+  }));
+  expect(gridTreatment.background).toContain("radial-gradient");
+  expect(gridTreatment.mask).toContain("radial-gradient");
+  await page.screenshot({ path: testInfo.outputPath("auth-refinement-login-desktop-1366.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/register");
+  await expect(page.getByTestId("auth-home-link")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("auth-refinement-register-mobile-375.png"), fullPage: true });
+});
+
+for (const viewport of mobileAuthViewports) {
+  test(`Phase 4B shows only the Auth form on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installAuthApiMock(page);
+
+    for (const route of ["/login", "/register"]) {
+      await page.goto(route);
+
+      await expect(page.getByTestId("auth-illustration-panel")).toBeHidden();
+      await expect(page.getByTestId("auth-form-panel")).toBeVisible();
+      await expect(page.getByTestId("auth-home-link")).toBeVisible();
+      await expect(page.getByTestId("auth-card").locator('[data-testid="auth-home-link"]')).toHaveCount(0);
+      await expectAuthFormToFit(page, route.slice(1));
+      await expectNoHorizontalOverflow(page);
+    }
+  });
+}
+
+test("Phase 4B preserves logical mobile focus order", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await installAuthApiMock(page);
+  await page.goto("/login");
+
+  await page.getByTestId("auth-home-link").focus();
+  await expect(page.getByTestId("auth-home-link")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Email")).toBeFocused();
+});
+
+test("Phase 4B keeps the mobile Login form reachable in a short viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 500 });
+  await installAuthApiMock(page);
+  await page.goto("/login");
+
+  await expect(page.getByTestId("auth-illustration-panel")).toBeHidden();
+  const submit = page.locator('button[type="submit"]');
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThanOrEqual(500);
+});
+
+test("Phase 4B preserves the desktop two-column Auth composition", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthApiMock(page);
+  await page.goto("/login");
+
+  const illustration = page.getByTestId("auth-illustration-panel");
+  const form = page.getByTestId("auth-form-panel");
+  await expect(illustration).toBeVisible();
+  await expect(form).toBeVisible();
+  const illustrationBounds = await illustration.boundingBox();
+  const formBounds = await form.boundingBox();
+  expect(illustrationBounds.x).toBeLessThan(formBounds.x);
+  expect(illustrationBounds.width).toBe(formBounds.width);
+});
+
+test("Phase 4B captures the required mobile and desktop visual evidence", async ({ page }, testInfo) => {
+  await installAuthApiMock(page);
+
+  const evidence = [
+    { route: "/login", width: 375, height: 812, name: "phase-4b-mobile-login-375.png" },
+    { route: "/register", width: 375, height: 812, name: "phase-4b-mobile-register-375.png" },
+    { route: "/register", width: 320, height: 720, name: "phase-4b-mobile-register-320.png" },
+    { route: "/login", width: 375, height: 500, name: "phase-4b-mobile-login-short-375x500.png" },
+    { route: "/login", width: 1366, height: 768, name: "phase-4b-desktop-login-1366.png" },
+  ];
+
+  for (const shot of evidence) {
+    await page.setViewportSize({ width: shot.width, height: shot.height });
+    await page.goto(shot.route);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath(shot.name), fullPage: true });
+  }
+});
+
+test("Phase 4A captures desktop registration success toast", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthApiMock(page, { "/api/auth/register": responses.registration() });
+  await page.goto("/register");
+  await submitValidRegistration(page);
+
+  const toast = page.locator('.Toastify__toast[role="status"]');
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Tạo tài khoản thành công!");
+  await toast.hover();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(toast).toHaveCount(1);
+  await waitForAuthAnimations(page);
+  await page.screenshot({ path: testInfo.outputPath("phase-4a-register-success-desktop-1366.png"), fullPage: true });
+});
+
+test("Phase 4A captures desktop registration global error toast", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthApiMock(page, {
+    "/api/auth/register": responses.error(500, "UNEXPECTED_INTERNAL_ERROR", "Raw", "Raw detail"),
+  });
+  await page.goto("/register");
+  await submitValidRegistration(page);
+
+  const toast = page.locator('.Toastify__toast[role="alert"]');
+  await expect(toast).toBeVisible();
+  await toast.hover();
+  await expect(toast).toContainText("Yêu cầu chưa thể hoàn tất. Vui lòng thử lại.");
+  await page.screenshot({ path: testInfo.outputPath("phase-4a-register-error-desktop-1366.png"), fullPage: true });
+});
+
+test("Phase 4A captures a bounded reduced-motion mobile registration toast", async ({ page }, testInfo) => {
+  const viewport = { width: 375, height: 812 };
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await installAuthApiMock(page, { "/api/auth/register": responses.registration() });
+  await page.goto("/register");
+  await submitValidRegistration(page);
+
+  const toast = page.locator('.Toastify__toast[role="status"]');
+  await expectSharedToastWithinViewport(page, viewport);
+  await expect(toast).toContainText("Tạo tài khoản thành công!");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(toast).toHaveCSS("animation-name", "none");
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("phase-4a-register-success-mobile-375.png"), fullPage: true });
+});
+
+test("Phase 4A captures the unchanged inline Login error", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthApiMock(page, {
+    "/api/auth/login": responses.error(401, "AUTHENTICATION_FAILED", "Raw", "Raw detail"),
+  });
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("learner@example.com");
+  await page.getByLabel("Mật khẩu", { exact: true }).fill("wrong-password");
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+
+  const alert = page.locator("form").getByRole("alert");
+  await expect(alert).toContainText("Email hoặc mật khẩu không chính xác.");
+  await expect(page.locator(".Toastify__toast")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("phase-4a-login-inline-error-desktop-1366.png"), fullPage: true });
 });
 
 test("desktop Login and Register panels slide in both directions", async ({ page }) => {
@@ -88,7 +269,7 @@ test("desktop Login and Register panels slide in both directions", async ({ page
   expect(await page.locator('[data-mode="login"]').boundingBox()).toEqual(initialBounds);
 });
 
-for (const viewport of viewports) {
+for (const viewport of toastViewports) {
   test(`expanded Register validation and API errors stay inside a content-safe shell on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await installAuthApiMock(page, {
@@ -110,8 +291,11 @@ for (const viewport of viewports) {
     await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
     await page.getByLabel("Xác nhận mật khẩu").fill("password");
     await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Yêu cầu chưa thể hoàn tất");
-    await expectAuthNotificationAnchoredToViewport(page, viewport);
+    const toast = page.locator('.Toastify__toast[role="alert"]');
+    await expect(toast).toBeVisible();
+    await toast.hover();
+    await expect(toast).toContainText("Yêu cầu chưa thể hoàn tất");
+    await expectSharedToastWithinViewport(page, viewport);
     await expectRegisterHandoffContained(page);
     await expectNoHorizontalOverflow(page);
   });
@@ -181,6 +365,20 @@ async function expectAuthFormToFit(page, mode) {
   await expectNoHorizontalOverflow(page);
 }
 
+async function submitValidRegistration(page) {
+  await page.getByLabel("Tên hiển thị").fill("Learner");
+  await page.getByLabel("Email").fill("learner@example.com");
+  await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
+  await page.getByLabel("Xác nhận mật khẩu").fill("password");
+  await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
+}
+
+async function waitForAuthAnimations(page) {
+  await page.locator('[data-mode="login"]').evaluate(async (shell) => {
+    await Promise.all(shell.getAnimations({ subtree: true }).map((animation) => animation.finished));
+  });
+}
+
 async function expectNoHorizontalOverflow(page) {
   await expect
     .poll(() =>
@@ -192,38 +390,27 @@ async function expectNoHorizontalOverflow(page) {
     .toEqual({ body: 0, document: 0 });
 }
 
-async function expectAuthNotificationAnchoredToViewport(page, viewport) {
-  const notification = page.locator('.auth-notification[aria-hidden="false"]');
+async function expectSharedToastWithinViewport(page, viewport) {
+  const notification = page.locator(".Toastify__toast");
   await expect(notification).toBeVisible();
-  const expectedMargin = viewport.width < 640 ? 16 : 20;
-  await expect.poll(() => notification.evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    return { right: Math.round(innerWidth - box.right), top: Math.round(box.top) };
-  })).toEqual({ right: expectedMargin, top: expectedMargin });
+  await notification.hover();
   const geometry = await notification.evaluate((element) => {
     const box = element.getBoundingClientRect();
-    const headingBox = document.querySelector("h1")?.getBoundingClientRect();
     return {
       bottom: box.bottom,
       left: box.left,
-      overlapsHeading: Boolean(headingBox
-        && box.left < headingBox.right
-        && box.right > headingBox.left
-        && box.top < headingBox.bottom
-        && box.bottom > headingBox.top),
       position: getComputedStyle(element).position,
       right: innerWidth - box.right,
       top: box.top,
       width: box.width,
     };
   });
-  expect(geometry.position).toBe("fixed");
-  expect(geometry.top).toBeCloseTo(expectedMargin, 0);
-  expect(geometry.right).toBeCloseTo(expectedMargin, 0);
-  if (viewport.width < 640) expect(geometry.left).toBeCloseTo(16, 0);
-  else expect(geometry.width).toBeLessThanOrEqual(400);
+  expect(geometry.position).toBe("relative");
+  expect(geometry.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeGreaterThanOrEqual(viewport.width <= 480 ? 8 : 16);
+  expect(geometry.left).toBeGreaterThanOrEqual(viewport.width <= 480 ? 8 : 16);
+  expect(geometry.width).toBeLessThanOrEqual(viewport.width <= 480 ? viewport.width - 16 : 400);
   expect(geometry.bottom).toBeLessThanOrEqual(viewport.height);
-  expect(geometry.overlapsHeading).toBe(false);
 }
 
 async function expectRegisterHandoffContained(page) {

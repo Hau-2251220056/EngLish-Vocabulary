@@ -25,11 +25,15 @@ test("initialization shows a neutral status without protected-content flash", as
 test("Guest route table redirects without an expiration warning", async ({ page }) => {
   await installAuthApiMock(page);
 
-  for (const path of ["/dashboard", "/", "/unknown-route"]) {
+  for (const path of ["/dashboard", "/unknown-route"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByText("Phiên đăng nhập đã hết hạn.")).toHaveCount(0);
   }
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Làm chủ tiếng Anh từng từ một" })).toBeVisible();
 
   await page.goto("/register");
   await expect(page).toHaveURL(/\/register$/);
@@ -40,7 +44,7 @@ test("authenticated Guest routes redirect to Dashboard", async ({ page }) => {
     "/api/auth/me": responses.currentUser(publicUser),
   });
 
-  for (const path of ["/login", "/register"]) {
+  for (const path of ["/", "/login", "/register"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/dashboard$/);
   }

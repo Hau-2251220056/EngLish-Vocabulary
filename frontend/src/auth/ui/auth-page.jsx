@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { notifications } from "../../components/notification-service.js";
 import { AuthShell } from "./auth-shell.jsx";
-import { SuccessToast } from "./success-toast.jsx";
 
 const REGISTRATION_HANDOFF_DELAY_MS = 1200;
+const REGISTRATION_SUCCESS_TOAST_ID = "auth-registration-success";
 
 export function AuthPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const mode = location.pathname === "/register" ? "register" : "login";
   const [loginEmail, setLoginEmail] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
   const handoffTimer = useRef(null);
 
   useEffect(
@@ -25,23 +25,24 @@ export function AuthPage() {
       clearTimeout(handoffTimer.current);
       handoffTimer.current = null;
     }
-    setShowSuccess(false);
     navigate(`/${nextMode}`);
   }
 
   function handleRegistrationSuccess(email) {
     setLoginEmail(email);
-    setShowSuccess(true);
+    notifications.success(
+      "Tạo tài khoản thành công!",
+      REGISTRATION_SUCCESS_TOAST_ID,
+      { role: "status" },
+    );
     handoffTimer.current = setTimeout(() => {
       handoffTimer.current = null;
-      setShowSuccess(false);
       navigate("/login");
     }, REGISTRATION_HANDOFF_DELAY_MS);
   }
 
   return (
     <>
-      <SuccessToast isVisible={showSuccess} />
       <AuthShell
         mode={mode}
         loginEmail={loginEmail}
