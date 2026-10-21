@@ -481,10 +481,15 @@ test("Flashcard navigation uses expressive actionable colors and neutral disable
   const before = await progressSnapshot(learnerRecord.id);
   await login(page, learner);
   await page.goto(`/learn/vocabulary-sets/${systemSet.id}`);
+  const preparingSession = page.getByRole("status").filter({ hasText: "Đang chuẩn bị phiên học…" });
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
 
   const previous = page.getByRole("button", { name: /Thẻ trước/ });
   const next = page.getByRole("button", { name: /Thẻ sau/ });
+  const learningStatus = page.locator('.sr-only[role="status"]');
+  await expect(preparingSession).toBeVisible();
+  await expect(preparingSession).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(previous).toBeDisabled();
   await expect(previous).toHaveClass(/disabled:bg-slate-100/);
   await expect(previous).toHaveClass(/disabled:!border-slate-200/);
@@ -496,6 +501,8 @@ test("Flashcard navigation uses expressive actionable colors and neutral disable
   await expect(next).toHaveClass(/text-white/);
   await expect(next).toHaveCSS("cursor", "pointer");
 
+  await page.getByRole("heading", { name: firstVocabulary.word }).click();
+  await expect(learningStatus).toContainText("Đã ghi nhận thẻ được lật.");
   await next.click();
   await expect(previous).toBeEnabled();
   await expect(previous).toHaveClass(/bg-white/);
@@ -505,6 +512,10 @@ test("Flashcard navigation uses expressive actionable colors and neutral disable
   await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
   await expect(next).toHaveCount(0);
   const complete = page.getByRole("button", { name: "Hoàn thành phiên", exact: true });
+  await expect(learningStatus).toContainText("Đã chuyển đến thẻ 2 trên 2.");
+  await expect(complete).toBeDisabled();
+  await page.getByRole("heading", { name: secondVocabulary.word }).click();
+  await expect(learningStatus).toContainText("Đã ghi nhận thẻ được lật.");
   await expect(complete).toBeEnabled();
   await expect(complete).toHaveClass(/bg-\[#7ed321\]/);
   await expect(complete).toHaveClass(/!border-\[#7ed321\]/);
