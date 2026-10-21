@@ -661,7 +661,7 @@ Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 User Dashboard	DONE	✓	✓	✓	✓	✓	✓
 XP Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
-Streak Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
+Streak Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
@@ -679,7 +679,7 @@ The Dashboard must not become a separate source of truth for business data.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
 - Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
-- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 workstream is `DONE`. Streak V1 now implements the compact read-only USER Streak card and remains `IN_PROGRESS` pending TASK-253 Preview TEST migration/deployment and Gate ST-8. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
+- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 and Streak V1 workstreams are `DONE`. Streak V1 adds the compact read-only USER Streak card. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
 ### Dashboard V1 Formal Evidence
@@ -755,7 +755,7 @@ Pronunciation must not automatically become a third quiz type.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 XP	DONE	✓	✓	✓	✓	PASS	APPROVE
 Level	DONE	✓	✓	✓	✓	PASS	APPROVE
-Streak	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
+Streak	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 XP Rules
@@ -805,7 +805,7 @@ The Backend threshold table is implemented for Levels 1–15 using `25 × L × (
 - Evidence references: TASK-233 report `docs/testing/XP_LEVEL_V1_TEST_REPORT.md`; TASK-234 report `docs/reviews/XP_LEVEL_V1_REVIEW_REPORT.md`; GitHub Actions Run #58 for accepted backend DB/real-stack verification; Run #53 for guarded XP migration verification and cleanup.
 - Closure records feature implementation acceptance only. The XP migration has **not** been applied to the Preview TEST DB, and the feature branch has **not** been merged into `dev`; those deployment/integration actions require their own authorization and release controls.
 
-### Streak V1 — Active bounded implementation, formal closure pending
+### Streak V1 — Closure Evidence
 
 - Exactly NORMAL, SRS and Multiple Choice Quiz can qualify through a completed Backend-owned snapshot. Speaking, login, browsing, opening, abandoning, failing or expiring a session do not qualify.
 - Accepted zero-correct Quiz completion qualifies without invented Quiz XP. Sessionless SRS/Quiz callers retain their approved Progress/XP behavior and never qualify.
@@ -820,8 +820,12 @@ The Backend threshold table is implemented for Levels 1–15 using `25 × L × (
 - Fixture cleanup was verified at fixture level. Foundation marker-validated cleanup and the integrated marker-validated cleanup routine were verified. Independent post-drop PostgreSQL catalog verification of integrated-schema absence was **NOT PERFORMED** and must not be inferred.
 - TASK-250 documentation synchronization: **HUMAN ACCEPTED — Published** at commit `1df63db3674dd1cdf10f06da27f900809c1b7ad5`.
 - TASK-251 formal TEST: **HUMAN ACCEPTED — Published** at commit `d1e04081dec59c43d04ec2fa35513275ea322ba3`. TASK-252 formal REVIEW: **HUMAN ACCEPTED — Published** at commit `94d4ee5e01207c820726addb269e132f3e6f056d`. Gate ST-7: **HUMAN ACCEPTED** for the reviewed implementation at `d1e04081dec59c43d04ec2fa35513275ea322ba3`.
-- TASK-253 Preview TEST migration/deployment: **NOT AUTHORIZED / NOT PERFORMED**. Gate ST-8: **PENDING**. No Streak V1 merge/release or Production deployment is recorded.
-- Streak V1 overall remains **IN_PROGRESS**, not `DONE`; accepted isolated CI TEST evidence is not Preview TEST or release acceptance.
+- TASK-253 Preview TEST verification: **HUMAN ACCEPTED**. Gate ST-8: **HUMAN ACCEPTED**.
+- Preview TEST migration verification passed with all `11/11` Prisma migrations applied. Both approved Streak migrations, four Streak tables and three enum types were verified with no historical Streak backfill. Migration-time aggregate counts were preserved for `USER` (`2 → 2`), `LEARNING_PROGRESS` (`14 → 14`) and `XP_REWARD` (`13 → 13`); this is aggregate preservation evidence, not row-by-row equality.
+- Frontend and Backend Vercel Preview deployments completed at accepted revision `91b4ec4d27240e009a8e8f44108037c44d0a1803`. An authenticated Streak read returned HTTP `200`; one HUMAN-authorized 10-question Quiz smoke completed with 8 correct and 2 incorrect answers. API and Dashboard Streak changed from `0` to `1` day on `2026-10-21` in `Asia/Ho_Chi_Minh`.
+- Streak V1 is **DONE** for its approved scope after formal TEST, formal REVIEW, Gate ST-7, TASK-253 and Gate ST-8 HUMAN acceptance.
+- Preview acceptance does not imply Production deployment or merge into `dev`; neither occurred. The committed feature-specific Frontend API rewrite is temporary and must be restored to the Dev Backend destination, independently reviewed and separately authorized before any future merge into `dev`.
+- Accepted limitations remain: no isolated backup restore rehearsal; the `pg_dump` numeric exit code was not captured; the PostgreSQL archive excludes external service resources; HUMAN accepted that recovery risk with archive retention for at least 30 days after Gate ST-8; no manual screen-reader verification; Chromium-focused browser evidence; equivalent viewport checks were not manual 200% browser zoom; independent integrated-schema post-drop catalog absence remains not verified; the XP migration had an LF/CRLF checksum provenance difference with normalized SQL equivalent and no dedicated Prisma LF/CRLF rehearsal; and the single Quiz smoke is not exhaustive activity coverage.
 
 #### Documentation traceability
 
