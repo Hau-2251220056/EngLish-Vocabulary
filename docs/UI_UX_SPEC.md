@@ -378,14 +378,18 @@ Introduce the platform and encourage users to start learning.
 Required sections:
 
 Hero section
-Product introduction
-Learning feature overview
-Vocabulary learning preview
-Quiz preview
-Progress / achievement preview
-Community preview
+Sticky public Navbar with section navigation and Authentication actions
+Browser-style static product demonstration, clearly identified as non-user data
+Six-card overview of implemented learning capabilities
+Three-step How It Works section
 Call-to-action
 Footer
+
+Landing Page V1 uses Vietnamese UI and the existing ELVocab logo. Its feature copy may describe public Set discovery, Flashcard, SRS, the active four-choice English-to-Vietnamese Quiz, browser speech-recognition practice, Learning Progress, XP, Level and Streak. It must not claim acoustic pronunciation scoring, unsupported Quiz types, unavailable analytics, Achievement or Community functionality, fabricated user statistics, guaranteed learning outcomes or an unverified public domain.
+
+The public Navbar contains only **Tính năng**, **Cách hoạt động**, **Đăng nhập** and **Bắt đầu miễn phí**. It has no obsolete **Đánh giá** destination. Testimonials and a StatsBar are not part of Landing Page V1.
+
+Guest `/` renders Landing Page V1. Authenticated USER and ADMIN actors visiting `/` retain the existing redirect to `/dashboard`. The Landing Page public Navbar and Footer remain separate from `AuthenticatedShell`.
 
 This Footer belongs to the public Landing Page. It is separate from the shared authenticated Footer defined in Global Layout.
 

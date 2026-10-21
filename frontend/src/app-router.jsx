@@ -11,6 +11,7 @@ import { DashboardPage } from "./dashboard/dashboard-page.jsx";
 import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
 import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
+import { LandingPage } from "./landing/landing-page.jsx";
 import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
 import { SpeakingPracticePage } from "./pronunciation/speaking-practice-page.jsx";
@@ -35,7 +36,6 @@ export function AppRouter() {
       <QuizSessionStorageObserver />
       <SpeakingSessionStorageObserver />
       <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route element={<DiscoveryRouteLayout />}>
           <Route path="/topics" element={<TopicListPage />} />
           <Route path="/topics/:topicId" element={<TopicDetailPage />} />
@@ -43,6 +43,7 @@ export function AppRouter() {
           <Route path="/vocabulary-sets/:setId" element={<PublicVocabularySetDetailPage />} />
         </Route>
         <Route element={<GuestRoute />}>
+          <Route path="/" element={<LandingPage />} />
           <Route element={<AuthPage />}>
             <Route path="/login" element={null} />
             <Route path="/register" element={null} />

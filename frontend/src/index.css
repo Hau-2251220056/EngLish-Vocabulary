@@ -1708,10 +1708,31 @@ input {
 }
 
 .learning-grid {
+  background:
+    radial-gradient(circle at 52% 48%, rgb(112 137 216 / 98%) 0, rgb(88 112 199 / 98%) 52%, #5368b7 100%);
+  isolation: isolate;
+}
+
+.learning-grid::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
   background-image:
     linear-gradient(rgb(255 255 255 / 9%) 1px, transparent 1px),
     linear-gradient(90deg, rgb(255 255 255 / 9%) 1px, transparent 1px);
   background-size: 30px 30px;
+  content: "";
+  mask-image: radial-gradient(ellipse 76% 72% at 52% 48%, #000 18%, rgb(0 0 0 / 82%) 46%, transparent 100%);
+  pointer-events: none;
+}
+
+.learning-grid::after {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: radial-gradient(circle at 52% 48%, rgb(255 255 255 / 9%), transparent 58%);
+  content: "";
+  pointer-events: none;
 }
 
 @media (max-width: 900px) {

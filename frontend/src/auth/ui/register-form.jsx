@@ -1,19 +1,15 @@
-import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { notifications } from "../../components/notification-service.js";
 import { useAuthentication } from "../use-authentication.js";
 import { registerSchema } from "../validation/auth-schemas.js";
 import { getAuthErrorPresentation } from "./auth-error-messages.js";
 import { FormField } from "./form-field.jsx";
 import { AuthFormFrame, ModeSwitch, SubmitButton } from "./login-form.jsx";
 import { PasswordField } from "./password-field.jsx";
-import { AuthNotification } from "./success-toast.jsx";
-
-const ERROR_NOTIFICATION_DURATION_MS = 7000;
 
 export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
   const { register: registerAccount } = useAuthentication();
-  const [notification, setNotification] = useState(null);
   const {
     register,
     handleSubmit,
@@ -30,14 +26,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
     },
   });
 
-  useEffect(() => {
-    if (!notification) return undefined;
-    const timer = window.setTimeout(() => setNotification(null), ERROR_NOTIFICATION_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [notification]);
-
   async function submit({ display_name, email, password }) {
-    setNotification(null);
     try {
       await registerAccount({ display_name, email, password });
       reset({
@@ -53,7 +42,12 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
         setError("email", { type: "server", message: presentation.message });
         return;
       }
-      setNotification(presentation);
+      const notificationId = `auth-registration-error-${error?.code ?? error?.kind ?? "unexpected"}`;
+      notifications.error(
+        `${presentation.title}: ${presentation.message}`,
+        notificationId,
+        { role: "alert" },
+      );
     }
   }
 
@@ -113,13 +107,6 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
         text="Đã có tài khoản?"
         action="Đăng nhập"
         onClick={onSwitchMode}
-      />
-      <AuthNotification
-        isVisible={Boolean(notification)}
-        message={notification?.message}
-        onDismiss={() => setNotification(null)}
-        title={notification?.title ?? ""}
-        variant="error"
       />
     </AuthFormFrame>
   );

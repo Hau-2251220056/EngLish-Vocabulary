@@ -61,9 +61,17 @@ test("valid registration locks submission and hands Guest off to Login", async (
   await expect(pendingButton).toBeDisabled();
   expect(api.callsFor("/api/auth/register")).toHaveLength(1);
 
+  const handoffStartedAt = Date.now();
   pending.resolve(responses.registration());
-  await expect(page.getByRole("status")).toContainText("Tạo tài khoản thành công!");
+  const successToast = page.locator('.Toastify__toast[role="status"]');
+  await expect(successToast).toBeVisible();
+  await expect(successToast).toContainText("Tạo tài khoản thành công!");
+  await expect(successToast).toHaveCount(1);
+  await expect(successToast.locator(".Toastify__progress-bar")).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
+  expect(Date.now() - handoffStartedAt).toBeGreaterThanOrEqual(1_000);
+  expect(Date.now() - handoffStartedAt).toBeLessThan(3_000);
+  await expect(successToast).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveValue("LEARNER@EXAMPLE.COM");
   expect(api.callsFor("/api/auth/register")[0].body).toEqual({
     display_name: "Learner",
@@ -71,6 +79,7 @@ test("valid registration locks submission and hands Guest off to Login", async (
     password: "password",
   });
   expect(api.callsFor("/api/auth/login")).toHaveLength(0);
+  await expect(successToast).toHaveCount(0, { timeout: 5_000 });
 });
 
 test("valid Login exposes pending state, deduplicates and enters Dashboard", async ({ page }) => {
@@ -178,7 +187,7 @@ test("backend validation and generic API failures use safe fallback messages", a
   await expect(page.getByText("Raw internal message.")).toHaveCount(0);
 });
 
-test("Register global failures use one dismissible toast without stealing focus", async ({ page }) => {
+test("Register global failures use one shared dismissible toast without stealing focus", async ({ page }) => {
   const api = await installAuthApiMock(page, {
     "/api/auth/register": responses.error(
       500,
@@ -193,12 +202,7 @@ test("Register global failures use one dismissible toast without stealing focus"
   await page.getByLabel("Mật khẩu", { exact: true }).fill("password");
   await page.getByLabel("Xác nhận mật khẩu").fill("password");
 
-  const hiddenDismiss = page.locator('button[aria-label="Đóng thông báo"]');
   const handoff = page.getByRole("button", { name: "Đăng nhập", exact: true });
-  await expect(hiddenDismiss).toHaveCount(0);
-  await handoff.focus();
-  await page.keyboard.press("Tab");
-  await expectKeyboardFocusOutsideHiddenDismiss(page);
 
   const submit = page.getByRole("button", { name: "Tạo tài khoản", exact: true });
   await submit.click();
@@ -207,24 +211,25 @@ test("Register global failures use one dismissible toast without stealing focus"
   await expect(notification).toContainText("Yêu cầu chưa thể hoàn tất. Vui lòng thử lại.");
   await expect(notification).not.toBeFocused();
   expect(await notification.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+  await expect(notification.locator(".Toastify__progress-bar")).toBeVisible();
+  await expect(page.getByLabel("Tên hiển thị")).toHaveValue("Learner");
+  await expect(page.getByLabel("Email")).toHaveValue("learner@example.com");
 
   await submit.click();
   await expect(notification).toHaveCount(1);
   expect(api.callsFor("/api/auth/register")).toHaveLength(2);
 
-  const dismiss = page.getByRole("button", { name: "Đóng thông báo" });
-  await handoff.focus();
-  await page.keyboard.press("Tab");
+  const dismiss = notification.locator(".Toastify__close-button");
+  await expect(dismiss).toBeVisible();
+  await dismiss.focus();
   await expect(dismiss).toBeFocused();
   await dismiss.press("Enter");
   await expect(notification).toHaveCount(0);
-  await expect(hiddenDismiss).toHaveCount(0);
-  await handoff.focus();
-  await page.keyboard.press("Tab");
-  await expectKeyboardFocusOutsideHiddenDismiss(page);
+  await expect(handoff).toBeVisible();
 });
 
-test("Register notification timeout removes its dismiss control from the keyboard sequence", async ({ page }) => {
+test("Register shared error notification auto-closes after its configured lifetime", async ({ page }) => {
+  await page.bringToFront();
   await installAuthApiMock(page, {
     "/api/auth/register": responses.error(
       500,
@@ -241,29 +246,12 @@ test("Register notification timeout removes its dismiss control from the keyboar
   await page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
 
   const notification = page.getByRole("alert");
-  const dismiss = page.locator('button[aria-label="Đóng thông báo"]');
   await expect(notification).toBeVisible();
-  await expect(dismiss).toHaveCount(1);
-  await expect(dismiss).toHaveCount(0, { timeout: 8_000 });
-
-  const handoff = page.getByRole("button", { name: "Đăng nhập", exact: true });
-  await handoff.focus();
-  await page.keyboard.press("Tab");
-  await expectKeyboardFocusOutsideHiddenDismiss(page);
+  await expect(notification.locator(".Toastify__close-button")).toBeVisible();
+  await expect(notification.locator(".Toastify__progress-bar")).toHaveCSS("animation-duration", "7s");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(notification).toHaveCount(0, { timeout: 8_000 });
 });
-
-async function expectKeyboardFocusOutsideHiddenDismiss(page) {
-  const focusState = await page.evaluate(() => {
-    const active = document.activeElement;
-    return {
-      dismiss: active?.matches('button[aria-label="Đóng thông báo"]') ?? false,
-      rendered: active === document.body
-        || active === document.documentElement
-        || Boolean(active?.getClientRects().length),
-    };
-  });
-  expect(focusState).toEqual({ dismiss: false, rendered: true });
-}
 
 test("network failure produces the approved operational Login error", async ({ page }) => {
   await installAuthApiMock(page, {
