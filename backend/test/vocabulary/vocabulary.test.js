@@ -103,7 +103,8 @@ test("Vocabulary schema materializes only the approved owned aggregate and const
   const foreignKeys = await prisma.$queryRawUnsafe(
     `SELECT conname, pg_get_constraintdef(oid) AS definition
        FROM pg_constraint
-      WHERE conname IN ('VOCABULARY_MEANING_vocabulary_id_fkey', 'VOCABULARY_EXAMPLE_meaning_id_fkey')`,
+      WHERE connamespace = current_schema()::regnamespace
+        AND conname IN ('VOCABULARY_MEANING_vocabulary_id_fkey', 'VOCABULARY_EXAMPLE_meaning_id_fkey')`,
   );
   assert.equal(foreignKeys.length, 2);
   for (const foreignKey of foreignKeys) {
