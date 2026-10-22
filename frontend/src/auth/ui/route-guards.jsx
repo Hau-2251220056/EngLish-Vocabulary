@@ -1,5 +1,6 @@
 import { LoaderCircle } from "lucide-react";
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { LandingPageLoadingState } from "../../landing/landing-page-loading-state.jsx";
 import { useAuthentication } from "../use-authentication.js";
 
 export function ProtectedRoute() {
@@ -13,8 +14,13 @@ export function ProtectedRoute() {
 
 export function GuestRoute() {
   const { isAuthenticated, isLoading } = useAuthentication();
+  const location = useLocation();
 
-  if (isLoading) return <AuthenticationLoadingState />;
+  if (isLoading) {
+    return location.pathname === "/"
+      ? <LandingPageLoadingState />
+      : <AuthenticationLoadingState />;
+  }
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
   return <Outlet />;
