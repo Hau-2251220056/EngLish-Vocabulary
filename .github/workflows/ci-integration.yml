@@ -21,7 +21,7 @@ on:
         default: false
         type: boolean
       run_daily_goal_migration_observation:
-        description: Reserved read-only Daily Goal Phase B observation (live execution disabled)
+        description: Registration only; feature-ref Phase B requires separate HUMAN authorization
         required: true
         default: false
         type: boolean
@@ -30,6 +30,10 @@ on:
         required: true
         default: false
         type: boolean
+      daily_goal_approved_target_identity:
+        description: "HUMAN-approved CI-exclusive database target identity for Daily Goal"
+        required: false
+        type: string
       streak_approved_target_identity:
         description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
         required: false
