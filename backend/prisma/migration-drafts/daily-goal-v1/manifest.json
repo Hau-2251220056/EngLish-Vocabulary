@@ -1,0 +1,11 @@
+{
+  "artifact": "Daily Goal V1 migration review draft",
+  "migration_name": "20261022000000_add_daily_goal_v1",
+  "original_active_path": "backend/prisma/migrations/20261022000000_add_daily_goal_v1/migration.sql",
+  "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261022000000_add_daily_goal_v1/migration.sql",
+  "byte_count": 11487,
+  "sha256": "8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6",
+  "human_approval_status": "MIGRATION QUARANTINE AUTHORIZED; ARTIFACT ACTIVATION REQUIRES SEPARATE HUMAN AUTHORIZATION",
+  "activation_status": "NOT AUTHORIZED",
+  "database_execution": "NOT RUN"
+}

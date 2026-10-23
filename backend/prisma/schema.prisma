@@ -46,6 +46,40 @@ enum SESSION_ITEM_EVIDENCE {
   QUIZ_INCORRECT
 }
 
+enum DAILY_GOAL_ACTIVITY_TYPE {
+  NORMAL
+  SRS
+  QUIZ
+  SPEAKING
+}
+
+enum DAILY_GOAL_TRACKING_STATUS {
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum DAILY_GOAL_OPERATION_TYPE {
+  CREATE
+  READY
+  INTERACTION
+  CLAIM
+  RESUME
+  HEARTBEAT
+  PAUSE
+  CLOSE
+  GOAL_UPDATE
+  REMINDER_PREFERENCE_UPDATE
+  MONITOR_CREATE
+  MONITOR_CHECK
+  MONITOR_CLOSE
+}
+
+enum USER_NOTIFICATION_TYPE {
+  DAILY_GOAL_COMPLETED
+  DAILY_GOAL_INACTIVITY_REMINDER
+}
+
 model USER {
   id                                   String                                @id @default(uuid()) @db.Uuid
   email                                String                                @unique @db.VarChar(255)
@@ -56,6 +90,9 @@ model USER {
   is_active                            Boolean                               @default(true)
   total_xp                             Int                                   @default(0)
   daily_xp_goal                        Int                                   @default(50)
+  daily_goal_minutes                   Int?
+  daily_goal_reminders_enabled         Boolean?
+  daily_goal_reminders_enabled_at      DateTime?                             @db.Timestamptz(3)
   created_at                           DateTime                              @default(now())
   updated_at                           DateTime                              @updatedAt
   auth_sessions                        AUTH_SESSION[]
@@ -66,6 +103,13 @@ model USER {
   xp_rewards                           XP_REWARD[]
   learning_sessions                    LEARNING_SESSION[]
   streak_days                          STREAK_DAY[]
+  daily_goal_days                      DAILY_GOAL_DAY[]
+  daily_goal_tracking_sessions         DAILY_GOAL_TRACKING_SESSION[]
+  daily_goal_owner                     DAILY_GOAL_OWNER?
+  daily_goal_operation_receipts        DAILY_GOAL_OPERATION_RECEIPT[]
+  daily_goal_rewards                   DAILY_GOAL_REWARD[]
+  notifications                        USER_NOTIFICATION[]
+  daily_goal_monitor_sessions          DAILY_GOAL_MONITOR_SESSION[]
 }
 
 model AUTH_SESSION {
@@ -100,6 +144,7 @@ model VOCABULARY {
   learning_progress         LEARNING_PROGRESS[]
   private_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationVocabulary")
   xp_rewards                XP_REWARD[]
+  daily_goal_tracking_sessions DAILY_GOAL_TRACKING_SESSION[] @relation("DailyGoalTrackingVocabulary")
 }
 
 model VOCABULARY_MEANING {
@@ -141,6 +186,7 @@ model VOCABULARY_SET {
   items                                VOCABULARY_SET_ITEM[]
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationSet")
   learning_sessions                    LEARNING_SESSION[]
+  daily_goal_tracking_sessions         DAILY_GOAL_TRACKING_SESSION[]          @relation("DailyGoalTrackingSet")
 }
 
 model VOCABULARY_SET_ITEM {
@@ -210,6 +256,7 @@ model LEARNING_SESSION {
   vocabulary_set      VOCABULARY_SET?         @relation(fields: [vocabulary_set_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   items               LEARNING_SESSION_ITEM[]
   streak_days         STREAK_DAY[]
+  daily_goal_tracking_sessions DAILY_GOAL_TRACKING_SESSION[]
 
   @@unique([user_id, create_operation_id])
   @@unique([user_id, completion_event_id])
@@ -270,4 +317,125 @@ model PRIVATE_VOCABULARY_CREATE_OPERATION {
   @@index([owner_id])
   @@index([vocabulary_set_id])
   @@index([vocabulary_id])
+}
+
+model DAILY_GOAL_DAY {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  user_id             String                    @db.Uuid
+  activity_date       DateTime                  @db.Date
+  active_milliseconds BigInt                    @default(0)
+  last_credited_at    DateTime?                 @db.Timestamptz(3)
+  last_engagement_at  DateTime?                 @db.Timestamptz(3)
+  last_activity_type  DAILY_GOAL_ACTIVITY_TYPE?
+  created_at          DateTime                  @default(now()) @db.Timestamptz(3)
+  updated_at          DateTime                  @updatedAt @db.Timestamptz(3)
+  user                USER                      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([user_id, activity_date])
+  @@index([user_id, activity_date(sort: Desc)])
+}
+
+model DAILY_GOAL_TRACKING_SESSION {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  user_id               String                         @db.Uuid
+  activity_type         DAILY_GOAL_ACTIVITY_TYPE
+  learning_session_id   String?                        @db.Uuid
+  set_id                String?                        @db.Uuid
+  vocabulary_id         String?                        @db.Uuid
+  status                DAILY_GOAL_TRACKING_STATUS     @default(ACTIVE)
+  engagement_expires_at DateTime?                      @db.Timestamptz(3)
+  last_meaningful_at    DateTime?                      @db.Timestamptz(3)
+  created_at            DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at            DateTime                       @updatedAt @db.Timestamptz(3)
+  closed_at             DateTime?                      @db.Timestamptz(3)
+  user                  USER                           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  learning_session      LEARNING_SESSION?              @relation(fields: [learning_session_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  vocabulary_set        VOCABULARY_SET?                @relation("DailyGoalTrackingSet", fields: [set_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  vocabulary            VOCABULARY?                    @relation("DailyGoalTrackingVocabulary", fields: [vocabulary_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  owner_records         DAILY_GOAL_OWNER[]
+  operation_receipts    DAILY_GOAL_OPERATION_RECEIPT[]
+
+  @@index([user_id, status, updated_at])
+  @@index([updated_at])
+  @@index([learning_session_id])
+  @@index([set_id])
+  @@index([vocabulary_id])
+}
+
+model DAILY_GOAL_OWNER {
+  user_id             String                       @id @db.Uuid
+  tracking_session_id String?                      @db.Uuid
+  generation          BigInt                       @default(0)
+  lease_expires_at    DateTime?                    @db.Timestamptz(3)
+  last_accounted_at   DateTime?                    @db.Timestamptz(3)
+  updated_at          DateTime                     @updatedAt @db.Timestamptz(3)
+  user                USER                         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tracking_session    DAILY_GOAL_TRACKING_SESSION? @relation(fields: [tracking_session_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([tracking_session_id])
+}
+
+model DAILY_GOAL_OPERATION_RECEIPT {
+  operation_id        String                       @id @db.Uuid
+  user_id             String                       @db.Uuid
+  tracking_session_id String?                      @db.Uuid
+  monitor_session_id  String?                      @db.Uuid
+  generation          BigInt?
+  operation_type      DAILY_GOAL_OPERATION_TYPE
+  request_fingerprint String                       @db.Text
+  credited_milliseconds BigInt                    @default(0)
+  response_projection Json                         @db.JsonB
+  created_at          DateTime                     @default(now()) @db.Timestamptz(3)
+  user                USER                         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tracking_session    DAILY_GOAL_TRACKING_SESSION? @relation(fields: [tracking_session_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  monitor_session     DAILY_GOAL_MONITOR_SESSION?  @relation(fields: [monitor_session_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([user_id, created_at])
+  @@index([created_at])
+  @@index([tracking_session_id])
+  @@index([monitor_session_id])
+}
+
+model DAILY_GOAL_REWARD {
+  id                  String   @id @default(uuid()) @db.Uuid
+  user_id             String   @db.Uuid
+  activity_date       DateTime @db.Date
+  source_operation_id String   @db.Uuid
+  xp_amount           Int
+  created_at          DateTime @default(now()) @db.Timestamptz(3)
+  user                USER     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([user_id, activity_date])
+  @@unique([user_id, source_operation_id])
+}
+
+model USER_NOTIFICATION {
+  id               String                 @id @default(uuid()) @db.Uuid
+  user_id          String                 @db.Uuid
+  type             USER_NOTIFICATION_TYPE
+  application_date DateTime               @db.Date
+  title            String                 @db.VarChar(160)
+  body             String                 @db.VarChar(500)
+  created_at       DateTime               @default(now()) @db.Timestamptz(3)
+  read_at          DateTime?              @db.Timestamptz(3)
+  user             USER                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([user_id, type, application_date])
+  @@index([user_id, read_at, created_at(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+}
+
+model DAILY_GOAL_MONITOR_SESSION {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  user_id               String                         @db.Uuid
+  started_at            DateTime                       @default(now()) @db.Timestamptz(3)
+  last_seen_at          DateTime                       @db.Timestamptz(3)
+  continuity_started_at DateTime                       @db.Timestamptz(3)
+  eligible_baseline_at  DateTime                       @db.Timestamptz(3)
+  closed_at             DateTime?                      @db.Timestamptz(3)
+  user                  USER                           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  operation_receipts    DAILY_GOAL_OPERATION_RECEIPT[]
+
+  @@index([user_id, last_seen_at])
+  @@index([last_seen_at])
 }
