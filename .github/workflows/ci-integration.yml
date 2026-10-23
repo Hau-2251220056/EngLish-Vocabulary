@@ -20,6 +20,16 @@ on:
         required: true
         default: false
         type: boolean
+      run_daily_goal_migration_observation:
+        description: Reserved read-only Daily Goal Phase B observation (live execution disabled)
+        required: true
+        default: false
+        type: boolean
+      run_daily_goal_migration_verification:
+        description: Reserved Daily Goal Phase D migration verification (live execution disabled)
+        required: true
+        default: false
+        type: boolean
       streak_approved_target_identity:
         description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
         required: false
