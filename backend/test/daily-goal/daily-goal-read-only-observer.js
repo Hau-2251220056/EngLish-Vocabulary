@@ -1,4 +1,9 @@
 import { verifyConnectedTarget } from "./daily-goal-migration-domain.js";
+import {
+  createDailyGoalPhaseBFailure,
+  DAILY_GOAL_PHASE_B_FAILURE_CODES,
+  getDailyGoalPhaseBFailureCode,
+} from "./daily-goal-phase-b-diagnostics.js";
 
 export const CI_EXCLUSIVE_OWNERSHIP_PREFIX = "elvocab-ci-exclusive:v1:";
 export const READ_ONLY_EVIDENCE_SOURCE = "POSTGRESQL_TRANSACTION_READ_ONLY";
@@ -29,10 +34,10 @@ const SAFE_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,255}$/;
 export function assertReadOnlyObservationQueries(queries = DAILY_GOAL_READ_ONLY_QUERIES) {
   for (const [name, sql] of Object.entries(queries)) {
     if (typeof sql !== "string" || !/^\s*(?:SELECT|WITH)\b/i.test(sql)) {
-      throw observerError(`${name} must be a SELECT/CTE query.`);
+      throw diagnosticError(`${name} must be a SELECT/CTE query.`);
     }
     if (MUTATING_SQL.test(sql) || sql.includes(";")) {
-      throw observerError(`${name} contains a prohibited SQL operation.`);
+      throw diagnosticError(`${name} contains a prohibited SQL operation.`);
     }
   }
   return queries;
@@ -47,7 +52,13 @@ export function createDailyGoalReadOnlyObserver({ openConnection }) {
   return Object.freeze({
     async withObservation({ authorization, expectedTarget, operation }) {
       if (authorization?.operation !== "observation") {
-        throw observerError("Observation authorization is required before connecting.");
+        throw createDailyGoalPhaseBFailure(
+          DAILY_GOAL_PHASE_B_FAILURE_CODES.CONFIG_REJECTED,
+          {
+            errorCode: "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED",
+            message: "Observation authorization is required before connecting.",
+          },
+        );
       }
       if (typeof operation !== "function") {
         throw new TypeError("A read-only observation callback is required.");
@@ -60,17 +71,27 @@ export function createDailyGoalReadOnlyObserver({ openConnection }) {
           requiredMode: "READ_ONLY",
         }));
         assertConnection(connection);
-        const readOnlyEvidence = assertReadOnlyEvidence(
-          await connection.establishAndVerifyReadOnly(),
-        );
+        let readOnlyEvidence;
+        try {
+          readOnlyEvidence = assertReadOnlyEvidence(
+            await connection.establishAndVerifyReadOnly(),
+          );
+        } catch {
+          throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED);
+        }
         const observation = await readTargetObservation(connection);
         const internalTargetToken = Object.freeze({ connectedObservation: true });
-        const verified = verifyConnectedTarget({
-          authorization,
-          expected: expectedTarget,
-          observation,
-          targetBindingToken: internalTargetToken,
-        });
+        let verified;
+        try {
+          verified = verifyConnectedTarget({
+            authorization,
+            expected: expectedTarget,
+            observation,
+            targetBindingToken: internalTargetToken,
+          });
+        } catch {
+          throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED);
+        }
         const history = await readPrismaMigrationHistory(connection);
         const snapshot = Object.freeze({
           targetBinding: verified.binding,
@@ -80,14 +101,13 @@ export function createDailyGoalReadOnlyObserver({ openConnection }) {
         });
         return await operation(snapshot);
       } catch (error) {
-        if (error?.code === "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED") throw error;
-        throw observerError("Daily Goal read-only observation failed.");
+        throw observerError(getDailyGoalPhaseBFailureCode(error));
       } finally {
         if (connection && typeof connection.close === "function") {
           try {
             await connection.close();
           } catch {
-            throw observerError("Daily Goal read-only observation cleanup failed.");
+            throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.OBSERVER_CLEANUP_FAILED);
           }
         }
       }
@@ -97,7 +117,7 @@ export function createDailyGoalReadOnlyObserver({ openConnection }) {
 
 export function mapPrismaMigrationHistory(rows) {
   if (!Array.isArray(rows)) {
-    throw observerError("Prisma migration history rows are required.");
+    throw diagnosticError("Prisma migration history rows are required.");
   }
   return Object.freeze(rows.map((row) => {
     const name = readText(row, "migration_name");
@@ -113,25 +133,34 @@ export function mapPrismaMigrationHistory(rows) {
 }
 
 async function readTargetObservation(connection) {
-  const rows = await queryRows(connection, DAILY_GOAL_READ_ONLY_QUERIES.TARGET_OBSERVATION);
+  let rows;
+  try {
+    rows = await queryRows(connection, DAILY_GOAL_READ_ONLY_QUERIES.TARGET_OBSERVATION);
+  } catch {
+    throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED);
+  }
   if (rows.length !== 1) {
-    throw observerError("Connected target observation must return exactly one row.");
+    throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED);
   }
   const row = rows[0];
-  const ownershipMarker = readText(row, "ownership_marker");
+  const ownershipMarker = readText(
+    row,
+    "ownership_marker",
+    DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED,
+  );
   if (!ownershipMarker.startsWith(CI_EXCLUSIVE_OWNERSHIP_PREFIX)) {
-    throw observerError("Independent CI-exclusive ownership evidence is missing.");
+    throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED);
   }
   const targetIdentity = ownershipMarker.slice(CI_EXCLUSIVE_OWNERSHIP_PREFIX.length);
   if (!SAFE_IDENTITY.test(targetIdentity)) {
-    throw observerError("Independent CI-exclusive ownership evidence is malformed.");
+    throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED);
   }
   return Object.freeze({
     targetIdentity,
-    databaseName: readText(row, "database_name"),
-    serverEndpoint: readText(row, "server_endpoint"),
-    serverPort: readText(row, "server_port"),
-    schemaName: readText(row, "schema_name"),
+    databaseName: readText(row, "database_name", DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED),
+    serverEndpoint: readText(row, "server_endpoint", DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED),
+    serverPort: readText(row, "server_port", DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED),
+    schemaName: readText(row, "schema_name", DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED),
     ownershipMarker,
     evidenceSource: "CONNECTED_POSTGRESQL",
     derivedFromConfiguration: false,
@@ -139,16 +168,20 @@ async function readTargetObservation(connection) {
 }
 
 async function readPrismaMigrationHistory(connection) {
-  return mapPrismaMigrationHistory(
-    await queryRows(connection, DAILY_GOAL_READ_ONLY_QUERIES.MIGRATION_HISTORY),
-  );
+  try {
+    return mapPrismaMigrationHistory(
+      await queryRows(connection, DAILY_GOAL_READ_ONLY_QUERIES.MIGRATION_HISTORY),
+    );
+  } catch {
+    throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.HISTORY_READ_FAILED);
+  }
 }
 
 async function queryRows(connection, sql) {
   assertReadOnlyObservationQueries({ query: sql });
   const result = await connection.query(sql);
   if (!result || !Array.isArray(result.rows)) {
-    throw observerError("Read-only query returned an invalid result.");
+    throw diagnosticError("Read-only query returned an invalid result.");
   }
   return result.rows;
 }
@@ -158,7 +191,7 @@ function assertConnection(connection) {
     || typeof connection.establishAndVerifyReadOnly !== "function"
     || typeof connection.query !== "function"
     || typeof connection.close !== "function") {
-    throw observerError("Injected connection does not satisfy the read-only contract.");
+    throw diagnosticError("Injected connection does not satisfy the read-only contract.");
   }
 }
 
@@ -167,7 +200,7 @@ function assertReadOnlyEvidence(evidence) {
     || evidence.enforced !== true
     || evidence.transactionReadOnly !== true
     || evidence.evidenceSource !== READ_ONLY_EVIDENCE_SOURCE) {
-    throw observerError("PostgreSQL read-only enforcement was not verified.");
+    throw diagnosticError("PostgreSQL read-only enforcement was not verified.");
   }
   return Object.freeze({
     enforced: true,
@@ -180,16 +213,28 @@ function freezeHistory(history) {
   return Object.freeze(history.map((entry) => Object.freeze({ ...entry })));
 }
 
-function readText(row, field) {
+function readText(row, field, failureCode) {
   const value = row?.[field];
   if (typeof value !== "string" || value.length === 0) {
-    throw observerError(`Connected ${field} evidence is missing.`);
+    if (failureCode) throw observerError(failureCode);
+    throw diagnosticError(`Connected ${field} evidence is missing.`);
   }
   return value;
 }
 
-function observerError(message) {
-  const error = new Error(message);
-  error.code = "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED";
-  return error;
+function observerError(failureCode = DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE) {
+  return createDailyGoalPhaseBFailure(failureCode, {
+    errorCode: "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED",
+    message: "Daily Goal read-only observation failed.",
+  });
+}
+
+function diagnosticError(message) {
+  return createDailyGoalPhaseBFailure(
+    DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+    {
+      errorCode: "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED",
+      message,
+    },
+  );
 }

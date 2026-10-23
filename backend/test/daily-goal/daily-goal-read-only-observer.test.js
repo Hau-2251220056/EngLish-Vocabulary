@@ -12,6 +12,10 @@ import {
   mapPrismaMigrationHistory,
   READ_ONLY_EVIDENCE_SOURCE,
 } from "./daily-goal-read-only-observer.js";
+import {
+  DAILY_GOAL_PHASE_B_FAILURE_CODES,
+  getDailyGoalPhaseBFailureCode,
+} from "./daily-goal-phase-b-diagnostics.js";
 
 const SECRET = "must-not-appear";
 const IDENTITY = "ci-db.example.invalid:5432/elvocab_ci";
@@ -178,6 +182,10 @@ test("a close failure after successful observation fails closed and stays redact
     }),
     (error) => {
       assert.equal(error.code, "DAILY_GOAL_READ_ONLY_OBSERVATION_FAILED");
+      assert.equal(
+        getDailyGoalPhaseBFailureCode(error),
+        DAILY_GOAL_PHASE_B_FAILURE_CODES.OBSERVER_CLEANUP_FAILED,
+      );
       assert.doesNotMatch(error.message, new RegExp(SECRET));
       return true;
     },
@@ -194,7 +202,13 @@ test("missing, read-write, or failed read-only verification stops before observa
   });
   await assert.rejects(() => missingVerifier.withObservation({
     authorization: authorize(), expectedTarget, operation: async () => {},
-  }), /read-only contract/);
+  }), (error) => {
+    assert.equal(
+      getDailyGoalPhaseBFailureCode(error),
+      DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+    );
+    return true;
+  });
   assert.deepEqual(missingCalls, ["close"]);
 
   for (const readOnlyResult of [
@@ -209,7 +223,13 @@ test("missing, read-write, or failed read-only verification stops before observa
     });
     await assert.rejects(() => observer.withObservation({
       authorization: authorize(), expectedTarget, operation: async () => {},
-    }), /read-only enforcement/);
+    }), (error) => {
+      assert.equal(
+        getDailyGoalPhaseBFailureCode(error),
+        DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED,
+      );
+      return true;
+    });
     assert.deepEqual(calls, ["verify-read-only", "close"]);
   }
 
@@ -228,6 +248,68 @@ test("missing, read-write, or failed read-only verification stops before observa
     },
   );
   assert.deepEqual(calls, ["verify-read-only", "close"]);
+});
+
+test("observer classifies read-only, target, verification, history, and callback boundaries", async () => {
+  const cases = [
+    {
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED,
+      connection: mockConnection({ readOnlyError: new Error(`read-only ${SECRET}`) }),
+    },
+    {
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED,
+      connection: mockConnection({ targetError: new Error(`target ${SECRET}`) }),
+    },
+    {
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED,
+      connection: mockConnection({ targetRow: observationRow({ server_endpoint: null }) }),
+    },
+    {
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED,
+      connection: mockConnection({
+        targetRow: observationRow({
+          ownership_marker: `${CI_EXCLUSIVE_OWNERSHIP_PREFIX}other.invalid:5432/elvocab_ci`,
+        }),
+      }),
+    },
+    {
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.HISTORY_READ_FAILED,
+      connection: mockConnection({ historyError: new Error(`history ${SECRET}`) }),
+    },
+  ];
+
+  for (const { stage, connection } of cases) {
+    const observer = createDailyGoalReadOnlyObserver({ openConnection: async () => connection });
+    await assert.rejects(
+      () => observer.withObservation({
+        authorization: authorize(), expectedTarget, operation: async () => "not-reached",
+      }),
+      (error) => {
+        assert.equal(getDailyGoalPhaseBFailureCode(error), stage);
+        assert.doesNotMatch(error.message, new RegExp(SECRET));
+        return true;
+      },
+    );
+  }
+
+  const observer = createDailyGoalReadOnlyObserver({
+    openConnection: async () => mockConnection(),
+  });
+  await assert.rejects(
+    () => observer.withObservation({
+      authorization: authorize(),
+      expectedTarget,
+      operation: async () => { throw new Error(`callback ${SECRET}`); },
+    }),
+    (error) => {
+      assert.equal(
+        getDailyGoalPhaseBFailureCode(error),
+        DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+      );
+      assert.doesNotMatch(error.message, new RegExp(SECRET));
+      return true;
+    },
+  );
 });
 
 test("caller cannot provide SQL or reach direct or indirect query execution", async () => {
@@ -258,7 +340,13 @@ test("connection is closed when the downstream callback fails without leaking th
       assert.equal(hasExecutableCapability(snapshot), false);
       throw new Error("callback failure");
     },
-  }), /read-only observation failed/);
+  }), (error) => {
+    assert.equal(
+      getDailyGoalPhaseBFailureCode(error),
+      DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+    );
+    return true;
+  });
   assert.deepEqual(calls, ["verify-read-only", "target-query", "history-query", "close"]);
 });
 
@@ -290,7 +378,14 @@ test("observer refuses non-observation authorization before opening a connection
     authorization: { ...authorize(), operation: "migration" },
     expectedTarget,
     operation: async () => {},
-  }), /Observation authorization/);
+  }), (error) => {
+    assert.match(error.message, /Observation authorization/);
+    assert.equal(
+      getDailyGoalPhaseBFailureCode(error),
+      DAILY_GOAL_PHASE_B_FAILURE_CODES.CONFIG_REJECTED,
+    );
+    return true;
+  });
   assert.equal(opened, false);
 });
 
@@ -321,6 +416,8 @@ function mockConnection({
   shadowHistoryRows = [],
   readOnlyResult = readOnlyEvidence(),
   readOnlyError,
+  targetError,
+  historyError,
   closeError,
 } = {}) {
   return {
@@ -332,10 +429,12 @@ function mockConnection({
     async query(sql) {
       if (sql === DAILY_GOAL_READ_ONLY_QUERIES.TARGET_OBSERVATION) {
         calls.push("target-query");
+        if (targetError) throw targetError;
         return { rows: [targetRow] };
       }
       if (sql === DAILY_GOAL_READ_ONLY_QUERIES.MIGRATION_HISTORY) {
         calls.push(shadowHistoryRows.length > 0 ? "public-history-query" : "history-query");
+        if (historyError) throw historyError;
         return { rows: publicHistoryRows };
       }
       if (/FROM\s+(?:"shadow"\.|"pg_temp"\.)?"_prisma_migrations"/i.test(sql)) {

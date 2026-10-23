@@ -1,0 +1,42 @@
+export const DAILY_GOAL_PHASE_B_FAILURE_CODES = Object.freeze({
+  CONFIG_REJECTED: "CONFIG_REJECTED",
+  PRISMA_LOAD_FAILED: "PRISMA_LOAD_FAILED",
+  TRANSACTION_ACQUIRE_FAILED: "TRANSACTION_ACQUIRE_FAILED",
+  READ_ONLY_ENFORCEMENT_FAILED: "READ_ONLY_ENFORCEMENT_FAILED",
+  TARGET_OBSERVATION_FAILED: "TARGET_OBSERVATION_FAILED",
+  TARGET_VERIFICATION_FAILED: "TARGET_VERIFICATION_FAILED",
+  HISTORY_READ_FAILED: "HISTORY_READ_FAILED",
+  OBSERVER_CLEANUP_FAILED: "OBSERVER_CLEANUP_FAILED",
+  ROLLBACK_FAILED: "ROLLBACK_FAILED",
+  DISCONNECT_FAILED: "DISCONNECT_FAILED",
+  UNKNOWN_PHASE_B_FAILURE: "UNKNOWN_PHASE_B_FAILURE",
+});
+
+const ALLOWED_CODES = new Set(Object.values(DAILY_GOAL_PHASE_B_FAILURE_CODES));
+const TRUSTED_FAILURE_CODES = new WeakMap();
+
+export function createDailyGoalPhaseBFailure(
+  failureCode,
+  {
+    errorCode = "DAILY_GOAL_PHASE_B_FAILED",
+    message = "Daily Goal Phase B observation failed.",
+  } = {},
+) {
+  const safeCode = ALLOWED_CODES.has(failureCode)
+    ? failureCode
+    : DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE;
+  const error = new Error(message);
+  error.code = errorCode;
+  TRUSTED_FAILURE_CODES.set(error, safeCode);
+  return error;
+}
+
+export function getDailyGoalPhaseBFailureCode(error) {
+  return TRUSTED_FAILURE_CODES.get(error)
+    ?? DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE;
+}
+
+export function normalizeDailyGoalPhaseBFailure(error, fallbackCode) {
+  if (TRUSTED_FAILURE_CODES.has(error)) return error;
+  return createDailyGoalPhaseBFailure(fallbackCode);
+}

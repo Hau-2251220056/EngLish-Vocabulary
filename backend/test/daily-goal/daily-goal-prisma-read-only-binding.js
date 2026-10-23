@@ -1,4 +1,10 @@
 import { createDailyGoalReadOnlyObserver, DAILY_GOAL_READ_ONLY_QUERIES } from "./daily-goal-read-only-observer.js";
+import {
+  createDailyGoalPhaseBFailure,
+  DAILY_GOAL_PHASE_B_FAILURE_CODES,
+  getDailyGoalPhaseBFailureCode,
+  normalizeDailyGoalPhaseBFailure,
+} from "./daily-goal-phase-b-diagnostics.js";
 
 export const DAILY_GOAL_PRISMA_TRANSACTION_LIMITS = Object.freeze({
   maxWait: 5_000,
@@ -26,17 +32,40 @@ export async function runDailyGoalPrismaReadOnlyObservation({
   const rollbackSignal = Object.freeze({ dailyGoalReadOnlyRollback: true });
   let completed = false;
   let result;
+  let callbackEntered = false;
+  let callbackFailure;
 
   try {
-    const PrismaClient = await loadPrismaClient();
-    if (typeof PrismaClient !== "function") throw bindingError();
-    prisma = new PrismaClient({ datasourceUrl: authorization.databaseUrl });
-    assertPrismaClient(prisma);
+    let PrismaClient;
+    try {
+      PrismaClient = await loadPrismaClient();
+      if (typeof PrismaClient !== "function") throw new TypeError("Invalid Prisma Client.");
+      prisma = new PrismaClient({ datasourceUrl: authorization.databaseUrl });
+      assertPrismaClient(prisma);
+    } catch {
+      throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.PRISMA_LOAD_FAILED);
+    }
 
+    let transactionResolved = false;
     try {
       await prisma.$transaction(async (transaction) => {
-        assertTransactionClient(transaction);
-        await transaction.$executeRawUnsafe(SET_TRANSACTION_READ_ONLY);
+        callbackEntered = true;
+        try {
+          assertTransactionClient(transaction);
+        } catch {
+          callbackFailure = bindingError(
+            DAILY_GOAL_PHASE_B_FAILURE_CODES.TRANSACTION_ACQUIRE_FAILED,
+          );
+          throw callbackFailure;
+        }
+        try {
+          await transaction.$executeRawUnsafe(SET_TRANSACTION_READ_ONLY);
+        } catch {
+          callbackFailure = bindingError(
+            DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED,
+          );
+          throw callbackFailure;
+        }
 
         const observer = createDailyGoalReadOnlyObserver({
           openConnection: async ({ databaseUrl, requiredMode }) => {
@@ -47,25 +76,50 @@ export async function runDailyGoalPrismaReadOnlyObservation({
           },
         });
 
-        result = await observer.withObservation({ authorization, expectedTarget, operation });
+        try {
+          result = await observer.withObservation({ authorization, expectedTarget, operation });
+        } catch (error) {
+          callbackFailure = normalizeDailyGoalPhaseBFailure(
+            error,
+            DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+          );
+          throw callbackFailure;
+        }
         completed = true;
         throw rollbackSignal;
       }, DAILY_GOAL_PRISMA_TRANSACTION_LIMITS);
-      throw bindingError();
+      transactionResolved = true;
     } catch (error) {
-      if (error !== rollbackSignal || !completed) throw error;
+      if (error === rollbackSignal && completed) {
+        // Exact private sentinel proves Prisma rejected the success callback and rolled it back.
+      } else if (!callbackEntered) {
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TRANSACTION_ACQUIRE_FAILED);
+      } else if (callbackFailure) {
+        // Prisma may replace the callback exception while rejecting the transaction.
+        // The callback stage was established at a controlled boundary and remains authoritative.
+        throw callbackFailure;
+      } else if (completed) {
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.ROLLBACK_FAILED);
+      } else {
+        throw normalizeDailyGoalPhaseBFailure(
+          error,
+          DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE,
+        );
+      }
+    }
+    if (transactionResolved) {
+      throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.ROLLBACK_FAILED);
     }
 
     return result;
   } catch (error) {
-    if (error?.code === "DAILY_GOAL_PRISMA_READ_ONLY_BINDING_FAILED") throw error;
-    throw bindingError();
+    throw bindingError(getDailyGoalPhaseBFailureCode(error));
   } finally {
     if (prisma && typeof prisma.$disconnect === "function") {
       try {
         await prisma.$disconnect();
       } catch {
-        throw bindingError();
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.DISCONNECT_FAILED);
       }
     }
   }
@@ -76,12 +130,19 @@ function createTransactionConnection(transaction) {
   let nextQuery = DAILY_GOAL_READ_ONLY_QUERIES.TARGET_OBSERVATION;
   return Object.freeze({
     async establishAndVerifyReadOnly() {
-      if (verified) throw bindingError();
-      const rows = await transaction.$queryRawUnsafe(SHOW_TRANSACTION_READ_ONLY);
+      if (verified) {
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED);
+      }
+      let rows;
+      try {
+        rows = await transaction.$queryRawUnsafe(SHOW_TRANSACTION_READ_ONLY);
+      } catch {
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED);
+      }
       if (!Array.isArray(rows)
         || rows.length !== 1
         || rows[0]?.transaction_read_only !== "on") {
-        throw bindingError();
+        throw bindingError(DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED);
       }
       verified = true;
       return Object.freeze({
@@ -130,8 +191,9 @@ async function loadGeneratedPrismaClient() {
   return module.PrismaClient;
 }
 
-function bindingError() {
-  const error = new Error("Daily Goal Prisma read-only observation failed.");
-  error.code = "DAILY_GOAL_PRISMA_READ_ONLY_BINDING_FAILED";
-  return error;
+function bindingError(failureCode = DAILY_GOAL_PHASE_B_FAILURE_CODES.UNKNOWN_PHASE_B_FAILURE) {
+  return createDailyGoalPhaseBFailure(failureCode, {
+    errorCode: "DAILY_GOAL_PRISMA_READ_ONLY_BINDING_FAILED",
+    message: "Daily Goal Prisma read-only observation failed.",
+  });
 }
