@@ -716,7 +716,7 @@ jobs:
           retention-days: 7
 
   daily-goal-migration-observation:
-    name: Daily Goal Phase B Observation (Disabled)
+    name: Daily Goal Phase B Observation
     needs: trust-gate
     if: >-
       needs.trust-gate.outputs.trusted == 'true' &&
@@ -729,8 +729,7 @@ jobs:
       inputs.run_streak_foundation_harness == false &&
       inputs.run_streak_integrated_verification == false &&
       inputs.daily_goal_approved_target_identity != '' &&
-      inputs.daily_goal_approved_target_identity == vars.CI_TEST_DATABASE_IDENTITY &&
-      false
+      inputs.daily_goal_approved_target_identity == vars.CI_TEST_DATABASE_IDENTITY
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -858,9 +857,19 @@ jobs:
             exit 1
           fi
 
-          if [[ "$DAILY_GOAL_OBSERVATION_MODE" == "true" ]]; then
+          if [[ "$DAILY_GOAL_OBSERVATION_MODE" != "true" ]]; then
             echo "## Daily Goal Phase B Observation: NOT RUN" >> "$GITHUB_STEP_SUMMARY"
-            echo "The dispatch route is reserved, but live connected observation remains disabled pending separate HUMAN authorization." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "$DAILY_GOAL_OBSERVATION_MODE" == "true" ]]; then
+            if [[ "$DAILY_GOAL_OBSERVATION_RESULT" != "success" ]]; then
+              echo "## Daily Goal Phase B Observation: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Observation result: $DAILY_GOAL_OBSERVATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Daily Goal Phase B Observation: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "The guarded read-only connected-target and Context A migration-history observation completed successfully." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 

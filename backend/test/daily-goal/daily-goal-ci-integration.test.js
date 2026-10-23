@@ -219,7 +219,7 @@ test("history contexts reject extra, missing, divergent, failed, or unknown owne
   }), /does not belong/);
 });
 
-test("workflow adds dormant Daily Goal modes without live database paths", async () => {
+test("workflow enables only the guarded Phase B observation without write-capable database paths", async () => {
   const workflowPath = fileURLToPath(new URL("../../../.github/workflows/ci-integration.yml", import.meta.url));
   const workflow = await readFile(workflowPath, "utf8");
   assert.match(workflow, /run_daily_goal_migration_observation:/);
@@ -232,9 +232,9 @@ test("workflow adds dormant Daily Goal modes without live database paths", async
     assert.match(job, /needs\.trust-gate\.outputs\.trusted == 'true'/);
     assert.match(job, /github\.event_name == 'workflow_dispatch'/);
     assert.match(job, /daily_goal_approved_target_identity == vars\.CI_TEST_DATABASE_IDENTITY/);
-    assert.match(job, /&&\r?\n\s+false/);
     assert.doesNotMatch(job, /(?:^|\s)(?:CI_TEST_DATABASE_URL|TEST_DATABASE_URL):|migrate\s+(deploy|status)/im);
     if (jobName === "daily-goal-migration-observation") {
+      assert.doesNotMatch(job, /&&\r?\n\s+false/);
       assert.match(job, /DAILY_GOAL_OBSERVER_DATABASE_URL:\s*\$\{\{ secrets\.DAILY_GOAL_OBSERVER_DATABASE_URL \}\}/);
       assert.match(job, /run:\s*npm run test:daily-goal-phase-b:ci/);
       assert.match(job, /DAILY_GOAL_OBSERVATION_ALLOW:\s*"true"/);
@@ -242,9 +242,81 @@ test("workflow adds dormant Daily Goal modes without live database paths", async
       assert.match(job, /DAILY_GOAL_EXPECTED_OWNERSHIP_MARKER:/);
       assert.doesNotMatch(job, /(?:CI_TEST_DATABASE_URL|TEST_DATABASE_URL):/);
     } else {
+      assert.match(job, /&&\r?\n\s+false/);
       assert.doesNotMatch(job, /DAILY_GOAL_OBSERVER_DATABASE_URL/);
     }
   }
+});
+
+test("Phase B scheduling remains workflow-dispatch-only and mutually exclusive", async () => {
+  const workflowPath = fileURLToPath(new URL("../../../.github/workflows/ci-integration.yml", import.meta.url));
+  const workflow = await readFile(workflowPath, "utf8");
+  const job = extractJob(workflow, "daily-goal-migration-observation");
+
+  for (const required of [
+    "needs.trust-gate.outputs.trusted == 'true'",
+    "github.event_name == 'workflow_dispatch'",
+    "inputs.run_daily_goal_migration_observation == true",
+    "inputs.run_daily_goal_migration_verification == false",
+    "inputs.run_xp_migration_harness == false",
+    "inputs.run_streak_migration_harness == false",
+    "inputs.run_streak_migration_cleanup == false",
+    "inputs.run_streak_foundation_harness == false",
+    "inputs.run_streak_integrated_verification == false",
+    "inputs.daily_goal_approved_target_identity != ''",
+    "inputs.daily_goal_approved_target_identity == vars.CI_TEST_DATABASE_IDENTITY",
+  ]) assert.ok(job.includes(required), `Expected Phase B guard: ${required}`);
+
+  const schedulingCondition = job.slice(job.indexOf("    if:"), job.indexOf("    runs-on:"));
+  assert.doesNotMatch(schedulingCondition, /github\.event_name == '(?:push|pull_request)'/);
+  assert.doesNotMatch(schedulingCondition, /\|\|/);
+});
+
+test("Phase B selection model rejects every contradictory or incomplete mode", () => {
+  const selected = {
+    trusted: true,
+    eventName: "workflow_dispatch",
+    observation: true,
+    verification: false,
+    xp: false,
+    streakMigration: false,
+    streakCleanup: false,
+    streakFoundation: false,
+    streakIntegrated: false,
+    approvedIdentity: IDENTITY,
+    configuredIdentity: IDENTITY,
+  };
+  assert.equal(isPhaseBEligible(selected), true);
+
+  for (const mode of [
+    "verification", "xp", "streakMigration", "streakCleanup",
+    "streakFoundation", "streakIntegrated",
+  ]) assert.equal(isPhaseBEligible({ ...selected, [mode]: true }), false, mode);
+
+  for (const override of [
+    { trusted: false },
+    { eventName: "push" },
+    { eventName: "pull_request" },
+    { observation: false },
+    { approvedIdentity: "" },
+    { approvedIdentity: undefined },
+    { configuredIdentity: "other.invalid:5432/postgres" },
+  ]) assert.equal(isPhaseBEligible({ ...selected, ...override }), false);
+});
+
+test("Phase B summary passes only a successful selected observation", async () => {
+  const workflowPath = fileURLToPath(new URL("../../../.github/workflows/ci-integration.yml", import.meta.url));
+  const workflow = await readFile(workflowPath, "utf8");
+  const summary = extractJob(workflow, "integration-summary");
+
+  assert.match(summary, /if \[\[ "\$DAILY_GOAL_OBSERVATION_MODE" != "true" \]\]; then/);
+  assert.match(summary, /Daily Goal Phase B Observation: NOT RUN/);
+  assert.match(summary, /if \[\[ "\$DAILY_GOAL_OBSERVATION_MODE" == "true" \]\]; then/);
+  assert.match(summary, /if \[\[ "\$DAILY_GOAL_OBSERVATION_RESULT" != "success" \]\]; then/);
+  assert.match(summary, /Daily Goal Phase B Observation: FAIL/);
+  assert.match(summary, /Observation result: \$DAILY_GOAL_OBSERVATION_RESULT/);
+  assert.match(summary, /Daily Goal Phase B Observation: PASS/);
+  assert.match(summary, /Daily Goal Phase D Migration Verification: NOT RUN/);
 });
 
 test("workflow routes every guarded mode exclusively and ordinary events cannot select Daily Goal", async () => {
@@ -279,6 +351,21 @@ function extractJob(workflow, jobName) {
   const match = workflow.match(new RegExp(`^  ${escaped}:\\r?\\n([\\s\\S]*?)(?=^  [a-z][a-z0-9-]*:\\r?$|(?![\\s\\S]))`, "m"));
   assert.ok(match, `Expected workflow job ${jobName}.`);
   return match[0];
+}
+
+function isPhaseBEligible(input) {
+  return input.trusted === true
+    && input.eventName === "workflow_dispatch"
+    && input.observation === true
+    && input.verification === false
+    && input.xp === false
+    && input.streakMigration === false
+    && input.streakCleanup === false
+    && input.streakFoundation === false
+    && input.streakIntegrated === false
+    && typeof input.approvedIdentity === "string"
+    && input.approvedIdentity.length > 0
+    && input.approvedIdentity === input.configuredIdentity;
 }
 
 function hasExecutableCapability(value, seen = new Set()) {
