@@ -3,6 +3,7 @@ import {
   createDailyGoalPhaseBFailure,
   DAILY_GOAL_PHASE_B_FAILURE_CODES,
   getDailyGoalPhaseBFailureCode,
+  getDailyGoalTargetPredicateFailureCode,
 } from "./daily-goal-phase-b-diagnostics.js";
 
 export const CI_EXCLUSIVE_OWNERSHIP_PREFIX = "elvocab-ci-exclusive:v1:";
@@ -89,8 +90,8 @@ export function createDailyGoalReadOnlyObserver({ openConnection }) {
             observation,
             targetBindingToken: internalTargetToken,
           });
-        } catch {
-          throw observerError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED);
+        } catch (error) {
+          throw observerError(getDailyGoalTargetPredicateFailureCode(error));
         }
         const history = await readPrismaMigrationHistory(connection);
         const snapshot = Object.freeze({

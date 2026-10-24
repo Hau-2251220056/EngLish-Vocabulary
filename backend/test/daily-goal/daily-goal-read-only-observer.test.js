@@ -13,6 +13,7 @@ import {
   READ_ONLY_EVIDENCE_SOURCE,
 } from "./daily-goal-read-only-observer.js";
 import {
+  createDailyGoalPhaseBFailure,
   DAILY_GOAL_PHASE_B_FAILURE_CODES,
   getDailyGoalPhaseBFailureCode,
 } from "./daily-goal-phase-b-diagnostics.js";
@@ -265,7 +266,7 @@ test("observer classifies read-only, target, verification, history, and callback
       connection: mockConnection({ targetRow: observationRow({ server_endpoint: null }) }),
     },
     {
-      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED,
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH,
       connection: mockConnection({
         targetRow: observationRow({
           ownership_marker: `${CI_EXCLUSIVE_OWNERSHIP_PREFIX}other.invalid:5432/elvocab_ci`,
@@ -310,6 +311,37 @@ test("observer classifies read-only, target, verification, history, and callback
       return true;
     },
   );
+});
+
+test("unknown target-verification exceptions retain the generic safe fallback", async () => {
+  for (const hostileError of [
+    new Error(`hostile expected target ${SECRET}`),
+    createDailyGoalPhaseBFailure(DAILY_GOAL_PHASE_B_FAILURE_CODES.HISTORY_READ_FAILED),
+  ]) {
+    const calls = [];
+    const expectedWithHostileGetter = { ...expectedTarget };
+    Object.defineProperty(expectedWithHostileGetter, "targetIdentity", {
+      enumerable: true,
+      get() { throw hostileError; },
+    });
+    const observer = createDailyGoalReadOnlyObserver({
+      openConnection: async () => mockConnection({ calls }),
+    });
+
+    await assert.rejects(() => observer.withObservation({
+      authorization: authorize(),
+      expectedTarget: expectedWithHostileGetter,
+      operation: async () => assert.fail("history/success must not be reached"),
+    }), (error) => {
+      assert.equal(
+        getDailyGoalPhaseBFailureCode(error),
+        DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED,
+      );
+      assert.doesNotMatch(error.message, new RegExp(SECRET));
+      return true;
+    });
+    assert.deepEqual(calls, ["verify-read-only", "target-query", "close"]);
+  }
 });
 
 test("caller cannot provide SQL or reach direct or indirect query execution", async () => {

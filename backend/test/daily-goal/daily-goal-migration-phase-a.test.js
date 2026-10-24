@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { assertNotSymbolicLink, withEphemeralMigrationActivation } from "./daily-goal-migration-activation.js";
 import { compareMigrationInventory, verifyConnectedTarget } from "./daily-goal-migration-domain.js";
 import { orchestrateDailyGoalMigrationPhaseA, readMigrationInventory } from "./daily-goal-migration-harness.js";
+import {
+  DAILY_GOAL_PHASE_B_FAILURE_CODES,
+  getDailyGoalPhaseBFailureCode,
+} from "./daily-goal-phase-b-diagnostics.js";
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryRoot = path.dirname(backendRoot);
@@ -41,13 +45,13 @@ test("connected observation requires independent complete evidence and the appro
     { ...observation, derivedFromConfiguration: true },
   ]) assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation: bad, targetBindingToken: bindingToken }));
   assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: undefined }));
-  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze({ query() {} }) }), /non-executable/);
-  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze({ nested: Object.freeze({ execute() {} }) }) }), /non-executable/);
+  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze({ query() {} }) }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID));
+  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze({ nested: Object.freeze({ execute() {} }) }) }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID));
   const accessorToken = {};
   Object.defineProperty(accessorToken, "value", { get: () => "side-effect" });
-  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze(accessorToken) }), /non-executable/);
+  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: Object.freeze(accessorToken) }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID));
   const customPrototypeToken = Object.freeze(Object.create({ query() {} }));
-  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: customPrototypeToken }), /non-executable/);
+  assert.throws(() => verifyConnectedTarget({ authorization, expected: expectedTarget, observation, targetBindingToken: customPrototypeToken }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID));
 });
 
 test("connected observation validates diagnostics without treating them as stable identity", () => {
@@ -70,7 +74,117 @@ test("connected observation validates diagnostics without treating them as stabl
     expected: expectedTarget,
     observation: { ...observation, ...invalid },
     targetBindingToken: bindingToken,
-  }), /missing or malformed/);
+  }));
+});
+
+test("connected-target predicates have fixed trusted diagnostics without changing acceptance", () => {
+  const bindingToken = Object.freeze({ opaque: true });
+  const authorization = { targetIdentity: IDENTITY };
+  const cases = [
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID,
+      input: { targetBindingToken: undefined },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.CONNECTED_EVIDENCE_INVALID,
+      input: { observation: { ...observation, evidenceSource: "CONFIGURATION" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.CONNECTED_EVIDENCE_INVALID,
+      input: { observation: { ...observation, derivedFromConfiguration: true } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_FIELD_INVALID,
+      input: { observation: { ...observation, targetIdentity: " invalid" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH,
+      input: { observation: { ...observation, targetIdentity: "other.example.invalid:5432/elvocab_ci" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.DATABASE_NAME_MISMATCH,
+      input: { observation: { ...observation, databaseName: "other_db" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.SCHEMA_NAME_MISMATCH,
+      input: { observation: { ...observation, schemaName: "other_schema" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.OWNERSHIP_MARKER_MISMATCH,
+      input: { observation: { ...observation, ownershipMarker: "other-marker" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID,
+      input: { observation: { ...observation, serverEndpoint: "pooler.example.invalid" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.PORT_DIAGNOSTIC_INVALID,
+      input: { observation: { ...observation, serverPort: "54.32" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.PORT_DIAGNOSTIC_INVALID,
+      input: { observation: { ...observation, serverPort: "65536" } },
+    },
+    {
+      code: DAILY_GOAL_PHASE_B_FAILURE_CODES.AUTHORIZATION_CONTINUITY_FAILED,
+      input: { authorization: { targetIdentity: "other.example.invalid:5432/elvocab_ci" } },
+    },
+  ];
+
+  for (const { code, input } of cases) {
+    assert.throws(() => verifyConnectedTarget({
+      authorization,
+      expected: expectedTarget,
+      observation,
+      targetBindingToken: bindingToken,
+      ...input,
+    }), failureCode(code));
+  }
+
+  assert.doesNotThrow(() => verifyConnectedTarget({
+    authorization, expected: expectedTarget, observation, targetBindingToken: bindingToken,
+  }));
+
+  for (const field of ["targetIdentity", "databaseName", "schemaName", "ownershipMarker"]) {
+    for (const invalidValue of [undefined, ` invalid-${field}`]) {
+      assert.throws(() => verifyConnectedTarget({
+        authorization,
+        expected: expectedTarget,
+        observation: { ...observation, [field]: invalidValue },
+        targetBindingToken: bindingToken,
+      }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_FIELD_INVALID));
+    }
+  }
+});
+
+test("multiple target failures retain the pre-existing deterministic evaluation order", () => {
+  const bindingToken = Object.freeze({ opaque: true });
+  const authorization = { targetIdentity: "unauthorized.example.invalid:5432/elvocab_ci" };
+  const invalid = {
+    ...observation,
+    targetIdentity: "other.example.invalid:5432/elvocab_ci",
+    databaseName: "other_db",
+    serverEndpoint: "not-an-ip",
+  };
+
+  assert.throws(() => verifyConnectedTarget({
+    authorization, expected: expectedTarget, observation: invalid, targetBindingToken: undefined,
+  }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID));
+  assert.throws(() => verifyConnectedTarget({
+    authorization,
+    expected: expectedTarget,
+    observation: { ...invalid, evidenceSource: "CONFIGURATION" },
+    targetBindingToken: bindingToken,
+  }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.CONNECTED_EVIDENCE_INVALID));
+  assert.throws(() => verifyConnectedTarget({
+    authorization, expected: expectedTarget, observation: invalid, targetBindingToken: bindingToken,
+  }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH));
+  assert.throws(() => verifyConnectedTarget({
+    authorization,
+    expected: expectedTarget,
+    observation: { ...observation, serverEndpoint: "not-an-ip", serverPort: "0" },
+    targetBindingToken: bindingToken,
+  }), failureCode(DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID));
 });
 
 test("migration inventory accepts only an exact approved pending suffix", () => {
@@ -194,6 +308,14 @@ test("harness requires every boundary callback and has no import-time execution"
 
 function entry(name, seed) { return { name, checksum: hash(seed) }; }
 function hash(seed) { return (seed.charCodeAt(0).toString(16).padStart(2, "0")).repeat(32); }
+
+function failureCode(expectedCode) {
+  return (error) => {
+    assert.equal(getDailyGoalPhaseBFailureCode(error), expectedCode);
+    assert.equal(error.message, "Daily Goal connected-target verification failed.");
+    return true;
+  };
+}
 
 async function withFixtureRepository(transformManifest, action) {
   const root = await mkdtemp(path.join(os.tmpdir(), "daily-goal-phase-a-fixture-"));

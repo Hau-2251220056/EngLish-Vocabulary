@@ -95,6 +95,15 @@ test("Prisma exception replacement cannot relabel an established callback stage"
       fixture: prismaFixture({ executeReadOnlyFailure: true, replaceCallbackFailure: true }),
       stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.READ_ONLY_ENFORCEMENT_FAILED,
     },
+    {
+      fixture: prismaFixture({
+        replaceCallbackFailure: true,
+        targetRow: observationRow({
+          ownership_marker: "elvocab-ci-exclusive:v1:other.example.invalid:5432/postgres",
+        }),
+      }),
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH,
+    },
   ];
 
   for (const { fixture, stage } of cases) {
@@ -179,7 +188,7 @@ test("controlled execution boundaries produce their exact trusted failure stages
       fixture: prismaFixture({ targetRow: observationRow({ ownership_marker: null }) }),
     },
     {
-      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_VERIFICATION_FAILED,
+      stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH,
       fixture: prismaFixture({
         targetRow: observationRow({
           ownership_marker: "elvocab-ci-exclusive:v1:other.example.invalid:5432/postgres",
@@ -225,7 +234,12 @@ test("cleanup failure takes deterministic precedence over success or an earlier 
     stageError(DAILY_GOAL_PHASE_B_FAILURE_CODES.DISCONNECT_FAILED),
   );
 
-  const afterTargetFailure = prismaFixture({ queryFailure: true, disconnectFailure: true });
+  const afterTargetFailure = prismaFixture({
+    disconnectFailure: true,
+    targetRow: observationRow({
+      ownership_marker: "elvocab-ci-exclusive:v1:other.example.invalid:5432/postgres",
+    }),
+  });
   await assert.rejects(
     () => run(afterTargetFailure),
     stageError(DAILY_GOAL_PHASE_B_FAILURE_CODES.DISCONNECT_FAILED),

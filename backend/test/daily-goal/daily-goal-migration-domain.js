@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
+import {
+  createDailyGoalPhaseBFailure,
+  DAILY_GOAL_PHASE_B_FAILURE_CODES,
+} from "./daily-goal-phase-b-diagnostics.js";
 
 const NAME = /^\d{14}_[a-z0-9_]+$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -8,25 +12,33 @@ const MANDATORY_IDENTITY_FIELDS = Object.freeze([
   "targetIdentity", "databaseName", "schemaName", "ownershipMarker",
 ]);
 const DIAGNOSTIC_FIELDS = Object.freeze(["serverEndpoint", "serverPort"]);
+const MISMATCH_CODES = Object.freeze({
+  targetIdentity: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_IDENTITY_MISMATCH,
+  databaseName: DAILY_GOAL_PHASE_B_FAILURE_CODES.DATABASE_NAME_MISMATCH,
+  schemaName: DAILY_GOAL_PHASE_B_FAILURE_CODES.SCHEMA_NAME_MISMATCH,
+  ownershipMarker: DAILY_GOAL_PHASE_B_FAILURE_CODES.OWNERSHIP_MARKER_MISMATCH,
+});
 
 export function verifyConnectedTarget({ authorization, expected, observation, targetBindingToken }) {
   if (!isOpaqueBindingToken(targetBindingToken)) {
-    throw new Error("A non-executable connected-target binding token is required.");
+    throw targetVerificationError(DAILY_GOAL_PHASE_B_FAILURE_CODES.INTERNAL_EVIDENCE_INVALID);
   }
   if (!observation || observation.evidenceSource !== "CONNECTED_POSTGRESQL" || observation.derivedFromConfiguration === true) {
-    throw new Error("Independent connected-target evidence is required.");
+    throw targetVerificationError(DAILY_GOAL_PHASE_B_FAILURE_CODES.CONNECTED_EVIDENCE_INVALID);
   }
   for (const field of MANDATORY_IDENTITY_FIELDS) {
     if (typeof observation[field] !== "string" || !TEXT.test(observation[field])) {
-      throw new Error(`Connected-target ${field} is missing or malformed.`);
+      throw targetVerificationError(DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_FIELD_INVALID);
     }
     if (observation[field] !== expected?.[field]) {
-      throw new Error(`Connected-target ${field} does not match approval.`);
+      throw targetVerificationError(MISMATCH_CODES[field]);
     }
   }
   assertBackendDiagnostics(observation);
   if (observation.targetIdentity !== authorization?.targetIdentity) {
-    throw new Error("Connected target identity does not match authorization.");
+    throw targetVerificationError(
+      DAILY_GOAL_PHASE_B_FAILURE_CODES.AUTHORIZATION_CONTINUITY_FAILED,
+    );
   }
   const fields = [...MANDATORY_IDENTITY_FIELDS, ...DIAGNOSTIC_FIELDS];
   const binding = createHash("sha256")
@@ -41,15 +53,24 @@ export function verifyConnectedTarget({ authorization, expected, observation, ta
 
 function assertBackendDiagnostics(observation) {
   if (typeof observation.serverEndpoint !== "string" || isIP(observation.serverEndpoint) === 0) {
-    throw new Error("Connected-target serverEndpoint is missing or malformed.");
+    throw targetVerificationError(
+      DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID,
+    );
   }
   if (typeof observation.serverPort !== "string" || !/^\d{1,5}$/.test(observation.serverPort)) {
-    throw new Error("Connected-target serverPort is missing or malformed.");
+    throw targetVerificationError(DAILY_GOAL_PHASE_B_FAILURE_CODES.PORT_DIAGNOSTIC_INVALID);
   }
   const port = Number(observation.serverPort);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error("Connected-target serverPort is missing or malformed.");
+    throw targetVerificationError(DAILY_GOAL_PHASE_B_FAILURE_CODES.PORT_DIAGNOSTIC_INVALID);
   }
+}
+
+function targetVerificationError(failureCode) {
+  return createDailyGoalPhaseBFailure(failureCode, {
+    errorCode: "DAILY_GOAL_TARGET_VERIFICATION_FAILED",
+    message: "Daily Goal connected-target verification failed.",
+  });
 }
 
 function isOpaqueBindingToken(value, seen = new Set()) {
