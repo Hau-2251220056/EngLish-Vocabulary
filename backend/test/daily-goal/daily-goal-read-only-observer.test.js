@@ -53,6 +53,12 @@ test("module import creates no connection and SQL allowlist contains reads only"
 
 test("target observation reads the current database shared-object comment", () => {
   const targetQuery = DAILY_GOAL_READ_ONLY_QUERIES.TARGET_OBSERVATION;
+  const normalizedTargetQuery = targetQuery.replace(/\s+/g, " ").trim();
+  assert.equal(
+    normalizedTargetQuery,
+    "SELECT current_database()::text AS database_name, host(inet_server_addr()) AS server_endpoint, inet_server_port()::text AS server_port, current_schema()::text AS schema_name, shobj_description( (SELECT oid FROM pg_database WHERE datname = current_database()), 'pg_database' )::text AS ownership_marker",
+  );
+  assert.doesNotMatch(targetQuery, /inet_server_addr\(\)::text AS server_endpoint/);
   assert.match(
     targetQuery,
     /shobj_description\(\s*\(SELECT oid FROM pg_database WHERE datname = current_database\(\)\),\s*'pg_database'\s*\)::text AS ownership_marker/s,
@@ -62,6 +68,7 @@ test("target observation reads the current database shared-object comment", () =
     targetQuery,
     /SELECT oid FROM pg_database WHERE datname = current_database\(\)/,
   );
+  assert.equal(Object.keys(DAILY_GOAL_READ_ONLY_QUERIES).length, 2);
 });
 
 test("Context A migration history uses only the exact schema-qualified public relation", () => {
@@ -311,6 +318,53 @@ test("observer classifies read-only, target, verification, history, and callback
       return true;
     },
   );
+});
+
+test("endpoint and port diagnostics fail before Context A history while valid evidence continues", async () => {
+  const invalidCases = [
+    { endpoint: null, port: "5432", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED },
+    { endpoint: "", port: "5432", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.TARGET_OBSERVATION_FAILED },
+    { endpoint: "10.0.0.8/32", port: "5432", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID },
+    { endpoint: "2001:db8::8/128", port: "5432", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID },
+    { endpoint: "pooler.example.invalid", port: "5432", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.ENDPOINT_DIAGNOSTIC_INVALID },
+    { endpoint: "10.0.0.8", port: "0", stage: DAILY_GOAL_PHASE_B_FAILURE_CODES.PORT_DIAGNOSTIC_INVALID },
+  ];
+
+  for (const { endpoint, port, stage } of invalidCases) {
+    const calls = [];
+    const observer = createDailyGoalReadOnlyObserver({
+      openConnection: async () => mockConnection({
+        calls,
+        targetRow: observationRow({ server_endpoint: endpoint, server_port: port }),
+      }),
+    });
+    await assert.rejects(() => observer.withObservation({
+      authorization: authorize(),
+      expectedTarget,
+      operation: async () => assert.fail("invalid diagnostics must not reach success"),
+    }), (error) => {
+      assert.equal(getDailyGoalPhaseBFailureCode(error), stage);
+      assert.doesNotMatch(error.message, /10\.0\.0\.8|2001:db8|pooler\.example/i);
+      return true;
+    });
+    assert.deepEqual(calls, ["verify-read-only", "target-query", "close"]);
+  }
+
+  for (const endpoint of ["10.0.0.8", "2001:db8::8", "::ffff:10.0.0.8"]) {
+    const calls = [];
+    const observer = createDailyGoalReadOnlyObserver({
+      openConnection: async () => mockConnection({
+        calls,
+        targetRow: observationRow({ server_endpoint: endpoint }),
+      }),
+    });
+    assert.equal(await observer.withObservation({
+      authorization: authorize(),
+      expectedTarget,
+      operation: async () => "success",
+    }), "success");
+    assert.deepEqual(calls, ["verify-read-only", "target-query", "history-query", "close"]);
+  }
 });
 
 test("unknown target-verification exceptions retain the generic safe fallback", async () => {

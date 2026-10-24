@@ -12,7 +12,7 @@ export const READ_ONLY_EVIDENCE_SOURCE = "POSTGRESQL_TRANSACTION_READ_ONLY";
 export const DAILY_GOAL_READ_ONLY_QUERIES = Object.freeze({
   TARGET_OBSERVATION: `SELECT
   current_database()::text AS database_name,
-  inet_server_addr()::text AS server_endpoint,
+  host(inet_server_addr()) AS server_endpoint,
   inet_server_port()::text AS server_port,
   current_schema()::text AS schema_name,
   shobj_description(

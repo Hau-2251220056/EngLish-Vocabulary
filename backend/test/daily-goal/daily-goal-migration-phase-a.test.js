@@ -65,8 +65,18 @@ test("connected observation validates diagnostics without treating them as stabl
   assert.equal(result.observation.serverPort, "6543");
   assert.ok(Object.isFrozen(result.observation));
 
+  for (const serverEndpoint of ["10.0.0.8", "2001:db8::8", "::ffff:10.0.0.8"]) {
+    assert.doesNotThrow(() => verifyConnectedTarget({
+      authorization,
+      expected: expectedTarget,
+      observation: { ...observation, serverEndpoint },
+      targetBindingToken: bindingToken,
+    }));
+  }
+
   for (const invalid of [
     { serverEndpoint: "" }, { serverEndpoint: "pooler.example.invalid" },
+    { serverEndpoint: "10.0.0.8/32" }, { serverEndpoint: "2001:db8::8/128" },
     { serverEndpoint: null }, { serverPort: "0" }, { serverPort: "65536" },
     { serverPort: "54.32" }, { serverPort: 5432 },
   ]) assert.throws(() => verifyConnectedTarget({
