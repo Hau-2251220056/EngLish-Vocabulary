@@ -1,0 +1,82 @@
+name: Daily Goal DG-1 Ephemeral PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact guarded operation
+        required: true
+        type: choice
+        default: NOT_AUTHORIZED
+        options:
+          - NOT_AUTHORIZED
+          - DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17
+      authorize_ephemeral_migration:
+        description: HUMAN authorization for this exact run
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-goal-dg1-ephemeral-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  verify-daily-goal-migration:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.operation == 'DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17' &&
+      inputs.authorize_ephemeral_migration == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: daily_goal_ephemeral
+          POSTGRES_USER: daily_goal_ephemeral
+          POSTGRES_PASSWORD: dg-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U daily_goal_ephemeral -d daily_goal_ephemeral"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      DAILY_GOAL_EPHEMERAL_OPERATION: DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17
+      DAILY_GOAL_EPHEMERAL_AUTHORIZED: "true"
+      DAILY_GOAL_POSTGRESQL_MAJOR: "17"
+      DAILY_GOAL_MIGRATION_INVENTORY_DIGEST: 833edeb16488fc71fbbea22532531699eb2ffb9334b5b4f1d6ff5bcf0d41c864
+      DAILY_GOAL_MIGRATION_SIZE: "11487"
+      DAILY_GOAL_MIGRATION_SHA256: 8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6
+      DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL: postgresql://daily_goal_ephemeral:dg-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/daily_goal_ephemeral
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install locked backend dependencies without lifecycle scripts
+        working-directory: backend
+        run: npm ci --ignore-scripts
+
+      - name: Generate the job-local raw-query Prisma client
+        working-directory: backend
+        run: node node_modules/prisma/build/index.js generate --schema test/daily-goal/ephemeral-prisma-schema.prisma
+
+      - name: Run guarded ephemeral migration verification
+        working-directory: backend
+        run: node test/daily-goal/daily-goal-ephemeral-migration-cli.js

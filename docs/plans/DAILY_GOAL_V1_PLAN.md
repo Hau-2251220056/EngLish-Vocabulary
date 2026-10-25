@@ -305,7 +305,26 @@ Forward migration:
 1. Add nullable USER fields without reading `daily_xp_goal`.
 2. Create enums/tables/checks/FKs/indexes and explicit database constraints Prisma cannot express directly.
 3. Existing users retain unset goal and effective reminder preference ON (`NULL` projection). Existing daily aggregates require no conversion because this is a new table.
-4. Generate Prisma client and run migration-safety verification only on a confirmed CI-exclusive database.
+4. Generate Prisma client and run migration-safety verification only on a confirmed CI-exclusive database. For Gate DG-1 migration correctness, the approved target class is a fresh PostgreSQL service/container and database created exclusively for one CI run under the ephemeral-target contract below; the existing Supabase CI project/database is not a prerequisite for DG-1.
+
+#### 6.5.1 Gate DG-1 ephemeral PostgreSQL target contract — HUMAN APPROVED
+
+- Create a new PostgreSQL service/container and fresh database for each CI run. It must contain no Production, Preview, DEV, shared/manual, or application-user data and must not reuse persistent database state, a schema/database from another run, or any external database credential.
+- The ephemeral path must not read or fall back to `CI_TEST_DATABASE_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`, a Supabase URL, or any other external database URL. The database, volume, and job-scoped network must be destroyed when the job ends.
+- Pin the PostgreSQL major version and match it to the intended Supabase PostgreSQL major. Until that intended major is independently confirmed, otherwise complete DG-1 evidence is provisional and cannot support final HUMAN DG-1 passage.
+- Install no extension outside the explicit allowlist required by the 11 reviewed baseline migration artifacts. Missing or unexpected extensions fail closed rather than broadening the environment.
+- Bind authorization and evidence to the exact repository, source SHA, CI run ID, run attempt, and reviewed migration-inventory digest. Do not accept a caller-supplied arbitrary migration path, inventory, database, or schema.
+- Keep the workflow terminally disabled by default. Implementation/review and each real CI execution require separate HUMAN authorizations; this PLAN amendment authorizes neither.
+
+#### 6.5.2 Exact DG-1 migration-correctness evidence
+
+Before the Daily Goal migration, the guarded run must prove a fresh database, execute exactly the 11 reviewed baseline migration artifacts in order, and report exactly 11 `APPLIED` records with 11 matching checksums and zero unexpected pending migrations.
+
+The Daily Goal migration must use the exact approved artifact: 11,487 raw bytes with SHA-256 `8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6`. After applying it, evidence must report exactly 12 `APPLIED` records, 12 matching checksums, correct order, and zero pending migrations. Verification must cover the expected schemas, tables, columns, SQL types, defaults, primary keys, foreign keys, unique constraints, checks, indexes, and cascade behavior, and must prove the complete sequence works from the fresh database. Any missing, extra, reordered, divergent, failed, or unresolved state fails closed.
+
+Passing this path proves only portable PostgreSQL migration correctness, compatibility with the 11 reviewed baseline migrations, and the expected schema/constraint behavior. It does not prove compatibility with a Supabase project, Session Pooler behavior, Supabase roles/extensions/default ACL/`PUBLIC` state, Vercel–Supabase connectivity, Preview/Production migration readiness, or deployment readiness.
+
+Those platform-specific facts are classified as **SUPABASE PLATFORM VALIDATION — REQUIRED BEFORE PREVIEW/PRODUCTION DEPLOYMENT**. Existing Phase B/Context B evidence remains valid historical/platform-specific work, but it is not a prerequisite for DG-1 and must not be relabeled as ephemeral DG-1 evidence.
 
 Rollback before production data exists may drop the new tables/enums/columns in reverse dependency order. After real Daily Goal data exists, rollback is application-disable/forward-fix: preserve tables and data, disable new routes/UI, and deploy a corrective migration rather than destructively dropping rewards, notifications, or aggregates.
 
@@ -680,7 +699,7 @@ No tests run during PLAN authoring. Future execution must use the Test Skill and
 - Receipt cleanup is child-first and respects the 30-day replay/31-day parent horizons; retained replay works, removed stale parent returns safe not-found, and durable reward/notification uniqueness survives cleanup.
 - Notification pagination/unread/read idempotency and cross-user isolation.
 
-**Database guard:** never use the current `backend/.env.test` Preview TEST target for reset, migration, concurrency, or failure-injection work. Before any state-changing test, `configureTestEnvironment()`/guard helpers must verify an explicitly approved CI-exclusive database identity and reset authorization. If `CI_TEST_DATABASE_URL` credentials or ownership proof are unavailable, database tests remain `NOT RUN`; Preview TEST, Main, Production, shared development, and manual TEST databases remain untouched.
+**Database guard:** never use the current `backend/.env.test` Preview TEST target for reset, migration, concurrency, or failure-injection work. Gate DG-1 migration correctness uses only the fresh per-run ephemeral target in §6.5.1 and has no external URL fallback. Other future state-changing database tests still require their separately approved CI-exclusive identity, credential/ownership proof, and reset authorization; if those prerequisites are unavailable, those tests remain `NOT RUN`. Preview TEST, Main, Production, shared development, manual TEST, and application-user data remain untouched.
 
 ### 12.3 Frontend unit/component tests
 
@@ -734,7 +753,7 @@ This is phased planning, not a TASK document.
 ### Phase 1 — Persistence and safety foundation
 
 - Add reviewed migration/schema, domain constants, Vietnam interval helpers, repository transaction lock, and guarded migration tests.
-- Gate: schema/constraints reviewed; isolated CI database proven; no legacy field reinterpretation; rollback plan accepted.
+- Gate: schema/constraints reviewed; the §6.5 per-run ephemeral PostgreSQL contract and exact 11→12 migration evidence are proven; no legacy field reinterpretation; rollback plan accepted; HUMAN accepts DG-1. Supabase platform validation remains a separate pre-Preview/Production deployment gate.
 
 ### Phase 2 — Ownership and accounting protocol
 
@@ -826,11 +845,11 @@ After implementation is verified and explicitly authorized:
 ### Infrastructure UNKNOWN, not business blockers
 
 - Vercel runtime limits/region and realistic invocation budget.
-- Supabase plan/region/pool mode/pool size/timeouts and CI-exclusive database readiness.
+- Supabase plan/region/pool mode/pool size/timeouts, exact intended PostgreSQL major, and platform-target readiness.
 - Actual active-user concurrency and typical session duration.
 - Whether deployment operations already provide an approved maintenance mechanism for retention cleanup.
 
-These unknowns block capacity claims and some future database/load test execution, but they do not block authoring or reviewing the implementation design. They must be resolved before deployment readiness.
+These unknowns block capacity claims, Supabase platform validation, and Preview/Production deployment readiness. They do not make the existing Supabase target a prerequisite for the §6.5 ephemeral DG-1 migration-correctness path, although the intended Supabase PostgreSQL major must be confirmed before otherwise complete ephemeral evidence can receive final DG-1 acceptance.
 
 ### Business blockers
 

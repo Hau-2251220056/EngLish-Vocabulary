@@ -10,7 +10,7 @@
 - `docs/plans/DAILY_GOAL_V1_PLAN.md` — HUMAN APPROVED Revision R1.
 - Planning baseline: `feature/daily-goal-v1` at `b0d89157f4e4d81fb81449c861bd0ec7c9d8e40a`.
 
-**Implementation authorized:** `TASK-256 OFFLINE CI INTEGRATION ONLY`
+**Implementation authorized:** `NO NEW IMPLEMENTATION — DOCUMENTATION AMENDMENT ONLY`
 
 **TASK-256 Phase B/C/D live execution / migration / database access / TASK-258–277 execution / commit / push / deployment authorized:** `NO`
 
@@ -20,13 +20,13 @@ TASK-254 through TASK-277 decompose the approved backend-authoritative Daily Goa
 
 No task changes existing learning outcomes, SRS/Quiz rewards, Level thresholds, Streak qualification, legacy `USER.daily_xp_goal`, or Vocabulary-scoped `XP_REWARD`. No task adds email, Web Push, Browser Notification permission, Service Worker delivery, an external scheduler/service, a full notification Settings module, analytics history, or a new role/dependency. Technical defaults remain PLAN decisions, not SPEC constants.
 
-HUMAN accepted TASK-254, TASK-255, the migration-quarantine amendment, TASK-256 Phase A, and TASK-257 within their offline scopes. Only TASK-256 offline CI integration is currently authorized for implementation. Phase B/C/D live execution and TASK-258–277 remain unauthorized, Gate DG-1 remains unpassed, and database access, migration execution, commit/push, and deployment remain prohibited.
+HUMAN accepted TASK-254, TASK-255, the migration-quarantine amendment, TASK-256 Phase A, TASK-257 within its offline scope, and the TASK-256 ephemeral-path direction at documentation level only. No ephemeral workflow implementation or real run is authorized. Phase B/Context B remains platform-specific and off the DG-1 critical path; TASK-258–277 remain unauthorized, Gate DG-1 remains unpassed, and database access, migration execution, workflow publish/dispatch, commit/push, and deployment remain prohibited.
 
 ## 2. Phase and gate distribution
 
 | Phase | Tasks | Gate |
 |---|---|---|
-| Safety and persistence | TASK-254–256 | DG-1 migration design and isolated-database authorization |
+| Safety and persistence | TASK-254–256 | DG-1 ephemeral PostgreSQL migration-correctness evidence and HUMAN acceptance |
 | Time/accounting protocol | TASK-257–260 | DG-2 backend correctness/concurrency evidence |
 | Goal, reward, notifications | TASK-261–265 | DG-3 atomicity/security/reminder evidence |
 | Shared frontend foundation | TASK-266–268 | DG-4 tracker/modal review |
@@ -61,9 +61,9 @@ Tasks may be parallelized only after their dependencies are satisfied and HUMAN 
 ## 4. Verification and database boundaries
 
 - Static/pure verification may use source inspection, fake clocks, mocks, lint/build, and DB-independent tests when execution is later authorized.
-- Any migration, reset, concurrency, failure-injection, or state-changing database test is `BLOCKED` until an explicitly identified CI-exclusive database and fail-closed guard are HUMAN-authorized.
+- Gate DG-1 migration correctness may use only a fresh, per-run ephemeral PostgreSQL service/container under the TASK-256 amendment below; implementation and each real run remain separately HUMAN-authorized. Other migration, reset, concurrency, failure-injection, or state-changing database tests remain `BLOCKED` until their explicitly identified CI-exclusive database and fail-closed guard are HUMAN-authorized.
 - `backend/.env.test` points to Vercel Preview TEST and is never a disposable fixture. Preview, Production, shared development, and manual TEST databases are prohibited for destructive/state-changing verification.
-- There is no fallback database. Missing identity, credentials, ownership proof, or reset authorization produces `NOT RUN`, never PASS.
+- There is no fallback database. The DG-1 ephemeral path uses no external database credential and never falls back to `CI_TEST_DATABASE_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`, or a Supabase URL. Missing identity, binding, inventory, required authorization, credential/ownership proof for another path, or reset authorization produces `NOT RUN`, never PASS.
 - UI changes require Focused `ui-ux-review` and HUMAN desktop/mobile visual approval. Formal TEST and REVIEW remain separate stages. Deployment requires separate authorization.
 
 ## 5. Implementation tasks
@@ -118,19 +118,37 @@ Read-only goal/notification APIs and notification mark-read do not create operat
 **Authorization:** Separate HUMAN-approved offline safety amendment; it does not authorize TASK-256 or database mutation.\
 **Reason:** Prisma `migrate deploy` applies every pending migration in its configured active migration directory. The unapplied Daily Goal draft was therefore moved out of `backend/prisma/migrations` so shared preparation and the existing XP/Streak migration-copy harnesses cannot discover it before DG-1 authorization.\
 **Artifact:** Original migration name `20261022000000_add_daily_goal_v1`; original path `backend/prisma/migrations/20261022000000_add_daily_goal_v1/migration.sql`; quarantined path `backend/prisma/migration-drafts/daily-goal-v1/20261022000000_add_daily_goal_v1/migration.sql`; 11,487 bytes; SHA-256 `8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6`. Byte-for-byte preservation and exclusion from Prisma/XP/Streak discovery are verified by offline tests.\
-**Activation contract:** Future TASK-256 work requires separate HUMAN authorization for the exact operation and target, a genuinely isolated CI-exclusive database, configured and connected-target identity verification, checksum verification, review of every pending migration, and restoration of these exact reviewed bytes to the original path through an approved procedure. Restoring the file makes it visible to shared migration runners; activation alone never authorizes `migrate deploy` or any database mutation.\
+**Activation contract:** Future TASK-256 work requires separate HUMAN authorization for the exact operation and target, the fresh per-run ephemeral PostgreSQL contract below, repository/source/run/attempt/inventory binding, checksum verification, review of every pending migration, and restoration of these exact reviewed bytes to the original path through an approved procedure. Restoring the file makes it visible to shared migration runners; activation alone never authorizes `migrate deploy` or any database mutation. Supabase connected-target observation is not a prerequisite for this ephemeral activation path.\
 **Gate:** DG-1 remains `NOT PASSED`; activation, live identity observation, Prisma commands, database access, migration execution, reset, rollback, and database-dependent verification remain `NOT RUN`.
 
 ### TASK-256 — Verify migration design and stop at Gate DG-1
 
-**Status:** `PHASE A + PRIOR OFFLINE AMENDMENTS HUMAN ACCEPTED; PRISMA SCOPED READ-ONLY BINDING — IMPLEMENTED, AWAITING HUMAN REVIEW; PHASE B LIVE/C/D BLOCKED`\
-**Objective:** Validate migration safety only on an approved isolated target.\
+**Status:** `DG-1 EPHEMERAL PATH DOCUMENTED; IMPLEMENTATION/RUN NOT AUTHORIZED; DG-1 NOT PASSED; SUPABASE PLATFORM VALIDATION SEPARATE`\
+**Objective:** Validate portable PostgreSQL migration correctness on an approved fresh per-run ephemeral target and stop for HUMAN DG-1 decision.\
 **Dependencies:** TASK-254–255 and explicit database identity/authorization.\
 **Files / modules:** migration/schema tests and evidence report.\
 **In scope:** generate client, apply/inspect migration, verify checks/FKs/indexes/cascades and safe rollback-before-data assumptions.\
 **Out of scope:** Preview/Production migration, deployment, or destructive rollback after durable data.\
 **SPEC / PLAN:** AC-DG-004, 016, 019, 024, 030, 034, 048; PLAN §§6.5, 12.2.\
-**Acceptance / evidence:** guarded results are PASS or honestly `NOT RUN`; HUMAN accepts Gate DG-1 before persistence-dependent work.
+**Acceptance / evidence:** guarded results are PASS or honestly `NOT RUN`; exact ephemeral evidence below is complete; HUMAN accepts Gate DG-1 before persistence-dependent work.
+
+#### TASK-256 DG-1 Ephemeral PostgreSQL Path Amendment — HUMAN APPROVED DESIGN ONLY
+
+**Target contract:** Each authorized CI run creates a new CI-exclusive PostgreSQL service/container and fresh database. The target contains no Production, Preview, DEV, shared/manual, or application-user data; uses no external database credential; does not read or fall back to `CI_TEST_DATABASE_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`, a Supabase URL, or another external database URL; and does not reuse persistent database state or any schema/database from another run. The database, volume, and job-scoped network are destroyed when the job ends. PostgreSQL major is pinned and must match the intended Supabase PostgreSQL major; until that major is independently confirmed, otherwise complete evidence is provisional. No extension may be installed outside the explicit allowlist required by the 11 reviewed baseline migrations.
+
+**Binding and execution guard:** Authorization and evidence bind the exact repository, source SHA, CI run ID, run attempt, and reviewed migration-inventory digest. The implementation must reject caller-supplied arbitrary migration paths/inventories and any cross-run schema/database. The workflow remains terminally disabled by default. This amendment authorizes documentation only: ephemeral workflow implementation/review and each real CI run require separate HUMAN authorizations, and every failure or unresolved binding fails closed.
+
+**Exact pre-migration evidence:** Start from the fresh database; execute exactly the 11 reviewed baseline migration artifacts in their approved order; then prove exactly 11 `APPLIED` records, 11 matching checksums, and zero unexpected pending migrations.
+
+**Exact Daily Goal artifact:** Execute only the approved `20261022000000_add_daily_goal_v1` bytes: 11,487 raw bytes, SHA-256 `8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6`.
+
+**Exact post-migration evidence:** Prove exactly 12 `APPLIED` records, 12 matching checksums, correct order, zero pending migrations, and the expected schemas, tables, columns, SQL types, defaults, primary keys, foreign keys, unique constraints, checks, indexes, and cascade behavior. The complete 11→12 sequence must succeed from the fresh database. Missing, extra, reordered, divergent, failed, or unresolved evidence fails closed.
+
+**Scope of a future DG-1 PASS:** It proves portable PostgreSQL migration correctness, compatibility with the 11 reviewed baseline migrations, and expected schema/constraint behavior only. It does not prove Supabase project compatibility, Session Pooler behavior, Supabase roles/extensions/default ACL/`PUBLIC` state, Vercel–Supabase connectivity, Preview/Production migration readiness, or deployment readiness. Those facts are **SUPABASE PLATFORM VALIDATION — REQUIRED BEFORE PREVIEW/PRODUCTION DEPLOYMENT**.
+
+**Existing-work disposition:** Full `B-COLLECTOR-IMPLEMENT` remains `DEFERRED`. The actual `B-DESTINATION` remains `PENDING` but is no longer a prerequisite for the ephemeral DG-1 path. The B-DESTINATION observation offline core is `TARGETED FIXES COMPLETE, NOT PUBLISHED, DEFERRED FROM DG-1 CRITICAL PATH`; its three existing untracked files remain untouched. Historical Phase B/Context B evidence below is retained as platform-specific evidence and must not be interpreted as ephemeral DG-1 evidence or as a prerequisite for DG-1.
+
+**Critical path:** documentation amendment → separately authorized ephemeral workflow implementation/review → separately authorized exact CI run → HUMAN DG-1 decision. DG-1 remains `NOT PASSED`; this amendment does not authorize TASK-258+, workflow publication/dispatch, migration execution, database access, or deployment.
 
 **Phase A offline evidence:** A dedicated dependency-injected harness now enforces configuration authorization, independent connected-target evidence and same-handle binding, quarantine checksum verification, ephemeral activation outside the source repository, exact ordered migration-history/pending-set approval, and immediate reauthorization before a mockable executor boundary. No live observer, PostgreSQL adapter, Prisma executor, database credential, workflow mutation path, or repository-active migration copy exists. Phase B target observation/history access, Phase C pending-set HUMAN approval, and Phase D mutation remain separately blocked; DG-1 remains `NOT PASSED`.
 
@@ -404,18 +422,18 @@ Every BR-DG-001–078 and AC-DG-001–055 appears in at least one row and is imp
 
 ## 7. Execution and HUMAN gates
 
-1. **Task approval:** HUMAN approved this document, accepted TASK-254/TASK-255 for offline scope, and authorized only the separate migration-quarantine safety amendment. Every numbered task from TASK-256 onward requires separate authorization.
-2. **DG-1 Database:** schema/SQL review plus explicit CI-exclusive database identity before migration execution.
+1. **Task approval:** HUMAN approved this document, accepted the prior offline work recorded above, and approved the TASK-256 ephemeral-path documentation amendment only. Ephemeral workflow implementation/review, each real CI run, and every numbered task from TASK-258 onward require separate authorization.
+2. **DG-1 Database:** schema/SQL review plus exact guarded evidence from a fresh per-run ephemeral PostgreSQL target under the TASK-256 contract, followed by a HUMAN DG-1 decision. The actual Supabase B-DESTINATION is not a prerequisite for this gate.
 3. **DG-2 Backend accounting:** fake-clock and guarded concurrency evidence before frontend reliance.
 4. **DG-3 Reward/reminder:** atomicity, authorization and dedupe evidence before Notification UI reliance.
 5. **DG-4 Shared tracker:** focused lifecycle/accessibility review before activity attachment.
 6. **DG-5 Activities:** independent Normal/SRS/Quiz/Speaking regression acceptance.
 7. **DG-6 UI:** Focused UI/UX Review and HUMAN desktop/mobile visual approval.
 8. **DG-7 Closure:** guarded full regression/performance facts, formal TEST, formal REVIEW and HUMAN acceptance.
-9. **Deployment:** separate authorization; no prior gate authorizes commit, push, Preview/Production migration, or deployment.
+9. **Supabase platform/deployment:** Supabase project, Session Pooler, roles/extensions/default ACL/`PUBLIC` state, and Vercel–Supabase connectivity require separate platform validation before Preview/Production migration or deployment. No DG-1 result authorizes commit, push, migration, or deployment.
 
 ## 8. Remaining unknowns and stop condition
 
-Vercel runtime/region/invocation budget, Supabase plan/region/pool/timeouts/storage, CI-exclusive database readiness, real concurrency/session duration, and an approved maintenance mechanism remain UNKNOWN. They block database/load evidence or deployment claims where applicable, not this decomposition. Any implementation discovery that requires changing a PLAN default, architecture, database/API contract, or business rule returns to PLAN/SPEC review.
+The intended Supabase PostgreSQL major, Vercel runtime/region/invocation budget, Supabase plan/region/pool/timeouts/storage, Supabase platform-target readiness, real concurrency/session duration, and an approved maintenance mechanism remain UNKNOWN. The intended major must be confirmed before final HUMAN acceptance of otherwise complete ephemeral DG-1 evidence; the remaining Supabase facts block platform/deployment claims rather than portable migration-correctness evidence. Any implementation discovery that requires changing a PLAN default, architecture, database/API contract, or business rule returns to PLAN/SPEC review.
 
-**STOP: HUMAN TASK-256 OFFLINE CI INTEGRATION REVIEW. DG-1 is NOT PASSED. Do not begin live Phase B/C/D, activate or execute a real migration, access a database, run database-dependent tests, begin TASK-258+, commit, push, or deploy.**
+**STOP: HUMAN TASK-256 DOCUMENTATION AMENDMENT REVIEW. DG-1 is NOT PASSED. Ephemeral workflow implementation/review and workflow publish/dispatch are NOT AUTHORIZED. Do not execute a migration, access a database, run database-dependent tests, resume Phase B/Context B as a DG-1 prerequisite, begin TASK-258+, commit, push, or deploy.**
