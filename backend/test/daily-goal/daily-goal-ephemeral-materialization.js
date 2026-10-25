@@ -10,9 +10,11 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
   const sourceMigrations = path.join(repositoryRoot, "backend", "prisma", "migrations");
   const draft = path.join(repositoryRoot, "backend", "prisma", "migration-drafts", "daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
   const activeCopy = path.join(sourceMigrations, DAILY_GOAL_MIGRATION.name, "migration.sql");
+  const sourceLock = path.join(sourceMigrations, MIGRATION_LOCK.name);
   await assertMissing(activeCopy);
   const draftBytes = await readRegularLfFile(draft);
   assertDigest(draftBytes);
+  const lockBytes = await readCanonicalMigrationLock(sourceLock);
   const workspace = await mkdtemp(path.join(os.tmpdir(), "daily-goal-ephemeral-"));
   try {
     const repositoryReal = await realpath(repositoryRoot);
@@ -20,7 +22,7 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
     if (workspaceReal === repositoryReal || workspaceReal.startsWith(`${repositoryReal}${path.sep}`)) throw new Error("Workspace must be outside repository.");
     const prismaPath = path.join(workspace, "prisma");
     const migrationsPath = path.join(prismaPath, "migrations");
-    await copyRegularTree(sourceMigrations, migrationsPath);
+    await copyCanonicalMigrationsTree(sourceMigrations, migrationsPath, lockBytes);
     await writeFile(path.join(prismaPath, "schema.prisma"), [
       "datasource db {", "  provider = \"postgresql\"", "  url = env(\"DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL\")", "}", "",
     ].join("\n"), { flag: "wx" });
@@ -57,11 +59,16 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
 
 export async function verifyDestinationInventory(migrationsPath, expected) {
   const entries = (await readdir(migrationsPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
-  if (entries.length !== expected.length || entries.some((item, index) => !item.isDirectory() || item.isSymbolicLink() || item.name !== expected[index].name)) {
+  const lockEntry = entries.find((item) => item.name === MIGRATION_LOCK.name);
+  const migrationEntries = entries.filter((item) => item.name !== MIGRATION_LOCK.name);
+  if (entries.length !== expected.length + 1 || !lockEntry || !lockEntry.isFile() || lockEntry.isSymbolicLink()
+    || migrationEntries.length !== expected.length
+    || migrationEntries.some((item, index) => !item.isDirectory() || item.isSymbolicLink() || item.name !== expected[index].name)) {
     throw new Error("Destination migration inventory mismatch.");
   }
+  const lockBytes = await readCanonicalMigrationLock(path.join(migrationsPath, MIGRATION_LOCK.name));
   const observed = [];
-  for (const item of entries) {
+  for (const item of migrationEntries) {
     const directory = path.join(migrationsPath, item.name);
     const children = await readdir(directory, { withFileTypes: true });
     if (children.length !== 1 || children[0].name !== "migration.sql" || !children[0].isFile() || children[0].isSymbolicLink()) {
@@ -76,7 +83,33 @@ export async function verifyDestinationInventory(migrationsPath, expected) {
   const digest = migrationInventoryDigest(observed);
   const expectedDigest = migrationInventoryDigest(expected);
   if (digest !== expectedDigest) throw new Error("Destination migration digest mismatch.");
-  return Object.freeze({ count: observed.length, digest, entries: Object.freeze(observed) });
+  return Object.freeze({
+    count: observed.length, digest, entries: Object.freeze(observed),
+    migrationLock: Object.freeze({ byteCount: lockBytes.length, checksum: sha256(lockBytes) }),
+  });
+}
+
+export const MIGRATION_LOCK = Object.freeze({
+  name: "migration_lock.toml",
+  byteCount: 128,
+  checksum: "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900",
+});
+
+async function copyCanonicalMigrationsTree(source, destination, lockBytes) {
+  const stats = await lstat(source);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error("Migration source tree is invalid.");
+  const entries = (await readdir(source, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  const expectedNames = [MIGRATION_LOCK.name, ...BASELINE_MIGRATIONS.map((item) => item.name)].sort();
+  if (entries.length !== expectedNames.length || entries.some((item, index) => item.name !== expectedNames[index])) {
+    throw new Error("Migration source root layout is invalid.");
+  }
+  await mkdir(destination, { recursive: true });
+  await writeFile(path.join(destination, MIGRATION_LOCK.name), lockBytes, { flag: "wx" });
+  for (const expected of BASELINE_MIGRATIONS) {
+    const entry = entries.find((item) => item.name === expected.name);
+    if (!entry?.isDirectory() || entry.isSymbolicLink()) throw new Error("Migration source directory is invalid.");
+    await copyRegularTree(path.join(source, expected.name), path.join(destination, expected.name));
+  }
 }
 
 async function copyRegularTree(source, destination) {
@@ -93,6 +126,16 @@ async function copyRegularTree(source, destination) {
   }
 }
 
+async function readCanonicalMigrationLock(file) {
+  const bytes = await readRegularLfFile(file);
+  const text = bytes.toString("utf8");
+  if (bytes.length !== MIGRATION_LOCK.byteCount || sha256(bytes) !== MIGRATION_LOCK.checksum
+    || !/^provider = "postgresql"$/m.test(text)) {
+    throw new Error("migration_lock.toml does not match the canonical PostgreSQL contract.");
+  }
+  return bytes;
+}
+
 async function readRegularLfFile(file) {
   const stats = await lstat(file);
   if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("Migration artifact must be a regular file.");
@@ -102,10 +145,12 @@ async function readRegularLfFile(file) {
 }
 
 function assertDigest(bytes) {
-  if (bytes.length !== DAILY_GOAL_MIGRATION.byteCount || createHash("sha256").update(bytes).digest("hex") !== DAILY_GOAL_MIGRATION.checksum) {
+  if (bytes.length !== DAILY_GOAL_MIGRATION.byteCount || sha256(bytes) !== DAILY_GOAL_MIGRATION.checksum) {
     throw new Error("Daily Goal migration bytes do not match the reviewed artifact.");
   }
 }
+
+function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 async function assertMissing(file) {
   try { await lstat(file); } catch (error) { if (error.code === "ENOENT") return; throw error; }

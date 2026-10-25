@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,7 +10,7 @@ import {
   EPHEMERAL_OPERATION, EphemeralMigrationFailure, MIGRATION_INVENTORY_DIGEST,
   migrationInventoryDigest, REVIEWED_INVENTORY, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
-import { withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
+import { MIGRATION_LOCK, withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import { createPrismaSubprocessEnvironment, parsePrismaPendingMigrations } from "./daily-goal-ephemeral-migration-cli.js";
 import { normalizeCatalogEvidence, expectedCatalogEvidence, runRequiredBehaviorProbes } from "./daily-goal-ephemeral-schema-verifier.js";
 import { DAILY_GOAL_MIGRATION, DAILY_GOAL_SCHEMA_EVIDENCE } from "./daily-goal-phase-d-offline.js";
@@ -78,11 +78,57 @@ test("destination inventory verifies exact 11 then exact 12 and cleans once", as
       workspace = activation.workspace;
       const baseline = await activation.verifyBaselineDestination();
       assert.equal(baseline.digest, migrationInventoryDigest(BASELINE_MIGRATIONS));
+      assert.deepEqual(baseline.migrationLock, { byteCount: MIGRATION_LOCK.byteCount, checksum: MIGRATION_LOCK.checksum });
       await activation.materializeDaily();
       const complete = await activation.verifyCompleteDestination();
       assert.equal(complete.digest, MIGRATION_INVENTORY_DIGEST);
+      assert.deepEqual(complete.migrationLock, { byteCount: MIGRATION_LOCK.byteCount, checksum: MIGRATION_LOCK.checksum });
     }});
     await assert.rejects(() => readFile(workspace), { code: "ENOENT" });
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
+
+test("migration lock source and destination layout fail closed", async () => {
+  for (const mutate of [
+    async (lock) => rm(lock),
+    async (lock) => writeFile(lock, "provider = \"sqlite\"\n"),
+    async (lock) => writeFile(lock, "provider = \"postgresql\"\r\n"),
+    async (lock) => { await rm(lock); await mkdir(lock); },
+    async (_lock, migrationsPath) => writeFile(path.join(migrationsPath, "extra.txt"), "unexpected\n"),
+    async (_lock, migrationsPath) => mkdir(path.join(migrationsPath, "20261021999999_extra")),
+  ]) {
+    const fixture = await createRepositoryFixture();
+    try {
+      await assert.rejects(() => withDailyGoalEphemeralWorkspace({ repositoryRoot: fixture, operation: async (activation) => {
+        const lock = path.join(activation.migrationsPath, MIGRATION_LOCK.name);
+        await mutate(lock, activation.migrationsPath);
+        await activation.verifyBaselineDestination();
+      }}), /migration|inventory|regular file|LF-only/i);
+    } finally { await rm(fixture, { recursive: true, force: true }); }
+  }
+
+  const badSource = await createRepositoryFixture();
+  try {
+    await writeFile(path.join(badSource, "backend/prisma/migrations", MIGRATION_LOCK.name), "provider = \"postgresql\"\r\n");
+    await assert.rejects(() => withDailyGoalEphemeralWorkspace({ repositoryRoot: badSource, operation: async () => {} }), /LF-only/);
+  } finally { await rm(badSource, { recursive: true, force: true }); }
+});
+
+test("migration lock symlink is refused when the platform permits symlink creation", async (t) => {
+  const fixture = await createRepositoryFixture();
+  try {
+    await withDailyGoalEphemeralWorkspace({ repositoryRoot: fixture, operation: async (activation) => {
+      const lock = path.join(activation.migrationsPath, MIGRATION_LOCK.name);
+      const target = path.join(activation.workspace, "lock-target.toml");
+      await writeFile(target, canonicalMigrationLockBytes());
+      await rm(lock);
+      try { await symlink(target, lock, "file"); }
+      catch (error) {
+        if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) { t.skip(`symlink creation blocked by platform: ${error.code}`); return; }
+        throw error;
+      }
+      await assert.rejects(() => activation.verifyBaselineDestination(), /inventory|regular file/i);
+    }});
   } finally { await rm(fixture, { recursive: true, force: true }); }
 });
 
@@ -236,11 +282,16 @@ async function createRepositoryFixture() {
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, (await readFile(source, "utf8")).replace(/\r\n/g, "\n"));
   }
+  await writeFile(path.join(fixture, "backend/prisma/migrations", MIGRATION_LOCK.name), canonicalMigrationLockBytes(), { flag: "wx" });
   const draftSource = path.join(root, "backend/prisma/migration-drafts/daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
   const draftDestination = path.join(fixture, "backend/prisma/migration-drafts/daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
   await mkdir(path.dirname(draftDestination), { recursive: true });
   await cp(draftSource, draftDestination);
   return fixture;
+}
+
+function canonicalMigrationLockBytes() {
+  return Buffer.from("# Please do not edit this file manually\n# It should be added in your version-control system (e.g., Git)\nprovider = \"postgresql\"\n", "utf8");
 }
 
 function catalogRows() {
