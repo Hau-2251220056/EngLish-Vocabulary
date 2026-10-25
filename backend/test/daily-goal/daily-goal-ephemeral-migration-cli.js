@@ -8,7 +8,7 @@ import os from "node:os";
 import { withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import {
   createEphemeralVerificationHarness, createRefusalEvidence, EPHEMERAL_OPERATION,
-  MIGRATION_INVENTORY_DIGEST, verifyCanonicalInventory,
+  MIGRATION_INVENTORY_DIGEST, runDiagnosticStage, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,14 +32,16 @@ export async function runEphemeralMigrationCli({ environment = process.env, adap
     dailyGoalSize: environment.DAILY_GOAL_MIGRATION_SIZE,
     dailyGoalHash: environment.DAILY_GOAL_MIGRATION_SHA256,
   };
-  await verifyCanonicalInventory({ migrationsPath, draftPath });
-  const localUrl = environment.DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL;
-  if (!/^postgresql:\/\/daily_goal_ephemeral:[^@\s]+@127\.0\.0\.1:5432\/daily_goal_ephemeral$/.test(localUrl ?? "")) {
-    throw new Error("Job-local PostgreSQL binding is invalid.");
-  }
-  const adapter = await adapterFactory({ localUrl, repositoryRoot });
+  await runDiagnosticStage("SOURCE_INVENTORY", () => verifyCanonicalInventory({ migrationsPath, draftPath }));
+  const { localUrl, adapter } = await runDiagnosticStage("PRIVATE_PRISMA_INPUTS", async () => {
+    const candidateUrl = environment.DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL;
+    if (!/^postgresql:\/\/daily_goal_ephemeral:[^@\s]+@127\.0\.0\.1:5432\/daily_goal_ephemeral$/.test(candidateUrl ?? "")) {
+      throw new Error("Job-local PostgreSQL binding is invalid.");
+    }
+    return { localUrl: candidateUrl, adapter: await adapterFactory({ localUrl: candidateUrl, repositoryRoot }) };
+  });
   const harness = createEphemeralVerificationHarness();
-  const authorization = harness.issueAuthorization(bindingInput);
+  const authorization = await runDiagnosticStage("INPUT_BINDING", () => harness.issueAuthorization(bindingInput));
   const trustedResult = await harness.run({
     authorization, adapter,
     activate: (operation) => withDailyGoalEphemeralWorkspace({ repositoryRoot, operation }),

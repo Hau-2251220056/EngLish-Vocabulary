@@ -8,6 +8,22 @@ export const EXPECTED_REPOSITORY = "Hau-2251220056/EngLish-Vocabulary";
 export const POSTGRESQL_MAJOR = 17;
 export const EXTENSION_ALLOWLIST = Object.freeze([]);
 export const OUTPUT_LIMIT_BYTES = 16_384;
+export const DIAGNOSTIC_STAGES = Object.freeze([
+  "INPUT_BINDING", "SOURCE_INVENTORY", "PRIVATE_PRISMA_INPUTS", "FRESH_DATABASE", "EXTENSION_INVENTORY",
+  "BASELINE_MATERIALIZATION", "BASELINE_DESTINATION", "BASELINE_DEPLOY", "BASELINE_HISTORY",
+  "DAILY_GOAL_MATERIALIZATION", "DAILY_GOAL_PENDING_STATUS", "DAILY_GOAL_DEPLOY", "FINAL_HISTORY",
+  "FINAL_PENDING_STATUS", "SCHEMA_EVIDENCE", "WORKSPACE_CLEANUP", "DISCONNECT",
+]);
+const GENERIC_CODES = Object.freeze(["OPERATION_FAILED", "CLEANUP_FAILED", "DISCONNECT_FAILED"]);
+const STABLE_CODES = new Set([
+  ...GENERIC_CODES, "BINDING_INCOMPLETE", "NOT_AUTHORIZED", "BINDING_MISMATCH", "AUTHORIZATION_INVALID_OR_CONSUMED",
+  "RESULT_INVALID_OR_CONSUMED", "RESULT_AUTHORIZATION_MISMATCH", "RESULT_BINDING_MISMATCH", "BASELINE_INVENTORY_MISMATCH",
+  "NON_LF_MIGRATION_BYTES", "MIGRATION_CHECKSUM_MISMATCH", "UNTRUSTED_BOUNDARY", "ADAPTER_INCOMPLETE",
+  "EXTENSION_ALLOWLIST_MISMATCH", "MATERIALIZATION_MISMATCH", "DESTINATION_INVENTORY_MISMATCH",
+  "MIGRATION_HISTORY_MISMATCH", "PRE_MIGRATION_PENDING_MISMATCH", "POST_MIGRATION_PENDING_MISMATCH",
+  "SCHEMA_EVIDENCE_MISMATCH", "OUTPUT_LIMIT_EXCEEDED",
+]);
+const STAGE_SET = new Set(DIAGNOSTIC_STAGES);
 
 export const BASELINE_MIGRATIONS = Object.freeze([
   entry("20260916042441_init_user_auth_session", "92035a5a775a727eeb0fb62aaa21036b66f3f5c6eac2284b6174382b617a8702"),
@@ -27,10 +43,15 @@ export const REVIEWED_INVENTORY = Object.freeze([...BASELINE_MIGRATIONS, entry(D
 export const MIGRATION_INVENTORY_DIGEST = digest(REVIEWED_INVENTORY);
 
 export class EphemeralMigrationFailure extends Error {
-  constructor(code) {
-    super(`Daily Goal ephemeral migration verification failed. Code: ${code}`);
+  constructor(code, stage, cleanupStage) {
+    const safeCode = STABLE_CODES.has(code) ? code : "OPERATION_FAILED";
+    const safeStage = STAGE_SET.has(stage) ? stage : undefined;
+    const safeCleanupStage = STAGE_SET.has(cleanupStage) ? cleanupStage : undefined;
+    super(`Daily Goal ephemeral migration verification refused. Code: ${safeCode}`);
     this.name = "EphemeralMigrationFailure";
-    this.code = code;
+    this.code = safeCode;
+    if (safeStage) this.stage = safeStage;
+    if (safeCleanupStage) this.cleanupStage = safeCleanupStage;
     this.dg1Passed = false;
     this.supabaseCompatibilityVerified = false;
     this.deploymentAuthorized = false;
@@ -105,28 +126,39 @@ async function runTrustedVerification({ binding, activate, adapter }) {
     if (typeof adapter[method] !== "function") fail("ADAPTER_INCOMPLETE");
   }
   let disconnectAttempted = false;
+  let evidence;
+  let primaryFailure;
   try {
-    await adapter.assertFresh(binding);
-    assertExactList(await adapter.readExtensions(), EXTENSION_ALLOWLIST, "EXTENSION_ALLOWLIST_MISMATCH");
-    await activate(async ({ migrationsPath, schemaPath, artifact, verifyBaselineDestination, materializeDaily, verifyCompleteDestination }) => {
+    await runDiagnosticStage("FRESH_DATABASE", () => adapter.assertFresh(binding));
+    await runDiagnosticStage("EXTENSION_INVENTORY", async () => assertExactList(await adapter.readExtensions(), EXTENSION_ALLOWLIST, "EXTENSION_ALLOWLIST_MISMATCH"));
+    await runDiagnosticStage("BASELINE_MATERIALIZATION", () => activate(async ({ migrationsPath, schemaPath, artifact, verifyBaselineDestination, materializeDaily, verifyCompleteDestination }) => {
       if (artifact.name !== DAILY_GOAL_MIGRATION.name || artifact.checksum !== DAILY_GOAL_MIGRATION.checksum
         || artifact.byteCount !== DAILY_GOAL_MIGRATION.byteCount) fail("MATERIALIZATION_MISMATCH");
-      const baselineDestination = await verifyBaselineDestination();
-      assertDestination(baselineDestination, BASELINE_MIGRATIONS);
-      await adapter.deploy({ migrationsPath, schemaPath, expectedDigest: baselineDestination.digest });
-      assertHistory(await adapter.readHistory(), BASELINE_MIGRATIONS);
-      await materializeDaily();
-      const completeDestination = await verifyCompleteDestination();
-      assertDestination(completeDestination, REVIEWED_INVENTORY);
-      assertExactList(await adapter.readPending({ schemaPath, expectedDigest: completeDestination.digest }), [DAILY_GOAL_MIGRATION.name], "PRE_MIGRATION_PENDING_MISMATCH");
-      const preDeployDestination = await verifyCompleteDestination();
-      assertDestination(preDeployDestination, REVIEWED_INVENTORY);
-      await adapter.deploy({ migrationsPath, schemaPath, expectedDigest: preDeployDestination.digest });
-      assertHistory(await adapter.readHistory(), REVIEWED_INVENTORY);
-      assertExactList(await adapter.readPending({ schemaPath, expectedDigest: completeDestination.digest }), [], "POST_MIGRATION_PENDING_MISMATCH");
-      assertSchemaEvidence(await adapter.readSchemaEvidence());
-    });
-    const evidence = deepFreeze({
+      const baselineDestination = await runDiagnosticStage("BASELINE_DESTINATION", async () => {
+        const result = await verifyBaselineDestination();
+        assertDestination(result, BASELINE_MIGRATIONS);
+        return result;
+      });
+      await runDiagnosticStage("BASELINE_DEPLOY", () => adapter.deploy({ migrationsPath, schemaPath, expectedDigest: baselineDestination.digest }));
+      await runDiagnosticStage("BASELINE_HISTORY", async () => assertHistory(await adapter.readHistory(), BASELINE_MIGRATIONS));
+      await runDiagnosticStage("DAILY_GOAL_MATERIALIZATION", materializeDaily);
+      const completeDestination = await runDiagnosticStage("DAILY_GOAL_MATERIALIZATION", async () => {
+        const result = await verifyCompleteDestination();
+        assertDestination(result, REVIEWED_INVENTORY);
+        return result;
+      });
+      await runDiagnosticStage("DAILY_GOAL_PENDING_STATUS", async () => assertExactList(await adapter.readPending({ schemaPath, expectedDigest: completeDestination.digest }), [DAILY_GOAL_MIGRATION.name], "PRE_MIGRATION_PENDING_MISMATCH"));
+      const preDeployDestination = await runDiagnosticStage("DAILY_GOAL_MATERIALIZATION", async () => {
+        const result = await verifyCompleteDestination();
+        assertDestination(result, REVIEWED_INVENTORY);
+        return result;
+      });
+      await runDiagnosticStage("DAILY_GOAL_DEPLOY", () => adapter.deploy({ migrationsPath, schemaPath, expectedDigest: preDeployDestination.digest }));
+      await runDiagnosticStage("FINAL_HISTORY", async () => assertHistory(await adapter.readHistory(), REVIEWED_INVENTORY));
+      await runDiagnosticStage("FINAL_PENDING_STATUS", async () => assertExactList(await adapter.readPending({ schemaPath, expectedDigest: completeDestination.digest }), [], "POST_MIGRATION_PENDING_MISMATCH"));
+      await runDiagnosticStage("SCHEMA_EVIDENCE", async () => assertSchemaEvidence(await adapter.readSchemaEvidence()));
+    }));
+    evidence = deepFreeze({
       outcome: "PORTABLE_MIGRATION_VERIFICATION_PASS", scope: "PORTABLE_POSTGRESQL_MIGRATION_CORRECTNESS_ONLY",
       binding, migrationCount: 12, baselineMigrationCount: 11,
       postgresqlMajor: POSTGRESQL_MAJOR, inventoryDigest: MIGRATION_INVENTORY_DIGEST,
@@ -134,16 +166,21 @@ async function runTrustedVerification({ binding, activate, adapter }) {
       extensionAllowlist: [], dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
     });
     if (Buffer.byteLength(JSON.stringify(evidence), "utf8") > OUTPUT_LIMIT_BYTES) fail("OUTPUT_LIMIT_EXCEEDED");
-    return evidence;
   } catch (error) {
-    if (error instanceof EphemeralMigrationFailure) throw error;
-    throw new EphemeralMigrationFailure("EXECUTION_FAILED");
+    primaryFailure = normalizeDiagnosticFailure(error);
   } finally {
     if (!disconnectAttempted) {
       disconnectAttempted = true;
-      try { await adapter.disconnect(); } catch { throw new EphemeralMigrationFailure("DISCONNECT_FAILED"); }
+      try { await adapter.disconnect(); }
+      catch {
+        primaryFailure = primaryFailure
+          ? attachCleanupStage(primaryFailure, "DISCONNECT")
+          : new EphemeralMigrationFailure("DISCONNECT_FAILED", "DISCONNECT");
+      }
     }
   }
+  if (primaryFailure) throw primaryFailure;
+  return evidence;
 }
 
 function assertDestination(actual, expected) {
@@ -180,11 +217,39 @@ function digest(value) { return createHash("sha256").update(stable(value)).diges
 export function migrationInventoryDigest(value) { return digest(value.map((item) => ({ name: item.name, checksum: item.checksum }))); }
 function bindingDigest(value) { return digest(value); }
 export function createRefusalEvidence(error) {
-  return deepFreeze({
+  const failure = normalizeDiagnosticFailure(error);
+  const evidence = {
     outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED",
-    code: error instanceof EphemeralMigrationFailure ? error.code : "FAILED",
+    code: failure.code,
+    ...(failure.stage ? { stage: failure.stage } : {}),
+    ...(failure.cleanupStage ? { cleanupStage: failure.cleanupStage } : {}),
     dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
-  });
+  };
+  if (Buffer.byteLength(JSON.stringify(evidence), "utf8") > OUTPUT_LIMIT_BYTES) {
+    return deepFreeze({ outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED", stage: "INPUT_BINDING", dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false });
+  }
+  return deepFreeze(evidence);
+}
+export async function runDiagnosticStage(stage, operation) {
+  const safeStage = STAGE_SET.has(stage) ? stage : "INPUT_BINDING";
+  try { return await operation(); }
+  catch (error) {
+    if (error instanceof EphemeralMigrationFailure) {
+      throw new EphemeralMigrationFailure(error.code, error.stage ?? safeStage, error.cleanupStage);
+    }
+    throw new EphemeralMigrationFailure("OPERATION_FAILED", safeStage);
+  }
+}
+export function attachCleanupStage(error, cleanupStage) {
+  const primary = normalizeDiagnosticFailure(error);
+  const safeCleanup = STAGE_SET.has(cleanupStage) ? cleanupStage : "DISCONNECT";
+  return new EphemeralMigrationFailure(primary.code, primary.stage, primary.cleanupStage ?? safeCleanup);
+}
+function normalizeDiagnosticFailure(error) {
+  try {
+    if (error instanceof EphemeralMigrationFailure) return new EphemeralMigrationFailure(error.code, error.stage, error.cleanupStage);
+  } catch {}
+  return new EphemeralMigrationFailure("OPERATION_FAILED", "INPUT_BINDING");
 }
 function stable(value) { return JSON.stringify(value); }
 function fail(code) { throw new EphemeralMigrationFailure(code); }

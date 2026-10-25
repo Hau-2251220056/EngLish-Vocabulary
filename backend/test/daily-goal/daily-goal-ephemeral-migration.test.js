@@ -9,8 +9,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   BASELINE_MIGRATIONS, createEphemeralVerificationHarness, createRefusalEvidence,
-  EPHEMERAL_OPERATION, EphemeralMigrationFailure, MIGRATION_INVENTORY_DIGEST,
-  migrationInventoryDigest, REVIEWED_INVENTORY, verifyCanonicalInventory,
+  DIAGNOSTIC_STAGES, EPHEMERAL_OPERATION, EphemeralMigrationFailure, MIGRATION_INVENTORY_DIGEST,
+  migrationInventoryDigest, REVIEWED_INVENTORY, runDiagnosticStage, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
 import { MIGRATION_LOCK, withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import {
@@ -58,6 +58,48 @@ test("exact orchestration is verify11 deploy11 history11 materialize verify12 pe
     "fresh", "extensions", "verify:11", "deploy:11", "history:11", "materialize",
     "verify:12", "pending:daily", "verify:12", "deploy:12", "history:12", "pending:none", "schema", "disconnect",
   ]);
+});
+
+test("malformed destination evidence keeps the exact production orchestration stage and blocks the next deploy", async () => {
+  const cases = [
+    {
+      name: "baseline",
+      malformedVerification: 0,
+      expectedStage: "BASELINE_DESTINATION",
+      forbiddenCall: "deploy:11",
+    },
+    {
+      name: "complete",
+      malformedVerification: 1,
+      expectedStage: "DAILY_GOAL_MATERIALIZATION",
+      forbiddenCall: "deploy:12",
+    },
+    {
+      name: "pre-deploy",
+      malformedVerification: 2,
+      expectedStage: "DAILY_GOAL_MATERIALIZATION",
+      forbiddenCall: "deploy:12",
+    },
+  ];
+
+  for (const scenario of cases) {
+    const calls = [];
+    const harness = createEphemeralVerificationHarness();
+    const activation = malformedDestinationActivation(calls, scenario.malformedVerification);
+    await assert.rejects(
+      () => harness.run({ authorization: harness.issueAuthorization(bindingInput()), adapter: fakeAdapter(calls), activate: activation }),
+      (error) => {
+        const evidence = createRefusalEvidence(error);
+        assert.equal(evidence.code, "DESTINATION_INVENTORY_MISMATCH", scenario.name);
+        assert.equal(evidence.stage, scenario.expectedStage, scenario.name);
+        assert.notEqual(evidence.stage, "BASELINE_MATERIALIZATION", scenario.name);
+        assert.equal(evidence.dg1Passed, false, scenario.name);
+        return true;
+      },
+    );
+    assert.equal(calls.includes(scenario.forbiddenCall), false, scenario.name);
+    assert.equal(calls.at(-1), "disconnect", scenario.name);
+  }
 });
 
 test("Prisma-backed pending parser accepts only explicit status output", () => {
@@ -221,6 +263,99 @@ test("failure evidence and success evidence always remain non-authorizing", asyn
     assert.deepEqual([error.dg1Passed, error.supabaseCompatibilityVerified, error.deploymentAuthorized], [false, false, false]);
     assert.doesNotMatch(error.message, /password|secret/); return true;
   });
+});
+
+test("every allowlisted execution stage converts raw nested errors to bounded safe evidence", async () => {
+  for (const stage of DIAGNOSTIC_STAGES) {
+    let failure;
+    try {
+      await runDiagnosticStage(stage, async () => {
+        const error = new Error("postgresql://user:password@external.invalid/db SELECT secret FROM /private/path");
+        error.cause = { token: "token-secret", stack: "sensitive-stack" };
+        throw error;
+      });
+    } catch (error) { failure = error; }
+    const evidence = createRefusalEvidence(failure);
+    assert.deepEqual(evidence, {
+      outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED", stage,
+      dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+    });
+    assert.ok(Buffer.byteLength(JSON.stringify(evidence), "utf8") < 16_384);
+    assert.doesNotMatch(JSON.stringify(evidence), /password@|external\.invalid|select secret|\/private\/path|token-secret|sensitive-stack/i);
+  }
+});
+
+test("stable codes are preserved and forged diagnostics fail closed", async () => {
+  let stableFailure;
+  try { await runDiagnosticStage("BASELINE_HISTORY", async () => { throw new EphemeralMigrationFailure("MIGRATION_HISTORY_MISMATCH"); }); }
+  catch (error) { stableFailure = error; }
+  assert.deepEqual(createRefusalEvidence(stableFailure), {
+    outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "MIGRATION_HISTORY_MISMATCH", stage: "BASELINE_HISTORY",
+    dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+  });
+  const forged = createRefusalEvidence(new EphemeralMigrationFailure("FORGED_CODE", "FORGED_STAGE", "FORGED_CLEANUP"));
+  assert.deepEqual(forged, {
+    outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED",
+    dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+  });
+  const hostile = new Proxy({}, { getPrototypeOf() { throw new Error("diagnostic construction trap with password=secret"); } });
+  assert.deepEqual(createRefusalEvidence(hostile), {
+    outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED", stage: "INPUT_BINDING",
+    dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+  });
+});
+
+test("disconnect failure preserves primary operation and deterministic cleanup precedence", async () => {
+  const harness = createEphemeralVerificationHarness();
+  const input = bindingInput();
+  const failing = fakeAdapter([]);
+  failing.assertFresh = async () => { throw new Error("raw freshness failure"); };
+  failing.disconnect = async () => { throw new Error("raw disconnect failure"); };
+  await assert.rejects(() => harness.run({ authorization: harness.issueAuthorization(input), adapter: failing, activate: fakeActivation([]) }), (error) => {
+    assert.deepEqual(createRefusalEvidence(error), {
+      outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED", stage: "FRESH_DATABASE", cleanupStage: "DISCONNECT",
+      dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+    }); return true;
+  });
+
+  const disconnectOnly = fakeAdapter([]);
+  disconnectOnly.disconnect = async () => { throw new Error("raw disconnect failure"); };
+  await assert.rejects(() => harness.run({ authorization: harness.issueAuthorization(input), adapter: disconnectOnly, activate: fakeActivation([]) }), (error) => {
+    assert.equal(error.code, "DISCONNECT_FAILED"); assert.equal(error.stage, "DISCONNECT"); return true;
+  });
+
+  const bothCleanupFailures = fakeAdapter([]);
+  bothCleanupFailures.disconnect = async () => { throw new Error("raw disconnect failure"); };
+  await assert.rejects(() => harness.run({
+    authorization: harness.issueAuthorization(input), adapter: bothCleanupFailures,
+    activate: async () => { throw new EphemeralMigrationFailure("OPERATION_FAILED", "BASELINE_DEPLOY", "WORKSPACE_CLEANUP"); },
+  }), (error) => {
+    assert.deepEqual(createRefusalEvidence(error), {
+      outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "OPERATION_FAILED", stage: "BASELINE_DEPLOY", cleanupStage: "WORKSPACE_CLEANUP",
+      dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+    }); return true;
+  });
+});
+
+test("workspace cleanup-only and operation-plus-cleanup failures are deterministic", async () => {
+  const fixture = await createRepositoryFixture();
+  const cleanupFailure = async (workspace, options) => { await rm(workspace, options); throw new Error("raw cleanup path"); };
+  try {
+    await assert.rejects(() => withDailyGoalEphemeralWorkspace({ repositoryRoot: fixture, cleanup: cleanupFailure, operation: async () => "ok" }), (error) => {
+      assert.deepEqual(createRefusalEvidence(error), {
+        outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "CLEANUP_FAILED", stage: "WORKSPACE_CLEANUP",
+        dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+      }); return true;
+    });
+    await assert.rejects(() => withDailyGoalEphemeralWorkspace({ repositoryRoot: fixture, cleanup: cleanupFailure, operation: async () => {
+      throw new EphemeralMigrationFailure("MIGRATION_HISTORY_MISMATCH", "BASELINE_HISTORY");
+    } }), (error) => {
+      assert.deepEqual(createRefusalEvidence(error), {
+        outcome: "PORTABLE_MIGRATION_VERIFICATION_REFUSED", code: "MIGRATION_HISTORY_MISMATCH", stage: "BASELINE_HISTORY", cleanupStage: "WORKSPACE_CLEANUP",
+        dg1Passed: false, supabaseCompatibilityVerified: false, deploymentAuthorized: false,
+      }); return true;
+    });
+  } finally { await rm(fixture, { recursive: true, force: true }); }
 });
 
 test("Prisma subprocess environment strips forbidden ambient credentials and NODE_OPTIONS", () => {
@@ -547,6 +682,31 @@ function fakeActivation(calls) {
     verifyBaselineDestination: async () => { calls.push("verify:11"); return { count: 11, digest: migrationInventoryDigest(BASELINE_MIGRATIONS) }; },
     materializeDaily: async () => { calls.push("materialize"); materialized = true; },
     verifyCompleteDestination: async () => { assert.equal(materialized, true); calls.push("verify:12"); return { count: 12, digest: MIGRATION_INVENTORY_DIGEST }; },
+  });
+}
+
+function malformedDestinationActivation(calls, malformedVerification) {
+  let materialized = false;
+  let verification = 0;
+  return async (operation) => operation({
+    migrationsPath: "/disposable/prisma/migrations", schemaPath: "/disposable/prisma/schema.prisma",
+    artifact: { name: DAILY_GOAL_MIGRATION.name, checksum: DAILY_GOAL_MIGRATION.checksum, byteCount: DAILY_GOAL_MIGRATION.byteCount },
+    verifyBaselineDestination: async () => {
+      calls.push("verify:11");
+      const current = verification++;
+      return current === malformedVerification
+        ? { count: 10, digest: migrationInventoryDigest(BASELINE_MIGRATIONS) }
+        : { count: 11, digest: migrationInventoryDigest(BASELINE_MIGRATIONS) };
+    },
+    materializeDaily: async () => { calls.push("materialize"); materialized = true; },
+    verifyCompleteDestination: async () => {
+      assert.equal(materialized, true);
+      calls.push("verify:12");
+      const current = verification++;
+      return current === malformedVerification
+        ? { count: 11, digest: MIGRATION_INVENTORY_DIGEST }
+        : { count: 12, digest: MIGRATION_INVENTORY_DIGEST };
+    },
   });
 }
 

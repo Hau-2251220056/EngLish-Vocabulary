@@ -3,9 +3,12 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } fro
 import os from "node:os";
 import path from "node:path";
 import { DAILY_GOAL_MIGRATION } from "./daily-goal-phase-d-offline.js";
-import { BASELINE_MIGRATIONS, REVIEWED_INVENTORY, migrationInventoryDigest } from "./daily-goal-ephemeral-migration-core.js";
+import {
+  attachCleanupStage, BASELINE_MIGRATIONS, EphemeralMigrationFailure,
+  REVIEWED_INVENTORY, migrationInventoryDigest,
+} from "./daily-goal-ephemeral-migration-core.js";
 
-export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operation }) {
+export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operation, cleanup = rm }) {
   if (typeof operation !== "function") throw new TypeError("Ephemeral operation is required.");
   const sourceMigrations = path.join(repositoryRoot, "backend", "prisma", "migrations");
   const draft = path.join(repositoryRoot, "backend", "prisma", "migration-drafts", "daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
@@ -16,6 +19,7 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
   assertDigest(draftBytes);
   const lockBytes = await readCanonicalMigrationLock(sourceLock);
   const workspace = await mkdtemp(path.join(os.tmpdir(), "daily-goal-ephemeral-"));
+  let primaryFailure;
   try {
     const repositoryReal = await realpath(repositoryRoot);
     const workspaceReal = await realpath(workspace);
@@ -52,8 +56,15 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
       verifyBaselineDestination, materializeDaily, verifyCompleteDestination,
       artifact: Object.freeze({ name: DAILY_GOAL_MIGRATION.name, checksum: DAILY_GOAL_MIGRATION.checksum, byteCount: DAILY_GOAL_MIGRATION.byteCount }),
     }));
+  } catch (error) {
+    primaryFailure = error;
+    throw error;
   } finally {
-    await rm(workspace, { recursive: true, force: true });
+    try { await cleanup(workspace, { recursive: true, force: true }); }
+    catch {
+      if (primaryFailure) throw attachCleanupStage(primaryFailure, "WORKSPACE_CLEANUP");
+      throw new EphemeralMigrationFailure("CLEANUP_FAILED", "WORKSPACE_CLEANUP");
+    }
   }
 }
 
