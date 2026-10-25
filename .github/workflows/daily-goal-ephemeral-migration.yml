@@ -156,7 +156,7 @@ jobs:
 
       - name: Generate the job-local raw-query Prisma client
         working-directory: backend
-        run: node node_modules/prisma/build/index.js generate --schema test/daily-goal/ephemeral-prisma-schema.prisma
+        run: node test/daily-goal/daily-goal-ephemeral-migration-cli.js --generate
 
       - name: Run guarded ephemeral migration verification
         working-directory: backend

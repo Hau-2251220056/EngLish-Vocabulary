@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,7 +13,13 @@ import {
   migrationInventoryDigest, REVIEWED_INVENTORY, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
 import { MIGRATION_LOCK, withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
-import { createPrismaSubprocessEnvironment, parsePrismaPendingMigrations } from "./daily-goal-ephemeral-migration-cli.js";
+import {
+  buildPrismaCommandArguments, createPrismaSubprocessEnvironment,
+  EPHEMERAL_PRISMA_CONFIG_PATH, EPHEMERAL_PRISMA_SCHEMA_PATH,
+  parsePrismaPendingMigrations, runGuardedPrismaGenerate,
+  runGuardedPrismaCommandSequenceForTest, runGuardedPrismaMigrationCommandForTest,
+  verifyStaticPrismaInputs,
+} from "./daily-goal-ephemeral-migration-cli.js";
 import { normalizeCatalogEvidence, expectedCatalogEvidence, runRequiredBehaviorProbes } from "./daily-goal-ephemeral-schema-verifier.js";
 import { DAILY_GOAL_MIGRATION, DAILY_GOAL_SCHEMA_EVIDENCE } from "./daily-goal-phase-d-offline.js";
 
@@ -225,6 +233,179 @@ test("Prisma subprocess environment strips forbidden ambient credentials and NOD
   assert.deepEqual({ ...environment }, { PATH: "/bin", HOME: "/home/runner", DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL: localUrl });
 });
 
+test("Prisma commands use private config and schema copies with exact reviewed bytes", async () => {
+  await verifyStaticPrismaInputs();
+  const configBytes = await readFile(EPHEMERAL_PRISMA_CONFIG_PATH);
+  const schemaBytes = await readFile(EPHEMERAL_PRISMA_SCHEMA_PATH);
+  const invocations = [];
+  const cleanup = [];
+  await runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    spawnProcess: prismaSpawn(async ({ args }) => invocations.push(await inspectPrivatePrismaArgs(args, configBytes, schemaBytes))),
+    testHooks: { onCleanupAttempt: ({ label }) => cleanup.push(label) },
+  });
+  assert.deepEqual(invocations.map((item) => item.operation), ["generate"]);
+  assert.deepEqual(cleanup.sort(), ["config", "schema"]);
+  assert.throws(() => buildPrismaCommandArguments({ repositoryRoot: path.dirname(root), configPath: "x", schemaPath: "y", operation: "deploy" }), /reviewed root/);
+  assert.throws(() => buildPrismaCommandArguments({ repositoryRoot: root, configPath: "x", schemaPath: "y", operation: "dev" }), /not allowed/);
+  assert.equal(EPHEMERAL_PRISMA_SCHEMA_PATH, path.join(root, "backend/test/daily-goal/ephemeral-prisma-schema.prisma"));
+  const config = configBytes.toString("utf8");
+  assert.match(config, /env\("DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL"\)/);
+  assert.doesNotMatch(config, /env\("(?:DATABASE_URL|TEST_DATABASE_URL|CI_TEST_DATABASE_URL|DAILY_GOAL_OBSERVER_DATABASE_URL|[^"\n]*SUPABASE[^"\n]*)"\)/i);
+});
+
+test("generate binds validated bytes despite source replacement and cleans exactly once", async () => {
+  const originalConfig = await readFile(EPHEMERAL_PRISMA_CONFIG_PATH);
+  const originalSchema = await readFile(EPHEMERAL_PRISMA_SCHEMA_PATH);
+  const cleanup = [];
+  let inspected;
+  try {
+    await runGuardedPrismaGenerate({
+      sourceEnvironment: prismaTestEnvironment(),
+      testHooks: {
+        afterConfigSourceRead: async ({ sourcePath }) => writeFile(sourcePath, "malicious config\n"),
+        afterSchemaSourceRead: async ({ sourcePath }) => writeFile(sourcePath, "malicious schema\n"),
+        onCleanupAttempt: ({ label }) => cleanup.push(label),
+      },
+      spawnProcess: prismaSpawn(async ({ args }) => { inspected = await inspectPrivatePrismaArgs(args, originalConfig, originalSchema); }),
+    });
+  } finally {
+    await writeFile(EPHEMERAL_PRISMA_CONFIG_PATH, originalConfig);
+    await writeFile(EPHEMERAL_PRISMA_SCHEMA_PATH, originalSchema);
+  }
+  assert.equal(inspected.operation, "generate");
+  assert.deepEqual(cleanup.sort(), ["config", "schema"]);
+});
+
+test("deploy and status use private copies and never repository source paths", async () => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "daily-goal-prisma-command-"));
+  const schemaDirectory = path.join(fixture, "prisma");
+  const schemaPath = path.join(schemaDirectory, "schema.prisma");
+  const configBytes = await readFile(EPHEMERAL_PRISMA_CONFIG_PATH);
+  const schemaBytes = await readFile(EPHEMERAL_PRISMA_SCHEMA_PATH);
+  try {
+    await mkdir(schemaDirectory);
+    await writeFile(schemaPath, schemaBytes);
+    for (const operation of ["deploy", "status"]) {
+      let inspected;
+      await runGuardedPrismaMigrationCommandForTest({
+        schemaPath, operation, sourceEnvironment: prismaTestEnvironment(),
+        spawnProcess: prismaSpawn(async ({ args }) => { inspected = await inspectPrivatePrismaArgs(args, configBytes, schemaBytes); }, operation === "status" ? 0 : 0, operation === "status" ? "Database schema is up to date!" : ""),
+      });
+      assert.equal(inspected.operation, operation);
+      assert.notEqual(inspected.schemaPath, schemaPath);
+      assert.notEqual(inspected.configPath, EPHEMERAL_PRISMA_CONFIG_PATH);
+    }
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
+
+test("each command revalidates reused private config and its exact private schema", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  let spawnCount = 0;
+  try {
+    await runGuardedPrismaCommandSequenceForTest({
+      commands: [
+        { schemaPath: fixture.schemaPath, operation: "deploy" },
+        { schemaPath: fixture.schemaPath, operation: "status" },
+      ],
+      sourceEnvironment: prismaTestEnvironment(),
+      spawnProcess: prismaSpawn(async () => { spawnCount += 1; }, 0, "Database schema is up to date!"),
+    });
+    assert.equal(spawnCount, 2);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("final validation boundary is synchronous and contains no post-validation hook", async () => {
+  const cli = await readFile(path.join(root, "backend/test/daily-goal/daily-goal-ephemeral-migration-cli.js"), "utf8");
+  const boundary = /function spawnPrismaAfterFinalValidation\([^)]*\) \{([\s\S]*?)\n\}/.exec(cli)?.[1];
+  assert.ok(boundary);
+  assert.match(boundary, /^\n  privateConfig\.revalidateSync\(\);\n  privateSchema\.revalidateSync\(\);\n  return spawnPrisma\(spawnInput\);$/);
+  assert.doesNotMatch(boundary, /await|testHooks|callback|Promise/);
+  assert.doesNotMatch(cli, /onInvocationValidation/);
+  assert.equal((cli.match(/await spawnPrismaAfterFinalValidation\(\{/g) ?? []).length, 2);
+  assert.equal((cli.match(/return spawnPrisma\(spawnInput\)/g) ?? []).length, 1);
+});
+
+test("pre-validation attack on generate is refused with zero spawns", async () => {
+  let spawnCount = 0;
+  await assert.rejects(() => runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    testHooks: { beforeInvocationValidation: async ({ schemaPath }) => writeFile(schemaPath, "mutated before final validation\n") },
+    spawnProcess: prismaSpawn(async () => { spawnCount += 1; }),
+  }), /destination bytes mismatch/);
+  assert.equal(spawnCount, 0);
+});
+
+test("private config mutation between commands refuses before a second spawn", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  let spawnCount = 0;
+  try {
+    await assert.rejects(() => runGuardedPrismaCommandSequenceForTest({
+      commands: [
+        { schemaPath: fixture.schemaPath, operation: "deploy" },
+        { schemaPath: fixture.schemaPath, operation: "status" },
+      ],
+      sourceEnvironment: prismaTestEnvironment(),
+      testHooks: { beforeInvocationValidation: async ({ operation, configPath }) => {
+        if (operation === "status") await writeFile(configPath, "mutated private config\n");
+      } },
+      spawnProcess: prismaSpawn(async () => { spawnCount += 1; }, 0, "Database schema is up to date!"),
+    }), /destination bytes mismatch/);
+    assert.equal(spawnCount, 1);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("private schema mutation for the next command refuses before spawn", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  let spawnCount = 0;
+  try {
+    await assert.rejects(() => runGuardedPrismaCommandSequenceForTest({
+      commands: [
+        { schemaPath: fixture.schemaPath, operation: "deploy" },
+        { schemaPath: fixture.schemaPath, operation: "status" },
+      ],
+      sourceEnvironment: prismaTestEnvironment(),
+      testHooks: { beforeInvocationValidation: async ({ operation, schemaPath }) => {
+        if (operation === "status") { await rm(schemaPath); await mkdir(schemaPath); }
+      } },
+      spawnProcess: prismaSpawn(async () => { spawnCount += 1; }, 0, "Database schema is up to date!"),
+    }), /regular file/);
+    assert.equal(spawnCount, 1);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("private creation is exclusive and cleanup failures are terminal", async () => {
+  await assert.rejects(() => runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    spawnProcess: prismaSpawn(async () => {}),
+    testHooks: { beforePrivateWrite: async ({ label, destination }) => { if (label === "config") await mkdir(destination); } },
+  }), /EEXIST|EISDIR|illegal operation|directory/i);
+
+  await assert.rejects(() => runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    spawnProcess: prismaSpawn(async () => {}),
+    testHooks: { afterPrivateWrite: async ({ label, destination }) => {
+      if (label === "config") { await rm(destination); await mkdir(destination); }
+    } },
+  }), /regular file/i);
+
+  const cleanup = [];
+  await assert.rejects(() => runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    spawnProcess: prismaSpawn(async () => {}),
+    testHooks: { failCleanupLabel: "config", onCleanupAttempt: ({ label }) => cleanup.push(label) },
+  }), /cleanup failed/);
+  assert.deepEqual(cleanup.sort(), ["config", "schema"]);
+
+  const failedCleanup = [];
+  await assert.rejects(() => runGuardedPrismaGenerate({
+    sourceEnvironment: prismaTestEnvironment(),
+    spawnProcess: prismaSpawn(async () => {}, 2),
+    testHooks: { onCleanupAttempt: ({ label }) => failedCleanup.push(label) },
+  }), /command failed/);
+  assert.deepEqual(failedCleanup.sort(), ["config", "schema"]);
+});
+
 test("workflow is manual-only, default-disabled, pinned and local-only", async () => {
   const workflow = await readFile(workflowPath, "utf8");
   const cli = await readFile(path.join(root, "backend/test/daily-goal/daily-goal-ephemeral-migration-cli.js"), "utf8");
@@ -244,7 +425,8 @@ test("workflow is manual-only, default-disabled, pinned and local-only", async (
   assert.match(workflow, /CHECKOUT_SHA="\$\(git rev-parse HEAD\)"/);
   assert.match(workflow, /\[\[ "\$CHECKOUT_SHA" == "\$EVENT_SHA" \]\]/);
   assert.match(workflow, /git symbolic-ref -q HEAD/);
-  assert.match(workflow, /node node_modules\/prisma\/build\/index\.js generate/);
+  assert.match(workflow, /node test\/daily-goal\/daily-goal-ephemeral-migration-cli\.js --generate/);
+  assert.doesNotMatch(workflow, /node node_modules\/prisma\/build\/index\.js generate/);
   assert.doesNotMatch(workflow, /\bnpx\b|secrets\.|postgres:latest/);
   const runBlocks = [...workflow.matchAll(/\n\s+run: \|\n((?:\s{10,}.*\n?)*)/g)].map((match) => match[1]);
   assert.ok(runBlocks.length >= 3);
@@ -292,7 +474,61 @@ test("workflow is manual-only, default-disabled, pinned and local-only", async (
   assert.match(workflow, /set -euo pipefail/);
   assert.match(workflow, /grep -Eq '# \(SKIP\|TODO\)' "\$report"/);
   assert.doesNotMatch(cli, /env:\s*\{\s*\.\.\.process\.env/);
+  assert.match(cli, /"--config", configPath/);
+  assert.doesNotMatch(cli, /"--config", EPHEMERAL_PRISMA_CONFIG_PATH/);
+  assert.doesNotMatch(cli, /(?:^|[^A-Z_])DATABASE_URL\s*=/m);
 });
+
+function prismaTestEnvironment() {
+  return {
+    PATH: process.env.PATH ?? "",
+    DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL: "postgresql://daily_goal_ephemeral:job@127.0.0.1:5432/daily_goal_ephemeral",
+  };
+}
+
+async function createPrismaSchemaFixture() {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "daily-goal-prisma-sequence-"));
+  const schemaDirectory = path.join(fixture, "prisma");
+  const schemaPath = path.join(schemaDirectory, "schema.prisma");
+  await mkdir(schemaDirectory);
+  await writeFile(schemaPath, await readFile(EPHEMERAL_PRISMA_SCHEMA_PATH));
+  return { root: fixture, schemaPath };
+}
+
+function prismaSpawn(inspect, exitCode = 0, stdoutText = "") {
+  return (_executable, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => {};
+    process.nextTick(async () => {
+      try {
+        await inspect({ args, options });
+        if (stdoutText) child.stdout.write(stdoutText);
+        child.stdout.end();
+        child.stderr.end();
+        child.emit("exit", exitCode);
+      } catch (error) { child.emit("error", error); }
+    });
+    return child;
+  };
+}
+
+async function inspectPrivatePrismaArgs(args, expectedConfig, expectedSchema) {
+  const operation = args[1] === "generate" ? "generate" : args[2];
+  const configPath = args[args.indexOf("--config") + 1];
+  const schemaPath = args[args.indexOf("--schema") + 1];
+  assert.notEqual(configPath, EPHEMERAL_PRISMA_CONFIG_PATH);
+  assert.notEqual(schemaPath, EPHEMERAL_PRISMA_SCHEMA_PATH);
+  assert.deepEqual(await readFile(configPath), expectedConfig);
+  assert.deepEqual(await readFile(schemaPath), expectedSchema);
+  assert.match(configPath, new RegExp(`^${escapeRegex(path.join(root, "backend"))}`));
+  return { operation, configPath, schemaPath };
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function bindingInput() {
   return {

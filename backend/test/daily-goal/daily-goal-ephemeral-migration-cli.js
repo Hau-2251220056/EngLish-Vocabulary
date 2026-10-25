@@ -1,6 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { lstatSync, readFileSync } from "node:fs";
+import { chmod, lstat, mkdtemp, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import {
   createEphemeralVerificationHarness, createRefusalEvidence, EPHEMERAL_OPERATION,
@@ -11,6 +15,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, "../../..");
 const draftPath = path.join(repositoryRoot, "backend/prisma/migration-drafts/daily-goal-v1/20261022000000_add_daily_goal_v1/migration.sql");
 const migrationsPath = path.join(repositoryRoot, "backend/prisma/migrations");
+export const EPHEMERAL_PRISMA_CONFIG_PATH = path.join(repositoryRoot, "backend/test/daily-goal/ephemeral-prisma.config.ts");
+export const EPHEMERAL_PRISMA_SCHEMA_PATH = path.join(repositoryRoot, "backend/test/daily-goal/ephemeral-prisma-schema.prisma");
+const EPHEMERAL_PRISMA_CONFIG = Object.freeze({ byteCount: 162, checksum: "2d2f4b78f9a65424a7fe7f57bb54b6c9e947422acd4450e08e24f23844d0b675" });
+const EPHEMERAL_PRISMA_SCHEMA = Object.freeze({ byteCount: 156, checksum: "3b22d4b8ed9c512407f5ac629e57d81b3820355fb26960b3c6d4929cc0b9119d" });
 
 export async function runEphemeralMigrationCli({ environment = process.env, adapterFactory = createPrismaAdapter } = {}) {
   const bindingInput = {
@@ -40,9 +48,17 @@ export async function runEphemeralMigrationCli({ environment = process.env, adap
 }
 
 async function createPrismaAdapter({ localUrl, repositoryRoot }) {
-  const { PrismaClient } = await import("@prisma/client");
-  const client = new PrismaClient({ datasourceUrl: localUrl });
+  const privateConfig = await createPrivatePrismaConfigWorkspace();
+  let client;
+  try {
+    const { PrismaClient } = await import("@prisma/client");
+    client = new PrismaClient({ datasourceUrl: localUrl });
+  } catch {
+    await privateConfig.cleanup();
+    throw new Error("Prisma adapter initialization failed.");
+  }
   let activeMigrationsPath;
+  let disconnected = false;
   return {
     async assertFresh() {
       const rows = await client.$queryRaw`SELECT current_database() AS database_name, current_setting('server_version_num') AS version_num, (SELECT count(*)::int FROM pg_catalog.pg_tables WHERE schemaname = 'public') AS public_tables`;
@@ -55,7 +71,7 @@ async function createPrismaAdapter({ localUrl, repositoryRoot }) {
     async deploy({ migrationsPath: activatedPath, schemaPath, expectedDigest }) {
       if (!/^[a-f0-9]{64}$/.test(expectedDigest)) throw new Error("Destination digest is invalid.");
       activeMigrationsPath = activatedPath;
-      await runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation: "deploy" });
+      await runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation: "deploy", privateConfig });
     },
     async readHistory() {
       const rows = await client.$queryRaw`SELECT migration_name AS name, checksum, CASE WHEN finished_at IS NOT NULL AND rolled_back_at IS NULL THEN 'APPLIED' ELSE 'FAILED' END AS status FROM public._prisma_migrations ORDER BY started_at, migration_name`;
@@ -63,7 +79,7 @@ async function createPrismaAdapter({ localUrl, repositoryRoot }) {
     },
     async readPending({ schemaPath, expectedDigest }) {
       if (!/^[a-f0-9]{64}$/.test(expectedDigest)) throw new Error("Destination digest is invalid.");
-      const output = await runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation: "status" });
+      const output = await runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation: "status", privateConfig });
       return parsePrismaPendingMigrations(output);
     },
     async readSchemaEvidence() {
@@ -73,12 +89,29 @@ async function createPrismaAdapter({ localUrl, repositoryRoot }) {
       const module = await import("./daily-goal-ephemeral-schema-verifier.js");
       return module.collectDailyGoalSchemaEvidence(client);
     },
-    async disconnect() { await client.$disconnect(); },
+    async disconnect() {
+      if (disconnected) throw new Error("Prisma adapter cleanup was already attempted.");
+      disconnected = true;
+      let disconnectError;
+      try { await client.$disconnect(); } catch (error) { disconnectError = error; }
+      try { await privateConfig.cleanup(); } catch { throw new Error("Private Prisma cleanup failed."); }
+      if (disconnectError) throw new Error("Prisma disconnect failed.");
+    },
   };
 }
 
-async function runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation, spawnProcess = spawn, sourceEnvironment = process.env }) {
-  const args = [path.join(repositoryRoot, "backend/node_modules/prisma/build/index.js"), "migrate", operation, "--schema", schemaPath];
+async function runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation, privateConfig, spawnProcess = spawn, sourceEnvironment = process.env, testHooks }) {
+  const privateSchema = await materializePrivateSchema(schemaPath, { testHooks });
+  const args = buildPrismaCommandArguments({ repositoryRoot, configPath: privateConfig.path, schemaPath: privateSchema.path, operation });
+  try {
+    await testHooks?.beforeInvocationValidation?.({ operation, configPath: privateConfig.path, schemaPath: privateSchema.path });
+    return await spawnPrismaAfterFinalValidation({ privateConfig, privateSchema, args, operation, localUrl, repositoryRoot, spawnProcess, sourceEnvironment });
+  } finally {
+    await privateSchema.cleanup();
+  }
+}
+
+function spawnPrisma({ args, operation, localUrl, repositoryRoot, spawnProcess, sourceEnvironment }) {
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, args, {
       cwd: path.join(repositoryRoot, "backend"), stdio: operation === "status" ? ["ignore", "pipe", "pipe"] : "ignore",
@@ -94,10 +127,200 @@ async function runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operatio
     child.once("error", reject);
     child.once("exit", (code) => {
       if (operation === "status" && [0, 1].includes(code)) resolve(stdout);
-      else if (operation === "deploy" && code === 0) resolve("");
+      else if (["deploy", "generate"].includes(operation) && code === 0) resolve("");
       else reject(new Error("Prisma migration command failed."));
     });
   });
+}
+
+export function buildPrismaCommandArguments({ repositoryRoot: fixedRoot, configPath, schemaPath, operation }) {
+  if (fixedRoot !== repositoryRoot) throw new Error("Repository root is not the reviewed root.");
+  if (!new Set(["generate", "deploy", "status"]).has(operation)) throw new Error("Prisma operation is not allowed.");
+  return [
+    path.join(repositoryRoot, "backend/node_modules/prisma/build/index.js"),
+    ...(operation === "generate" ? ["generate"] : ["migrate", operation]),
+    "--config", configPath,
+    "--schema", schemaPath,
+  ];
+}
+
+export async function runGuardedPrismaGenerate({ spawnProcess = spawn, sourceEnvironment = process.env, testHooks } = {}) {
+  const privateConfig = await createPrivatePrismaConfigWorkspace({ testHooks });
+  let privateSchema;
+  let operationError;
+  try {
+    privateSchema = await materializePrivateSchema(EPHEMERAL_PRISMA_SCHEMA_PATH, { repositoryStatic: true, testHooks });
+    const args = buildPrismaCommandArguments({ repositoryRoot, configPath: privateConfig.path, schemaPath: privateSchema.path, operation: "generate" });
+    await testHooks?.beforeInvocationValidation?.({ operation: "generate", configPath: privateConfig.path, schemaPath: privateSchema.path });
+    await spawnPrismaAfterFinalValidation({ privateConfig, privateSchema, args, operation: "generate", localUrl: sourceEnvironment.DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL, repositoryRoot, spawnProcess, sourceEnvironment });
+  } catch (error) {
+    operationError = error;
+  } finally {
+    const cleanupError = await cleanupHandles([privateSchema, privateConfig]);
+    if (cleanupError) throw cleanupError;
+  }
+  if (operationError) throw operationError;
+}
+
+export async function runGuardedPrismaMigrationCommandForTest({ schemaPath, operation, spawnProcess, sourceEnvironment = process.env, testHooks } = {}) {
+  return runGuardedPrismaCommandSequenceForTest({ commands: [{ schemaPath, operation }], spawnProcess, sourceEnvironment, testHooks });
+}
+
+export async function runGuardedPrismaCommandSequenceForTest({ commands, spawnProcess, sourceEnvironment = process.env, testHooks } = {}) {
+  const privateConfig = await createPrivatePrismaConfigWorkspace({ testHooks });
+  let operationError;
+  const results = [];
+  try {
+    for (const command of commands) {
+      results.push(await runPrismaCommand({ repositoryRoot, localUrl: sourceEnvironment.DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL, schemaPath: command.schemaPath, operation: command.operation, privateConfig, spawnProcess, sourceEnvironment, testHooks }));
+    }
+  } catch (error) {
+    operationError = error;
+  } finally {
+    const cleanupError = await cleanupHandles([privateConfig]);
+    if (cleanupError) throw cleanupError;
+  }
+  if (operationError) throw operationError;
+  return results.length === 1 ? results[0] : results;
+}
+
+async function readReviewedPrismaFileOnce(filePath, contract, label) {
+  const info = await lstat(filePath);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error(`${label} is not a reviewed regular file.`);
+  const bytes = await readFile(filePath);
+  if (bytes.includes(Buffer.from("\r\n"))) throw new Error(`${label} is not LF-only.`);
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== contract.byteCount || checksum !== contract.checksum) throw new Error(`${label} bytes do not match the reviewed contract.`);
+  return bytes;
+}
+
+async function createPrivatePrismaConfigWorkspace({ testHooks } = {}) {
+  const bytes = await readReviewedPrismaFileOnce(EPHEMERAL_PRISMA_CONFIG_PATH, EPHEMERAL_PRISMA_CONFIG, "Prisma config");
+  await testHooks?.afterConfigSourceRead?.({ sourcePath: EPHEMERAL_PRISMA_CONFIG_PATH, bytes: Buffer.from(bytes) });
+  let directory;
+  try {
+    directory = await mkdtemp(path.join(repositoryRoot, "backend/.daily-goal-prisma-"));
+    await chmod(directory, 0o700);
+    const destination = path.join(directory, "ephemeral-prisma.config.ts");
+    await testHooks?.beforePrivateWrite?.({ label: "config", destination });
+    await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+    await testHooks?.afterPrivateWrite?.({ label: "config", destination });
+    const expected = privateArtifactContract(bytes, EPHEMERAL_PRISMA_CONFIG);
+    await verifyDestinationBytes(destination, expected, "Private Prisma config");
+    return createPrivateArtifactHandle(directory, destination, "config", expected, testHooks);
+  } catch (error) {
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function materializePrivateSchema(schemaPath, { repositoryStatic = false, testHooks } = {}) {
+  if (repositoryStatic && schemaPath !== EPHEMERAL_PRISMA_SCHEMA_PATH) throw new Error("Static Prisma schema path is not reviewed.");
+  if (!repositoryStatic) await verifyEphemeralSchemaSourcePath(schemaPath);
+  const bytes = await readReviewedPrismaFileOnce(schemaPath, EPHEMERAL_PRISMA_SCHEMA, "Prisma schema");
+  await testHooks?.afterSchemaSourceRead?.({ sourcePath: schemaPath, bytes: Buffer.from(bytes) });
+  let parent;
+  let ownsParent = false;
+  let destination;
+  try {
+    if (repositoryStatic) {
+      parent = await mkdtemp(path.join(repositoryRoot, "backend/.daily-goal-schema-"));
+      ownsParent = true;
+      await chmod(parent, 0o700);
+    } else parent = path.dirname(schemaPath);
+    destination = path.join(parent, `.daily-goal-private-${process.pid}-${randomBytes(12).toString("hex")}.prisma`);
+    await testHooks?.beforePrivateWrite?.({ label: "schema", destination });
+    await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
+    await testHooks?.afterPrivateWrite?.({ label: "schema", destination });
+    const expected = privateArtifactContract(bytes, EPHEMERAL_PRISMA_SCHEMA);
+    await verifyDestinationBytes(destination, expected, "Private Prisma schema");
+    return createPrivateArtifactHandle(ownsParent ? parent : null, destination, "schema", expected, testHooks);
+  } catch (error) {
+    if (ownsParent && parent) await rm(parent, { recursive: true, force: true }).catch(() => {});
+    else if (destination) await unlink(destination).catch(() => {});
+    throw error;
+  }
+}
+
+async function verifyEphemeralSchemaSourcePath(schemaPath) {
+  if (typeof schemaPath !== "string" || path.basename(schemaPath) !== "schema.prisma") throw new Error("Ephemeral schema path is invalid.");
+  const resolved = await realpath(schemaPath);
+  const temporaryRoot = `${await realpath(os.tmpdir())}${path.sep}`;
+  if (!resolved.startsWith(temporaryRoot)) throw new Error("Ephemeral schema is outside the temporary workspace.");
+  const info = await lstat(schemaPath);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error("Ephemeral schema is not a regular file.");
+}
+
+async function verifyDestinationBytes(filePath, contract, label) {
+  const info = await lstat(filePath);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error(`${label} destination is not a regular file.`);
+  const bytes = await readFile(filePath);
+  if (contract.lfOnly && bytes.includes(Buffer.from("\r\n"))) throw new Error(`${label} destination is not LF-only.`);
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== contract.byteCount || checksum !== contract.checksum || !bytes.equals(contract.bytes)) throw new Error(`${label} destination bytes mismatch.`);
+}
+
+function verifyDestinationBytesSync(filePath, contract, label) {
+  const info = lstatSync(filePath);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error(`${label} destination is not a regular file.`);
+  const bytes = readFileSync(filePath);
+  if (contract.lfOnly && bytes.includes(Buffer.from("\r\n"))) throw new Error(`${label} destination is not LF-only.`);
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== contract.byteCount || checksum !== contract.checksum || !bytes.equals(contract.bytes)) throw new Error(`${label} destination bytes mismatch.`);
+}
+
+function spawnPrismaAfterFinalValidation({ privateConfig, privateSchema, ...spawnInput }) {
+  privateConfig.revalidateSync();
+  privateSchema.revalidateSync();
+  return spawnPrisma(spawnInput);
+}
+
+function privateArtifactContract(bytes, reviewedContract) {
+  const contract = Object.freeze({
+    bytes: Buffer.from(bytes),
+    byteCount: bytes.length,
+    checksum: createHash("sha256").update(bytes).digest("hex"),
+    lfOnly: true,
+  });
+  if (contract.byteCount !== reviewedContract.byteCount || contract.checksum !== reviewedContract.checksum) throw new Error("Private artifact metadata does not match the reviewed contract.");
+  return contract;
+}
+
+function createPrivateArtifactHandle(directory, filePath, label, expected, testHooks) {
+  let attempted = false;
+  return {
+    path: filePath,
+    revalidateSync() {
+      verifyDestinationBytesSync(filePath, expected, `Private Prisma ${label}`);
+    },
+    async cleanup() {
+      if (attempted) throw new Error("Private Prisma cleanup was already attempted.");
+      attempted = true;
+      await testHooks?.onCleanupAttempt?.({ label, directory, filePath });
+      if (directory) await rm(directory, { recursive: true });
+      else await rm(filePath, { recursive: true });
+      if (testHooks?.failCleanupLabel === label) throw new Error("Injected private cleanup failure.");
+    },
+  };
+}
+
+async function cleanupHandles(handles) {
+  let firstError;
+  for (const handle of handles) {
+    if (!handle) continue;
+    try { await handle.cleanup(); } catch (error) { firstError ??= error; }
+  }
+  return firstError ? new Error("Private Prisma cleanup failed.") : null;
+}
+
+export async function verifyStaticPrismaInputs() {
+  const privateConfig = await createPrivatePrismaConfigWorkspace();
+  let privateSchema;
+  try { privateSchema = await materializePrivateSchema(EPHEMERAL_PRISMA_SCHEMA_PATH, { repositoryStatic: true }); }
+  finally {
+    const cleanupError = await cleanupHandles([privateSchema, privateConfig]);
+    if (cleanupError) throw cleanupError;
+  }
 }
 
 export function createPrismaSubprocessEnvironment(source, localUrl) {
@@ -119,6 +342,14 @@ export function parsePrismaPendingMigrations(output) {
 
 async function main() {
   try {
+    if (process.argv[2] === "--verify-static-prisma-inputs") {
+      await verifyStaticPrismaInputs();
+      return;
+    }
+    if (process.argv[2] === "--generate") {
+      await runGuardedPrismaGenerate();
+      return;
+    }
     const result = await runEphemeralMigrationCli();
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
