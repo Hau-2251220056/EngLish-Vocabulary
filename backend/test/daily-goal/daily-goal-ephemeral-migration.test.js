@@ -124,7 +124,10 @@ test("migration lock symlink is refused when the platform permits symlink creati
       await rm(lock);
       try { await symlink(target, lock, "file"); }
       catch (error) {
-        if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) { t.skip(`symlink creation blocked by platform: ${error.code}`); return; }
+        if (process.platform === "win32" && ["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+          t.skip(`symlink creation blocked by Windows: ${error.code}`);
+          return;
+        }
         throw error;
       }
       await assert.rejects(() => activation.verifyBaselineDestination(), /inventory|regular file/i);
@@ -229,8 +232,65 @@ test("workflow is manual-only, default-disabled, pinned and local-only", async (
   assert.doesNotMatch(workflow, /^\s+(push|pull_request|schedule|workflow_call):/m);
   assert.match(workflow, /default: false/);
   assert.match(workflow, /image: postgres:17/);
+  assert.match(workflow, /expected_source_sha:\n\s+description:[^\n]+\n\s+required: true\n\s+type: string/);
+  assert.match(workflow, /expected_source_ref:\n\s+description:[^\n]+\n\s+required: true\n\s+type: string/);
+  assert.doesNotMatch(workflow, /expected_source_sha:[\s\S]*?default:/);
+  assert.match(workflow, /\[\[ "\$EXPECTED_SOURCE_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+  assert.match(workflow, /\[\[ "\$EXPECTED_SOURCE_SHA" == "\$EVENT_SHA" \]\]/);
+  assert.match(workflow, /\[\[ "\$EXPECTED_SOURCE_REF" == "\$EVENT_REF" \]\]/);
+  assert.match(workflow, /\[\[ "\$EVENT_REF" == "refs\/heads\/feature\/daily-goal-v1" \]\]/);
+  assert.match(workflow, /\[\[ "\$WORKFLOW_SHA" == "\$EVENT_SHA" \]\]/);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /CHECKOUT_SHA="\$\(git rev-parse HEAD\)"/);
+  assert.match(workflow, /\[\[ "\$CHECKOUT_SHA" == "\$EVENT_SHA" \]\]/);
+  assert.match(workflow, /git symbolic-ref -q HEAD/);
   assert.match(workflow, /node node_modules\/prisma\/build\/index\.js generate/);
   assert.doesNotMatch(workflow, /\bnpx\b|secrets\.|postgres:latest/);
+  const runBlocks = [...workflow.matchAll(/\n\s+run: \|\n((?:\s{10,}.*\n?)*)/g)].map((match) => match[1]);
+  assert.ok(runBlocks.length >= 3);
+  for (const runBlock of runBlocks) assert.doesNotMatch(runBlock, /\$\{\{\s*inputs\./);
+  const jobs = workflow.slice(workflow.indexOf("\njobs:\n"));
+  const jobIds = [...jobs.matchAll(/^  ([a-z0-9-]+):\n/gm)].map((match) => match[1]);
+  assert.deepEqual(jobIds, ["preflight", "ephemeral-migration"]);
+  const preflightStart = jobs.indexOf("  preflight:\n");
+  const migrationStart = jobs.indexOf("  ephemeral-migration:\n");
+  const preflight = jobs.slice(preflightStart, migrationStart);
+  const migrationJob = jobs.slice(migrationStart);
+  assert.doesNotMatch(preflight, /^\s{4}(if|services):/m);
+  assert.doesNotMatch(preflight, /actions\/checkout|actions\/setup-node|npm ci|node --test|prisma|DATABASE_URL|postgres:17/);
+  for (const guard of [
+    /"\$EVENT_NAME" == "workflow_dispatch"/,
+    /"\$EVENT_REPOSITORY" == "Hau-2251220056\/EngLish-Vocabulary"/,
+    /"\$REQUESTED_OPERATION" == "DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17"/,
+    /"\$REQUESTED_AUTHORIZATION" == "true"/,
+    /"\$EXPECTED_SOURCE_SHA" =~ \^\[0-9a-f\]\{40\}\$/,
+    /"\$EXPECTED_SOURCE_SHA" == "\$EVENT_SHA"/,
+    /"\$EXPECTED_SOURCE_REF" == "\$EVENT_REF"/,
+    /"\$EVENT_REF" == "refs\/heads\/feature\/daily-goal-v1"/,
+    /"\$WORKFLOW_SHA" == "\$EVENT_SHA"/,
+    /"\$EVENT_RUN_ID" =~ \^\[0-9\]\+\$/,
+    /"\$EVENT_RUN_ATTEMPT" =~ \^\[0-9\]\+\$/,
+  ]) {
+    assert.match(preflight, guard);
+  }
+  assert.ok((preflight.match(/exit 1/g) ?? []).length >= 11);
+  assert.match(migrationJob, /^    needs: preflight$/m);
+  assert.doesNotMatch(migrationJob, /always\s*\(/);
+  assert.match(migrationJob, /^    services:\n\s+postgres:\n\s+image: postgres:17$/m);
+  assert.equal((jobs.match(/image: postgres:17/g) ?? []).length, 1);
+  assert.equal((jobs.match(/^    services:/gm) ?? []).length, 1);
+  const guardIndex = jobs.indexOf("Verify immutable dispatch binding");
+  const checkoutIndex = workflow.indexOf("Check out exact source revision");
+  const installIndex = workflow.indexOf("Install locked backend dependencies");
+  const focusedIndex = workflow.indexOf("Run focused offline migration verification");
+  const generateIndex = workflow.indexOf("Generate the job-local raw-query Prisma client");
+  const migrationIndex = workflow.indexOf("Run guarded ephemeral migration verification");
+  assert.ok(guardIndex >= 0 && preflightStart < guardIndex && guardIndex < migrationStart);
+  assert.ok(migrationStart < checkoutIndex && checkoutIndex < installIndex);
+  assert.ok(installIndex < focusedIndex && focusedIndex < generateIndex && generateIndex < migrationIndex);
+  assert.match(workflow, /node --test --test-concurrency=1 backend\/test\/daily-goal\/daily-goal-ephemeral-migration\.test\.js \| tee "\$report"/);
+  assert.match(workflow, /set -euo pipefail/);
+  assert.match(workflow, /grep -Eq '# \(SKIP\|TODO\)' "\$report"/);
   assert.doesNotMatch(cli, /env:\s*\{\s*\.\.\.process\.env/);
 });
 

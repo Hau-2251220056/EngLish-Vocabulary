@@ -16,6 +16,14 @@ on:
         required: true
         type: boolean
         default: false
+      expected_source_sha:
+        description: Exact lowercase feature commit SHA authorized by HUMAN
+        required: true
+        type: string
+      expected_source_ref:
+        description: Exact feature ref authorized by HUMAN
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,11 +33,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify-daily-goal-migration:
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      inputs.operation == 'DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17' &&
-      inputs.authorize_ephemeral_migration == true
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify immutable dispatch binding
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_RUN_ID: ${{ github.run_id }}
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_AUTHORIZATION: ${{ inputs.authorize_ephemeral_migration }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_NAME" == "workflow_dispatch" ]] || { echo "Refusal: event is not workflow_dispatch"; exit 1; }
+          [[ "$EVENT_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]] || { echo "Refusal: repository mismatch"; exit 1; }
+          [[ "$REQUESTED_OPERATION" == "DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17" ]] || { echo "Refusal: operation mismatch"; exit 1; }
+          [[ "$REQUESTED_AUTHORIZATION" == "true" ]] || { echo "Refusal: authorization missing"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: expected source SHA is malformed"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: expected source SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: expected source ref mismatch"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: event ref is not the authorized feature ref"; exit 1; }
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA mismatch"; exit 1; }
+          [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Refusal: run ID is malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" =~ ^[0-9]+$ ]] || { echo "Refusal: run attempt is malformed"; exit 1; }
+
+  ephemeral-migration:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -62,6 +99,39 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify detached checkout binding
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_RUN_ID: ${{ github.run_id }}
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          CHECKOUT_SHA="$(git rev-parse HEAD)"
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: expected source SHA is malformed after checkout"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: expected source ref mismatch after checkout"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: event ref changed after preflight"; exit 1; }
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA changed after preflight"; exit 1; }
+          [[ "$CHECKOUT_SHA" == "$EXPECTED_SOURCE_SHA" ]] || { echo "Refusal: checkout SHA does not match expected source SHA"; exit 1; }
+          [[ "$CHECKOUT_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: checkout SHA does not match event SHA"; exit 1; }
+          if git symbolic-ref -q HEAD >/dev/null; then
+            echo "Refusal: checkout is not detached"
+            exit 1
+          fi
+          printf '%s\n' \
+            "expected_source_sha=$EXPECTED_SOURCE_SHA" \
+            "github_event_sha=$EVENT_SHA" \
+            "github_workflow_sha=$WORKFLOW_SHA" \
+            "checkout_sha=$CHECKOUT_SHA" \
+            "expected_source_ref=$EXPECTED_SOURCE_REF" \
+            "github_event_ref=$EVENT_REF" \
+            "github_run_id=$EVENT_RUN_ID" \
+            "github_run_attempt=$EVENT_RUN_ATTEMPT"
+
       - name: Set up Node.js 22
         uses: actions/setup-node@v7
         with:
@@ -72,6 +142,17 @@ jobs:
       - name: Install locked backend dependencies without lifecycle scripts
         working-directory: backend
         run: npm ci --ignore-scripts
+
+      - name: Run focused offline migration verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/daily-goal-ephemeral-focused.tap"
+          node --test --test-concurrency=1 backend/test/daily-goal/daily-goal-ephemeral-migration.test.js | tee "$report"
+          if grep -Eq '# (SKIP|TODO)' "$report"; then
+            echo "Refusal: focused suite reported an unexpected skip or todo"
+            exit 1
+          fi
 
       - name: Generate the job-local raw-query Prisma client
         working-directory: backend
