@@ -12,7 +12,7 @@ import {
   DIAGNOSTIC_STAGES, EPHEMERAL_OPERATION, EphemeralMigrationFailure, MIGRATION_INVENTORY_DIGEST,
   migrationInventoryDigest, REVIEWED_INVENTORY, runDiagnosticStage, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
-import { MIGRATION_LOCK, withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
+import { EPHEMERAL_SCHEMA, MIGRATION_LOCK, withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import {
   buildPrismaCommandArguments, createPrismaSubprocessEnvironment,
   EPHEMERAL_PRISMA_CONFIG_PATH, EPHEMERAL_PRISMA_SCHEMA_PATH,
@@ -136,6 +136,77 @@ test("destination inventory verifies exact 11 then exact 12 and cleans once", as
     }});
     await assert.rejects(() => readFile(workspace), { code: "ENOENT" });
   } finally { await rm(fixture, { recursive: true, force: true }); }
+});
+
+test("production workspace schema reaches guarded deploy with exact reviewed private bytes and cleanup", async () => {
+  const fixture = await createRepositoryFixture();
+  const reviewedSchema = await readFile(EPHEMERAL_PRISMA_SCHEMA_PATH);
+  const cleanupAttempts = [];
+  let workspace;
+  let spawnCount = 0;
+  try {
+    await withDailyGoalEphemeralWorkspace({ repositoryRoot: fixture, operation: async (activation) => {
+      workspace = activation.workspace;
+      await activation.verifyBaselineDestination();
+      await runGuardedPrismaMigrationCommandForTest({
+        schemaPath: activation.schemaPath,
+        operation: "deploy",
+        sourceEnvironment: prismaTestEnvironment(),
+        testHooks: { onCleanupAttempt: ({ label }) => cleanupAttempts.push(label) },
+        spawnProcess: prismaDiagnosticSpawn({ inspect: async ({ args }) => {
+          spawnCount += 1;
+          const privateSchemaPath = args[args.indexOf("--schema") + 1];
+          const privateSchemaBytes = await readFile(privateSchemaPath);
+          assert.notEqual(privateSchemaPath, activation.schemaPath);
+          assert.equal(privateSchemaBytes.length, EPHEMERAL_SCHEMA.byteCount);
+          assert.equal(createHash("sha256").update(privateSchemaBytes).digest("hex"), EPHEMERAL_SCHEMA.checksum);
+          assert.deepEqual(privateSchemaBytes, reviewedSchema);
+        } }),
+      });
+    }});
+    assert.equal(spawnCount, 1);
+    assert.deepEqual(cleanupAttempts.sort(), ["config", "schema"]);
+    await assert.rejects(() => readFile(workspace), { code: "ENOENT" });
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
+
+test("production workspace refuses tampered canonical schema source and destination before spawn", async () => {
+  const sourceFixture = await createRepositoryFixture();
+  const destinationFixture = await createRepositoryFixture();
+  let operationCount = 0;
+  let spawnCount = 0;
+  let destinationWorkspace;
+  try {
+    const sourceSchema = path.join(sourceFixture, "backend/test/daily-goal/ephemeral-prisma-schema.prisma");
+    await writeFile(sourceSchema, "tampered source\n");
+    await assert.rejects(() => withDailyGoalEphemeralWorkspace({
+      repositoryRoot: sourceFixture,
+      operation: async () => { operationCount += 1; },
+    }), /reviewed contract/);
+
+    await assert.rejects(() => withDailyGoalEphemeralWorkspace({
+      repositoryRoot: destinationFixture,
+      testHooks: { afterSchemaWrite: async ({ schemaPath }) => {
+        destinationWorkspace = path.dirname(path.dirname(schemaPath));
+        await writeFile(schemaPath, "tampered destination\n");
+      } },
+      operation: async (activation) => {
+        operationCount += 1;
+        await runGuardedPrismaMigrationCommandForTest({
+          schemaPath: activation.schemaPath,
+          operation: "deploy",
+          sourceEnvironment: prismaTestEnvironment(),
+          spawnProcess: prismaDiagnosticSpawn({ inspect: async () => { spawnCount += 1; } }),
+        });
+      },
+    }), /reviewed contract|destination bytes mismatch/);
+    assert.equal(operationCount, 0);
+    assert.equal(spawnCount, 0);
+    await assert.rejects(() => readFile(destinationWorkspace), { code: "ENOENT" });
+  } finally {
+    await rm(sourceFixture, { recursive: true, force: true });
+    await rm(destinationFixture, { recursive: true, force: true });
+  }
 });
 
 test("migration lock source and destination layout fail closed", async () => {
@@ -935,6 +1006,10 @@ async function createRepositoryFixture() {
   const draftDestination = path.join(fixture, "backend/prisma/migration-drafts/daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
   await mkdir(path.dirname(draftDestination), { recursive: true });
   await cp(draftSource, draftDestination);
+  const schemaSource = EPHEMERAL_PRISMA_SCHEMA_PATH;
+  const schemaDestination = path.join(fixture, "backend/test/daily-goal/ephemeral-prisma-schema.prisma");
+  await mkdir(path.dirname(schemaDestination), { recursive: true });
+  await cp(schemaSource, schemaDestination);
   return fixture;
 }
 

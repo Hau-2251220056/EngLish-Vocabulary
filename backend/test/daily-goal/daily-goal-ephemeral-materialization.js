@@ -8,16 +8,18 @@ import {
   REVIEWED_INVENTORY, migrationInventoryDigest,
 } from "./daily-goal-ephemeral-migration-core.js";
 
-export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operation, cleanup = rm }) {
+export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operation, cleanup = rm, testHooks }) {
   if (typeof operation !== "function") throw new TypeError("Ephemeral operation is required.");
   const sourceMigrations = path.join(repositoryRoot, "backend", "prisma", "migrations");
   const draft = path.join(repositoryRoot, "backend", "prisma", "migration-drafts", "daily-goal-v1", DAILY_GOAL_MIGRATION.name, "migration.sql");
   const activeCopy = path.join(sourceMigrations, DAILY_GOAL_MIGRATION.name, "migration.sql");
   const sourceLock = path.join(sourceMigrations, MIGRATION_LOCK.name);
+  const sourceSchema = path.join(repositoryRoot, "backend", "test", "daily-goal", "ephemeral-prisma-schema.prisma");
   await assertMissing(activeCopy);
   const draftBytes = await readRegularLfFile(draft);
   assertDigest(draftBytes);
   const lockBytes = await readCanonicalMigrationLock(sourceLock);
+  const schemaBytes = await readCanonicalEphemeralSchema(sourceSchema);
   const workspace = await mkdtemp(path.join(os.tmpdir(), "daily-goal-ephemeral-"));
   let primaryFailure;
   try {
@@ -27,9 +29,10 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
     const prismaPath = path.join(workspace, "prisma");
     const migrationsPath = path.join(prismaPath, "migrations");
     await copyCanonicalMigrationsTree(sourceMigrations, migrationsPath, lockBytes);
-    await writeFile(path.join(prismaPath, "schema.prisma"), [
-      "datasource db {", "  provider = \"postgresql\"", "  url = env(\"DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL\")", "}", "",
-    ].join("\n"), { flag: "wx" });
+    const schemaPath = path.join(prismaPath, EPHEMERAL_SCHEMA.name);
+    await writeFile(schemaPath, schemaBytes, { flag: "wx" });
+    await testHooks?.afterSchemaWrite?.({ schemaPath });
+    await verifyCanonicalEphemeralSchemaDestination(schemaPath, schemaBytes);
     let materialized = false;
     let baselineVerified = false;
     const materializeDaily = async () => {
@@ -52,7 +55,7 @@ export async function withDailyGoalEphemeralWorkspace({ repositoryRoot, operatio
       return verifyDestinationInventory(migrationsPath, REVIEWED_INVENTORY);
     };
     return await operation(Object.freeze({
-      workspace, migrationsPath, schemaPath: path.join(prismaPath, "schema.prisma"),
+      workspace, migrationsPath, schemaPath,
       verifyBaselineDestination, materializeDaily, verifyCompleteDestination,
       artifact: Object.freeze({ name: DAILY_GOAL_MIGRATION.name, checksum: DAILY_GOAL_MIGRATION.checksum, byteCount: DAILY_GOAL_MIGRATION.byteCount }),
     }));
@@ -106,6 +109,12 @@ export const MIGRATION_LOCK = Object.freeze({
   checksum: "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900",
 });
 
+export const EPHEMERAL_SCHEMA = Object.freeze({
+  name: "schema.prisma",
+  byteCount: 156,
+  checksum: "3b22d4b8ed9c512407f5ac629e57d81b3820355fb26960b3c6d4929cc0b9119d",
+});
+
 async function copyCanonicalMigrationsTree(source, destination, lockBytes) {
   const stats = await lstat(source);
   if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error("Migration source tree is invalid.");
@@ -145,6 +154,19 @@ async function readCanonicalMigrationLock(file) {
     throw new Error("migration_lock.toml does not match the canonical PostgreSQL contract.");
   }
   return bytes;
+}
+
+async function readCanonicalEphemeralSchema(file) {
+  const bytes = await readRegularLfFile(file);
+  if (bytes.length !== EPHEMERAL_SCHEMA.byteCount || sha256(bytes) !== EPHEMERAL_SCHEMA.checksum) {
+    throw new Error("Ephemeral Prisma schema does not match the reviewed contract.");
+  }
+  return bytes;
+}
+
+async function verifyCanonicalEphemeralSchemaDestination(file, expectedBytes) {
+  const bytes = await readCanonicalEphemeralSchema(file);
+  if (!bytes.equals(expectedBytes)) throw new Error("Ephemeral Prisma schema destination bytes mismatch.");
 }
 
 async function readRegularLfFile(file) {
