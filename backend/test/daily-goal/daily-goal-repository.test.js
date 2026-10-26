@@ -51,6 +51,22 @@ test("owned session, monitor and notification operations always include authenti
   assert.equal(JSON.stringify(harness.calls).includes(OTHER), false);
 });
 
+test("activity context queries remain owner/access scoped inside the USER transaction", async () => {
+  const harness = createHarness();
+  const observedAt = new Date("2026-10-26T00:00:00.000Z");
+  await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, async (repository) => {
+    await repository.findAuthorizedActivityContext({ activityType: "QUIZ", learningSessionId: "learning", observedAt });
+    await repository.findAuthorizedActivityContext({ activityType: "SPEAKING", setId: "set", vocabularyId: "word", observedAt });
+  });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "learning-session.findFirst").args.where, {
+    id: "learning", user_id: USER, status: "ACTIVE", mode: "QUIZ", expires_at: { gt: observedAt },
+  });
+  const speaking = harness.calls.find((call) => call.kind === "set.findFirst").args.where;
+  assert.equal(speaking.id, "set");
+  assert.deepEqual(speaking.items, { some: { vocabulary_id: "word" } });
+  assert.equal(speaking.OR[1].owner_id, USER);
+});
+
 test("generation updates and expired-owner fencing are conditional and clear the pointer first", async () => {
   const harness = createHarness();
   await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, async (repository) => {
@@ -345,6 +361,8 @@ function createHarness({
         : {}),
     }),
     uSER_NOTIFICATION: delegate("notification"),
+    lEARNING_SESSION: delegate("learning-session"),
+    vOCABULARY_SET: delegate("set"),
   };
   const prisma = {
     async $transaction(callback) {

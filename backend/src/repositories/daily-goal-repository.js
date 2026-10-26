@@ -58,6 +58,28 @@ function createRepository(prisma, now) {
 
 function createTransactionRepository(transaction, userId, lifecycle) {
   return guardRepository({
+    findAuthorizedActivityContext({ activityType, learningSessionId, setId, vocabularyId, observedAt }) {
+      if (activityType === "SPEAKING") {
+        return transaction.vOCABULARY_SET.findFirst({
+          where: {
+            id: setId,
+            OR: [{ is_public: true }, { is_public: false, owner_id: userId }],
+            items: { some: { vocabulary_id: vocabularyId } },
+          },
+          select: { id: true },
+        });
+      }
+      return transaction.lEARNING_SESSION.findFirst({
+        where: {
+          id: learningSessionId,
+          user_id: userId,
+          status: "ACTIVE",
+          mode: activityType,
+          expires_at: { gt: observedAt },
+        },
+        select: { id: true, mode: true, status: true, expires_at: true },
+      });
+    },
     findTrackingSession(sessionId) {
       return transaction.dAILY_GOAL_TRACKING_SESSION.findFirst({
         where: { id: sessionId, user_id: userId },

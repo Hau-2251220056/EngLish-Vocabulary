@@ -1,0 +1,316 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createDailyGoalService } from "../../src/services/daily-goal-service.js";
+
+const USER = "11111111-1111-4111-8111-111111111111";
+const SESSION = "22222222-2222-4222-8222-222222222222";
+const SESSION_B = "22222222-2222-4222-8222-222222222223";
+const LEARNING = "33333333-3333-4333-8333-333333333333";
+const OPS = Array.from({ length: 12 }, (_, i) => `${String(i + 1).padStart(8, "0")}-4444-4444-8444-444444444444`);
+
+test("establish and READY use the locked production repository, issue server timing, and credit zero", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  const established = await service.establish(USER, { operation_id: OPS[0], activity_type: "NORMAL", learning_session_id: LEARNING });
+  assert.equal(established.tracking_session_id, SESSION);
+  assert.equal(established.credited_milliseconds, "0");
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  await assert.rejects(service.engage(USER, SESSION, { operation_id: OPS[4], generation: ready.generation, event_type: "RESUME" }), hasCode("TRACKING_SEQUENCE_CONFLICT"));
+  assert.equal(ready.owner, true);
+  assert.equal(ready.generation, "1");
+  assert.equal(ready.engagement_expires_at, "2026-10-26T00:02:00.000Z");
+  assert.equal(ready.credited_milliseconds, "0");
+  assert.equal(harness.state.days[0].active_milliseconds, 0n);
+});
+
+test("ordinary event at the deadline fences with zero expired-gap credit and requires explicit RESUME", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:02:00.000Z");
+  await assert.rejects(service.engage(USER, SESSION, { operation_id: OPS[2], generation: "1", event_type: "REVEAL" }), hasCode("IDLE_RESUME_REQUIRED"));
+  await assert.rejects(service.engage(USER, SESSION, { operation_id: OPS[2], generation: "1", event_type: "REVEAL" }), hasCode("IDLE_RESUME_REQUIRED"));
+  assert.equal(harness.state.sessions[0].status, "PAUSED");
+  assert.equal(harness.state.days[0].active_milliseconds, 0n);
+  now = new Date("2026-10-26T00:02:01.000Z");
+  const resumed = await service.engage(USER, SESSION, { operation_id: OPS[3], generation: "2", event_type: "RESUME" });
+  assert.equal(resumed.generation, "3");
+  assert.equal(resumed.credited_milliseconds, "0");
+});
+
+test("expired non-owner event pauses only its requester and cannot fence the current owner", async () => {
+  const harness = createHarness();
+  const ownerCursor = new Date("2026-10-26T00:00:10.000Z");
+  const ownerLease = new Date("2026-10-26T00:01:00.000Z");
+  harness.state.sessions.push(
+    { id: SESSION, activity_type: "NORMAL", learning_session_id: LEARNING, status: "ACTIVE", engagement_expires_at: new Date("2026-10-26T00:02:00.000Z") },
+    { id: SESSION_B, activity_type: "NORMAL", learning_session_id: LEARNING, status: "ACTIVE", engagement_expires_at: new Date("2026-10-25T23:59:59.000Z") },
+  );
+  harness.state.owner = { tracking_session_id: SESSION, generation: 7n, last_accounted_at: ownerCursor, lease_expires_at: ownerLease };
+  const service = createService(harness);
+  await assert.rejects(service.engage(USER, SESSION_B, { operation_id: OPS[5], event_type: "REVEAL" }), hasCode("IDLE_RESUME_REQUIRED"));
+  assert.deepEqual(harness.state.owner, { tracking_session_id: SESSION, generation: 7n, last_accounted_at: ownerCursor, lease_expires_at: ownerLease });
+  assert.equal(harness.state.sessions.find((row) => row.id === SESSION_B).status, "PAUSED");
+});
+
+test("expired meaningful event stores actual prefix credit and exact replay stays terminal without duplicate upsert", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:01:40.000Z");
+  const reclaimed = await service.heartbeat(USER, SESSION, heartbeat(OPS[2], ready.generation));
+  now = new Date("2026-10-26T00:02:05.000Z");
+  const request = { operation_id: OPS[3], generation: reclaimed.generation, event_type: "REVEAL" };
+  await assert.rejects(service.engage(USER, SESSION, request), hasCode("IDLE_RESUME_REQUIRED"));
+  const firstAmount = harness.state.days[0].active_milliseconds;
+  assert.equal(firstAmount, 20_000n);
+  assert.equal(harness.state.receipts.find((row) => row.operation_id === OPS[3]).credited_milliseconds, 20_000n);
+  await assert.rejects(service.engage(USER, SESSION, request), hasCode("IDLE_RESUME_REQUIRED"));
+  assert.equal(harness.state.days[0].active_milliseconds, firstAmount);
+});
+
+test("idle heartbeat and its exact replay both return terminal conflict without duplicate day credit", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  let generation = ready.generation;
+  for (let second = 20, index = 2; second < 120; second += 20, index++) {
+    now = new Date(`2026-10-26T00:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}.000Z`);
+    generation = (await service.heartbeat(USER, SESSION, heartbeat(OPS[index], generation))).generation;
+  }
+  now = new Date("2026-10-26T00:02:00.000Z");
+  const request = heartbeat(OPS[7], generation);
+  await assert.rejects(service.heartbeat(USER, SESSION, request), hasCode("IDLE_RESUME_REQUIRED"));
+  const firstAmount = harness.state.days[0].active_milliseconds;
+  assert.equal(firstAmount, 120_000n);
+  await assert.rejects(service.heartbeat(USER, SESSION, request), hasCode("IDLE_RESUME_REQUIRED"));
+  assert.equal(harness.state.days[0].active_milliseconds, firstAmount);
+});
+
+test("heartbeat accepts 25 seconds, rejects a larger gap in full, and never extends engagement", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:00:25.000Z");
+  const accepted = await service.heartbeat(USER, SESSION, heartbeat(OPS[2], ready.generation));
+  assert.equal(accepted.credited_milliseconds, "25000");
+  assert.equal(accepted.engagement_expires_at, ready.engagement_expires_at);
+  now = new Date("2026-10-26T00:00:51.000Z");
+  const rejected = await service.heartbeat(USER, SESSION, heartbeat(OPS[3], ready.generation));
+  assert.equal(rejected.credited_milliseconds, "0");
+  assert.equal(harness.state.days[0].active_milliseconds, 25_000n);
+});
+
+test("early heartbeat is rate-bounded, credits zero, and does not move cursor or lease", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  const cursor = harness.state.owner.last_accounted_at;
+  const lease = harness.state.owner.lease_expires_at;
+  now = new Date("2026-10-26T00:00:09.999Z");
+  const early = await service.heartbeat(USER, SESSION, heartbeat(OPS[2], ready.generation));
+  assert.equal(early.credited_milliseconds, "0");
+  assert.equal(harness.state.owner.last_accounted_at, cursor);
+  assert.equal(harness.state.owner.lease_expires_at, lease);
+});
+
+test("timely meaningful interaction accounts under the old deadline before extending it", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:00:20.000Z");
+  const result = await service.engage(USER, SESSION, { operation_id: OPS[2], generation: ready.generation, event_type: "REVEAL" });
+  assert.equal(result.credited_milliseconds, "20000");
+  assert.equal(result.generation, ready.generation);
+  assert.equal(result.engagement_expires_at, "2026-10-26T00:02:20.000Z");
+  assert.equal(harness.state.days[0].active_milliseconds, 20_000n);
+});
+
+test("persisted exact replay succeeds, mismatched reuse conflicts, and stale ownership credits zero", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  await service.establish(USER, establish(OPS[0]));
+  const first = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  const replay = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.generation, first.generation);
+  await assert.rejects(service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "RESUME" }), hasCode("OPERATION_CONFLICT"));
+  await assert.rejects(service.heartbeat(USER, SESSION, heartbeat(OPS[2], "0")), hasCode("TRACKING_OWNERSHIP_CONFLICT"));
+  await assert.rejects(service.engage(USER, SESSION, { operation_id: OPS[3], generation: "0", event_type: "REVEAL" }), hasCode("TRACKING_OWNERSHIP_CONFLICT"));
+  assert.equal(harness.state.days[0].active_milliseconds, 0n);
+});
+
+test("valid SUCCESS receipts replay for create, interaction, heartbeat, pause and close", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  const createRequest = establish(OPS[0]);
+  await service.establish(USER, createRequest);
+  assert.equal((await service.establish(USER, createRequest)).replayed, true);
+  const readyRequest = { operation_id: OPS[1], event_type: "READY" };
+  const ready = await service.engage(USER, SESSION, readyRequest);
+  assert.equal((await service.engage(USER, SESSION, readyRequest)).replayed, true);
+  now = new Date("2026-10-26T00:00:20.000Z");
+  const interactionRequest = { operation_id: OPS[2], generation: ready.generation, event_type: "REVEAL" };
+  await service.engage(USER, SESSION, interactionRequest);
+  assert.equal((await service.engage(USER, SESSION, interactionRequest)).replayed, true);
+  now = new Date("2026-10-26T00:00:40.000Z");
+  const heartbeatRequest = heartbeat(OPS[3], ready.generation);
+  await service.heartbeat(USER, SESSION, heartbeatRequest);
+  assert.equal((await service.heartbeat(USER, SESSION, heartbeatRequest)).replayed, true);
+  const pauseRequest = { operation_id: OPS[4], generation: ready.generation, reason: "HIDDEN" };
+  await service.pause(USER, SESSION, pauseRequest);
+  assert.equal((await service.pause(USER, SESSION, pauseRequest)).replayed, true);
+  const resume = await service.engage(USER, SESSION, { operation_id: OPS[5], generation: "2", event_type: "RESUME" });
+  const closeRequest = { operation_id: OPS[6], generation: resume.generation };
+  await service.close(USER, SESSION, closeRequest);
+  assert.equal((await service.close(USER, SESSION, closeRequest)).replayed, true);
+});
+
+test("malformed persisted SUCCESS evidence fails closed without mutation or public success", async () => {
+  const mutations = [
+    (data) => { data.extra_receipt_metadata = "forbidden"; },
+    (data) => { data.projection.secret = "forbidden"; },
+    (data) => { data.owner = "true"; },
+    (data) => { data.generation = "-1"; },
+    (data) => { data.status = "UNKNOWN"; },
+    (data) => { delete data.tracking_session_id; },
+    (data) => { data.credited_milliseconds = "25001"; data.projection.credited_milliseconds = "25001"; },
+    (data) => { data.projection.credited_milliseconds = "1"; },
+  ];
+  for (const mutate of mutations) {
+    const harness = createHarness();
+    const service = createService(harness);
+    const request = establish(OPS[0]);
+    await service.establish(USER, request);
+    const receipt = harness.state.receipts[0];
+    mutate(receipt.response_projection.data);
+    const snapshot = structuredClone(harness.state);
+    await assert.rejects(service.establish(USER, request), /Stored Daily Goal replay outcome is invalid/);
+    assert.deepEqual(harness.state, snapshot);
+  }
+});
+
+test("persisted SUCCESS generation is bounded to PostgreSQL signed bigint before replay", async () => {
+  const maximum = "9223372036854775807";
+  const tooLarge = "9223372036854775808";
+  const veryLong = "9".repeat(10_000);
+
+  const accepted = createHarness();
+  const acceptedService = createService(accepted);
+  await acceptedService.establish(USER, establish(OPS[0]));
+  const readyRequest = { operation_id: OPS[1], event_type: "READY" };
+  await acceptedService.engage(USER, SESSION, readyRequest);
+  accepted.state.receipts.find((row) => row.operation_id === OPS[1]).response_projection.data.generation = maximum;
+  assert.equal((await acceptedService.engage(USER, SESSION, readyRequest)).generation, maximum);
+
+  for (const invalidGeneration of [tooLarge, veryLong]) {
+    const harness = createHarness();
+    const service = createService(harness);
+    await service.establish(USER, establish(OPS[0]));
+    await service.engage(USER, SESSION, readyRequest);
+    harness.state.receipts.find((row) => row.operation_id === OPS[1]).response_projection.data.generation = invalidGeneration;
+    const snapshot = structuredClone(harness.state);
+    await assert.rejects(service.engage(USER, SESSION, readyRequest), /Stored Daily Goal replay outcome is invalid/);
+    assert.deepEqual(harness.state, snapshot);
+  }
+});
+
+test("persisted operation_type, not JSONB fields, selects the SUCCESS replay contract", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  const request = establish(OPS[0]);
+  await service.establish(USER, request);
+  const receipt = harness.state.receipts[0];
+  receipt.response_projection.data.operation_type = "HEARTBEAT";
+  await assert.rejects(service.establish(USER, request), /Stored Daily Goal replay outcome is invalid/);
+  const restoredReceipt = harness.state.receipts[0];
+  delete restoredReceipt.response_projection.data.operation_type;
+  restoredReceipt.operation_type = "HEARTBEAT";
+  await assert.rejects(service.establish(USER, request), hasCode("OPERATION_CONFLICT"));
+});
+
+test("non-owner supplied stale/future generation is refused; omitted generation may claim", async () => {
+  const harness = createHarness();
+  harness.state.sessions.push(
+    { id: SESSION, activity_type: "NORMAL", learning_session_id: LEARNING, status: "ACTIVE", engagement_expires_at: new Date("2026-10-26T00:02:00.000Z") },
+    { id: SESSION_B, activity_type: "NORMAL", learning_session_id: LEARNING, status: "ACTIVE", engagement_expires_at: new Date("2026-10-26T00:02:00.000Z") },
+  );
+  harness.state.owner = { tracking_session_id: SESSION, generation: 7n, last_accounted_at: new Date("2026-10-26T00:00:00.000Z"), lease_expires_at: new Date("2026-10-26T00:00:45.000Z") };
+  const service = createService(harness);
+  await assert.rejects(service.engage(USER, SESSION_B, { operation_id: OPS[8], generation: "6", event_type: "REVEAL" }), hasCode("TRACKING_OWNERSHIP_CONFLICT"));
+  await assert.rejects(service.engage(USER, SESSION_B, { operation_id: OPS[9], generation: "8", event_type: "REVEAL" }), hasCode("TRACKING_OWNERSHIP_CONFLICT"));
+  assert.equal(harness.state.owner.tracking_session_id, SESSION);
+  const claimed = await service.engage(USER, SESSION_B, { operation_id: OPS[10], event_type: "REVEAL" });
+  assert.equal(claimed.owner, true);
+  assert.equal(claimed.generation, "8");
+});
+
+test("foreign/inaccessible context is safe not-found; validation rejects client time/date/owner fields", async () => {
+  const harness = createHarness();
+  harness.state.contextAccessible = false;
+  const service = createService(harness);
+  await assert.rejects(service.establish(USER, establish(OPS[0])), hasCode("DAILY_GOAL_NOT_FOUND"));
+  for (const extra of [{ duration: 10 }, { timestamp: 1 }, { timezone: "UTC" }, { user_id: USER }, { application_date: "2026-10-26" }]) {
+    assert.throws(() => service.establish(USER, { ...establish(OPS[0]), ...extra }), hasCode("DAILY_GOAL_VALIDATION_ERROR"));
+  }
+});
+
+test("pause and close add no tail; close replay is idempotent; injected failure rolls back", async () => {
+  const harness = createHarness();
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:00:20.000Z");
+  const closed = await service.close(USER, SESSION, { operation_id: OPS[2], generation: ready.generation });
+  assert.equal(closed.status, "CLOSED");
+  assert.equal(harness.state.days[0].active_milliseconds, 0n);
+  assert.equal((await service.close(USER, SESSION, { operation_id: OPS[2], generation: ready.generation })).replayed, true);
+
+  const failing = createHarness();
+  failing.state.failReceipt = true;
+  await assert.rejects(createService(failing).establish(USER, establish(OPS[0])), /injected receipt failure/);
+  assert.equal(failing.state.sessions.length, 0);
+});
+
+function establish(operation_id) { return { operation_id, activity_type: "NORMAL", learning_session_id: LEARNING }; }
+function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
+function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z")) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION }); }
+function hasCode(code) { return (error) => error?.code === code; }
+
+function createHarness() {
+  const state = { sessions: [], owner: null, receipts: [], days: [], contextAccessible: true, failReceipt: false };
+  const repository = {
+    async withUserTransaction(_userId, callback) {
+      const before = structuredClone(state);
+      try { return await callback(tx()); } catch (error) { for (const key of Object.keys(state)) state[key] = before[key]; throw error; }
+    },
+  };
+  function tx() { return {
+    findAuthorizedActivityContext: async () => state.contextAccessible ? { id: LEARNING } : null,
+    findTrackingSession: async (id) => state.sessions.find((x) => x.id === id) ?? null,
+    createTrackingSession: async (data) => { const row = { ...data, engagement_expires_at: null, last_meaningful_at: null, closed_at: null }; state.sessions.push(row); return row; },
+    updateTrackingSession: async (id, data) => { Object.assign(state.sessions.find((x) => x.id === id), data); return { count: 1 }; },
+    findOwner: async () => state.owner,
+    upsertOwner: async ({ create, update }) => { state.owner = state.owner ? { ...state.owner, ...update } : { user_id: USER, ...create }; return state.owner; },
+    updateOwnerAtGeneration: async (generation, data) => { if (state.owner?.generation !== generation) return { count: 0 }; Object.assign(state.owner, data); return { count: 1 }; },
+    findOperationReplay: async ({ operationId, operationType, requestFingerprint }) => { const receipt = state.receipts.find((x) => x.operation_id === operationId); if (!receipt) return { classification: "MISSING", receipt: null }; return { classification: receipt.operation_type === operationType && receipt.request_fingerprint === requestFingerprint ? "REPLAY" : "OPERATION_CONFLICT", receipt }; },
+    createOperationReceipt: async (data) => { if (state.failReceipt) throw new Error("injected receipt failure"); state.receipts.push(data); return data; },
+    upsertDay: async (date, { create, update }) => { let row = state.days.find((x) => x.activity_date.getTime() === date.getTime()); if (!row) { row = { activity_date: date, ...create }; state.days.push(row); } else { for (const [key, value] of Object.entries(update)) row[key] = value?.increment !== undefined ? row[key] + value.increment : value; } return row; },
+  }; }
+  return { state, repository };
+}

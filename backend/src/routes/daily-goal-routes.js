@@ -1,0 +1,12 @@
+// @ts-nocheck
+import express from "express";
+export function createDailyGoalRouter({ controller, authenticationMiddleware, userAuthorizationMiddleware }) {
+  const router = express.Router();
+  router.use(authenticationMiddleware, userAuthorizationMiddleware);
+  router.post("/tracking-sessions", controller.establish);
+  router.post("/tracking-sessions/:id/engagement", controller.engage);
+  router.post("/tracking-sessions/:id/heartbeat", controller.heartbeat);
+  router.post("/tracking-sessions/:id/pause", controller.pause);
+  router.post("/tracking-sessions/:id/close", controller.close);
+  return router;
+}
