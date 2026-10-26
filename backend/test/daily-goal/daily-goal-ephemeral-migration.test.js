@@ -643,7 +643,199 @@ function prismaSpawn(inspect, exitCode = 0, stdoutText = "") {
         child.stdout.end();
         child.stderr.end();
         child.emit("exit", exitCode);
+        child.emit("close", exitCode);
       } catch (error) { child.emit("error", error); }
+    });
+    return child;
+  };
+}
+
+test("BASELINE_DEPLOY diagnostics classify private input and spawn failures without raw output", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  try {
+    let spawnCount = 0;
+    const privateInput = await baselineDeployRefusal({
+      schemaPath: fixture.schemaPath,
+      spawnProcess: prismaDiagnosticSpawn({ inspect: async () => { spawnCount += 1; } }),
+      testHooks: { beforeInvocationValidation: async ({ schemaPath }) => writeFile(schemaPath, "hostile password=secret\n") },
+    });
+    assertDiagnosticEvidence(privateInput, "PRISMA_PRIVATE_INPUT_FAILED");
+    assert.equal(spawnCount, 0);
+
+    const spawnFailure = await baselineDeployRefusal({
+      schemaPath: fixture.schemaPath,
+      spawnProcess: prismaDiagnosticSpawn({ spawnError: true }),
+    });
+    assertDiagnosticEvidence(spawnFailure, "PRISMA_SPAWN_FAILED");
+    assert.doesNotMatch(JSON.stringify(spawnFailure), /hostile|raw|path|password|secret|database_url/i);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("BASELINE_DEPLOY diagnostics map only the fixed exact Prisma P-code headers", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  const allowlist = [
+    "P1000", "P1001", "P1002", "P1003", "P1010", "P1011", "P1017",
+    "P3004", "P3005", "P3008", "P3009", "P3015", "P3017", "P3018", "P3019",
+  ];
+  try {
+    for (const prismaCode of allowlist) {
+      const evidence = await baselineDeployRefusal({
+        schemaPath: fixture.schemaPath,
+        spawnProcess: prismaDiagnosticSpawn({ exitCode: 1, stderrChunks: [`Error code: ${prismaCode}\n`] }),
+      });
+      assertDiagnosticEvidence(evidence, `PRISMA_EXIT_${prismaCode}`);
+    }
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("BASELINE_DEPLOY diagnostics refuse hostile, ambiguous, malformed and bounded stderr as unclassified", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  const hostileCases = [
+    ["unknown", ["Error code: P9999\npostgresql://user:password@external.invalid/db\n"]],
+    ["multiple", ["Error: P1001\nError code: P1002\n"]],
+    ["malformed", ["Error code: P1001 trailing SQL SELECT secret\n"]],
+    ["embedded", ["prefix Error code: P1001\n"]],
+    ["invalid utf8", [Buffer.from([0xff, 0xfe, 0xfd])]],
+    ["classification over limit", ["x".repeat(16_385), "\nError code: P1001\n"]],
+  ];
+  try {
+    for (const [name, stderrChunks] of hostileCases) {
+      const evidence = await baselineDeployRefusal({
+        schemaPath: fixture.schemaPath,
+        spawnProcess: prismaDiagnosticSpawn({ exitCode: 1, stderrChunks }),
+      });
+      assertDiagnosticEvidence(evidence, "PRISMA_EXIT_UNCLASSIFIED", name);
+      assert.ok(Buffer.byteLength(JSON.stringify(evidence), "utf8") < 16_384, name);
+      assert.doesNotMatch(JSON.stringify(evidence), /P9999|external|password|select secret|private path/i, name);
+    }
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("BASELINE_DEPLOY diagnostics retain hard output killing and settle child event races once", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  let killCount = 0;
+  let spawnCount = 0;
+  try {
+    const bounded = await baselineDeployRefusal({
+      schemaPath: fixture.schemaPath,
+      spawnProcess: prismaDiagnosticSpawn({
+        exitCode: 0,
+        stderrChunks: ["x".repeat(32_769)],
+        onKill: () => { killCount += 1; },
+        emitDuplicateCompletion: true,
+      }),
+    });
+    assertDiagnosticEvidence(bounded, "PRISMA_EXIT_UNCLASSIFIED");
+    assert.equal(killCount, 1);
+
+    await runGuardedPrismaMigrationCommandForTest({
+      schemaPath: fixture.schemaPath,
+      operation: "deploy",
+      sourceEnvironment: prismaTestEnvironment(),
+      spawnProcess: prismaDiagnosticSpawn({ inspect: async () => { spawnCount += 1; }, emitDuplicateCompletion: true }),
+    });
+    assert.equal(spawnCount, 1);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("BASELINE_DEPLOY cleanup is call-once, terminal, and cannot replace an earlier primary failure", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  try {
+    const primaryCleanupAttempts = [];
+    const primary = await baselineDeployRefusal({
+      schemaPath: fixture.schemaPath,
+      spawnProcess: prismaDiagnosticSpawn({ exitCode: 1, stderrChunks: ["Error: P1001\n"] }),
+      testHooks: {
+        failCleanupLabel: "schema",
+        onCleanupAttempt: ({ label }) => primaryCleanupAttempts.push(label),
+      },
+    });
+    assertDiagnosticEvidence(primary, "PRISMA_EXIT_P1001");
+    assert.equal(primary.cleanupStage, "PRIVATE_PRISMA_INPUTS");
+    assert.equal(primaryCleanupAttempts.filter((label) => label === "schema").length, 1);
+
+    const cleanupAttempts = [];
+    const cleanupOnly = await baselineDeployRefusal({
+      schemaPath: fixture.schemaPath,
+      spawnProcess: prismaDiagnosticSpawn({ exitCode: 0 }),
+      testHooks: {
+        failCleanupLabel: "schema",
+        onCleanupAttempt: ({ label }) => cleanupAttempts.push(label),
+      },
+    });
+    assertDiagnosticEvidence(cleanupOnly, "PRISMA_PRIVATE_INPUT_CLEANUP_FAILED");
+    assert.equal(cleanupOnly.cleanupStage, "PRIVATE_PRISMA_INPUTS");
+    assert.equal(cleanupAttempts.filter((label) => label === "schema").length, 1);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("successful BASELINE_DEPLOY keeps the reviewed command arguments and isolated environment", async () => {
+  const fixture = await createPrismaSchemaFixture();
+  let invocation;
+  try {
+    await runGuardedPrismaMigrationCommandForTest({
+      schemaPath: fixture.schemaPath,
+      operation: "deploy",
+      sourceEnvironment: { ...prismaTestEnvironment(), DATABASE_URL: "postgresql://external.invalid", NODE_OPTIONS: "--require hostile" },
+      spawnProcess: prismaDiagnosticSpawn({ inspect: async (value) => { invocation = value; } }),
+    });
+    assert.equal(invocation.args[1], "migrate");
+    assert.equal(invocation.args[2], "deploy");
+    assert.equal(invocation.args.includes("--config"), true);
+    assert.equal(invocation.args.includes("--schema"), true);
+    assert.equal(invocation.options.cwd, path.join(root, "backend"));
+    assert.equal(invocation.options.env.DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL, prismaTestEnvironment().DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL);
+    assert.equal("DATABASE_URL" in invocation.options.env, false);
+    assert.equal("NODE_OPTIONS" in invocation.options.env, false);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+async function baselineDeployRefusal({ schemaPath, spawnProcess, testHooks }) {
+  let failure;
+  try {
+    await runDiagnosticStage("BASELINE_DEPLOY", () => runGuardedPrismaMigrationCommandForTest({
+      schemaPath, operation: "deploy", spawnProcess, sourceEnvironment: prismaTestEnvironment(), testHooks,
+    }));
+  } catch (error) { failure = error; }
+  assert.ok(failure, "BASELINE_DEPLOY must refuse");
+  return createRefusalEvidence(failure);
+}
+
+function assertDiagnosticEvidence(evidence, code, label = code) {
+  assert.equal(evidence.code, code, label);
+  assert.equal(evidence.stage, "BASELINE_DEPLOY", label);
+  assert.deepEqual(
+    [evidence.dg1Passed, evidence.supabaseCompatibilityVerified, evidence.deploymentAuthorized],
+    [false, false, false],
+    label,
+  );
+  assert.deepEqual(Object.keys(evidence).filter((key) => !["cleanupStage"].includes(key)).sort(), [
+    "code", "deploymentAuthorized", "dg1Passed", "outcome", "stage", "supabaseCompatibilityVerified",
+  ]);
+}
+
+function prismaDiagnosticSpawn({ inspect = async () => {}, exitCode = 0, stderrChunks = [], spawnError = false, onKill = () => {}, emitDuplicateCompletion = false } = {}) {
+  return (_executable, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = onKill;
+    process.nextTick(async () => {
+      try {
+        await inspect({ args, options });
+        for (const chunk of stderrChunks) child.stderr.write(chunk);
+        child.stdout.end();
+        child.stderr.end();
+        if (spawnError) child.emit("error", new Error("hostile raw spawn error with password=secret"));
+        child.emit("exit", exitCode);
+        child.emit("close", exitCode);
+        if (emitDuplicateCompletion) child.emit("close", 1);
+      } catch (error) {
+        child.emit("error", error);
+        child.stdout.end();
+        child.stderr.end();
+        child.emit("close", 1);
+      }
     });
     return child;
   };

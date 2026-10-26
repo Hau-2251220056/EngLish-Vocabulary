@@ -7,8 +7,8 @@ import { chmod, lstat, mkdtemp, readFile, realpath, rm, unlink, writeFile } from
 import os from "node:os";
 import { withDailyGoalEphemeralWorkspace } from "./daily-goal-ephemeral-materialization.js";
 import {
-  createEphemeralVerificationHarness, createRefusalEvidence, EPHEMERAL_OPERATION,
-  MIGRATION_INVENTORY_DIGEST, runDiagnosticStage, verifyCanonicalInventory,
+  attachCleanupStage, createEphemeralVerificationHarness, createRefusalEvidence, EPHEMERAL_OPERATION,
+  EphemeralMigrationFailure, MIGRATION_INVENTORY_DIGEST, runDiagnosticStage, verifyCanonicalInventory,
 } from "./daily-goal-ephemeral-migration-core.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +19,12 @@ export const EPHEMERAL_PRISMA_CONFIG_PATH = path.join(repositoryRoot, "backend/t
 export const EPHEMERAL_PRISMA_SCHEMA_PATH = path.join(repositoryRoot, "backend/test/daily-goal/ephemeral-prisma-schema.prisma");
 const EPHEMERAL_PRISMA_CONFIG = Object.freeze({ byteCount: 162, checksum: "2d2f4b78f9a65424a7fe7f57bb54b6c9e947422acd4450e08e24f23844d0b675" });
 const EPHEMERAL_PRISMA_SCHEMA = Object.freeze({ byteCount: 156, checksum: "3b22d4b8ed9c512407f5ac629e57d81b3820355fb26960b3c6d4929cc0b9119d" });
+const PRISMA_OUTPUT_HARD_LIMIT_BYTES = 32_768;
+const PRISMA_STDERR_CLASSIFICATION_LIMIT_BYTES = 16_384;
+const PRISMA_ERROR_CODE_ALLOWLIST = new Set([
+  "P1000", "P1001", "P1002", "P1003", "P1010", "P1011", "P1017",
+  "P3004", "P3005", "P3008", "P3009", "P3015", "P3017", "P3018", "P3019",
+]);
 
 export async function runEphemeralMigrationCli({ environment = process.env, adapterFactory = createPrismaAdapter } = {}) {
   const bindingInput = {
@@ -103,36 +109,103 @@ async function createPrismaAdapter({ localUrl, repositoryRoot }) {
 }
 
 async function runPrismaCommand({ repositoryRoot, localUrl, schemaPath, operation, privateConfig, spawnProcess = spawn, sourceEnvironment = process.env, testHooks }) {
-  const privateSchema = await materializePrivateSchema(schemaPath, { testHooks });
-  const args = buildPrismaCommandArguments({ repositoryRoot, configPath: privateConfig.path, schemaPath: privateSchema.path, operation });
+  let privateSchema;
+  let result;
+  let primaryFailure;
   try {
+    privateSchema = await materializePrivateSchema(schemaPath, { testHooks });
+    const args = buildPrismaCommandArguments({ repositoryRoot, configPath: privateConfig.path, schemaPath: privateSchema.path, operation });
     await testHooks?.beforeInvocationValidation?.({ operation, configPath: privateConfig.path, schemaPath: privateSchema.path });
-    return await spawnPrismaAfterFinalValidation({ privateConfig, privateSchema, args, operation, localUrl, repositoryRoot, spawnProcess, sourceEnvironment });
+    result = await spawnPrismaAfterFinalValidation({ privateConfig, privateSchema, args, operation, localUrl, repositoryRoot, spawnProcess, sourceEnvironment });
+  } catch (error) {
+    primaryFailure = operation === "deploy" && !(error instanceof EphemeralMigrationFailure)
+      ? new EphemeralMigrationFailure("PRISMA_PRIVATE_INPUT_FAILED")
+      : error;
   } finally {
-    await privateSchema.cleanup();
+    if (privateSchema) {
+      try { await privateSchema.cleanup(); }
+      catch (cleanupError) {
+        if (operation !== "deploy") throw cleanupError;
+        if (primaryFailure) primaryFailure = attachCleanupStage(primaryFailure, "PRIVATE_PRISMA_INPUTS");
+        else primaryFailure = new EphemeralMigrationFailure("PRISMA_PRIVATE_INPUT_CLEANUP_FAILED", undefined, "PRIVATE_PRISMA_INPUTS");
+      }
+    }
   }
+  if (primaryFailure) throw primaryFailure;
+  return result;
 }
 
 function spawnPrisma({ args, operation, localUrl, repositoryRoot, spawnProcess, sourceEnvironment }) {
   return new Promise((resolve, reject) => {
-    const child = spawnProcess(process.execPath, args, {
-      cwd: path.join(repositoryRoot, "backend"), stdio: operation === "status" ? ["ignore", "pipe", "pipe"] : "ignore",
-      env: createPrismaSubprocessEnvironment(sourceEnvironment, localUrl),
-    });
+    let child;
+    try {
+      child = spawnProcess(process.execPath, args, {
+        cwd: path.join(repositoryRoot, "backend"),
+        stdio: ["ignore", operation === "status" ? "pipe" : "ignore", operation === "deploy" || operation === "status" ? "pipe" : "ignore"],
+        env: createPrismaSubprocessEnvironment(sourceEnvironment, localUrl),
+      });
+    } catch (error) {
+      reject(operation === "deploy" ? new EphemeralMigrationFailure("PRISMA_SPAWN_FAILED") : error);
+      return;
+    }
     let stdout = "";
     let stderrBytes = 0;
+    let stderrClassificationBytes = 0;
+    const stderrChunks = [];
+    let stderrClassificationOverflow = false;
+    let spawnError = false;
+    let hardOutputExceeded = false;
+    let settled = false;
     child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString("utf8");
-      if (Buffer.byteLength(stdout, "utf8") > 32_768) child.kill();
+      if (!hardOutputExceeded && Buffer.byteLength(stdout, "utf8") > PRISMA_OUTPUT_HARD_LIMIT_BYTES) {
+        hardOutputExceeded = true;
+        child.kill();
+      }
     });
-    child.stderr?.on("data", (chunk) => { stderrBytes += chunk.length; if (stderrBytes > 32_768) child.kill(); });
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (operation === "status" && [0, 1].includes(code)) resolve(stdout);
+    child.stderr?.on("data", (chunk) => {
+      const bytes = Buffer.from(chunk);
+      stderrBytes += bytes.length;
+      if (stderrClassificationBytes + bytes.length <= PRISMA_STDERR_CLASSIFICATION_LIMIT_BYTES) {
+        stderrChunks.push(bytes);
+        stderrClassificationBytes += bytes.length;
+      } else stderrClassificationOverflow = true;
+      if (!hardOutputExceeded && stderrBytes > PRISMA_OUTPUT_HARD_LIMIT_BYTES) {
+        hardOutputExceeded = true;
+        child.kill();
+      }
+    });
+    child.once("error", () => { spawnError = true; });
+    child.once("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (spawnError) {
+        reject(operation === "deploy" ? new EphemeralMigrationFailure("PRISMA_SPAWN_FAILED") : new Error("Prisma command could not start."));
+      } else if (hardOutputExceeded) {
+        reject(operation === "deploy" ? new EphemeralMigrationFailure("PRISMA_EXIT_UNCLASSIFIED") : new Error("Prisma migration command failed."));
+      } else if (operation === "status" && [0, 1].includes(code)) resolve(stdout);
       else if (["deploy", "generate"].includes(operation) && code === 0) resolve("");
-      else reject(new Error("Prisma migration command failed."));
+      else if (operation === "deploy") {
+        reject(new EphemeralMigrationFailure(classifyPrismaDeployExit(stderrChunks, stderrClassificationOverflow)));
+      } else reject(new Error("Prisma migration command failed."));
     });
   });
+}
+
+function classifyPrismaDeployExit(chunks, overflow) {
+  if (overflow) return "PRISMA_EXIT_UNCLASSIFIED";
+  let output;
+  try { output = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)); }
+  catch { return "PRISMA_EXIT_UNCLASSIFIED"; }
+  const headers = [];
+  let malformedHeader = false;
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^(?:Error|Error code): (P\d{4})$/.exec(line);
+    if (match) headers.push(match[1]);
+    else if (line.startsWith("Error:") || line.startsWith("Error code:")) malformedHeader = true;
+  }
+  if (malformedHeader || headers.length !== 1 || !PRISMA_ERROR_CODE_ALLOWLIST.has(headers[0])) return "PRISMA_EXIT_UNCLASSIFIED";
+  return `PRISMA_EXIT_${headers[0]}`;
 }
 
 export function buildPrismaCommandArguments({ repositoryRoot: fixedRoot, configPath, schemaPath, operation }) {
