@@ -26,6 +26,7 @@ import {
   repositoryDiagnosticLineForTest,
   runAtConcurrentTransactionStart,
   runRepositoryDiagnosticLifecycleForTest,
+  seedLearningContextWithCleanupForTest,
 } from "./daily-goal-dg2-repository.integration.test.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -221,6 +222,63 @@ test("cleanup-only repository failure has a fixed phase and diagnostic writer fa
   assert.throws(() => repositoryDiagnosticLineForTest("postgresql://host/private"), /not allowlisted/);
 });
 
+test("learning fixture uses one creation instant and the exact seven-day expiry", async () => {
+  const createdAt = new Date("2026-10-26T04:05:06.789Z");
+  const fake = fixtureSeedPrisma();
+  await seedLearningContextWithCleanupForTest({ prisma: fake.prisma, createdAt });
+
+  assert.equal(fake.learningData.created_at.toISOString(), createdAt.toISOString());
+  assert.equal(fake.learningData.expires_at.getTime() - fake.learningData.created_at.getTime(), 7 * 86_400_000);
+  assert.deepEqual(fake.calls.slice(0, 2), ["user:create", "learning:create"]);
+  assertFixtureCleanupIsScoped(fake.cleanupWhere, "fixture-user");
+});
+
+test("partial learning fixture failure cleans the already-created USER only", async () => {
+  const fake = fixtureSeedPrisma({ learningFailure: new Error("fixture insert refused") });
+  await assert.rejects(
+    seedLearningContextWithCleanupForTest({ prisma: fake.prisma, createdAt: new Date("2026-10-26T00:00:00.000Z") }),
+    /fixture insert refused/,
+  );
+
+  assert.deepEqual(fake.calls.slice(0, 2), ["user:create", "learning:create"]);
+  assert.equal(fake.calls.filter((call) => call === "user:deleteMany").length, 1);
+  assertFixtureCleanupIsScoped(fake.cleanupWhere, "fixture-user");
+});
+
+test("fixture cleanup preserves a seed failure when cleanup also fails", async () => {
+  const seedFailure = new Error("seed failure");
+  const cleanupFailure = new Error("cleanup failure");
+  const fake = fixtureSeedPrisma({ learningFailure: seedFailure, cleanupFailure });
+  await assert.rejects(
+    seedLearningContextWithCleanupForTest({ prisma: fake.prisma, createdAt: new Date("2026-10-26T00:00:00.000Z") }),
+    (error) => error === seedFailure,
+  );
+  assert.equal(fake.calls.filter((call) => call === "receipt:deleteMany").length, 1);
+});
+
+test("fixture cleanup reports cleanup-only failure and preserves throw undefined", async () => {
+  const cleanupFailure = new Error("cleanup-only failure");
+  const cleanupOnly = fixtureSeedPrisma({ cleanupFailure });
+  await assert.rejects(
+    seedLearningContextWithCleanupForTest({ prisma: cleanupOnly.prisma, createdAt: new Date("2026-10-26T00:00:00.000Z") }),
+    (error) => error === cleanupFailure,
+  );
+  assert.equal(cleanupOnly.calls.filter((call) => call === "receipt:deleteMany").length, 1);
+
+  const undefinedPrimary = fixtureSeedPrisma({ learningFailure: undefined, cleanupFailure });
+  let rejected = false;
+  let rejection = Symbol("not rejected");
+  try {
+    await seedLearningContextWithCleanupForTest({ prisma: undefinedPrimary.prisma, createdAt: new Date("2026-10-26T00:00:00.000Z") });
+  } catch (error) {
+    rejected = true;
+    rejection = error;
+  }
+  assert.equal(rejected, true);
+  assert.equal(rejection, undefined);
+  assert.equal(undefinedPrimary.calls.filter((call) => call === "receipt:deleteMany").length, 1);
+});
+
 test("repository PASS categories require every named durable assertion", () => {
   const checks = Object.fromEntries([
     "sameUserWaited", "differentUsersEntered", "ownerPersisted", "staleUnchanged",
@@ -310,6 +368,37 @@ function envBinding() { return { DAILY_GOAL_DG2_OPERATION: DG2_OPERATION, DAILY_
 function fakeAdapter(calls, options = {}) { return { async assertPrepared() { calls.push("prepared"); }, async generateClient() { calls.push("generated"); }, async runRepository() { calls.push("repository"); if (options.repositoryError) throw options.repositoryError; return repositoryCategories(); }, async runHttp() { calls.push("http"); return { httpAuthorization: pass(3), httpConflicts: pass(4) }; }, async cleanup() { calls.push("cleanup"); if (options.cleanupError) throw new Error("secret cleanup path"); } }; }
 function repositoryCategories() { return { sameUserContention: pass(3), differentUserIndependence: pass(2), ownershipTransfer: pass(6), staleGeneration: pass(2), replay: pass(8), rollback: pass(4), fkCleanup: pass(7), sleepOffline: pass(2), vietnamMidnight: pass(3), noFabrication: pass(5) }; }
 function pass(assertions) { return { status: "PASS", assertions }; }
+function fixtureSeedPrisma(options = {}) {
+  const learningFailurePresent = Object.prototype.hasOwnProperty.call(options, "learningFailure");
+  const { learningFailure, cleanupFailure } = options;
+  const calls = [];
+  const cleanupWhere = [];
+  let learningData;
+  const cleanupDelegate = (name) => ({ async deleteMany({ where }) { calls.push(`${name}:deleteMany`); cleanupWhere.push({ name, where }); if (name === "receipt" && cleanupFailure) throw cleanupFailure; return { count: 0 }; } });
+  const userCleanup = cleanupDelegate("user");
+  const prisma = {
+    dAILY_GOAL_OPERATION_RECEIPT: cleanupDelegate("receipt"),
+    dAILY_GOAL_OWNER: cleanupDelegate("owner"),
+    dAILY_GOAL_TRACKING_SESSION: cleanupDelegate("tracking"),
+    dAILY_GOAL_DAY: cleanupDelegate("day"),
+    aUTH_SESSION: cleanupDelegate("auth"),
+    uSER: {
+      async create() { calls.push("user:create"); return { id: "fixture-user" }; },
+      deleteMany: userCleanup.deleteMany,
+    },
+    lEARNING_SESSION: {
+      async create({ data }) { calls.push("learning:create"); learningData = data; if (learningFailurePresent) throw learningFailure; return { id: "fixture-learning", ...data }; },
+      ...cleanupDelegate("learning"),
+    },
+  };
+  return { prisma, calls, cleanupWhere, get learningData() { return learningData; } };
+}
+function assertFixtureCleanupIsScoped(cleanupWhere, userId) {
+  assert.equal(cleanupWhere.length, 7);
+  for (const { name, where } of cleanupWhere) {
+    assert.deepEqual(where, name === "user" ? { id: { in: [userId] } } : { user_id: { in: [userId] } });
+  }
+}
 function fakeInteractiveTransactions({ sequential = false, rejectFirstBeforeCallback = false } = {}) {
   const stats = { calls: 0, starts: 0, active: 0, maxActive: 0 };
   let tail = Promise.resolve();

@@ -29,12 +29,12 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     cleanup: () => cleanupUsers(prisma, users),
     async execute(runPhase) {
     let assertions = 0;
-    const a = await runPhase("FIXTURE_A", () => seedLearningContext(prisma, "same-a")); users.push(a.user.id);
+    const a = await runPhase("FIXTURE_A", () => seedLearningContext(prisma, "same-a", users));
     const durable = Object.create(null);
     const same = await runPhase("SAME_USER_LOCK", () => proveSameUserSerialization(prisma, a.user.id)); assertions += same;
     durable.sameUserWaited = true;
 
-    const b = await runPhase("FIXTURE_B", () => seedLearningContext(prisma, "different-b")); users.push(b.user.id);
+    const b = await runPhase("FIXTURE_B", () => seedLearningContext(prisma, "different-b", users));
     assertions += await runPhase("DIFFERENT_USER_LOCK", () => proveDifferentUserIndependence(prisma, a.user.id, b.user.id));
     durable.differentUsersEntered = true;
 
@@ -230,8 +230,9 @@ async function proveNonOwnerReclaim({ prisma, service, clock, fixture, currentSe
 }
 
 async function proveRollbackAfterDayCredit(prisma) {
-  const fixture = await seedLearningContext(prisma, "rollback-credit");
-  try {
+  const users = [];
+  return withFixtureCleanup(() => cleanupUsers(prisma, users), async () => {
+    const fixture = await seedLearningContext(prisma, "rollback-credit", users);
     const clock = { value: new Date("2026-10-26T02:00:00.000Z") };
     const normal = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
     const session = await normal.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
@@ -246,9 +247,7 @@ async function proveRollbackAfterDayCredit(prisma) {
     const owner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: fixture.user.id } });
     assert.equal(owner.last_accounted_at.toISOString(), "2026-10-26T02:00:00.000Z");
     return 4;
-  } finally {
-    await cleanupUsers(prisma, [fixture.user.id]);
-  }
+  });
 }
 
 async function proveMidnightSplit(prisma, fixture) {
@@ -266,24 +265,28 @@ async function proveMidnightSplit(prisma, fixture) {
 }
 
 async function proveCleanupAndRestrict(prisma) {
-  const fixture = await seedLearningContext(prisma, "cleanup");
-  const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
-  await prisma.dAILY_GOAL_OPERATION_RECEIPT.create({ data: { operation_id: randomUUID(), user_id: fixture.user.id, tracking_session_id: session.id, operation_type: "CLOSE", request_fingerprint: "reviewed", response_projection: {}, created_at: new Date("2026-08-02T00:00:00.000Z") } });
-  await assert.rejects(prisma.dAILY_GOAL_TRACKING_SESSION.delete({ where: { id: session.id } }));
-  const repository = createDailyGoalRepositoryForTest(prisma, { now: () => new Date("2026-10-26T00:00:00.000Z") });
-  const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
-  assert.equal(result.receiptsDeleted, 1);
-  assert.equal(result.trackingSessionsDeleted, 1);
-  assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: session.id } }), 0);
-  await cleanupUsers(prisma, [fixture.user.id]);
-  return 4;
+  const users = [];
+  return withFixtureCleanup(() => cleanupUsers(prisma, users), async () => {
+    const fixture = await seedLearningContext(prisma, "cleanup", users);
+    const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
+    await prisma.dAILY_GOAL_OPERATION_RECEIPT.create({ data: { operation_id: randomUUID(), user_id: fixture.user.id, tracking_session_id: session.id, operation_type: "CLOSE", request_fingerprint: "reviewed", response_projection: {}, created_at: new Date("2026-08-02T00:00:00.000Z") } });
+    await assert.rejects(prisma.dAILY_GOAL_TRACKING_SESSION.delete({ where: { id: session.id } }));
+    const repository = createDailyGoalRepositoryForTest(prisma, { now: () => new Date("2026-10-26T00:00:00.000Z") });
+    const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
+    assert.equal(result.receiptsDeleted, 1);
+    assert.equal(result.trackingSessionsDeleted, 1);
+    assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: session.id } }), 0);
+    return 4;
+  });
 }
 
 async function proveCleanupRaceRecheck(prisma) {
-  const fixture = await seedLearningContext(prisma, "cleanup-race");
-  const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
-  let changed = false;
-  const client = new Proxy(prisma, { get(target, property) {
+  const users = [];
+  return withFixtureCleanup(() => cleanupUsers(prisma, users), async () => {
+    const fixture = await seedLearningContext(prisma, "cleanup-race", users);
+    const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
+    let changed = false;
+    const client = new Proxy(prisma, { get(target, property) {
     if (property !== "$transaction") { const value = Reflect.get(target, property, target); return typeof value === "function" ? value.bind(target) : value; }
     return (callback, options) => target.$transaction((tx) => callback(new Proxy(tx, { get(inner, key) {
       if (key !== "dAILY_GOAL_TRACKING_SESSION") return Reflect.get(inner, key, inner);
@@ -300,14 +303,14 @@ async function proveCleanupRaceRecheck(prisma) {
         };
       } });
     } })), options);
-  } });
-  const repository = createDailyGoalRepositoryForTest(client, { now: () => new Date("2026-10-26T00:00:00.000Z") });
-  const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
-  assert.equal(changed, true);
-  assert.equal(result.trackingSessionsDeleted, 0);
-  assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: session.id } }), 1);
-  await cleanupUsers(prisma, [fixture.user.id]);
-  return 3;
+    } });
+    const repository = createDailyGoalRepositoryForTest(client, { now: () => new Date("2026-10-26T00:00:00.000Z") });
+    const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
+    assert.equal(changed, true);
+    assert.equal(result.trackingSessionsDeleted, 0);
+    assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: session.id } }), 1);
+    return 3;
+  });
 }
 
 function transactionClientWithLockHook(prisma, hook) { return new Proxy(prisma, { get(target, property) { if (property !== "$transaction") { const value = Reflect.get(target, property, target); return typeof value === "function" ? value.bind(target) : value; } return (callback, options) => target.$transaction((tx) => callback(new Proxy(tx, { get(inner, key) { if (key !== "$queryRaw") return Reflect.get(inner, key, inner); return async (...args) => { const result = await inner.$queryRaw(...args); await hook(); return result; }; } })), options); } }); }
@@ -315,8 +318,40 @@ function transactionClientWithStartBarrier(prisma, barrier) { return new Proxy(p
 function transactionClientWithReceiptFailure(prisma) { return new Proxy(prisma, { get(target, property) { if (property !== "$transaction") { const value = Reflect.get(target, property, target); return typeof value === "function" ? value.bind(target) : value; } return (callback, options) => target.$transaction((tx) => callback(new Proxy(tx, { get(inner, key) { if (key !== "dAILY_GOAL_OPERATION_RECEIPT") return Reflect.get(inner, key, inner); return new Proxy(inner[key], { get(delegate, method) { if (method === "create") return async () => { throw new Error("Injected receipt failure."); }; const value = Reflect.get(delegate, method, delegate); return typeof value === "function" ? value.bind(delegate) : value; } }); } })), options); } }); }
 async function accountingSnapshot(prisma, userId) { const [owner, aggregate] = await Promise.all([prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: userId } }), prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: userId }, _sum: { active_milliseconds: true } })]); return { owner, dayMilliseconds: aggregate._sum.active_milliseconds ?? 0n }; }
 async function durableSnapshot(prisma, userId) { const [owner, sessions, days, receipts] = await Promise.all([prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: userId } }), prisma.dAILY_GOAL_TRACKING_SESSION.findMany({ where: { user_id: userId }, orderBy: { id: "asc" } }), prisma.dAILY_GOAL_DAY.findMany({ where: { user_id: userId }, orderBy: { activity_date: "asc" } }), prisma.dAILY_GOAL_OPERATION_RECEIPT.findMany({ where: { user_id: userId }, orderBy: { operation_id: "asc" } })]); return structuredClone({ owner, sessions, days, receipts }); }
-async function seedLearningContext(prisma, label) { const user = await prisma.uSER.create({ data: { email: `${label}-${randomUUID()}@example.test`, password_hash: "not-used", display_name: label } }); const learning = await prisma.lEARNING_SESSION.create({ data: { user_id: user.id, set_id_snapshot: randomUUID(), mode: "NORMAL", status: "ACTIVE", create_operation_id: randomUUID(), snapshot_size: 1, expires_at: new Date("2026-12-01T00:00:00.000Z") } }); return { user, learning }; }
+async function seedLearningContext(prisma, label, cleanupUserIds, createdAt = new Date()) {
+  if (!Array.isArray(cleanupUserIds)) throw new TypeError("A fixture cleanup registry is required.");
+  const fixtureCreatedAt = new Date(createdAt);
+  if (Number.isNaN(fixtureCreatedAt.getTime())) throw new TypeError("Fixture creation time must be valid.");
+  const user = await prisma.uSER.create({ data: { email: `${label}-${randomUUID()}@example.test`, password_hash: "not-used", display_name: label } });
+  cleanupUserIds.push(user.id);
+  const learning = await prisma.lEARNING_SESSION.create({ data: { user_id: user.id, set_id_snapshot: randomUUID(), mode: "NORMAL", status: "ACTIVE", create_operation_id: randomUUID(), snapshot_size: 1, created_at: fixtureCreatedAt, expires_at: new Date(fixtureCreatedAt.getTime() + (7 * 86_400_000)) } });
+  return { user, learning };
+}
 async function cleanupUsers(prisma, ids) { if (!ids.length) return; await prisma.dAILY_GOAL_OPERATION_RECEIPT.deleteMany({ where: { user_id: { in: ids } } }); await prisma.dAILY_GOAL_OWNER.deleteMany({ where: { user_id: { in: ids } } }); await prisma.dAILY_GOAL_TRACKING_SESSION.deleteMany({ where: { user_id: { in: ids } } }); await prisma.dAILY_GOAL_DAY.deleteMany({ where: { user_id: { in: ids } } }); await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: ids } } }); await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: ids } } }); await prisma.uSER.deleteMany({ where: { id: { in: ids } } }); }
+
+export async function seedLearningContextWithCleanupForTest({ prisma, label = "offline-fixture", createdAt }) {
+  const users = [];
+  return withFixtureCleanup(
+    () => cleanupUsers(prisma, users),
+    () => seedLearningContext(prisma, label, users, createdAt),
+  );
+}
+
+async function withFixtureCleanup(cleanup, operation) {
+  let primaryFailed = false;
+  try {
+    return await operation();
+  } catch (error) {
+    primaryFailed = true;
+    throw error;
+  } finally {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      if (!primaryFailed) throw cleanupError;
+    }
+  }
+}
 function createRequest(learningSessionId) { return { activity_type: "NORMAL", learning_session_id: learningSessionId }; }
 function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
 function pass(assertions) { return Object.freeze({ status: "PASS", assertions }); }
