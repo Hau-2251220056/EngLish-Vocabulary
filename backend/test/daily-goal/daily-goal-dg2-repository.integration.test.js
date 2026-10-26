@@ -11,44 +11,66 @@ const REQUIRED_DURABLE_CHECKS = Object.freeze([
   "sleepGapExcluded", "leaseLiveGapBurned", "nonOwnerReclaimed", "midnightConserved",
 ]);
 
-export async function runRepositoryIntegration({ prisma }) {
+const REPOSITORY_DIAGNOSTIC_PHASES = Object.freeze(new Set([
+  "FIXTURE_A", "SAME_USER_LOCK", "FIXTURE_B", "DIFFERENT_USER_LOCK",
+  "SESSION_ESTABLISH_READY", "SAME_USER_CREDIT_RACE", "OWNERSHIP_TRANSFER",
+  "STALE_GENERATION", "CONCURRENT_REPLAY", "FINGERPRINT_MISMATCH",
+  "SLEEP_RECLAIM", "LEASE_GAP_BURN", "NON_OWNER_RECLAIM",
+  "ROLLBACK_AFTER_CREDIT", "VIETNAM_MIDNIGHT", "FK_CLEANUP",
+  "CLEANUP_RACE", "EVIDENCE_GATE", "FINAL_CLEANUP", "REPOSITORY_UNCLASSIFIED",
+]));
+const REPOSITORY_DIAGNOSTIC_LIMIT_BYTES = 256;
+
+export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}) {
   if (!prisma?.$transaction) throw new TypeError("A real Prisma client is required.");
   const users = [];
-  let assertions = 0;
-  try {
-    const a = await seedLearningContext(prisma, "same-a"); users.push(a.user.id);
+  return runRepositoryDiagnosticLifecycle({
+    diagnosticWriter,
+    cleanup: () => cleanupUsers(prisma, users),
+    async execute(runPhase) {
+    let assertions = 0;
+    const a = await runPhase("FIXTURE_A", () => seedLearningContext(prisma, "same-a")); users.push(a.user.id);
     const durable = Object.create(null);
-    const same = await proveSameUserSerialization(prisma, a.user.id); assertions += same;
+    const same = await runPhase("SAME_USER_LOCK", () => proveSameUserSerialization(prisma, a.user.id)); assertions += same;
     durable.sameUserWaited = true;
 
-    const b = await seedLearningContext(prisma, "different-b"); users.push(b.user.id);
-    assertions += await proveDifferentUserIndependence(prisma, a.user.id, b.user.id);
+    const b = await runPhase("FIXTURE_B", () => seedLearningContext(prisma, "different-b")); users.push(b.user.id);
+    assertions += await runPhase("DIFFERENT_USER_LOCK", () => proveDifferentUserIndependence(prisma, a.user.id, b.user.id));
     durable.differentUsersEntered = true;
 
     const clock = { value: new Date("2026-10-26T00:00:00.000Z") };
     const service = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
-    const sessionA = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
-    const readyA = await service.engage(a.user.id, sessionA.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
+    const { sessionA, readyA } = await runPhase("SESSION_ESTABLISH_READY", async () => {
+      const session = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
+      const ready = await service.engage(a.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
+      return { sessionA: session, readyA: ready };
+    });
     clock.value = new Date("2026-10-26T00:00:20.000Z");
-    assertions += await proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation });
+    assertions += await runPhase("SAME_USER_CREDIT_RACE", () => proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation }));
     durable.raceReceiptsUnique = true;
     durable.raceCreditBounded = true;
-    const sessionB = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
-    const transfer = await service.engage(a.user.id, sessionB.tracking_session_id, { operation_id: randomUUID(), event_type: "REVEAL" });
-    assert.equal(transfer.owner, true); assertions += 1;
-    const persistedOwner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: a.user.id } });
-    assert.equal(persistedOwner.tracking_session_id, sessionB.tracking_session_id); assertions += 1;
-    assert.equal(persistedOwner.generation.toString(), transfer.generation); assertions += 1;
+    const { sessionB, transfer } = await runPhase("OWNERSHIP_TRANSFER", async () => {
+      const session = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
+      const claimed = await service.engage(a.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "REVEAL" });
+      assert.equal(claimed.owner, true); assertions += 1;
+      const persistedOwner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: a.user.id } });
+      assert.equal(persistedOwner.tracking_session_id, session.tracking_session_id); assertions += 1;
+      assert.equal(persistedOwner.generation.toString(), claimed.generation); assertions += 1;
+      return { sessionB: session, transfer: claimed };
+    });
     durable.ownerPersisted = true;
-    const staleBefore = await durableSnapshot(prisma, a.user.id);
-    await assert.rejects(service.heartbeat(a.user.id, sessionA.tracking_session_id, heartbeat(randomUUID(), readyA.generation)), (error) => error?.code === "TRACKING_OWNERSHIP_CONFLICT"); assertions += 1;
-    assert.deepEqual(await durableSnapshot(prisma, a.user.id), staleBefore); assertions += 1;
+    await runPhase("STALE_GENERATION", async () => {
+      const staleBefore = await durableSnapshot(prisma, a.user.id);
+      await assert.rejects(service.heartbeat(a.user.id, sessionA.tracking_session_id, heartbeat(randomUUID(), readyA.generation)), (error) => error?.code === "TRACKING_OWNERSHIP_CONFLICT"); assertions += 1;
+      assert.deepEqual(await durableSnapshot(prisma, a.user.id), staleBefore); assertions += 1;
+    });
     durable.staleUnchanged = true;
 
     const replayOperation = randomUUID();
     clock.value = new Date("2026-10-26T00:00:40.000Z");
-    const replayBefore = await accountingSnapshot(prisma, a.user.id);
-    const [first, replay] = await runAtConcurrentTransactionStart({
+    await runPhase("CONCURRENT_REPLAY", async () => {
+      const replayBefore = await accountingSnapshot(prisma, a.user.id);
+      const [first, replay] = await runAtConcurrentTransactionStart({
       prisma,
       createOperations(client) {
         const concurrentService = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(client), now: () => new Date(clock.value), uuid: randomUUID });
@@ -57,52 +79,61 @@ export async function runRepositoryIntegration({ prisma }) {
           () => concurrentService.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(replayOperation, transfer.generation)),
         ];
       },
+      });
+      assert.equal([first, replay].filter((item) => item.replayed === true).length, 1); assertions += 1;
+      const replayAfter = await accountingSnapshot(prisma, a.user.id);
+      assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { user_id: a.user.id, operation_id: replayOperation } }), 1); assertions += 1;
+      assert.equal(replayAfter.dayMilliseconds - replayBefore.dayMilliseconds, 20_000n); assertions += 1;
+      assert.equal(replayAfter.owner.generation, replayBefore.owner.generation); assertions += 1;
+      assert.equal(replayAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
+      assert.equal(replayAfter.owner.lease_expires_at.toISOString(), "2026-10-26T00:01:25.000Z"); assertions += 1;
+      assert.notEqual(replayAfter.owner.lease_expires_at.toISOString(), replayBefore.owner.lease_expires_at.toISOString()); assertions += 1;
     });
-    assert.equal([first, replay].filter((item) => item.replayed === true).length, 1); assertions += 1;
-    const replayAfter = await accountingSnapshot(prisma, a.user.id);
-    assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { user_id: a.user.id, operation_id: replayOperation } }), 1); assertions += 1;
-    assert.equal(replayAfter.dayMilliseconds - replayBefore.dayMilliseconds, 20_000n); assertions += 1;
-    assert.equal(replayAfter.owner.generation, replayBefore.owner.generation); assertions += 1;
-    assert.equal(replayAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
-    assert.equal(replayAfter.owner.lease_expires_at.toISOString(), "2026-10-26T00:01:25.000Z"); assertions += 1;
-    assert.notEqual(replayAfter.owner.lease_expires_at.toISOString(), replayBefore.owner.lease_expires_at.toISOString()); assertions += 1;
     durable.replayReceiptUnique = true;
     durable.replayMutationOnce = true;
-    const mismatchBefore = await durableSnapshot(prisma, a.user.id);
-    await assert.rejects(service.engage(a.user.id, sessionB.tracking_session_id, { operation_id: replayOperation, generation: transfer.generation, event_type: "NEXT" }), (error) => error?.code === "OPERATION_CONFLICT"); assertions += 1;
-    assert.deepEqual(await durableSnapshot(prisma, a.user.id), mismatchBefore); assertions += 1;
+    await runPhase("FINGERPRINT_MISMATCH", async () => {
+      const mismatchBefore = await durableSnapshot(prisma, a.user.id);
+      await assert.rejects(service.engage(a.user.id, sessionB.tracking_session_id, { operation_id: replayOperation, generation: transfer.generation, event_type: "NEXT" }), (error) => error?.code === "OPERATION_CONFLICT"); assertions += 1;
+      assert.deepEqual(await durableSnapshot(prisma, a.user.id), mismatchBefore); assertions += 1;
+    });
     durable.mismatchUnchanged = true;
 
-    clock.value = new Date("2026-10-26T00:01:40.000Z");
-    const beforeSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
-    const reclaimed = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), transfer.generation));
-    const afterSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
-    assert.equal(afterSleep._sum.active_milliseconds ?? 0n, beforeSleep._sum.active_milliseconds ?? 0n); assertions += 1;
-    assert(BigInt(reclaimed.generation) > BigInt(transfer.generation)); assertions += 1;
+    const reclaimed = await runPhase("SLEEP_RECLAIM", async () => {
+      clock.value = new Date("2026-10-26T00:01:40.000Z");
+      const beforeSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
+      const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), transfer.generation));
+      const afterSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
+      assert.equal(afterSleep._sum.active_milliseconds ?? 0n, beforeSleep._sum.active_milliseconds ?? 0n); assertions += 1;
+      assert(BigInt(result.generation) > BigInt(transfer.generation)); assertions += 1;
+      return result;
+    });
     durable.sleepGapExcluded = true;
 
-    clock.value = new Date("2026-10-26T00:02:10.000Z");
-    const gapBefore = await accountingSnapshot(prisma, a.user.id);
-    const burned = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), reclaimed.generation));
-    const gapAfter = await accountingSnapshot(prisma, a.user.id);
-    assert.equal(burned.credited_milliseconds, "0"); assertions += 1;
-    assert.equal(gapAfter.dayMilliseconds, gapBefore.dayMilliseconds); assertions += 1;
-    assert.equal(gapAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
+    const burned = await runPhase("LEASE_GAP_BURN", async () => {
+      clock.value = new Date("2026-10-26T00:02:10.000Z");
+      const gapBefore = await accountingSnapshot(prisma, a.user.id);
+      const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), reclaimed.generation));
+      const gapAfter = await accountingSnapshot(prisma, a.user.id);
+      assert.equal(result.credited_milliseconds, "0"); assertions += 1;
+      assert.equal(gapAfter.dayMilliseconds, gapBefore.dayMilliseconds); assertions += 1;
+      assert.equal(gapAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
+      return result;
+    });
     durable.leaseLiveGapBurned = true;
 
-    assertions += await proveNonOwnerReclaim({ prisma, service, clock, fixture: a, currentSessionId: sessionB.tracking_session_id, currentGeneration: burned.generation });
+    assertions += await runPhase("NON_OWNER_RECLAIM", () => proveNonOwnerReclaim({ prisma, service, clock, fixture: a, currentSessionId: sessionB.tracking_session_id, currentGeneration: burned.generation }));
     durable.nonOwnerReclaimed = true;
 
-    assertions += await proveRollbackAfterDayCredit(prisma);
+    assertions += await runPhase("ROLLBACK_AFTER_CREDIT", () => proveRollbackAfterDayCredit(prisma));
     durable.rollbackComplete = true;
-    assertions += await proveMidnightSplit(prisma, a);
+    assertions += await runPhase("VIETNAM_MIDNIGHT", () => proveMidnightSplit(prisma, a));
     durable.midnightConserved = true;
-    assertions += await proveCleanupAndRestrict(prisma);
+    assertions += await runPhase("FK_CLEANUP", () => proveCleanupAndRestrict(prisma));
     durable.restrictObserved = true;
-    assertions += await proveCleanupRaceRecheck(prisma);
+    assertions += await runPhase("CLEANUP_RACE", () => proveCleanupRaceRecheck(prisma));
     durable.cleanupRaceRechecked = true;
 
-    return buildRepositoryEvidenceForTest(durable, {
+    return runPhase("EVIDENCE_GATE", () => buildRepositoryEvidenceForTest(durable, {
       sameUserContention: pass(same),
       differentUserIndependence: pass(2),
       ownershipTransfer: pass(6),
@@ -113,10 +144,9 @@ export async function runRepositoryIntegration({ prisma }) {
       sleepOffline: pass(2),
       vietnamMidnight: pass(3),
       noFabrication: pass(5),
-    });
-  } finally {
-    await cleanupUsers(prisma, users);
-  }
+    }));
+    },
+  });
 }
 
 async function proveSameUserSerialization(prisma, userId) {
@@ -292,6 +322,52 @@ function heartbeat(operation_id, generation) { return { operation_id, generation
 function pass(assertions) { return Object.freeze({ status: "PASS", assertions }); }
 async function waitFor(predicate, timeoutMilliseconds = 2_000) { const deadline = Date.now() + timeoutMilliseconds; while (!predicate()) { if (Date.now() >= deadline) throw new Error("Barrier observation timed out."); await boundedDelay(Math.min(5, timeoutMilliseconds)); } }
 function boundedDelay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+
+async function runRepositoryDiagnosticLifecycle({ execute, cleanup, diagnosticWriter = defaultDiagnosticWriter }) {
+  let primaryError;
+  let primaryPhase;
+  let result;
+  const runPhase = async (phase, operation) => {
+    assertRepositoryDiagnosticPhase(phase);
+    try { return await operation(); }
+    catch (error) { if (!primaryError) { primaryError = error; primaryPhase = phase; } throw error; }
+  };
+  try { result = await execute(runPhase); }
+  catch (error) { if (!primaryError) { primaryError = error; primaryPhase = "REPOSITORY_UNCLASSIFIED"; } }
+  try { await cleanup(); }
+  catch (error) {
+    if (!primaryError) { primaryError = error; primaryPhase = "FINAL_CLEANUP"; }
+  }
+  if (primaryError) {
+    try { emitRepositoryDiagnostic(primaryPhase, diagnosticWriter); } catch {}
+    throw primaryError;
+  }
+  return result;
+}
+
+function assertRepositoryDiagnosticPhase(phase) {
+  if (!REPOSITORY_DIAGNOSTIC_PHASES.has(phase)) throw new Error("Repository diagnostic phase is not allowlisted.");
+}
+
+function emitRepositoryDiagnostic(phase, writer) {
+  assertRepositoryDiagnosticPhase(phase);
+  if (typeof writer !== "function") throw new TypeError("Repository diagnostic writer is required.");
+  const line = `${JSON.stringify({ outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: phase })}\n`;
+  if (Buffer.byteLength(line, "utf8") > REPOSITORY_DIAGNOSTIC_LIMIT_BYTES) throw new Error("Repository diagnostic output exceeds its bound.");
+  writer(line);
+}
+
+function defaultDiagnosticWriter(line) { process.stdout.write(line); }
+
+export function runRepositoryDiagnosticLifecycleForTest(options) {
+  return runRepositoryDiagnosticLifecycle(options);
+}
+
+export function repositoryDiagnosticLineForTest(phase) {
+  let output = "";
+  emitRepositoryDiagnostic(phase, (line) => { output += line; });
+  return output;
+}
 
 export async function runAtConcurrentTransactionStart({ prisma, createOperations, timeoutMilliseconds = 5_000, observationTimeoutMilliseconds = 2_000 }) {
   if (!prisma?.$transaction || typeof createOperations !== "function") throw new TypeError("Concurrent transaction operations are required.");

@@ -23,7 +23,9 @@ import {
 import {
   buildRepositoryEvidenceForTest,
   createAbortableBarrier,
+  repositoryDiagnosticLineForTest,
   runAtConcurrentTransactionStart,
+  runRepositoryDiagnosticLifecycleForTest,
 } from "./daily-goal-dg2-repository.integration.test.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -184,6 +186,39 @@ test("early transaction failure aborts the other start waiter and settles both o
   assert.equal(bodies, 0);
   assert.equal(fake.stats.calls, 2);
   assert.equal(fake.stats.active, 0);
+});
+
+test("repository diagnostic emits only an allowlisted phase and preserves primary failure over cleanup", async () => {
+  const primary = new Error("postgresql://user:password@host/db SELECT secret /private/path");
+  const output = [];
+  let cleanupCalls = 0;
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    async execute(runPhase) {
+      await runPhase("SAME_USER_LOCK", async () => { throw primary; });
+    },
+    async cleanup() { cleanupCalls += 1; throw new Error("cleanup credential and SQL"); },
+    diagnosticWriter(line) { output.push(line); },
+  }), (error) => error === primary);
+  assert.equal(output.length, 1);
+  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "SAME_USER_LOCK" });
+  assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
+  assert.doesNotMatch(output[0], /password|SELECT|private|cleanup|credential/i);
+});
+
+test("cleanup-only repository failure has a fixed phase and diagnostic writer failure cannot mask it", async () => {
+  const cleanupFailure = new Error("hostile cleanup path and URL");
+  let cleanupCalls = 0;
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    async execute() { return "domain result"; },
+    async cleanup() { cleanupCalls += 1; throw cleanupFailure; },
+    diagnosticWriter() { throw new Error("writer unavailable"); },
+  }), (error) => error === cleanupFailure);
+  assert.equal(cleanupCalls, 1);
+  const line = repositoryDiagnosticLineForTest("FINAL_CLEANUP");
+  assert.deepEqual(JSON.parse(line), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "FINAL_CLEANUP" });
+  assert.equal(Buffer.byteLength(line, "utf8") <= 256, true);
+  assert.throws(() => repositoryDiagnosticLineForTest("postgresql://host/private"), /not allowlisted/);
 });
 
 test("repository PASS categories require every named durable assertion", () => {
