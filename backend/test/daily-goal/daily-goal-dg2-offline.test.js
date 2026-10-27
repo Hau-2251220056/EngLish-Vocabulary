@@ -36,6 +36,14 @@ import {
   runRepositoryDiagnosticLifecycleForTest,
   seedLearningContextWithCleanupForTest,
 } from "./daily-goal-dg2-repository.integration.test.js";
+import {
+  alignReadyClockForTest,
+  createHttpTimelineForTest,
+  createIdentityForTest,
+  createLearningForTest,
+  httpDiagnosticLineForTest,
+  runHttpDiagnosticLifecycleForTest,
+} from "./daily-goal-dg2-http.integration.test.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../..");
@@ -636,6 +644,100 @@ test("Vietnam-midnight evidence binds exact CREATE READY and REVEAL receipts", (
   }));
 });
 
+test("HTTP learning fixture uses one instant and exact seven-day expiry", async () => {
+  let data;
+  const createdAt = new Date("2027-04-05T06:07:08.901Z");
+  await createLearningForTest({
+    prisma: { lEARNING_SESSION: { async create(input) { data = input.data; return { id: "learning", ...data }; } } },
+    userId: "11111111-1111-4111-8111-111111111111",
+    createdAt,
+  });
+  assert.equal(data.created_at.toISOString(), createdAt.toISOString());
+  assert.equal(data.expires_at.getTime() - data.created_at.getTime(), 7 * 86_400_000);
+});
+
+test("HTTP READY clock is aligned to the exact persisted tracking session", async () => {
+  const requested = [];
+  const clock = { value: new Date("2026-10-26T00:00:00.000Z") };
+  const persisted = new Date("2027-04-05T06:07:08.901Z");
+  const timelineStart = await alignReadyClockForTest({
+    prisma: { dAILY_GOAL_TRACKING_SESSION: { async findUnique(input) { requested.push(input); return { created_at: persisted }; } } },
+    clock,
+    trackingSessionId: "22222222-2222-4222-8222-222222222222",
+  });
+  assert.deepEqual(requested, [{ where: { id: "22222222-2222-4222-8222-222222222222" }, select: { created_at: true } }]);
+  assert.equal(timelineStart, persisted.getTime());
+  assert.equal(clock.value.toISOString(), persisted.toISOString());
+});
+
+test("HTTP heartbeat and terminal timeline is entirely relative to READY", () => {
+  const start = new Date("2027-04-05T06:07:08.901Z").getTime();
+  const timeline = createHttpTimelineForTest(start);
+  assert.deepEqual(timeline.heartbeats.map((instant) => instant - start), [20_000, 40_000, 60_000, 80_000, 100_000]);
+  assert.equal(timeline.terminal - start, 120_000);
+});
+
+test("HTTP identity registers USER cleanup before AUTH_SESSION failure", async () => {
+  const users = [];
+  const authFailure = new Error("auth insert refused");
+  await assert.rejects(createIdentityForTest({
+    prisma: {
+      uSER: { async create() { return { id: "fixture-user" }; } },
+      aUTH_SESSION: { async create() { throw authFailure; } },
+    },
+    role: "USER",
+    users,
+  }), (error) => error === authFailure);
+  assert.deepEqual(users, ["fixture-user"]);
+});
+
+test("HTTP lifecycle attempts close and fixture cleanup once while preserving primary failure", async () => {
+  const primary = new Error("primary password URL SQL path");
+  const calls = [];
+  const output = [];
+  await assert.rejects(runHttpDiagnosticLifecycleForTest({
+    diagnosticWriter(line) { output.push(line); },
+    async execute(runPhase) { return runPhase("HTTP_HEARTBEATS", async () => { throw primary; }); },
+    async close() { calls.push("close"); throw new Error("close secret"); },
+    async cleanup() { calls.push("cleanup"); throw new Error("cleanup credential"); },
+  }), (error) => error === primary);
+  assert.deepEqual(calls, ["close", "cleanup"]);
+  assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_HTTP_STAGE_REFUSED", httpStage: "HTTP_HEARTBEATS" });
+  assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
+  assert.doesNotMatch(output[0], /password|URL|SQL|path|secret|credential/i);
+});
+
+test("HTTP lifecycle reports close-only and cleanup-only failures without skipping cleanup", async () => {
+  const closeFailure = new Error("close failure");
+  const closeCalls = [];
+  await assert.rejects(runHttpDiagnosticLifecycleForTest({
+    async execute() { return "ok"; },
+    async close() { closeCalls.push("close"); throw closeFailure; },
+    async cleanup() { closeCalls.push("cleanup"); throw new Error("later cleanup"); },
+    diagnosticWriter() {},
+  }), (error) => error === closeFailure);
+  assert.deepEqual(closeCalls, ["close", "cleanup"]);
+
+  const cleanupFailure = new Error("cleanup-only failure");
+  const output = [];
+  await assert.rejects(runHttpDiagnosticLifecycleForTest({
+    async execute() { return "ok"; },
+    async close() {},
+    async cleanup() { throw cleanupFailure; },
+    diagnosticWriter(line) { output.push(line); },
+  }), (error) => error === cleanupFailure);
+  assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_HTTP_STAGE_REFUSED", httpStage: "HTTP_FIXTURE_CLEANUP" });
+});
+
+test("HTTP diagnostic phase is allowlisted, single-line and bounded", () => {
+  const line = httpDiagnosticLineForTest("HTTP_READY_REPLAY");
+  assert.equal(line.endsWith("\n"), true);
+  assert.equal(line.trim().split(/\r?\n/).length, 1);
+  assert.equal(Buffer.byteLength(line, "utf8") <= 256, true);
+  assert.deepEqual(JSON.parse(line), { outcome: "DG2_HTTP_STAGE_REFUSED", httpStage: "HTTP_READY_REPLAY" });
+  assert.throws(() => httpDiagnosticLineForTest("postgresql://user:password@host/database"));
+});
+
 test("repository PASS categories require every named durable assertion", () => {
   const checks = Object.fromEntries([
     "sameUserWaited", "differentUsersEntered", "ownerPersisted", "staleUnchanged",
@@ -722,6 +824,8 @@ test("integration sources contain real repository/HTTP entrypoints and bounded l
   assert.match(http, /durableSnapshot\(prisma, user\.id\)/);
   assert.match(http, /IDLE_RESUME_REQUIRED/);
   assert.match(http, /terminalReceipt\.credited_milliseconds, 20_000n/);
+  assert.match(http, /createHttpTimeline\(timelineStart\)/);
+  assert.doesNotMatch(http, /2026-10-26T00:/);
 });
 
 function binding() { return { operation: DG2_OPERATION, authorized: "true", repository: DG2_REPOSITORY, sourceSha: SHA, sourceRef: DG2_REF, workflowSha: SHA, runId: "401", runAttempt: "2", postgresqlMajor: "17" }; }
