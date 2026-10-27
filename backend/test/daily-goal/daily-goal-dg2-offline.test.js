@@ -21,10 +21,12 @@ import {
   validateFixedPrismaInputs,
 } from "./daily-goal-dg2-cli.js";
 import {
+  assertSameUserDurableStateForTest,
   buildRepositoryEvidenceForTest,
   createAbortableBarrier,
   establishAndReadyForTest,
   repositoryDiagnosticLineForTest,
+  proveSameUserCreditRaceForTest,
   runAtConcurrentTransactionStart,
   runRepositoryDiagnosticLifecycleForTest,
   seedLearningContextWithCleanupForTest,
@@ -134,8 +136,11 @@ test("integration barrier abort settles every waiter and clears its timer exactl
 test("transaction-start gate observes two interactive callbacks before releasing operation bodies", async () => {
   const fake = fakeInteractiveTransactions();
   const bodies = [];
+  const boundaries = [];
   const result = await runAtConcurrentTransactionStart({
     prisma: fake.client,
+    runStartBoundary: async (operation) => { boundaries.push("start:begin"); const value = await operation(); boundaries.push("start:end"); return value; },
+    runOperationsBoundary: async (operation) => { boundaries.push("operations:begin"); const value = await operation(); boundaries.push("operations:end"); return value; },
     createOperations(client) {
       return [
         () => client.$transaction(async () => { bodies.push("A"); return "A"; }),
@@ -146,6 +151,7 @@ test("transaction-start gate observes two interactive callbacks before releasing
     observationTimeoutMilliseconds: 50,
   });
   assert.deepEqual(result.sort(), ["A", "B"]);
+  assert.deepEqual(boundaries, ["start:begin", "start:end", "operations:begin", "operations:end"]);
   assert.equal(fake.stats.starts, 2);
   assert.equal(fake.stats.maxActive, 2);
   assert.deepEqual(bodies.sort(), ["A", "B"]);
@@ -206,6 +212,87 @@ test("repository diagnostic emits only an allowlisted phase and preserves primar
   assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "SAME_USER_LOCK" });
   assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
   assert.doesNotMatch(output[0], /password|SELECT|private|cleanup|credential/i);
+});
+
+test("same-USER substages are bounded, redacted and preserve primary failure over cleanup", async () => {
+  for (const phase of ["SAME_USER_TX_START", "SAME_USER_OPERATIONS", "SAME_USER_DURABLE_ASSERTIONS"]) {
+    const line = repositoryDiagnosticLineForTest(phase);
+    assert.deepEqual(JSON.parse(line), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: phase });
+    assert.equal(Buffer.byteLength(line, "utf8") <= 256, true);
+  }
+  assert.throws(() => repositoryDiagnosticLineForTest("SAME_USER_CREDIT_RACE"), /not allowlisted/);
+
+  const primary = new Error("postgresql://user:password@host/db SELECT secret /private/path");
+  const output = [];
+  let cleanupCalls = 0;
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    diagnosticWriter(line) { output.push(line); },
+    async cleanup() { cleanupCalls += 1; throw new Error("cleanup credential"); },
+    async execute(runPhase) { await runPhase("SAME_USER_OPERATIONS", async () => { throw primary; }); },
+  }), (error) => error === primary);
+  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "SAME_USER_OPERATIONS" });
+  assert.doesNotMatch(output[0], /password|SELECT|private|cleanup|credential/i);
+});
+
+test("same-USER durable cursor and lease follow a nonhistorical timeline anchor", async () => {
+  const timelineStart = new Date("2027-02-03T04:05:06.789Z").getTime();
+  const operationIds = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  const counted = [];
+  await assertSameUserDurableStateForTest({
+    timelineStart,
+    userId: "33333333-3333-4333-8333-333333333333",
+    operations: operationIds,
+    before: { dayMilliseconds: 5_000n, owner: { generation: 9n } },
+    after: {
+      dayMilliseconds: 25_000n,
+      owner: {
+        generation: 9n,
+        last_accounted_at: new Date(timelineStart + 20_000),
+        lease_expires_at: new Date(timelineStart + 65_000),
+      },
+    },
+    results: [{ credited_milliseconds: "20000" }, { credited_milliseconds: "0" }],
+    prisma: { dAILY_GOAL_OPERATION_RECEIPT: { async count({ where }) { counted.push(where); return 1; } } },
+  });
+  assert.deepEqual(counted.map((where) => where.operation_id), operationIds);
+});
+
+test("same-USER baseline snapshot failure is durable-stage refusal before race operations", async () => {
+  const primary = new Error("baseline database read failed at postgresql://user:password@host/db");
+  const output = [];
+  let raceOperations = 0;
+  let cleanupCalls = 0;
+  const prisma = {
+    dAILY_GOAL_OWNER: { async findUnique() { throw primary; } },
+    dAILY_GOAL_DAY: { async aggregate() { return { _sum: { active_milliseconds: 0n } }; } },
+    async $transaction() { raceOperations += 1; throw new Error("race operation must not start"); },
+  };
+
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    diagnosticWriter(line) { output.push(line); },
+    async cleanup() { cleanupCalls += 1; throw new Error("cleanup password must not mask primary"); },
+    execute(runPhase) {
+      return proveSameUserCreditRaceForTest({
+        prisma,
+        clock: { value: new Date("2027-02-03T04:05:26.789Z") },
+        userId: "33333333-3333-4333-8333-333333333333",
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        generation: "9",
+        timelineStart: new Date("2027-02-03T04:05:06.789Z").getTime(),
+        runPhase,
+      });
+    },
+  }), (error) => error === primary);
+
+  assert.equal(raceOperations, 0);
+  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(output.map((line) => JSON.parse(line)), [{
+    outcome: "DG2_REPOSITORY_STAGE_REFUSED",
+    repositoryStage: "SAME_USER_DURABLE_ASSERTIONS",
+  }]);
+  assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
+  assert.doesNotMatch(output[0], /postgresql|password|database read|cleanup/i);
 });
 
 test("cleanup-only repository failure has a fixed phase and diagnostic writer failure cannot mask it", async () => {

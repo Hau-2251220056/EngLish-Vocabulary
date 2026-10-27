@@ -13,7 +13,8 @@ const REQUIRED_DURABLE_CHECKS = Object.freeze([
 
 const REPOSITORY_DIAGNOSTIC_PHASES = Object.freeze(new Set([
   "FIXTURE_A", "SAME_USER_LOCK", "FIXTURE_B", "DIFFERENT_USER_LOCK",
-  "SESSION_ESTABLISH", "SESSION_READY", "SAME_USER_CREDIT_RACE", "OWNERSHIP_TRANSFER",
+  "SESSION_ESTABLISH", "SESSION_READY", "SAME_USER_TX_START", "SAME_USER_OPERATIONS",
+  "SAME_USER_DURABLE_ASSERTIONS", "OWNERSHIP_TRANSFER",
   "STALE_GENERATION", "CONCURRENT_REPLAY", "FINGERPRINT_MISMATCH",
   "SLEEP_RECLAIM", "LEASE_GAP_BURN", "NON_OWNER_RECLAIM",
   "ROLLBACK_AFTER_CREDIT", "VIETNAM_MIDNIGHT", "FK_CLEANUP",
@@ -43,7 +44,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     const { session: sessionA, ready: readyA } = await establishAndReady({ prisma, service, clock, userId: a.user.id, learningSessionId: a.learning.id, runPhase });
     const timelineStart = clock.value.getTime();
     clock.value = new Date(timelineStart + 20_000);
-    assertions += await runPhase("SAME_USER_CREDIT_RACE", () => proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation }));
+    assertions += await proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation, timelineStart, runPhase });
     durable.raceReceiptsUnique = true;
     durable.raceCreditBounded = true;
     const { sessionB, transfer } = await runPhase("OWNERSHIP_TRANSFER", async () => {
@@ -194,23 +195,32 @@ async function proveDifferentUserIndependence(prisma, firstUser, secondUser) {
   }
 }
 
-async function proveSameUserCreditRace({ prisma, clock, userId, sessionId, generation }) {
+async function proveSameUserCreditRace({ prisma, clock, userId, sessionId, generation, timelineStart, runPhase }) {
   const operations = [randomUUID(), randomUUID()];
-  const before = await accountingSnapshot(prisma, userId);
+  const before = await runPhase("SAME_USER_DURABLE_ASSERTIONS", () => accountingSnapshot(prisma, userId));
   const results = await runAtConcurrentTransactionStart({
     prisma,
+    runStartBoundary: (operation) => runPhase("SAME_USER_TX_START", operation),
+    runOperationsBoundary: (operation) => runPhase("SAME_USER_OPERATIONS", operation),
     createOperations(client) {
       const concurrentService = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(client), now: () => new Date(clock.value), uuid: randomUUID });
       return operations.map((operationId) => () => concurrentService.heartbeat(userId, sessionId, heartbeat(operationId, generation)));
     },
   });
-  const after = await accountingSnapshot(prisma, userId);
+  return runPhase("SAME_USER_DURABLE_ASSERTIONS", async () => {
+    const after = await accountingSnapshot(prisma, userId);
+    await assertSameUserDurableState({ prisma, userId, operations, before, after, results, timelineStart });
+    return 7;
+  });
+}
+
+async function assertSameUserDurableState({ prisma, userId, operations, before, after, results, timelineStart }) {
   assert.equal(results.reduce((sum, item) => sum + BigInt(item.credited_milliseconds), 0n), 20_000n);
   assert.equal(after.dayMilliseconds - before.dayMilliseconds, 20_000n);
   assert.equal(after.owner.generation, before.owner.generation);
-  assert.equal(after.owner.last_accounted_at.toISOString(), "2026-10-26T00:00:20.000Z");
+  assert.equal(after.owner.last_accounted_at.toISOString(), new Date(timelineStart + 20_000).toISOString());
+  assert.equal(after.owner.lease_expires_at.toISOString(), new Date(timelineStart + 65_000).toISOString());
   for (const operationId of operations) assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { user_id: userId, operation_id: operationId } }), 1);
-  return 6;
 }
 
 async function proveNonOwnerReclaim({ prisma, service, clock, fixture, currentSessionId, currentGeneration }) {
@@ -447,8 +457,9 @@ export function repositoryDiagnosticLineForTest(phase) {
   return output;
 }
 
-export async function runAtConcurrentTransactionStart({ prisma, createOperations, timeoutMilliseconds = 5_000, observationTimeoutMilliseconds = 2_000 }) {
+export async function runAtConcurrentTransactionStart({ prisma, createOperations, runStartBoundary = runDirectly, runOperationsBoundary = runDirectly, timeoutMilliseconds = 5_000, observationTimeoutMilliseconds = 2_000 }) {
   if (!prisma?.$transaction || typeof createOperations !== "function") throw new TypeError("Concurrent transaction operations are required.");
+  if (typeof runStartBoundary !== "function" || typeof runOperationsBoundary !== "function") throw new TypeError("Concurrent transaction boundaries are required.");
   const barrier = createAbortableBarrier({ parties: 2, timeoutMilliseconds });
   const client = transactionClientWithStartBarrier(prisma, barrier);
   const operations = createOperations(client);
@@ -459,14 +470,28 @@ export async function runAtConcurrentTransactionStart({ prisma, createOperations
     return promise;
   });
   try {
-    await waitFor(() => barrier.snapshot().arrivals === 2, observationTimeoutMilliseconds);
-    assert.equal(barrier.snapshot().arrivals, 2);
-    barrier.release();
-    return await Promise.all(pending);
+    await runStartBoundary(async () => {
+      await waitFor(() => barrier.snapshot().arrivals === 2, observationTimeoutMilliseconds);
+      assert.equal(barrier.snapshot().arrivals, 2);
+    });
+    return await runOperationsBoundary(async () => {
+      barrier.release();
+      return Promise.all(pending);
+    });
   } finally {
     if (!barrier.snapshot().terminal) barrier.abort(new Error("Transaction-start barrier aborted."));
     await Promise.allSettled(pending);
   }
+}
+
+function runDirectly(operation) { return operation(); }
+
+export function assertSameUserDurableStateForTest(options) {
+  return assertSameUserDurableState(options);
+}
+
+export function proveSameUserCreditRaceForTest(options) {
+  return proveSameUserCreditRace(options);
 }
 
 export function buildRepositoryEvidenceForTest(checks, categories) {
