@@ -86,11 +86,15 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     });
     durable.replayReceiptUnique = true;
     durable.replayMutationOnce = true;
-    await runPhase("FINGERPRINT_MISMATCH", async () => {
-      const mismatchBefore = await durableSnapshot(prisma, a.user.id);
-      await assert.rejects(service.engage(a.user.id, sessionB.tracking_session_id, { operation_id: replayOperation, generation: transfer.generation, event_type: "NEXT" }), (error) => error?.code === "OPERATION_CONFLICT"); assertions += 1;
-      assert.deepEqual(await durableSnapshot(prisma, a.user.id), mismatchBefore); assertions += 1;
-    });
+    assertions += await runPhase("FINGERPRINT_MISMATCH", () => proveFingerprintMismatch({
+      prisma,
+      service,
+      userId: a.user.id,
+      sessionId: sessionB.tracking_session_id,
+      operationId: replayOperation,
+      generation: transfer.generation,
+      eventType: "REVEAL",
+    }));
     durable.mismatchUnchanged = true;
 
     const reclaimed = await runPhase("SLEEP_RECLAIM", async () => {
@@ -255,6 +259,17 @@ async function proveNonOwnerReclaim({ prisma, service, clock, fixture, currentSe
   assert.equal(owner.tracking_session_id, contender.tracking_session_id);
   assert(BigInt(owner.generation) > BigInt(currentClaim.generation));
   return 6;
+}
+
+async function proveFingerprintMismatch({ prisma, service, userId, sessionId, operationId, generation, eventType }) {
+  const before = await durableSnapshot(prisma, userId);
+  await assert.rejects(
+    service.engage(userId, sessionId, { operation_id: operationId, generation, event_type: eventType }),
+    (error) => error?.code === "OPERATION_CONFLICT",
+  );
+  const after = await durableSnapshot(prisma, userId);
+  assert.deepEqual(after, before);
+  return 2;
 }
 
 async function proveRollbackAfterDayCredit(prisma) {
@@ -536,6 +551,10 @@ export function proveOwnershipTransferForTest(options) {
 
 export function proveNonOwnerReclaimForTest(options) {
   return proveNonOwnerReclaim(options);
+}
+
+export function proveFingerprintMismatchForTest(options) {
+  return proveFingerprintMismatch(options);
 }
 
 export function createOldClosedTrackingSessionForTest(options) {

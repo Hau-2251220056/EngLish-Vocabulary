@@ -28,6 +28,7 @@ import {
   establishAndReadyForTest,
   repositoryDiagnosticLineForTest,
   proveSameUserCreditRaceForTest,
+  proveFingerprintMismatchForTest,
   proveNonOwnerReclaimForTest,
   proveOwnershipTransferForTest,
   runAtConcurrentTransactionStart,
@@ -398,6 +399,51 @@ test("both cleanup integration paths use the shared strict-cutoff CLOSED fixture
   assert.doesNotMatch(source, /status: "CLOSED", closed_at: new Date\("2026-08-01/);
 });
 
+test("valid REVEAL reaches replay conflict and executes the durable after snapshot", async () => {
+  const fake = fingerprintMismatchFixture();
+  const assertions = await proveFingerprintMismatchForTest({
+    prisma: fake.prisma,
+    service: {
+      async engage(_userId, _sessionId, input) {
+        fake.events.push(input.event_type);
+        const error = new Error("persisted receipt differs");
+        error.code = "OPERATION_CONFLICT";
+        throw error;
+      },
+    },
+    userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    operationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    generation: "5",
+    eventType: "REVEAL",
+  });
+  assert.equal(assertions, 2);
+  assert.deepEqual(fake.events, ["REVEAL"]);
+  assert.deepEqual(fake.reads, { owner: 2, sessions: 2, days: 2, receipts: 2 });
+});
+
+test("invalid event is not accepted as fingerprint-mismatch evidence", async () => {
+  const fake = fingerprintMismatchFixture();
+  await assert.rejects(proveFingerprintMismatchForTest({
+    prisma: fake.prisma,
+    service: {
+      async engage(_userId, _sessionId, input) {
+        fake.events.push(input.event_type);
+        const error = new Error("invalid event");
+        error.code = "DAILY_GOAL_VALIDATION_ERROR";
+        throw error;
+      },
+    },
+    userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    operationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    generation: "5",
+    eventType: "NEXT",
+  }), (error) => error?.code === "ERR_ASSERTION");
+  assert.deepEqual(fake.events, ["NEXT"]);
+  assert.deepEqual(fake.reads, { owner: 1, sessions: 1, days: 1, receipts: 1 });
+});
+
 test("cleanup-only repository failure has a fixed phase and diagnostic writer failure cannot mask it", async () => {
   const cleanupFailure = new Error("hostile cleanup path and URL");
   let cleanupCalls = 0;
@@ -664,6 +710,25 @@ function assertFixtureCleanupIsScoped(cleanupWhere, userId) {
   for (const { name, where } of cleanupWhere) {
     assert.deepEqual(where, name === "user" ? { id: { in: [userId] } } : { user_id: { in: [userId] } });
   }
+}
+function fingerprintMismatchFixture() {
+  const reads = { owner: 0, sessions: 0, days: 0, receipts: 0 };
+  const state = {
+    owner: { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tracking_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", generation: 5n },
+    sessions: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "ACTIVE" }],
+    days: [{ user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", active_milliseconds: 20_000n }],
+    receipts: [{ operation_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", operation_type: "HEARTBEAT" }],
+  };
+  return {
+    events: [],
+    reads,
+    prisma: {
+      dAILY_GOAL_OWNER: { async findUnique() { reads.owner += 1; return structuredClone(state.owner); } },
+      dAILY_GOAL_TRACKING_SESSION: { async findMany() { reads.sessions += 1; return structuredClone(state.sessions); } },
+      dAILY_GOAL_DAY: { async findMany() { reads.days += 1; return structuredClone(state.days); } },
+      dAILY_GOAL_OPERATION_RECEIPT: { async findMany() { reads.receipts += 1; return structuredClone(state.receipts); } },
+    },
+  };
 }
 function fakeInteractiveTransactions({ sequential = false, rejectFirstBeforeCallback = false } = {}) {
   const stats = { calls: 0, starts: 0, active: 0, maxActive: 0 };
