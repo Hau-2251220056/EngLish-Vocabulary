@@ -134,7 +134,7 @@ Read-only goal/notification APIs and notification mark-read do not create operat
 **SPEC / PLAN:** AC-DG-004, 016, 019, 024, 030, 034, 048; PLAN §§6.5, 12.2.\
 **Acceptance / evidence:** guarded results are PASS or honestly `NOT RUN`; exact ephemeral evidence below is complete; HUMAN accepts Gate DG-1 before persistence-dependent work.
 
-**Accepted DG-1 checkpoint:** HUMAN accepted the guarded portable PostgreSQL 17 evidence from GitHub Actions Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. This closes TASK-256 only for portable migration correctness. It does not verify or authorize Supabase, Session Pooler, Preview/Production, Vercel connectivity, deployment, or any TASK-258+ implementation.
+**Accepted DG-1 checkpoint:** HUMAN accepted the guarded portable PostgreSQL 17 evidence from GitHub Actions Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. This closes TASK-256 only for portable migration correctness. At that checkpoint it did not verify or authorize Supabase, Session Pooler, Preview/Production, Vercel connectivity, deployment, or any TASK-258+ implementation; later numbered tasks still require their own recorded HUMAN authorization.
 
 #### TASK-256 DG-1 Ephemeral PostgreSQL Path Amendment — HUMAN APPROVED DESIGN ONLY
 
@@ -152,7 +152,7 @@ Read-only goal/notification APIs and notification mark-read do not create operat
 
 **Existing-work disposition:** Full `B-COLLECTOR-IMPLEMENT` remains `DEFERRED`. The actual `B-DESTINATION` remains `PENDING` but is no longer a prerequisite for the ephemeral DG-1 path. The B-DESTINATION observation offline core is `TARGETED FIXES COMPLETE, NOT PUBLISHED, DEFERRED FROM DG-1 CRITICAL PATH`; its three existing untracked files remain untouched. Historical Phase B/Context B evidence below is retained as platform-specific evidence and must not be interpreted as ephemeral DG-1 evidence or as a prerequisite for DG-1.
 
-**Critical path outcome:** documentation amendment → separately authorized ephemeral workflow implementation/review → separately authorized exact CI run → HUMAN DG-1 decision completed with `PASS` for portable PostgreSQL 17 migration correctness. This PASS satisfies the TASK-258 DG-1 dependency but does not authorize TASK-258+, another workflow dispatch, migration execution, database access, Supabase platform validation, or deployment.
+**Critical path outcome:** documentation amendment → separately authorized ephemeral workflow implementation/review → separately authorized exact CI run → HUMAN DG-1 decision completed with `PASS` for portable PostgreSQL 17 migration correctness. This PASS satisfied the TASK-258 DG-1 dependency but did not itself authorize later tasks, another workflow dispatch, migration execution, database access, Supabase platform validation, or deployment; subsequent task authorizations and acceptances are recorded in their own checkpoints.
 
 **Phase A offline evidence:** A dedicated dependency-injected harness now enforces configuration authorization, independent connected-target evidence and same-handle binding, quarantine checksum verification, ephemeral activation outside the source repository, exact ordered migration-history/pending-set approval, and immediate reauthorization before a mockable executor boundary. No live observer, PostgreSQL adapter, Prisma executor, database credential, workflow mutation path, or repository-active migration copy exists. Phase B target observation/history access, Phase C pending-set HUMAN approval, and Phase D mutation remain separately blocked; the later portable PostgreSQL 17 DG-1 PASS does not open them.
 
@@ -176,7 +176,7 @@ Read-only goal/notification APIs and notification mark-read do not create operat
 
 Supabase Session Pooler does not guarantee that independent sessions observe the same PostgreSQL backend endpoint. Phase B therefore keeps `targetIdentity`, `databaseName`, `schemaName`, and `ownershipMarker` as mandatory exact-match identity fields, while `serverEndpoint` and `serverPort` are mandatory diagnostic evidence rather than stable cross-session identity invariants. The diagnostics must still be collected from the connected backend on the same server-verified read-only transaction as identity and `public."_prisma_migrations"`, must contain a valid IPv4/IPv6 address and an integer port from 1 through 65535, and must remain present in the immutable observation and sanitized allowlisted CLI evidence. Missing or malformed diagnostics fail closed; valid backend changes alone do not create an identity mismatch, and endpoint/port are never inferred from the Session Pooler URL.
 
-Phase B authorization additionally requires the exact approved Session Pooler principal `elvocab_daily_goal_observer.fmosmonrivuoacjfbmov`, preserves separation from XP/Streak write credentials, and continues rejecting runtime/legacy database URL injection or fallback. The obsolete `daily_goal_approved_server_endpoint` dispatch input and expected backend endpoint/port configuration are removed. Exact ownership-marker verification, repository/HUMAN identity agreement, Trust Gate, shared CI concurrency, Context A/Context B separation, rollback/disconnect failure handling, redaction, migration quarantine, and the literal `false` gates for Phase B and Phase D remain unchanged. HUMAN acceptance of A1 authorizes no live observation, migration, Phase C/D work, Gate DG-1 passage, or TASK-258+ execution.
+Phase B authorization additionally requires the exact approved Session Pooler principal `elvocab_daily_goal_observer.fmosmonrivuoacjfbmov`, preserves separation from XP/Streak write credentials, and continues rejecting runtime/legacy database URL injection or fallback. The obsolete `daily_goal_approved_server_endpoint` dispatch input and expected backend endpoint/port configuration are removed. Exact ownership-marker verification, repository/HUMAN identity agreement, Trust Gate, shared CI concurrency, Context A/Context B separation, rollback/disconnect failure handling, redaction, migration quarantine, and the literal `false` gates for Phase B and Phase D remain unchanged. HUMAN acceptance of A1 did not authorize live observation, migration, Phase C/D work, Gate DG-1 passage, or TASK-258+ execution; later portable DG-1/DG-2 evidence remains separate from Supabase platform validation.
 
 ### TASK-257 — Implement pure Daily Goal time domain
 
@@ -215,7 +215,7 @@ Phase B authorization additionally requires the exact approved Session Pooler pr
 
 ### TASK-260 — Prove tracking concurrency and stop at Gate DG-2
 
-**Status:** `BLOCKED — REQUIRES APPROVED ISOLATED DATABASE`\
+**Status:** `HUMAN ACCEPTED — PASS; PORTABLE POSTGRESQL 17 + JOB-LOCAL EXPRESS ONLY`\
 **Objective:** Demonstrate non-overlap and retry correctness under races/failures.\
 **Dependencies:** TASK-259 and Gate DG-1.\
 **Files / modules:** guarded integration/concurrency suites and evidence report.\
@@ -223,6 +223,8 @@ Phase B authorization additionally requires the exact approved Session Pooler pr
 **Out of scope:** Preview TEST or capacity claims.\
 **SPEC / PLAN:** AC-DG-016–021, 024, 040–041, 048–049; PLAN §§12.1–12.2.\
 **Acceptance / evidence:** no overlap/fabrication and deterministic idempotency are demonstrated or marked `NOT RUN`; HUMAN accepts DG-2.
+
+**Accepted DG-2 checkpoint:** HUMAN accepted GitHub Actions Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`, as PASS evidence for portable PostgreSQL 17 and a job-local listening Express stack only. The two reward-specific clauses were deliberately reported `NOT_RUN` and are deferred to TASK-262. This checkpoint does not verify Supabase platform behavior and does not authorize Supabase, Preview/Production migration, deployment, another workflow dispatch, or any database operation.
 
 ### TASK-261 — Implement goal settings, progress, reward, and XP projection
 
@@ -426,9 +428,9 @@ Every BR-DG-001–078 and AC-DG-001–055 appears in at least one row and is imp
 
 ## 7. Execution and HUMAN gates
 
-1. **Task approval:** HUMAN approved this document and accepted TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness using Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. Every numbered task from TASK-258 onward and every additional CI/database operation require separate authorization.
+1. **Task approval:** HUMAN approved this document and accepted TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness using Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. TASK-258 through TASK-260 were subsequently authorized in bounded scopes, and DG-2 was HUMAN accepted using Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. TASK-261 and every later numbered task or additional CI/database operation still require separate authorization.
 2. **DG-1 Database:** `HUMAN ACCEPTED — PASS`, portable PostgreSQL 17 migration correctness only. The actual Supabase B-DESTINATION was not a prerequisite and remains pending platform-specific evidence.
-3. **DG-2 Backend accounting:** fake-clock and guarded concurrency evidence before frontend reliance.
+3. **DG-2 Backend accounting:** `HUMAN ACCEPTED — PASS` for portable PostgreSQL 17 and job-local Express evidence from Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. The two reward clauses remain `NOT_RUN` and move to TASK-262; Supabase and deployment evidence remain pending.
 4. **DG-3 Reward/reminder:** atomicity, authorization and dedupe evidence before Notification UI reliance.
 5. **DG-4 Shared tracker:** focused lifecycle/accessibility review before activity attachment.
 6. **DG-5 Activities:** independent Normal/SRS/Quiz/Speaking regression acceptance.
@@ -438,6 +440,6 @@ Every BR-DG-001–078 and AC-DG-001–055 appears in at least one row and is imp
 
 ## 8. Remaining unknowns and stop condition
 
-The exact Supabase platform PostgreSQL compatibility, Vercel runtime/region/invocation budget, Supabase plan/region/pool/timeouts/storage, Supabase platform-target readiness, real concurrency/session duration, and an approved maintenance mechanism remain UNKNOWN. These facts block Supabase compatibility, capacity, Preview/Production migration, and deployment claims; they do not reopen the HUMAN-accepted portable PostgreSQL 17 DG-1 result. Any implementation discovery that requires changing a PLAN default, architecture, database/API contract, or business rule returns to PLAN/SPEC review.
+The exact Supabase platform PostgreSQL compatibility, Supabase/Vercel platform capacity and connection pooling, long-duration session behavior on the real platform, Vercel runtime/region/invocation budget, Supabase plan/region/timeouts/storage, Supabase platform-target readiness, and an approved maintenance mechanism remain UNKNOWN. Portable PostgreSQL 17 concurrency and job-local Express behavior are HUMAN ACCEPTED — PASS through Run `40449670981`, attempt `1`; that portable evidence does not resolve the remaining platform-specific unknowns. These facts block Supabase compatibility, platform capacity, Preview/Production migration, and deployment claims; they do not reopen the HUMAN-accepted portable PostgreSQL 17 DG-1 or DG-2 results. Any implementation discovery that requires changing a PLAN default, architecture, database/API contract, or business rule returns to PLAN/SPEC review.
 
-**STOP: TASK-256 is closed for portable PostgreSQL 17 migration correctness and DG-1 is HUMAN ACCEPTED — PASS. TASK-258+ remains NOT AUTHORIZED pending a separate HUMAN decision. Do not dispatch another workflow, execute a migration, access a database, run database-dependent tests, treat Phase B/Context B as completed Supabase evidence, commit, push, or deploy without separate authorization.**
+**STOP: TASK-256/DG-1 and TASK-260/DG-2 are HUMAN ACCEPTED — PASS only for their recorded portable PostgreSQL 17 scopes, with DG-2 additionally limited to job-local Express. TASK-261+ remains NOT AUTHORIZED pending a separate HUMAN decision, and the two reward clauses remain deferred to TASK-262. Do not dispatch another workflow, execute a migration, access a database, run database-dependent tests, treat Phase B/Context B or portable evidence as completed Supabase evidence, commit, push, or deploy without separate authorization.**
