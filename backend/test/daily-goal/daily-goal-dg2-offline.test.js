@@ -23,6 +23,7 @@ import {
 import {
   buildRepositoryEvidenceForTest,
   createAbortableBarrier,
+  establishAndReadyForTest,
   repositoryDiagnosticLineForTest,
   runAtConcurrentTransactionStart,
   runRepositoryDiagnosticLifecycleForTest,
@@ -222,6 +223,77 @@ test("cleanup-only repository failure has a fixed phase and diagnostic writer fa
   assert.throws(() => repositoryDiagnosticLineForTest("postgresql://host/private"), /not allowlisted/);
 });
 
+test("establish/READY phases use persisted created_at as the controlled-clock floor", async () => {
+  const initial = new Date("2026-10-26T00:00:00.000Z");
+  const persistedCreatedAt = new Date("2026-10-27T03:04:05.678Z");
+  const clock = { value: initial };
+  const phases = [];
+  let readyInstant;
+  const result = await establishAndReadyForTest({
+    prisma: { dAILY_GOAL_TRACKING_SESSION: { async findUnique() { return { created_at: persistedCreatedAt }; } } },
+    clock,
+    userId: "11111111-1111-4111-8111-111111111111",
+    learningSessionId: "22222222-2222-4222-8222-222222222222",
+    runPhase: async (phase, operation) => { phases.push(phase); return operation(); },
+    service: {
+      async establish() { return { tracking_session_id: "33333333-3333-4333-8333-333333333333" }; },
+      async engage() { readyInstant = new Date(clock.value); return { generation: "1" }; },
+    },
+  });
+
+  assert.deepEqual(phases, ["SESSION_ESTABLISH", "SESSION_READY"]);
+  assert.equal(readyInstant.toISOString(), persistedCreatedAt.toISOString());
+  assert.equal(clock.value.getTime() >= persistedCreatedAt.getTime(), true);
+  assert.equal(result.ready.generation, "1");
+});
+
+test("split establish/READY diagnostics preserve stage, redaction and cleanup precedence", async () => {
+  const primary = new Error("postgresql://user:password@host/db SELECT secret /private/path");
+  const output = [];
+  let cleanupCalls = 0;
+  let readyCalls = 0;
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    diagnosticWriter(line) { output.push(line); },
+    async cleanup() { cleanupCalls += 1; throw new Error("cleanup credential"); },
+    execute(runPhase) {
+      return establishAndReadyForTest({
+        prisma: { dAILY_GOAL_TRACKING_SESSION: { async findUnique() { return { created_at: new Date("2026-10-27T00:00:00.000Z") }; } } },
+        clock: { value: new Date("2026-10-26T00:00:00.000Z") },
+        userId: "11111111-1111-4111-8111-111111111111",
+        learningSessionId: "22222222-2222-4222-8222-222222222222",
+        runPhase,
+        service: {
+          async establish() { return { tracking_session_id: "33333333-3333-4333-8333-333333333333" }; },
+          async engage() { readyCalls += 1; throw primary; },
+        },
+      });
+    },
+  }), (error) => error === primary);
+
+  assert.equal(readyCalls, 1);
+  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(JSON.parse(output[0]), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "SESSION_READY" });
+  assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
+  assert.doesNotMatch(output[0], /password|SELECT|private|cleanup|credential/i);
+
+  const establishOutput = [];
+  await assert.rejects(runRepositoryDiagnosticLifecycleForTest({
+    diagnosticWriter(line) { establishOutput.push(line); },
+    async cleanup() {},
+    execute(runPhase) {
+      return establishAndReadyForTest({
+        prisma: { dAILY_GOAL_TRACKING_SESSION: { async findUnique() { throw new Error("must not query"); } } },
+        clock: { value: new Date("2026-10-26T00:00:00.000Z") },
+        userId: "11111111-1111-4111-8111-111111111111",
+        learningSessionId: "22222222-2222-4222-8222-222222222222",
+        runPhase,
+        service: { async establish() { throw primary; }, async engage() { throw new Error("must not run"); } },
+      });
+    },
+  }), (error) => error === primary);
+  assert.deepEqual(JSON.parse(establishOutput[0]), { outcome: "DG2_REPOSITORY_STAGE_REFUSED", repositoryStage: "SESSION_ESTABLISH" });
+});
+
 test("learning fixture uses one creation instant and the exact seven-day expiry", async () => {
   const createdAt = new Date("2026-10-26T04:05:06.789Z");
   const fake = fixtureSeedPrisma();
@@ -355,6 +427,10 @@ test("integration sources contain real repository/HTTP entrypoints and bounded l
   assert.match(repository, /raceCreditBounded/);
   assert.doesNotMatch(repository, /assertions\s*-\s*\d+/);
   assert.match(repository, /\[400n, 400n\]/);
+  assert.match(repository, /nextVietnamMidnightAfter/);
+  assert.doesNotMatch(repository, /SESSION_ESTABLISH_READY/);
+  assert.match(repository, /"SESSION_ESTABLISH"/);
+  assert.match(repository, /"SESSION_READY"/);
   assert.match(repository, /cleanupExpiredOperationalState/);
   assert.match(http, /startHttpTestServer\(createApp/);
   for (const status of [401, 403, 404, 409, 400]) assert.match(http, new RegExp(`status, ${status}`));

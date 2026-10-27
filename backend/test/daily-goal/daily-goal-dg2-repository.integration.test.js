@@ -13,7 +13,7 @@ const REQUIRED_DURABLE_CHECKS = Object.freeze([
 
 const REPOSITORY_DIAGNOSTIC_PHASES = Object.freeze(new Set([
   "FIXTURE_A", "SAME_USER_LOCK", "FIXTURE_B", "DIFFERENT_USER_LOCK",
-  "SESSION_ESTABLISH_READY", "SAME_USER_CREDIT_RACE", "OWNERSHIP_TRANSFER",
+  "SESSION_ESTABLISH", "SESSION_READY", "SAME_USER_CREDIT_RACE", "OWNERSHIP_TRANSFER",
   "STALE_GENERATION", "CONCURRENT_REPLAY", "FINGERPRINT_MISMATCH",
   "SLEEP_RECLAIM", "LEASE_GAP_BURN", "NON_OWNER_RECLAIM",
   "ROLLBACK_AFTER_CREDIT", "VIETNAM_MIDNIGHT", "FK_CLEANUP",
@@ -40,12 +40,9 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
 
     const clock = { value: new Date("2026-10-26T00:00:00.000Z") };
     const service = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
-    const { sessionA, readyA } = await runPhase("SESSION_ESTABLISH_READY", async () => {
-      const session = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
-      const ready = await service.engage(a.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
-      return { sessionA: session, readyA: ready };
-    });
-    clock.value = new Date("2026-10-26T00:00:20.000Z");
+    const { session: sessionA, ready: readyA } = await establishAndReady({ prisma, service, clock, userId: a.user.id, learningSessionId: a.learning.id, runPhase });
+    const timelineStart = clock.value.getTime();
+    clock.value = new Date(timelineStart + 20_000);
     assertions += await runPhase("SAME_USER_CREDIT_RACE", () => proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation }));
     durable.raceReceiptsUnique = true;
     durable.raceCreditBounded = true;
@@ -67,7 +64,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.staleUnchanged = true;
 
     const replayOperation = randomUUID();
-    clock.value = new Date("2026-10-26T00:00:40.000Z");
+    clock.value = new Date(timelineStart + 40_000);
     await runPhase("CONCURRENT_REPLAY", async () => {
       const replayBefore = await accountingSnapshot(prisma, a.user.id);
       const [first, replay] = await runAtConcurrentTransactionStart({
@@ -86,7 +83,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
       assert.equal(replayAfter.dayMilliseconds - replayBefore.dayMilliseconds, 20_000n); assertions += 1;
       assert.equal(replayAfter.owner.generation, replayBefore.owner.generation); assertions += 1;
       assert.equal(replayAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
-      assert.equal(replayAfter.owner.lease_expires_at.toISOString(), "2026-10-26T00:01:25.000Z"); assertions += 1;
+      assert.equal(replayAfter.owner.lease_expires_at.toISOString(), new Date(timelineStart + 85_000).toISOString()); assertions += 1;
       assert.notEqual(replayAfter.owner.lease_expires_at.toISOString(), replayBefore.owner.lease_expires_at.toISOString()); assertions += 1;
     });
     durable.replayReceiptUnique = true;
@@ -99,7 +96,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.mismatchUnchanged = true;
 
     const reclaimed = await runPhase("SLEEP_RECLAIM", async () => {
-      clock.value = new Date("2026-10-26T00:01:40.000Z");
+      clock.value = new Date(timelineStart + 100_000);
       const beforeSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
       const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), transfer.generation));
       const afterSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
@@ -110,7 +107,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.sleepGapExcluded = true;
 
     const burned = await runPhase("LEASE_GAP_BURN", async () => {
-      clock.value = new Date("2026-10-26T00:02:10.000Z");
+      clock.value = new Date(timelineStart + 130_000);
       const gapBefore = await accountingSnapshot(prisma, a.user.id);
       const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), reclaimed.generation));
       const gapAfter = await accountingSnapshot(prisma, a.user.id);
@@ -218,6 +215,7 @@ async function proveSameUserCreditRace({ prisma, clock, userId, sessionId, gener
 
 async function proveNonOwnerReclaim({ prisma, service, clock, fixture, currentSessionId, currentGeneration }) {
   const contender = await service.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
+  await alignClockForReady(prisma, clock, contender.tracking_session_id);
   const contenderReady = await service.engage(fixture.user.id, contender.tracking_session_id, { operation_id: randomUUID(), generation: currentGeneration, event_type: "READY" });
   const currentClaim = await service.engage(fixture.user.id, currentSessionId, { operation_id: randomUUID(), generation: contenderReady.generation, event_type: "REVEAL" });
   clock.value = new Date(clock.value.getTime() + 46_000);
@@ -236,8 +234,10 @@ async function proveRollbackAfterDayCredit(prisma) {
     const clock = { value: new Date("2026-10-26T02:00:00.000Z") };
     const normal = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
     const session = await normal.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
+    await alignClockForReady(prisma, clock, session.tracking_session_id);
     const ready = await normal.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
-    clock.value = new Date("2026-10-26T02:00:20.000Z");
+    const readyAt = new Date(clock.value);
+    clock.value = new Date(clock.value.getTime() + 20_000);
     const before = await durableSnapshot(prisma, fixture.user.id);
     const operation = randomUUID();
     const failing = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(transactionClientWithReceiptFailure(prisma)), now: () => new Date(clock.value), uuid: randomUUID });
@@ -245,7 +245,7 @@ async function proveRollbackAfterDayCredit(prisma) {
     assert.deepEqual(await durableSnapshot(prisma, fixture.user.id), before);
     assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { user_id: fixture.user.id, operation_id: operation } }), 0);
     const owner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: fixture.user.id } });
-    assert.equal(owner.last_accounted_at.toISOString(), "2026-10-26T02:00:00.000Z");
+    assert.equal(owner.last_accounted_at.toISOString(), readyAt.toISOString());
     return 4;
   });
 }
@@ -254,8 +254,11 @@ async function proveMidnightSplit(prisma, fixture) {
   const clock = { value: new Date("2026-10-26T16:59:59.600Z") };
   const service = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
   const session = await service.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
+  const createdAt = await readTrackingCreatedAt(prisma, session.tracking_session_id);
+  const midnight = nextVietnamMidnightAfter(createdAt.getTime() + 400);
+  clock.value = new Date(midnight - 400);
   const ready = await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
-  clock.value = new Date("2026-10-26T17:00:00.400Z");
+  clock.value = new Date(midnight + 400);
   await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), generation: ready.generation, event_type: "REVEAL" });
   const rows = await prisma.dAILY_GOAL_DAY.findMany({ where: { user_id: fixture.user.id }, orderBy: { activity_date: "asc" } });
   assert.equal(rows.length, 2);
@@ -351,6 +354,46 @@ async function withFixtureCleanup(cleanup, operation) {
       if (!primaryFailed) throw cleanupError;
     }
   }
+}
+
+async function establishAndReady({ prisma, service, clock, userId, learningSessionId, runPhase }) {
+  const session = await runPhase(
+    "SESSION_ESTABLISH",
+    () => service.establish(userId, { operation_id: randomUUID(), ...createRequest(learningSessionId) }),
+  );
+  await alignClockForReady(prisma, clock, session.tracking_session_id);
+  const ready = await runPhase(
+    "SESSION_READY",
+    () => service.engage(userId, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" }),
+  );
+  return { session, ready };
+}
+
+async function alignClockForReady(prisma, clock, trackingSessionId) {
+  const createdAt = await readTrackingCreatedAt(prisma, trackingSessionId);
+  clock.value = new Date(Math.max(clock.value.getTime(), createdAt.getTime()));
+}
+
+async function readTrackingCreatedAt(prisma, trackingSessionId) {
+  const session = await prisma.dAILY_GOAL_TRACKING_SESSION.findUnique({
+    where: { id: trackingSessionId },
+    select: { created_at: true },
+  });
+  if (!(session?.created_at instanceof Date) || Number.isNaN(session.created_at.getTime())) {
+    throw new Error("Persisted tracking-session creation time is unavailable.");
+  }
+  return new Date(session.created_at);
+}
+
+function nextVietnamMidnightAfter(minimumInstant) {
+  const instant = new Date(minimumInstant);
+  let boundary = Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate(), 17, 0, 0, 0);
+  if (boundary < minimumInstant) boundary += 86_400_000;
+  return boundary;
+}
+
+export function establishAndReadyForTest(options) {
+  return establishAndReady(options);
 }
 function createRequest(learningSessionId) { return { activity_type: "NORMAL", learning_session_id: learningSessionId }; }
 function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
