@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { createDailyGoalRepository, createDailyGoalRepositoryForTest } from "../../src/repositories/daily-goal-repository.js";
+import { splitIntervalByApplicationDay } from "../../src/services/daily-goal-domain.js";
 import { createDailyGoalService } from "../../src/services/daily-goal-service.js";
 
 const REQUIRED_DURABLE_CHECKS = Object.freeze([
@@ -141,7 +142,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
       rollback: pass(4),
       fkCleanup: pass(7),
       sleepOffline: pass(2),
-      vietnamMidnight: pass(3),
+      vietnamMidnight: pass(9),
       noFabrication: pass(5),
     }));
     },
@@ -298,18 +299,72 @@ async function proveRollbackAfterDayCredit(prisma) {
 async function proveMidnightSplit(prisma, fixture) {
   const clock = { value: new Date("2026-10-26T16:59:59.600Z") };
   const service = createDailyGoalService({ dailyGoalRepository: createDailyGoalRepository(prisma), now: () => new Date(clock.value), uuid: randomUUID });
-  const session = await service.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
+  const operations = Object.freeze({ create: randomUUID(), ready: randomUUID(), reveal: randomUUID() });
+  const beforeRows = await readDailyGoalRows(prisma, fixture.user.id);
+  const session = await service.establish(fixture.user.id, { operation_id: operations.create, ...createRequest(fixture.learning.id) });
   const createdAt = await readTrackingCreatedAt(prisma, session.tracking_session_id);
   const midnight = nextVietnamMidnightAfter(createdAt.getTime() + 400);
   clock.value = new Date(midnight - 400);
-  const ready = await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
+  const ready = await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: operations.ready, event_type: "READY" });
   clock.value = new Date(midnight + 400);
-  await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), generation: ready.generation, event_type: "REVEAL" });
-  const rows = await prisma.dAILY_GOAL_DAY.findMany({ where: { user_id: fixture.user.id }, orderBy: { activity_date: "asc" } });
-  assert.equal(rows.length, 2);
-  assert.deepEqual(rows.map((row) => row.active_milliseconds), [400n, 400n]);
-  assert.equal(rows.reduce((sum, row) => sum + row.active_milliseconds, 0n), 800n);
-  return 3;
+  await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: operations.reveal, generation: ready.generation, event_type: "REVEAL" });
+  const afterRows = await readDailyGoalRows(prisma, fixture.user.id);
+  const receipts = await prisma.dAILY_GOAL_OPERATION_RECEIPT.findMany({
+    where: { user_id: fixture.user.id, operation_id: { in: Object.values(operations) } },
+  });
+  const expectedParts = splitIntervalByApplicationDay(midnight - 400, midnight + 400);
+  assertMidnightDurableDelta({ beforeRows, afterRows, receipts, operations, expectedParts });
+  return 9;
+}
+
+async function readDailyGoalRows(prisma, userId) {
+  return prisma.dAILY_GOAL_DAY.findMany({ where: { user_id: userId }, orderBy: { activity_date: "asc" } });
+}
+
+function assertMidnightDurableDelta({ beforeRows, afterRows, receipts, operations, expectedParts }) {
+  const before = dailyGoalAmountsByDate(beforeRows);
+  const after = dailyGoalAmountsByDate(afterRows);
+  const expected = new Map(expectedParts.map((part) => [part.applicationDate, BigInt(part.durationMilliseconds)]));
+  assert.equal(expected.size, 2);
+  assert.deepEqual([...expected.values()], [400n, 400n]);
+
+  const dates = new Set([...before.keys(), ...after.keys(), ...expected.keys()]);
+  let totalDelta = 0n;
+  for (const date of dates) {
+    const delta = (after.get(date) ?? 0n) - (before.get(date) ?? 0n);
+    assert.equal(delta, expected.get(date) ?? 0n, `Unexpected durable Daily Goal delta for ${date}.`);
+    totalDelta += delta;
+  }
+  assert.equal(totalDelta, 800n);
+
+  assert.equal(receipts.length, 3);
+  const receiptByOperation = new Map(receipts.map((receipt) => [receipt.operation_id, receipt]));
+  assert.equal(receiptByOperation.size, 3);
+  assertReceipt(receiptByOperation.get(operations.create), "CREATE", 0n);
+  assertReceipt(receiptByOperation.get(operations.ready), "READY", 0n);
+  assertReceipt(receiptByOperation.get(operations.reveal), "INTERACTION", 800n);
+}
+
+function dailyGoalAmountsByDate(rows) {
+  const result = new Map();
+  for (const row of rows) {
+    const date = applicationDateKey(row.activity_date);
+    assert.equal(result.has(date), false, `Duplicate Daily Goal day row for ${date}.`);
+    result.set(date, BigInt(row.active_milliseconds));
+  }
+  return result;
+}
+
+function applicationDateKey(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  throw new TypeError("Daily Goal activity date is invalid.");
+}
+
+function assertReceipt(receipt, operationType, creditedMilliseconds) {
+  assert(receipt);
+  assert.equal(receipt.operation_type, operationType);
+  assert.equal(BigInt(receipt.credited_milliseconds), creditedMilliseconds);
 }
 
 async function proveCleanupAndRestrict(prisma) {
@@ -555,6 +610,10 @@ export function proveNonOwnerReclaimForTest(options) {
 
 export function proveFingerprintMismatchForTest(options) {
   return proveFingerprintMismatch(options);
+}
+
+export function assertMidnightDurableDeltaForTest(options) {
+  return assertMidnightDurableDelta(options);
 }
 
 export function createOldClosedTrackingSessionForTest(options) {

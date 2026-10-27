@@ -21,6 +21,7 @@ import {
   validateFixedPrismaInputs,
 } from "./daily-goal-dg2-cli.js";
 import {
+  assertMidnightDurableDeltaForTest,
   assertSameUserDurableStateForTest,
   buildRepositoryEvidenceForTest,
   createOldClosedTrackingSessionForTest,
@@ -587,6 +588,54 @@ test("fixture cleanup reports cleanup-only failure and preserves throw undefined
   assert.equal(undefinedPrimary.calls.filter((call) => call === "receipt:deleteMany").length, 1);
 });
 
+test("Vietnam-midnight evidence uses durable deltas and preserves pre-existing day amounts", () => {
+  const evidence = midnightEvidence({
+    beforeRows: [dayRow("2026-10-26", 40_000n)],
+    afterRows: [dayRow("2026-10-26", 40_400n), dayRow("2026-10-27", 400n)],
+  });
+  assert.doesNotThrow(() => assertMidnightDurableDeltaForTest(evidence));
+});
+
+test("Vietnam-midnight evidence requires zero delta on every unrelated existing date", () => {
+  const evidence = midnightEvidence({
+    beforeRows: [dayRow("2026-10-25", 9_000n), dayRow("2026-10-26", 40_000n)],
+    afterRows: [dayRow("2026-10-25", 9_000n), dayRow("2026-10-26", 40_400n), dayRow("2026-10-27", 400n)],
+  });
+  assert.doesNotThrow(() => assertMidnightDurableDeltaForTest(evidence));
+  assert.throws(() => assertMidnightDurableDeltaForTest({
+    ...evidence,
+    afterRows: [dayRow("2026-10-25", 9_001n), dayRow("2026-10-26", 40_400n), dayRow("2026-10-27", 400n)],
+  }), /Unexpected durable Daily Goal delta/);
+});
+
+test("Vietnam-midnight evidence rejects credit on the wrong date or an extra delta", () => {
+  const evidence = midnightEvidence({ beforeRows: [dayRow("2026-10-26", 40_000n)] });
+  assert.throws(() => assertMidnightDurableDeltaForTest({
+    ...evidence,
+    afterRows: [dayRow("2026-10-26", 40_400n), dayRow("2026-10-28", 400n)],
+  }), /Unexpected durable Daily Goal delta/);
+  assert.throws(() => assertMidnightDurableDeltaForTest({
+    ...evidence,
+    afterRows: [dayRow("2026-10-26", 40_401n), dayRow("2026-10-27", 400n)],
+  }), /Unexpected durable Daily Goal delta/);
+});
+
+test("Vietnam-midnight evidence binds exact CREATE READY and REVEAL receipts", () => {
+  const evidence = midnightEvidence();
+  assert.throws(() => assertMidnightDurableDeltaForTest({
+    ...evidence,
+    receipts: evidence.receipts.map((receipt) => receipt.operation_id === evidence.operations.reveal
+      ? { ...receipt, operation_type: "READY" }
+      : receipt),
+  }));
+  assert.throws(() => assertMidnightDurableDeltaForTest({
+    ...evidence,
+    receipts: evidence.receipts.map((receipt) => receipt.operation_id === evidence.operations.reveal
+      ? { ...receipt, credited_milliseconds: 799n }
+      : receipt),
+  }));
+});
+
 test("repository PASS categories require every named durable assertion", () => {
   const checks = Object.fromEntries([
     "sameUserWaited", "differentUsersEntered", "ownerPersisted", "staleUnchanged",
@@ -676,9 +725,36 @@ test("integration sources contain real repository/HTTP entrypoints and bounded l
 });
 
 function binding() { return { operation: DG2_OPERATION, authorized: "true", repository: DG2_REPOSITORY, sourceSha: SHA, sourceRef: DG2_REF, workflowSha: SHA, runId: "401", runAttempt: "2", postgresqlMajor: "17" }; }
+
+function midnightEvidence({ beforeRows = [], afterRows = [dayRow("2026-10-26", 400n), dayRow("2026-10-27", 400n)] } = {}) {
+  const operations = Object.freeze({
+    create: "11111111-1111-4111-8111-111111111111",
+    ready: "22222222-2222-4222-8222-222222222222",
+    reveal: "33333333-3333-4333-8333-333333333333",
+  });
+  return {
+    beforeRows,
+    afterRows,
+    operations,
+    expectedParts: [
+      { applicationDate: "2026-10-26", durationMilliseconds: 400n },
+      { applicationDate: "2026-10-27", durationMilliseconds: 400n },
+    ],
+    receipts: [
+      { operation_id: operations.create, operation_type: "CREATE", credited_milliseconds: 0n },
+      { operation_id: operations.ready, operation_type: "READY", credited_milliseconds: 0n },
+      { operation_id: operations.reveal, operation_type: "INTERACTION", credited_milliseconds: 800n },
+    ],
+  };
+}
+
+function dayRow(activityDate, activeMilliseconds) {
+  return { activity_date: new Date(`${activityDate}T00:00:00.000Z`), active_milliseconds: activeMilliseconds };
+}
+
 function envBinding() { return { DAILY_GOAL_DG2_OPERATION: DG2_OPERATION, DAILY_GOAL_DG2_AUTHORIZED: "true", DAILY_GOAL_DG2_REPOSITORY: DG2_REPOSITORY, DAILY_GOAL_DG2_SOURCE_SHA: SHA, DAILY_GOAL_DG2_SOURCE_REF: DG2_REF, DAILY_GOAL_DG2_WORKFLOW_SHA: SHA, DAILY_GOAL_DG2_RUN_ID: "401", DAILY_GOAL_DG2_RUN_ATTEMPT: "2", DAILY_GOAL_DG2_POSTGRESQL_MAJOR: "17" }; }
 function fakeAdapter(calls, options = {}) { return { async assertPrepared() { calls.push("prepared"); }, async generateClient() { calls.push("generated"); }, async runRepository() { calls.push("repository"); if (options.repositoryError) throw options.repositoryError; return repositoryCategories(); }, async runHttp() { calls.push("http"); return { httpAuthorization: pass(3), httpConflicts: pass(4) }; }, async cleanup() { calls.push("cleanup"); if (options.cleanupError) throw new Error("secret cleanup path"); } }; }
-function repositoryCategories() { return { sameUserContention: pass(3), differentUserIndependence: pass(2), ownershipTransfer: pass(6), staleGeneration: pass(2), replay: pass(8), rollback: pass(4), fkCleanup: pass(7), sleepOffline: pass(2), vietnamMidnight: pass(3), noFabrication: pass(5) }; }
+function repositoryCategories() { return { sameUserContention: pass(3), differentUserIndependence: pass(2), ownershipTransfer: pass(6), staleGeneration: pass(2), replay: pass(8), rollback: pass(4), fkCleanup: pass(7), sleepOffline: pass(2), vietnamMidnight: pass(9), noFabrication: pass(5) }; }
 function pass(assertions) { return { status: "PASS", assertions }; }
 function fixtureSeedPrisma(options = {}) {
   const learningFailurePresent = Object.prototype.hasOwnProperty.call(options, "learningFailure");
