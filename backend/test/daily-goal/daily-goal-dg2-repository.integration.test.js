@@ -10,6 +10,8 @@ const REQUIRED_DURABLE_CHECKS = Object.freeze([
   "mismatchUnchanged", "rollbackComplete", "restrictObserved", "cleanupRaceRechecked",
   "sleepGapExcluded", "leaseLiveGapBurned", "nonOwnerReclaimed", "midnightConserved",
 ]);
+const DAY_MILLISECONDS = 86_400_000;
+const CLEANUP_EVALUATED_AT = new Date("2026-10-26T00:00:00.000Z");
 
 const REPOSITORY_DIAGNOSTIC_PHASES = Object.freeze(new Set([
   "FIXTURE_A", "SAME_USER_LOCK", "FIXTURE_B", "DIFFERENT_USER_LOCK",
@@ -47,15 +49,9 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     assertions += await proveSameUserCreditRace({ prisma, clock, userId: a.user.id, sessionId: sessionA.tracking_session_id, generation: readyA.generation, timelineStart, runPhase });
     durable.raceReceiptsUnique = true;
     durable.raceCreditBounded = true;
-    const { sessionB, transfer } = await runPhase("OWNERSHIP_TRANSFER", async () => {
-      const session = await service.establish(a.user.id, { operation_id: randomUUID(), ...createRequest(a.learning.id) });
-      const claimed = await service.engage(a.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "REVEAL" });
-      assert.equal(claimed.owner, true); assertions += 1;
-      const persistedOwner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: a.user.id } });
-      assert.equal(persistedOwner.tracking_session_id, session.tracking_session_id); assertions += 1;
-      assert.equal(persistedOwner.generation.toString(), claimed.generation); assertions += 1;
-      return { sessionB: session, transfer: claimed };
-    });
+    const ownershipTransfer = await runPhase("OWNERSHIP_TRANSFER", () => proveOwnershipTransfer({ prisma, service, clock, fixture: a }));
+    const { sessionB, transfer } = ownershipTransfer;
+    assertions += ownershipTransfer.assertions;
     durable.ownerPersisted = true;
     await runPhase("STALE_GENERATION", async () => {
       const staleBefore = await durableSnapshot(prisma, a.user.id);
@@ -65,7 +61,8 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.staleUnchanged = true;
 
     const replayOperation = randomUUID();
-    clock.value = new Date(timelineStart + 40_000);
+    const replayInstant = ownershipTransfer.transferInstant + 20_000;
+    clock.value = new Date(replayInstant);
     await runPhase("CONCURRENT_REPLAY", async () => {
       const replayBefore = await accountingSnapshot(prisma, a.user.id);
       const [first, replay] = await runAtConcurrentTransactionStart({
@@ -84,7 +81,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
       assert.equal(replayAfter.dayMilliseconds - replayBefore.dayMilliseconds, 20_000n); assertions += 1;
       assert.equal(replayAfter.owner.generation, replayBefore.owner.generation); assertions += 1;
       assert.equal(replayAfter.owner.last_accounted_at.toISOString(), clock.value.toISOString()); assertions += 1;
-      assert.equal(replayAfter.owner.lease_expires_at.toISOString(), new Date(timelineStart + 85_000).toISOString()); assertions += 1;
+      assert.equal(replayAfter.owner.lease_expires_at.toISOString(), new Date(replayInstant + 45_000).toISOString()); assertions += 1;
       assert.notEqual(replayAfter.owner.lease_expires_at.toISOString(), replayBefore.owner.lease_expires_at.toISOString()); assertions += 1;
     });
     durable.replayReceiptUnique = true;
@@ -97,7 +94,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.mismatchUnchanged = true;
 
     const reclaimed = await runPhase("SLEEP_RECLAIM", async () => {
-      clock.value = new Date(timelineStart + 100_000);
+      clock.value = new Date(replayInstant + 60_000);
       const beforeSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
       const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), transfer.generation));
       const afterSleep = await prisma.dAILY_GOAL_DAY.aggregate({ where: { user_id: a.user.id }, _sum: { active_milliseconds: true } });
@@ -108,7 +105,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     durable.sleepGapExcluded = true;
 
     const burned = await runPhase("LEASE_GAP_BURN", async () => {
-      clock.value = new Date(timelineStart + 130_000);
+      clock.value = new Date(replayInstant + 90_000);
       const gapBefore = await accountingSnapshot(prisma, a.user.id);
       const result = await service.heartbeat(a.user.id, sessionB.tracking_session_id, heartbeat(randomUUID(), reclaimed.generation));
       const gapAfter = await accountingSnapshot(prisma, a.user.id);
@@ -134,7 +131,7 @@ export async function runRepositoryIntegration({ prisma, diagnosticWriter } = {}
     return runPhase("EVIDENCE_GATE", () => buildRepositoryEvidenceForTest(durable, {
       sameUserContention: pass(same),
       differentUserIndependence: pass(2),
-      ownershipTransfer: pass(6),
+      ownershipTransfer: pass(7),
       staleGeneration: pass(2),
       replay: pass(8),
       rollback: pass(4),
@@ -223,18 +220,41 @@ async function assertSameUserDurableState({ prisma, userId, operations, before, 
   for (const operationId of operations) assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { user_id: userId, operation_id: operationId } }), 1);
 }
 
+async function proveOwnershipTransfer({ prisma, service, clock, fixture }) {
+  const before = await accountingSnapshot(prisma, fixture.user.id);
+  const session = await service.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
+  await alignClockForReady(prisma, clock, session.tracking_session_id);
+  const ready = await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), event_type: "READY" });
+  const claimed = await service.engage(fixture.user.id, session.tracking_session_id, { operation_id: randomUUID(), generation: ready.generation, event_type: "REVEAL" });
+  const after = await accountingSnapshot(prisma, fixture.user.id);
+  assert.equal(ready.owner, true);
+  assert.equal(ready.credited_milliseconds, "0");
+  assert.equal(claimed.owner, true);
+  assert.equal(claimed.credited_milliseconds, "0");
+  assert.equal(after.dayMilliseconds, before.dayMilliseconds);
+  assert.equal(after.owner.tracking_session_id, session.tracking_session_id);
+  assert.equal(after.owner.generation.toString(), claimed.generation);
+  return { sessionB: session, transfer: claimed, transferInstant: clock.value.getTime(), assertions: 7 };
+}
+
 async function proveNonOwnerReclaim({ prisma, service, clock, fixture, currentSessionId, currentGeneration }) {
   const contender = await service.establish(fixture.user.id, { operation_id: randomUUID(), ...createRequest(fixture.learning.id) });
   await alignClockForReady(prisma, clock, contender.tracking_session_id);
   const contenderReady = await service.engage(fixture.user.id, contender.tracking_session_id, { operation_id: randomUUID(), generation: currentGeneration, event_type: "READY" });
   const currentClaim = await service.engage(fixture.user.id, currentSessionId, { operation_id: randomUUID(), generation: contenderReady.generation, event_type: "REVEAL" });
-  clock.value = new Date(clock.value.getTime() + 46_000);
-  const reclaimed = await service.heartbeat(fixture.user.id, contender.tracking_session_id, heartbeat(randomUUID(), contenderReady.generation));
+  const ownerLeaseExpiry = new Date(currentClaim.lease_expires_at).getTime();
+  const contenderDeadline = new Date(contenderReady.engagement_expires_at).getTime();
+  assert.equal(Number.isFinite(ownerLeaseExpiry), true);
+  assert.equal(Number.isFinite(contenderDeadline), true);
+  clock.value = new Date(ownerLeaseExpiry + 1);
+  assert(clock.value.getTime() < contenderDeadline);
+  const reclaimed = await service.engage(fixture.user.id, contender.tracking_session_id, { operation_id: randomUUID(), event_type: "REVEAL" });
   const owner = await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: fixture.user.id } });
   assert.equal(reclaimed.owner, true);
+  assert.equal(reclaimed.credited_milliseconds, "0");
   assert.equal(owner.tracking_session_id, contender.tracking_session_id);
   assert(BigInt(owner.generation) > BigInt(currentClaim.generation));
-  return 3;
+  return 6;
 }
 
 async function proveRollbackAfterDayCredit(prisma) {
@@ -281,10 +301,10 @@ async function proveCleanupAndRestrict(prisma) {
   const users = [];
   return withFixtureCleanup(() => cleanupUsers(prisma, users), async () => {
     const fixture = await seedLearningContext(prisma, "cleanup", users);
-    const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
-    await prisma.dAILY_GOAL_OPERATION_RECEIPT.create({ data: { operation_id: randomUUID(), user_id: fixture.user.id, tracking_session_id: session.id, operation_type: "CLOSE", request_fingerprint: "reviewed", response_projection: {}, created_at: new Date("2026-08-02T00:00:00.000Z") } });
+    const session = await createOldClosedTrackingSession(prisma, fixture, CLEANUP_EVALUATED_AT);
+    await prisma.dAILY_GOAL_OPERATION_RECEIPT.create({ data: { operation_id: randomUUID(), user_id: fixture.user.id, tracking_session_id: session.id, operation_type: "CLOSE", request_fingerprint: "reviewed", response_projection: {}, created_at: session.closed_at } });
     await assert.rejects(prisma.dAILY_GOAL_TRACKING_SESSION.delete({ where: { id: session.id } }));
-    const repository = createDailyGoalRepositoryForTest(prisma, { now: () => new Date("2026-10-26T00:00:00.000Z") });
+    const repository = createDailyGoalRepositoryForTest(prisma, { now: () => new Date(CLEANUP_EVALUATED_AT) });
     const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
     assert.equal(result.receiptsDeleted, 1);
     assert.equal(result.trackingSessionsDeleted, 1);
@@ -297,7 +317,7 @@ async function proveCleanupRaceRecheck(prisma) {
   const users = [];
   return withFixtureCleanup(() => cleanupUsers(prisma, users), async () => {
     const fixture = await seedLearningContext(prisma, "cleanup-race", users);
-    const session = await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { user_id: fixture.user.id, activity_type: "NORMAL", learning_session_id: fixture.learning.id, status: "CLOSED", closed_at: new Date("2026-08-01T00:00:00.000Z") } });
+    const session = await createOldClosedTrackingSession(prisma, fixture, CLEANUP_EVALUATED_AT);
     let changed = false;
     const client = new Proxy(prisma, { get(target, property) {
     if (property !== "$transaction") { const value = Reflect.get(target, property, target); return typeof value === "function" ? value.bind(target) : value; }
@@ -317,12 +337,28 @@ async function proveCleanupRaceRecheck(prisma) {
       } });
     } })), options);
     } });
-    const repository = createDailyGoalRepositoryForTest(client, { now: () => new Date("2026-10-26T00:00:00.000Z") });
+    const repository = createDailyGoalRepositoryForTest(client, { now: () => new Date(CLEANUP_EVALUATED_AT) });
     const result = await repository.withCleanupTransaction((tx) => tx.cleanupExpiredOperationalState());
     assert.equal(changed, true);
     assert.equal(result.trackingSessionsDeleted, 0);
     assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: session.id } }), 1);
     return 3;
+  });
+}
+
+async function createOldClosedTrackingSession(prisma, fixture, evaluatedAt) {
+  const cutoff = new Date(evaluatedAt).getTime() - (31 * DAY_MILLISECONDS);
+  const closedAt = new Date(cutoff - 1);
+  const createdAt = new Date(closedAt.getTime() - DAY_MILLISECONDS);
+  return prisma.dAILY_GOAL_TRACKING_SESSION.create({
+    data: {
+      user_id: fixture.user.id,
+      activity_type: "NORMAL",
+      learning_session_id: fixture.learning.id,
+      status: "CLOSED",
+      created_at: createdAt,
+      closed_at: closedAt,
+    },
   });
 }
 
@@ -492,6 +528,18 @@ export function assertSameUserDurableStateForTest(options) {
 
 export function proveSameUserCreditRaceForTest(options) {
   return proveSameUserCreditRace(options);
+}
+
+export function proveOwnershipTransferForTest(options) {
+  return proveOwnershipTransfer(options);
+}
+
+export function proveNonOwnerReclaimForTest(options) {
+  return proveNonOwnerReclaim(options);
+}
+
+export function createOldClosedTrackingSessionForTest(options) {
+  return createOldClosedTrackingSession(options.prisma, options.fixture, options.evaluatedAt);
 }
 
 export function buildRepositoryEvidenceForTest(checks, categories) {

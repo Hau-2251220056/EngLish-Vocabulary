@@ -23,10 +23,13 @@ import {
 import {
   assertSameUserDurableStateForTest,
   buildRepositoryEvidenceForTest,
+  createOldClosedTrackingSessionForTest,
   createAbortableBarrier,
   establishAndReadyForTest,
   repositoryDiagnosticLineForTest,
   proveSameUserCreditRaceForTest,
+  proveNonOwnerReclaimForTest,
+  proveOwnershipTransferForTest,
   runAtConcurrentTransactionStart,
   runRepositoryDiagnosticLifecycleForTest,
   seedLearningContextWithCleanupForTest,
@@ -293,6 +296,106 @@ test("same-USER baseline snapshot failure is durable-stage refusal before race o
   }]);
   assert.equal(Buffer.byteLength(output[0], "utf8") <= 256, true);
   assert.doesNotMatch(output[0], /postgresql|password|database read|cleanup/i);
+});
+
+test("ownership transfer aligns persisted creation time and uses READY before zero-credit REVEAL", async () => {
+  const persistedCreatedAt = new Date("2027-03-04T05:06:07.890Z");
+  const clock = { value: new Date("2027-03-04T05:06:00.000Z") };
+  const calls = [];
+  let owner = { generation: 4n, tracking_session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+  const dayValues = [12_000n, 12_000n];
+  const prisma = {
+    dAILY_GOAL_TRACKING_SESSION: { async findUnique({ where }) { assert.equal(where.id, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"); return { created_at: persistedCreatedAt }; } },
+    dAILY_GOAL_OWNER: { async findUnique() { return owner; } },
+    dAILY_GOAL_DAY: { async aggregate() { return { _sum: { active_milliseconds: dayValues.shift() } }; } },
+  };
+  const service = {
+    async establish() { calls.push(["ESTABLISH", new Date(clock.value)]); return { tracking_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }; },
+    async engage(_userId, sessionId, input) {
+      calls.push([input.event_type, new Date(clock.value), input]);
+      assert.equal(sessionId, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+      if (input.event_type === "READY") return { owner: true, generation: "5", credited_milliseconds: "0" };
+      assert.equal(input.generation, "5");
+      owner = { generation: 5n, tracking_session_id: sessionId };
+      return { owner: true, generation: "5", credited_milliseconds: "0" };
+    },
+  };
+
+  const result = await proveOwnershipTransferForTest({
+    prisma,
+    service,
+    clock,
+    fixture: { user: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, learning: { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" } },
+  });
+
+  assert.deepEqual(calls.map(([name]) => name), ["ESTABLISH", "READY", "REVEAL"]);
+  assert.equal(calls[1][1].toISOString(), persistedCreatedAt.toISOString());
+  assert.equal(calls[2][1].toISOString(), persistedCreatedAt.toISOString());
+  assert.equal(result.transfer.generation, "5");
+  assert.equal(result.transferInstant, persistedCreatedAt.getTime());
+  assert.equal(result.assertions, 7);
+});
+
+test("non-owner reclaim uses an omitted-generation engagement only after current lease expiry", async () => {
+  const initial = new Date("2027-03-04T05:06:07.890Z");
+  const contenderDeadline = initial.getTime() + 120_000;
+  const clock = { value: initial };
+  const calls = [];
+  let owner = { tracking_session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", generation: 7n };
+  const contenderId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const currentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const service = {
+    async establish() { return { tracking_session_id: contenderId }; },
+    async engage(_userId, sessionId, input) {
+      calls.push({ sessionId, input: { ...input }, instant: new Date(clock.value) });
+      if (input.event_type === "READY") return { owner: true, generation: "8", credited_milliseconds: "0", engagement_expires_at: new Date(contenderDeadline).toISOString() };
+      if (sessionId === currentId) return { owner: true, generation: "9", credited_milliseconds: "0", lease_expires_at: new Date(initial.getTime() + 45_000).toISOString() };
+      owner = { tracking_session_id: contenderId, generation: 10n };
+      return { owner: true, generation: "10", credited_milliseconds: "0" };
+    },
+  };
+  const prisma = {
+    dAILY_GOAL_TRACKING_SESSION: { async findUnique() { return { created_at: initial }; } },
+    dAILY_GOAL_OWNER: { async findUnique() { return owner; } },
+  };
+
+  const assertions = await proveNonOwnerReclaimForTest({
+    prisma,
+    service,
+    clock,
+    fixture: { user: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, learning: { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" } },
+    currentSessionId: currentId,
+    currentGeneration: "7",
+  });
+
+  assert.equal(assertions, 6);
+  assert.deepEqual(calls.map((call) => call.input.event_type), ["READY", "REVEAL", "REVEAL"]);
+  assert.equal("generation" in calls[2].input, false);
+  assert.equal(calls[2].instant.getTime(), initial.getTime() + 45_001);
+  assert(calls[2].instant.getTime() < contenderDeadline);
+});
+
+test("old CLOSED fixture is valid and strictly older than the 31-day cleanup cutoff", async () => {
+  const evaluatedAt = new Date("2026-10-26T00:00:00.000Z");
+  let data;
+  const result = await createOldClosedTrackingSessionForTest({
+    evaluatedAt,
+    fixture: { user: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, learning: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } },
+    prisma: { dAILY_GOAL_TRACKING_SESSION: { async create(input) { data = input.data; return { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", ...input.data }; } } },
+  });
+  const cutoff = evaluatedAt.getTime() - (31 * 86_400_000);
+  assert.equal(data.closed_at.getTime(), cutoff - 1);
+  assert.equal(data.created_at.getTime(), data.closed_at.getTime() - 86_400_000);
+  assert(data.closed_at.getTime() >= data.created_at.getTime());
+  assert(data.closed_at.getTime() < cutoff);
+  assert.equal(result.status, "CLOSED");
+});
+
+test("both cleanup integration paths use the shared strict-cutoff CLOSED fixture", async () => {
+  const source = await readFile(path.join(root, "backend/test/daily-goal/daily-goal-dg2-repository.integration.test.js"), "utf8");
+  assert.match(source, /proveCleanupAndRestrict[\s\S]*?createOldClosedTrackingSession\(prisma, fixture, CLEANUP_EVALUATED_AT\)/);
+  assert.match(source, /proveCleanupRaceRecheck[\s\S]*?createOldClosedTrackingSession\(prisma, fixture, CLEANUP_EVALUATED_AT\)/);
+  assert.doesNotMatch(source, /status: "CLOSED", closed_at: new Date\("2026-08-01/);
 });
 
 test("cleanup-only repository failure has a fixed phase and diagnostic writer failure cannot mask it", async () => {
