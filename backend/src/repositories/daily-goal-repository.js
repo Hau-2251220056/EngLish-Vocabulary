@@ -173,6 +173,7 @@ function createTransactionRepository(transaction, userId, lifecycle) {
         where: { id: userId },
         select: {
           id: true,
+          total_xp: true,
           daily_goal_minutes: true,
           daily_goal_reminders_enabled: true,
           daily_goal_reminders_enabled_at: true,
@@ -181,6 +182,13 @@ function createTransactionRepository(transaction, userId, lifecycle) {
     },
     updatePreference(data) {
       return transaction.uSER.updateMany({ where: { id: userId }, data });
+    },
+    incrementTotalXp(amount) {
+      return transaction.uSER.update({
+        where: { id: userId },
+        data: { total_xp: { increment: amount } },
+        select: { total_xp: true },
+      });
     },
 
     findMonitorSession(monitorSessionId) {

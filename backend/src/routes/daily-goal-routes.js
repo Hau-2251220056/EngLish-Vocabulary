@@ -3,6 +3,8 @@ import express from "express";
 export function createDailyGoalRouter({ controller, authenticationMiddleware, userAuthorizationMiddleware }) {
   const router = express.Router();
   router.use(authenticationMiddleware, userAuthorizationMiddleware);
+  router.get("/", controller.getGoal);
+  router.put("/", controller.updateGoal);
   router.post("/tracking-sessions", controller.establish);
   router.post("/tracking-sessions/:id/engagement", controller.engage);
   router.post("/tracking-sessions/:id/heartbeat", controller.heartbeat);

@@ -287,13 +287,138 @@ test("pause and close add no tail; close replay is idempotent; injected failure 
   assert.equal(failing.state.sessions.length, 0);
 });
 
+test("goal projection floors seconds and minutes at the HUMAN-approved boundaries", async () => {
+  for (const [seconds, minutes] of [[0, 0], [59, 0], [60, 1], [119, 1], [120, 2], [599, 9], [600, 10]]) {
+    const harness = createHarness({ activeMilliseconds: BigInt(seconds) * 1_000n });
+    const result = await createService(harness).getGoal(USER);
+    assert.equal(result.active_seconds, seconds);
+    assert.equal(result.actual_minutes, minutes);
+    assert.equal(result.target_minutes, null);
+    assert.equal(result.reminder_enabled, true);
+  }
+  const subsecond = createHarness({ activeMilliseconds: 60_999n });
+  assert.deepEqual((({ active_seconds, actual_minutes }) => ({ active_seconds, actual_minutes }))(await createService(subsecond).getGoal(USER)), { active_seconds: 60, actual_minutes: 1 });
+});
+
+test("599 seconds does not complete a ten-minute goal; 600 seconds rewards exactly once", async () => {
+  const below = createHarness({ activeMilliseconds: 599_999n, targetMinutes: 10, totalXp: 49 });
+  assert.equal((await createService(below).getGoal(USER)).completed, false);
+
+  const reached = createHarness({ activeMilliseconds: 600_000n, totalXp: 49 });
+  const service = createService(reached);
+  const request = { operation_id: OPS[0], target_minutes: 10 };
+  const first = await service.updateGoal(USER, request);
+  assert.equal(first.completed, true);
+  assert.deepEqual(first.reward, { earned_now: true, xp_earned: 10 });
+  assert.equal(first.xp_level.total_xp, 59);
+  assert.equal(first.xp_level.level, 2);
+  assert.equal(reached.state.rewards.length, 1);
+  assert.equal(reached.state.notifications.length, 1);
+  assert.equal(reached.state.user.total_xp, 59);
+  const replay = await service.updateGoal(USER, request);
+  assert.equal(replay.replayed, true);
+  assert.equal(reached.state.rewards.length, 1);
+  assert.equal(reached.state.notifications.length, 1);
+  assert.equal(reached.state.user.total_xp, 59);
+  await assert.rejects(service.updateGoal(USER, { ...request, target_minutes: 11 }), hasCode("OPERATION_CONFLICT"));
+});
+
+test("goal update validates exact input and malformed persisted SUCCESS fails closed", async () => {
+  const service = createService(createHarness());
+  assert.equal((await service.updateGoal(USER, { operation_id: OPS[10], target_minutes: 240 })).target_minutes, 240);
+  for (const target_minutes of [9, 241, 10.5, "10", null]) {
+    assert.throws(() => service.updateGoal(USER, { operation_id: OPS[0], target_minutes }), hasCode("DAILY_GOAL_VALIDATION_ERROR"));
+  }
+  for (const extra of [{ user_id: USER }, { application_date: "2026-10-26" }, { duration: 1 }, { timestamp: 1 }, { xp: 10 }, { reward: true }, { completed: true }]) {
+    assert.throws(() => service.updateGoal(USER, { operation_id: OPS[0], target_minutes: 10, ...extra }), hasCode("DAILY_GOAL_VALIDATION_ERROR"));
+  }
+  const harness = createHarness({ activeMilliseconds: 600_000n });
+  const guarded = createService(harness);
+  const request = { operation_id: OPS[0], target_minutes: 10 };
+  await guarded.updateGoal(USER, request);
+  harness.state.receipts[0].response_projection.data.actual_minutes = 11;
+  const snapshot = structuredClone(harness.state);
+  await assert.rejects(guarded.updateGoal(USER, request), /Stored Daily Goal replay outcome is invalid/);
+  assert.deepEqual(harness.state, snapshot);
+});
+
+test("READY and zero-credit operations cannot fabricate reward; positive credit reevaluates completion", async () => {
+  const harness = createHarness({ activeMilliseconds: 590_000n, targetMinutes: 10 });
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  assert.equal(harness.state.rewards.length, 0);
+  now = new Date("2026-10-26T00:00:09.999Z");
+  await service.heartbeat(USER, SESSION, heartbeat(OPS[2], ready.generation));
+  assert.equal(harness.state.rewards.length, 0);
+  now = new Date("2026-10-26T00:00:20.000Z");
+  await service.heartbeat(USER, SESSION, heartbeat(OPS[3], ready.generation));
+  assert.equal(harness.state.rewards.length, 1);
+  assert.equal(harness.state.notifications.length, 1);
+  assert.equal(harness.state.user.total_xp, 10);
+});
+
+test("raising a goal after reward changes completion without revoking or reissuing", async () => {
+  const harness = createHarness({ activeMilliseconds: 600_000n, targetMinutes: 10, reward: true, totalXp: 10 });
+  const result = await createService(harness).updateGoal(USER, { operation_id: OPS[0], target_minutes: 20 });
+  assert.equal(result.completed, false);
+  assert.equal(result.reward_earned, true);
+  assert.deepEqual(result.reward, { earned_now: false, xp_earned: 0 });
+  assert.equal(harness.state.rewards.length, 1);
+  assert.equal(harness.state.notifications.length, 0);
+  assert.equal(harness.state.user.total_xp, 10);
+});
+
+test("reducing a configured goal below accumulated time rewards exactly once without resetting time", async () => {
+  const harness = createHarness({ activeMilliseconds: 900_000n, targetMinutes: 20, totalXp: 49 });
+  const service = createService(harness);
+  const result = await service.updateGoal(USER, { operation_id: OPS[0], target_minutes: 10 });
+
+  assert.equal(result.target_minutes, 10);
+  assert.equal(result.active_seconds, 900);
+  assert.equal(result.actual_minutes, 15);
+  assert.equal(result.completed, true);
+  assert.equal(result.reward_earned, true);
+  assert.deepEqual(result.reward, { earned_now: true, xp_earned: 10 });
+  assert.equal(result.xp_level.total_xp, 59);
+  assert.equal(harness.state.days[0].active_milliseconds, 900_000n);
+  assert.equal(harness.state.rewards.length, 1);
+  assert.equal(harness.state.notifications.length, 1);
+  assert.equal(harness.state.user.total_xp, 59);
+
+  const replay = await service.updateGoal(USER, { operation_id: OPS[0], target_minutes: 10 });
+  assert.equal(replay.replayed, true);
+  assert.equal(harness.state.days[0].active_milliseconds, 900_000n);
+  assert.equal(harness.state.rewards.length, 1);
+  assert.equal(harness.state.notifications.length, 1);
+  assert.equal(harness.state.user.total_xp, 59);
+});
+
+test("reward, XP, notification, goal and receipt roll back together on injected failure", async () => {
+  const harness = createHarness({ activeMilliseconds: 600_000n, totalXp: 40, failNotification: true });
+  const before = structuredClone(harness.state);
+  await assert.rejects(
+    createService(harness).updateGoal(USER, { operation_id: OPS[0], target_minutes: 10 }),
+    /injected notification failure/,
+  );
+  assert.deepEqual(harness.state, before);
+});
+
 function establish(operation_id) { return { operation_id, activity_type: "NORMAL", learning_session_id: LEARNING }; }
 function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
 function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z")) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION }); }
 function hasCode(code) { return (error) => error?.code === code; }
 
-function createHarness() {
-  const state = { sessions: [], owner: null, receipts: [], days: [], contextAccessible: true, failReceipt: false };
+function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false } = {}) {
+  const date = new Date("2026-10-26T00:00:00.000Z");
+  const state = {
+    sessions: [], owner: null, receipts: [],
+    days: activeMilliseconds === null ? [] : [{ activity_date: date, active_milliseconds: activeMilliseconds }],
+    rewards: reward ? [{ id: "reward", activity_date: date, source_operation_id: OPS[11], xp_amount: 10 }] : [],
+    notifications: [], user: { id: USER, total_xp: totalXp, daily_goal_minutes: targetMinutes, daily_goal_reminders_enabled: null, daily_goal_reminders_enabled_at: null },
+    contextAccessible: true, failReceipt: false, failNotification,
+  };
   const repository = {
     async withUserTransaction(_userId, callback) {
       const before = structuredClone(state);
@@ -310,7 +435,14 @@ function createHarness() {
     updateOwnerAtGeneration: async (generation, data) => { if (state.owner?.generation !== generation) return { count: 0 }; Object.assign(state.owner, data); return { count: 1 }; },
     findOperationReplay: async ({ operationId, operationType, requestFingerprint }) => { const receipt = state.receipts.find((x) => x.operation_id === operationId); if (!receipt) return { classification: "MISSING", receipt: null }; return { classification: receipt.operation_type === operationType && receipt.request_fingerprint === requestFingerprint ? "REPLAY" : "OPERATION_CONFLICT", receipt }; },
     createOperationReceipt: async (data) => { if (state.failReceipt) throw new Error("injected receipt failure"); state.receipts.push(data); return data; },
+    findDay: async (date) => state.days.find((x) => x.activity_date.getTime() === date.getTime()) ?? null,
     upsertDay: async (date, { create, update }) => { let row = state.days.find((x) => x.activity_date.getTime() === date.getTime()); if (!row) { row = { activity_date: date, ...create }; state.days.push(row); } else { for (const [key, value] of Object.entries(update)) row[key] = value?.increment !== undefined ? row[key] + value.increment : value; } return row; },
+    findReward: async (date) => state.rewards.find((x) => x.activity_date.getTime() === date.getTime()) ?? null,
+    createReward: async (data) => { state.rewards.push({ ...data, user_id: USER }); return data; },
+    findPreference: async () => state.user,
+    updatePreference: async (data) => { Object.assign(state.user, data); return { count: 1 }; },
+    incrementTotalXp: async (amount) => { state.user.total_xp += amount; return { total_xp: state.user.total_xp }; },
+    createNotification: async (data) => { if (state.failNotification) throw new Error("injected notification failure"); state.notifications.push({ ...data, user_id: USER }); return data; },
   }; }
   return { state, repository };
 }

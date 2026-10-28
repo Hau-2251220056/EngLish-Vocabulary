@@ -11,6 +11,7 @@ import {
   nextOwnershipGeneration,
   splitIntervalByApplicationDay,
 } from "./daily-goal-domain.js";
+import { projectXpLevel } from "./xp-level-service.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ELIGIBILITY = "VISIBLE_FOCUSED_ACTIVE";
@@ -18,6 +19,11 @@ const MIN_USEFUL_HEARTBEAT_MILLISECONDS = 10_000;
 const PAUSE_REASONS = new Set(["HIDDEN", "BLURRED", "IDLE", "ROUTE_EXIT", "LOGOUT", "SLEEP", "COMPLETED", "ERROR"]);
 const REPLAYABLE_TERMINAL_CODES = new Set(["IDLE_RESUME_REQUIRED"]);
 const POSTGRESQL_BIGINT_MAX = 9_223_372_036_854_775_807n;
+const DAILY_GOAL_REWARD_XP = 10;
+const COMPLETION_NOTIFICATION = Object.freeze({
+  title: "Daily Goal completed",
+  body: "You completed your Daily Goal and earned 10 XP.",
+});
 
 export class DailyGoalServiceError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -35,6 +41,32 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
   }
 
   return Object.freeze({
+    getGoal(userId) {
+      return transact(userId, async (repository, instant) => projectGoal(repository, applicationDate(instant)));
+    },
+
+    updateGoal(userId, input) {
+      const request = validateGoalUpdate(input);
+      return transact(userId, async (repository, instant) => {
+        const date = applicationDate(instant);
+        const fingerprint = digest(request);
+        const replay = await repository.findOperationReplay({
+          operationId: request.operation_id,
+          operationType: "GOAL_UPDATE",
+          requestFingerprint: fingerprint,
+        });
+        if (replay.classification === "REPLAY") return replayResult(replay);
+        if (replay.classification === "OPERATION_CONFLICT") throw conflict("OPERATION_CONFLICT");
+        const updated = await repository.updatePreference({ daily_goal_minutes: request.target_minutes });
+        if (updated.count !== 1) throw notFound();
+        const earnedNow = await awardCompletion(repository, date, request.operation_id, instant, uuid);
+        const goal = await projectGoal(repository, date);
+        const response = { ...goal, reward: { earned_now: earnedNow, xp_earned: earnedNow ? DAILY_GOAL_REWARD_XP : 0 } };
+        await receipt(repository, request.operation_id, "GOAL_UPDATE", fingerprint, null, null, 0n, response, instant);
+        return { ...response, replayed: false };
+      });
+    },
+
     establish(userId, input) {
       const request = validateEstablish(input);
       return transact(userId, async (repository, instant) => {
@@ -82,7 +114,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
                 lastAccountedAtMs: owner.last_accounted_at.getTime(), receivedAtMs: instant.getTime(),
                 leaseExpiresAtMs: owner.lease_expires_at.getTime(), engagementExpiresAtMs: session.engagement_expires_at.getTime(),
               });
-              if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type);
+              if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type, request.operation_id, instant, uuid);
               credited = decision.creditedMilliseconds;
             }
             const requestingOwner = owner?.tracking_session_id === session.id ? owner : null;
@@ -104,7 +136,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
             leaseExpiresAtMs: owner.lease_expires_at.getTime(), engagementExpiresAtMs: session.engagement_expires_at.getTime(),
           });
           if (decision.shouldFence) throw conflict("IDLE_RESUME_REQUIRED");
-          if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type);
+          if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type, request.operation_id, instant, uuid);
           credited = decision.creditedMilliseconds;
           generation = owner.generation;
         }
@@ -147,7 +179,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
           lastAccountedAtMs: owner.last_accounted_at.getTime(), receivedAtMs: instant.getTime(),
           leaseExpiresAtMs: owner.lease_expires_at.getTime(), engagementExpiresAtMs: session.engagement_expires_at.getTime(),
         });
-        if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type);
+        if (decision.acceptedInterval) await creditInterval(repository, decision.acceptedInterval, session.activity_type, request.operation_id, instant, uuid);
         let nextOwner = owner;
         if (decision.classification === "LEASE_EXPIRED" && instant.getTime() < session.engagement_expires_at.getTime()) {
           const generation = nextOwnershipGeneration(owner.generation);
@@ -227,10 +259,11 @@ async function fence(repository, session, owner, instant, status) {
   if (owner) await repository.updateOwnerAtGeneration(owner.generation, { tracking_session_id: null, lease_expires_at: null, last_accounted_at: null, generation: nextOwnershipGeneration(owner.generation) });
   await repository.updateTrackingSession(session.id, { status, ...(status === "CLOSED" ? { closed_at: instant } : {}) });
 }
-async function creditInterval(repository, interval, activityType) {
+async function creditInterval(repository, interval, activityType, operationId, instant, uuid) {
   for (const part of splitIntervalByApplicationDay(interval.startMs, interval.endMs)) {
     const date = new Date(`${part.applicationDate}T00:00:00.000Z`);
     await repository.upsertDay(date, { create: { active_milliseconds: part.durationMilliseconds, last_credited_at: new Date(part.endMs), last_activity_type: activityType }, update: { active_milliseconds: { increment: part.durationMilliseconds }, last_credited_at: new Date(part.endMs), last_activity_type: activityType } });
+    await awardCompletion(repository, date, operationId, instant, uuid);
   }
 }
 async function touchEngagementDay(repository, instant, activityType) {
@@ -240,6 +273,7 @@ async function touchEngagementDay(repository, instant, activityType) {
 }
 function projection(session, owner, credited) { return { tracking_session_id: session.id, status: session.status, owner: owner?.tracking_session_id === session.id, generation: owner ? owner.generation.toString() : null, lease_expires_at: owner?.lease_expires_at?.toISOString?.() ?? null, engagement_expires_at: session.engagement_expires_at?.toISOString?.() ?? null, credited_milliseconds: credited.toString(), projection: { credited_milliseconds: credited.toString() } }; }
 function validateStoredSuccess(operationType, data) {
+  if (operationType === "GOAL_UPDATE") return validateStoredGoalUpdate(data);
   const operations = new Set(["CREATE", "READY", "RESUME", "INTERACTION", "HEARTBEAT", "PAUSE", "CLOSE"]);
   if (!operations.has(operationType) || !isRecord(data)) throw invalidReplay();
   const keys = ["tracking_session_id", "status", "owner", "generation", "lease_expires_at", "engagement_expires_at", "credited_milliseconds", "projection"];
@@ -274,6 +308,81 @@ function validateStoredSuccess(operationType, data) {
     credited_milliseconds: data.credited_milliseconds,
     projection: { credited_milliseconds: data.credited_milliseconds },
   };
+}
+
+async function projectGoal(repository, date) {
+  const preference = await repository.findPreference();
+  if (!preference) throw notFound();
+  const day = await repository.findDay(date);
+  const reward = await repository.findReward(date);
+  const activeMilliseconds = day?.active_milliseconds ?? 0n;
+  const activeSeconds = Number(activeMilliseconds / 1_000n);
+  const targetMinutes = preference.daily_goal_minutes ?? null;
+  return {
+    application_date: date.toISOString().slice(0, 10),
+    target_minutes: targetMinutes,
+    active_seconds: activeSeconds,
+    actual_minutes: Math.floor(activeSeconds / 60),
+    completed: targetMinutes !== null && activeSeconds >= targetMinutes * 60,
+    reward_earned: reward !== null,
+    reminder_enabled: preference.daily_goal_reminders_enabled ?? true,
+    xp_level: projectXpLevel(preference.total_xp),
+  };
+}
+
+async function awardCompletion(repository, date, operationId, instant, uuid = randomUUID) {
+  const preference = await repository.findPreference();
+  if (!preference?.daily_goal_minutes) return false;
+  const day = await repository.findDay(date);
+  const activeSeconds = Number((day?.active_milliseconds ?? 0n) / 1_000n);
+  if (activeSeconds < preference.daily_goal_minutes * 60 || await repository.findReward(date)) return false;
+  await repository.createReward({
+    id: uuid(), activity_date: date, source_operation_id: operationId,
+    xp_amount: DAILY_GOAL_REWARD_XP, created_at: instant,
+  });
+  await repository.incrementTotalXp(DAILY_GOAL_REWARD_XP);
+  await repository.createNotification({
+    id: uuid(), type: "DAILY_GOAL_COMPLETED", application_date: date,
+    ...COMPLETION_NOTIFICATION, created_at: instant, read_at: null,
+  });
+  return true;
+}
+
+function applicationDate(instant) {
+  const part = splitIntervalByApplicationDay(instant.getTime(), instant.getTime() + 1)[0];
+  return new Date(`${part.applicationDate}T00:00:00.000Z`);
+}
+
+function validateStoredGoalUpdate(data) {
+  if (!isRecord(data)) throw invalidReplay();
+  requireExactKeys(data, ["application_date", "target_minutes", "active_seconds", "actual_minutes", "completed", "reward_earned", "reminder_enabled", "xp_level", "reward"]);
+  validateGoalProjection(data);
+  if (!isRecord(data.reward)) throw invalidReplay();
+  requireExactKeys(data.reward, ["earned_now", "xp_earned"]);
+  if (typeof data.reward.earned_now !== "boolean" || ![0, DAILY_GOAL_REWARD_XP].includes(data.reward.xp_earned)
+    || data.reward.xp_earned !== (data.reward.earned_now ? DAILY_GOAL_REWARD_XP : 0)) throw invalidReplay();
+  return structuredClone(data);
+}
+
+function validateGoalProjection(data) {
+  if (typeof data.application_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data.application_date)
+    || new Date(`${data.application_date}T00:00:00.000Z`).toISOString().slice(0, 10) !== data.application_date) throw invalidReplay();
+  if (!Number.isInteger(data.target_minutes) || data.target_minutes < 10 || data.target_minutes > 240) throw invalidReplay();
+  if (!Number.isSafeInteger(data.active_seconds) || data.active_seconds < 0) throw invalidReplay();
+  if (!Number.isSafeInteger(data.actual_minutes) || data.actual_minutes !== Math.floor(data.active_seconds / 60)) throw invalidReplay();
+  if (typeof data.completed !== "boolean" || data.completed !== (data.active_seconds >= data.target_minutes * 60)) throw invalidReplay();
+  if (typeof data.reward_earned !== "boolean" || typeof data.reminder_enabled !== "boolean") throw invalidReplay();
+  if (!isRecord(data.xp_level) || !Number.isSafeInteger(data.xp_level.total_xp) || data.xp_level.total_xp < 0) throw invalidReplay();
+  const expectedXp = projectXpLevel(data.xp_level.total_xp);
+  requireExactKeys(data.xp_level, Object.keys(expectedXp));
+  if (Object.keys(expectedXp).some((key) => data.xp_level[key] !== expectedXp[key])) throw invalidReplay();
+}
+
+function validateGoalUpdate(input) {
+  const request = exact(input, ["operation_id", "target_minutes"], ["operation_id", "target_minutes"]);
+  requireUuid(request.operation_id);
+  if (!Number.isInteger(request.target_minutes) || request.target_minutes < 10 || request.target_minutes > 240) throw validation();
+  return request;
 }
 function requireExactKeys(value, expected) {
   const actual = Object.keys(value).sort();

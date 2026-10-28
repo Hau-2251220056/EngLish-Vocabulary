@@ -66,9 +66,27 @@ test("endpoint-specific DTO builders expose only PLAN 8.2 keys", async () => {
   }
 });
 
-test("production route source mounts only the five approved USER-protected tracking operations", async () => {
+test("goal GET and PUT expose only PLAN 8.1 DTO keys", async () => {
+  const goal = goalResult();
+  const controller = createDailyGoalController({ dailyGoalService: {
+    ...fakeService(() => ({ value: internalResult(false) })),
+    getGoal: async () => ({ ...goal, internal_receipt: "hidden" }),
+    updateGoal: async () => ({ ...goal, reward: { earned_now: true, xp_earned: 10, secret: true }, replayed: true }),
+  } });
+  const get = response();
+  await controller.getGoal({ user: { id: USER } }, get, assertNoNext);
+  assert.deepEqual(Object.keys(get.body.data), ["application_date", "target_minutes", "active_seconds", "actual_minutes", "completed", "reward_earned", "reminder_enabled", "xp_level"]);
+  const put = response();
+  await controller.updateGoal({ user: { id: USER }, body: {} }, put, assertNoNext);
+  assert.deepEqual(Object.keys(put.body.data), [...Object.keys(get.body.data), "reward"]);
+  assert.deepEqual(put.body.data.reward, { earned_now: true, xp_earned: 10 });
+});
+
+test("production route source mounts goal and tracking operations behind USER middleware", async () => {
   const source = await readFile(new URL("../../src/routes/daily-goal-routes.js", import.meta.url), "utf8");
   assert.match(source, /router\.use\(authenticationMiddleware, userAuthorizationMiddleware\)/);
+  assert.ok(source.includes('router.get("/", controller.getGoal)'));
+  assert.ok(source.includes('router.put("/", controller.updateGoal)'));
   for (const [path, controller] of [
     ['"/tracking-sessions"', "controller.establish"],
     ['"/tracking-sessions/:id/engagement"', "controller.engage"],
@@ -76,15 +94,17 @@ test("production route source mounts only the five approved USER-protected track
     ['"/tracking-sessions/:id/pause"', "controller.pause"],
     ['"/tracking-sessions/:id/close"', "controller.close"],
   ]) assert.ok(source.includes(`router.post(${path}, ${controller})`));
-  assert.doesNotMatch(source, /reward|reminder|notification|scheduler/i);
+  assert.doesNotMatch(source, /notification|scheduler/i);
 });
 
 function fakeService(next) {
   return {
+    getGoal: async () => goalResult(), updateGoal: async () => ({ ...goalResult(), reward: { earned_now: false, xp_earned: 0 } }),
     establish: async () => { const result = next(); if (result?.code) { const error = new Error("Safe Daily Goal failure."); Object.assign(error, result); throw error; } return result.value; },
     engage: async () => ({}), heartbeat: async () => ({}), pause: async () => ({}), close: async () => ({}),
   };
 }
+function goalResult() { return { application_date: "2026-10-26", target_minutes: 10, active_seconds: 600, actual_minutes: 10, completed: true, reward_earned: true, reminder_enabled: true, xp_level: { total_xp: 10, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false } }; }
 function internalResult(replayed) { return { tracking_session_id: USER, status: "ACTIVE", owner: false, generation: null, lease_expires_at: null, engagement_expires_at: null, credited_milliseconds: "0", projection: { credited_milliseconds: "0" }, replayed, internal_receipt: "not-public" }; }
 function response() { return { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } }; }
 function assertNoNext(error) { if (error) assert.fail(`Unexpected next(error): ${error.message}`); }

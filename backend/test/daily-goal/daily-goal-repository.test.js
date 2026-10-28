@@ -116,6 +116,7 @@ test("day, receipt, reward, preference, monitor and notification writes stay own
     await repository.createOperationReceipt({ operation_id: "op" });
     await repository.createReward({ activity_date: day, source_operation_id: "op", xp_amount: 10 });
     await repository.updatePreference({ daily_goal_minutes: 20 });
+    await repository.incrementTotalXp(10);
     await repository.createMonitorSession({ id: "monitor" });
     await repository.createNotification({ id: "notification" });
   });
@@ -123,6 +124,9 @@ test("day, receipt, reward, preference, monitor and notification writes stay own
   assert.equal(serialized.filter((data) => data.user_id === USER).length, 4);
   assert.equal(harness.calls.find((call) => call.kind === "day.upsert").args.create.user_id, USER);
   assert.deepEqual(harness.calls.find((call) => call.kind === "user.updateMany").args.where, { id: USER });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "user.update").args, {
+    where: { id: USER }, data: { total_xp: { increment: 10 } }, select: { total_xp: true },
+  });
 });
 
 test("transaction failure rolls back and never commits", async () => {
@@ -315,6 +319,7 @@ function createHarness({
     findMany: record(`${prefix}.findMany`, []),
     create: record(`${prefix}.create`, ({ data }) => data),
     upsert: record(`${prefix}.upsert`, ({ create }) => create),
+    update: record(`${prefix}.update`, ({ data }) => data),
     updateMany: record(`${prefix}.updateMany`, { count: 1 }),
     deleteMany: record(`${prefix}.deleteMany`, ({ where }) => ({
       count: Object.values(where).find((value) => value?.in)?.in.length ?? 1,

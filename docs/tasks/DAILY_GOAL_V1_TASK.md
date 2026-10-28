@@ -14,7 +14,9 @@
 
 **TASK-256 DG-1 portable PostgreSQL 17 migration correctness:** `HUMAN ACCEPTED — PASS`
 
-**TASK-256 Phase B/C/D live execution / Supabase platform validation / database access / TASK-258–277 execution / commit / push / deployment authorized:** `NO`
+**TASK-261 bounded implementation and retained offline evidence:** `HUMAN ACCEPTED — PASS; BOUNDED IMPLEMENTATION + OFFLINE EVIDENCE ONLY`
+
+**TASK-256 Phase B/C/D live execution / Supabase platform validation / database access / TASK-262–277 execution / commit / push / deployment authorized:** `NO`
 
 ## 1. Overview and scope gate
 
@@ -22,7 +24,7 @@ TASK-254 through TASK-277 decompose the approved backend-authoritative Daily Goa
 
 No task changes existing learning outcomes, SRS/Quiz rewards, Level thresholds, Streak qualification, legacy `USER.daily_xp_goal`, or Vocabulary-scoped `XP_REWARD`. No task adds email, Web Push, Browser Notification permission, Service Worker delivery, an external scheduler/service, a full notification Settings module, analytics history, or a new role/dependency. Technical defaults remain PLAN decisions, not SPEC constants.
 
-HUMAN accepted TASK-254, TASK-255, the migration-quarantine amendment, TASK-256 Phase A, TASK-257 within its offline scope, and TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness only. The accepted evidence is GitHub Actions Run `40259396391`, attempt `1`, at source SHA `7a19a97dd05394e2cf11112157871259e693e529`. Phase B/Context B and Supabase platform validation remain separate and pending; TASK-258–277 still require separate HUMAN authorization, and database access, further migration execution, workflow dispatch, commit/push, and deployment remain prohibited unless separately authorized.
+HUMAN accepted TASK-254, TASK-255, the migration-quarantine amendment, TASK-256 Phase A, TASK-257 within its offline scope, and TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness only. The accepted DG-1 evidence is GitHub Actions Run `40259396391`, attempt `1`, at source SHA `7a19a97dd05394e2cf11112157871259e693e529`. TASK-258 through TASK-260 were subsequently authorized in bounded scopes, and DG-2 was HUMAN accepted using Run `40449670981`, attempt `1`, at source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. TASK-261's bounded seven-file implementation and retained offline evidence were independently reviewed at HEAD `ae256cb12f8b2007bb60fe025630b41642d6759b` and are HUMAN accepted. This TASK-261 acceptance excludes real PostgreSQL concurrency/atomicity, transaction rollback/failure injection, database-enforced uniqueness under races, PostgreSQL-backed XP/SRS/Quiz/Streak regressions, TASK-262, and DG-3. Phase B/Context B and Supabase platform validation remain separate and pending; TASK-262–277 still require separate HUMAN authorization, and database access, further migration execution, workflow dispatch, commit/push, and deployment remain prohibited unless separately authorized.
 
 ## 2. Phase and gate distribution
 
@@ -228,7 +230,7 @@ Phase B authorization additionally requires the exact approved Session Pooler pr
 
 ### TASK-261 — Implement goal settings, progress, reward, and XP projection
 
-**Status:** `TODO`\
+**Status:** `HUMAN ACCEPTED — PASS; BOUNDED IMPLEMENTATION + OFFLINE EVIDENCE ONLY`\
 **Objective:** Add read/update and atomic first-completion behavior.\
 **Dependencies:** TASK-258–260.\
 **Files / modules:** daily-goal service/repository/controller/routes; reuse `xp-level-service.js`; additive reward ledger only.\
@@ -236,6 +238,8 @@ Phase B authorization additionally requires the exact approved Session Pooler pr
 **Out of scope:** `XP_REWARD` generalization, Streak mutation, persisted Level, XP history.\
 **SPEC / PLAN:** BR-DG-001–011, 047–059, 062–063; AC-DG-001–006, 021–028, 045–049, 054–055; PLAN §§7.3, 8.1.\
 **Acceptance / evidence:** failure-injection and race tests prove exactly `+10 XP`, atomic rollback, initial setup above/below target, goal increase/decrease behavior, unchanged SRS/Quiz/Streak.
+
+**Accepted TASK-261 checkpoint:** HUMAN accepted the independently reviewed seven-file implementation at HEAD `ae256cb12f8b2007bb60fe025630b41642d6759b` and its retained offline evidence: syntax checks `7/7 PASS`, focused database-independent Node tests `46/46 PASS`, and `git diff --check` PASS. Bounded remediation removed only the accidental leading whitespace from `backend/src/repositories/xp-reward-repository.js`; its protected-file diff was empty at review, and independent REVIEW returned PASS with no remaining remediation finding. This acceptance is limited to the bounded implementation and offline evidence. Real PostgreSQL concurrency/atomicity, transaction rollback/failure injection, database-enforced uniqueness under races, PostgreSQL-backed XP/SRS/Quiz/Streak regressions, TASK-262 execution, and DG-3 remain unverified and unauthorized.
 
 ### TASK-262 — Verify reward compatibility and atomicity
 
@@ -428,7 +432,7 @@ Every BR-DG-001–078 and AC-DG-001–055 appears in at least one row and is imp
 
 ## 7. Execution and HUMAN gates
 
-1. **Task approval:** HUMAN approved this document and accepted TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness using Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. TASK-258 through TASK-260 were subsequently authorized in bounded scopes, and DG-2 was HUMAN accepted using Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. TASK-261 and every later numbered task or additional CI/database operation still require separate authorization.
+1. **Task approval:** HUMAN approved this document and accepted TASK-256 Gate DG-1 for portable PostgreSQL 17 migration correctness using Run `40259396391`, attempt `1`, source SHA `7a19a97dd05394e2cf11112157871259e693e529`. TASK-258 through TASK-260 were subsequently authorized in bounded scopes, and DG-2 was HUMAN accepted using Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. TASK-261's bounded seven-file implementation and retained offline evidence were independently reviewed at HEAD `ae256cb12f8b2007bb60fe025630b41642d6759b` and are HUMAN accepted. TASK-262 and every later numbered task or additional CI/database operation still require separate authorization.
 2. **DG-1 Database:** `HUMAN ACCEPTED — PASS`, portable PostgreSQL 17 migration correctness only. The actual Supabase B-DESTINATION was not a prerequisite and remains pending platform-specific evidence.
 3. **DG-2 Backend accounting:** `HUMAN ACCEPTED — PASS` for portable PostgreSQL 17 and job-local Express evidence from Run `40449670981`, attempt `1`, source SHA `862abdf8b90c3bcc45900f84cdd3efce4fe4a23e`. The two reward clauses remain `NOT_RUN` and move to TASK-262; Supabase and deployment evidence remain pending.
 4. **DG-3 Reward/reminder:** atomicity, authorization and dedupe evidence before Notification UI reliance.
@@ -442,4 +446,4 @@ Every BR-DG-001–078 and AC-DG-001–055 appears in at least one row and is imp
 
 The exact Supabase platform PostgreSQL compatibility, Supabase/Vercel platform capacity and connection pooling, long-duration session behavior on the real platform, Vercel runtime/region/invocation budget, Supabase plan/region/timeouts/storage, Supabase platform-target readiness, and an approved maintenance mechanism remain UNKNOWN. Portable PostgreSQL 17 concurrency and job-local Express behavior are HUMAN ACCEPTED — PASS through Run `40449670981`, attempt `1`; that portable evidence does not resolve the remaining platform-specific unknowns. These facts block Supabase compatibility, platform capacity, Preview/Production migration, and deployment claims; they do not reopen the HUMAN-accepted portable PostgreSQL 17 DG-1 or DG-2 results. Any implementation discovery that requires changing a PLAN default, architecture, database/API contract, or business rule returns to PLAN/SPEC review.
 
-**STOP: TASK-256/DG-1 and TASK-260/DG-2 are HUMAN ACCEPTED — PASS only for their recorded portable PostgreSQL 17 scopes, with DG-2 additionally limited to job-local Express. TASK-261+ remains NOT AUTHORIZED pending a separate HUMAN decision, and the two reward clauses remain deferred to TASK-262. Do not dispatch another workflow, execute a migration, access a database, run database-dependent tests, treat Phase B/Context B or portable evidence as completed Supabase evidence, commit, push, or deploy without separate authorization.**
+**STOP: TASK-256/DG-1 and TASK-260/DG-2 are HUMAN ACCEPTED — PASS only for their recorded portable PostgreSQL 17 scopes, with DG-2 additionally limited to job-local Express. TASK-261 is HUMAN ACCEPTED — PASS only for its bounded seven-file implementation and retained offline evidence; this does not verify real PostgreSQL reward concurrency/atomicity or authorize TASK-262 or DG-3. TASK-262+ remains NOT AUTHORIZED pending a separate HUMAN decision, and the two PostgreSQL-backed reward clauses remain deferred to TASK-262. Do not dispatch another workflow, execute a migration, access a database, run database-dependent tests, treat Phase B/Context B or portable evidence as completed Supabase evidence, commit, push, or deploy without separate authorization.**
