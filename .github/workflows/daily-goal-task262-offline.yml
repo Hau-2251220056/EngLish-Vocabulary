@@ -1,0 +1,106 @@
+name: Daily Goal TASK-262 Offline Guards
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact guarded TASK-262 offline operation
+        required: true
+        type: choice
+        default: NOT_AUTHORIZED
+        options:
+          - NOT_AUTHORIZED
+          - RUN_TASK262_OFFLINE_GUARDS
+      authorize_task262_offline:
+        description: HUMAN authorization for this exact offline run
+        required: true
+        type: boolean
+        default: false
+      expected_source_sha:
+        description: Exact lowercase feature commit SHA authorized by HUMAN
+        required: true
+        type: string
+      expected_source_ref:
+        description: Exact feature ref authorized by HUMAN
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verify immutable TASK-262 offline dispatch binding
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_WORKFLOW: ${{ github.workflow }}
+          EVENT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          EVENT_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_RUN_ID: ${{ github.run_id }}
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_AUTHORIZATION: ${{ inputs.authorize_task262_offline }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_NAME" == "workflow_dispatch" ]] || { echo "Refusal: event mismatch"; exit 1; }
+          [[ "$EVENT_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]] || { echo "Refusal: repository mismatch"; exit 1; }
+          [[ "$REQUESTED_OPERATION" == "RUN_TASK262_OFFLINE_GUARDS" ]] || { echo "Refusal: operation mismatch"; exit 1; }
+          [[ "$REQUESTED_AUTHORIZATION" == "true" ]] || { echo "Refusal: authorization missing"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: source SHA malformed"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: source SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: source ref mismatch"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: feature ref mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW" == "Daily Goal TASK-262 Offline Guards" ]] || { echo "Refusal: workflow name mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW_REF" == "Hau-2251220056/EngLish-Vocabulary/.github/workflows/daily-goal-task262-offline.yml@$EVENT_REF" ]] || { echo "Refusal: workflow ref mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA mismatch"; exit 1; }
+          [[ "$EVENT_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run ID malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run attempt malformed"; exit 1; }
+
+  offline-verification:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out exact authorized source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Check TASK-262 core syntax
+        run: node --check test/daily-goal/daily-goal-task262-core.js
+
+      - name: Check TASK-262 CLI syntax
+        run: node --check test/daily-goal/daily-goal-task262-cli.js
+
+      - name: Check TASK-262 offline suite syntax
+        run: node --check test/daily-goal/daily-goal-task262-offline.test.js
+
+      - name: Check TASK-262 reward integration source syntax
+        run: node --check test/daily-goal/daily-goal-task262-reward.integration.test.js
+
+      - name: Check TASK-262 HTTP integration source syntax
+        run: node --check test/daily-goal/daily-goal-task262-http.integration.test.js
+
+      - name: Check TASK-262 compatibility integration source syntax
+        run: node --check test/daily-goal/daily-goal-task262-compatibility.integration.test.js
+
+      - name: Run TASK-262 offline guard suite
+        run: node --test --test-concurrency=1 test/daily-goal/daily-goal-task262-offline.test.js
