@@ -21,9 +21,16 @@ export async function runTask262RewardIntegration({ prisma } = {}) {
   let primary;
   try {
     const first = await seedUser(prisma, users, { milliseconds: 1_200_000n, totalXp: 45 });
+    await prisma.uSER.update({
+      where: { id: first.id },
+      data: { daily_goal_reminders_enabled: false, daily_goal_reminders_enabled_at: NOW },
+    });
     const setupResults = await concurrentGoalUpdates(prisma, first.id, [15, 15]);
     assert.equal(setupResults.filter((item) => item.reward.earned_now).length, 1); evidence.mark("firstSetup");
+    assert(setupResults.every((item) => item.reminder_enabled === false));
     await assertCompletionState(prisma, first.id, { milliseconds: 1_200_000n, totalXp: 55, rewards: 1, notifications: 1 });
+    assert.equal(await prisma.uSER_NOTIFICATION.count({ where: { user_id: first.id } }), 1);
+    assert.equal(await prisma.uSER_NOTIFICATION.count({ where: { user_id: first.id, type: "DAILY_GOAL_INACTIVITY_REMINDER" } }), 0);
     evidence.mark("rewardUniqueness"); evidence.mark("notificationUniqueness");
     assert.deepEqual(setupResults.at(-1).xp_level, projectXpLevel(55)); evidence.mark("levelProjection");
 
@@ -70,13 +77,24 @@ export async function runTask262RewardIntegration({ prisma } = {}) {
     await assertCompletionState(prisma, raced.id, { milliseconds: 600_000n, totalXp: 10, rewards: 1, notifications: 1 }); evidence.mark("heartbeatGoalRace", 2);
 
     const preGoal = await seedTrackingUser(prisma, users, { milliseconds: 600_000n, goal: null });
+    const preSetupDay = await day(prisma, preGoal.id);
+    assert.equal(preSetupDay.active_milliseconds, 600_000n);
+    assert.equal(preSetupDay.last_credited_at.getTime(), preGoal.readyAt.getTime());
+    assert.equal(preSetupDay.last_engagement_at.getTime(), preGoal.readyAt.getTime());
     const configured = await service(prisma, { value: preGoal.readyAt }).updateGoal(preGoal.id, goalUpdate(15));
     assert.equal(configured.completed, false);
     assert.equal(configured.reward.earned_now, false);
-    assert.equal((await day(prisma, preGoal.id)).active_milliseconds, 600_000n);
+    const configuredDay = await day(prisma, preGoal.id);
+    assert.equal(configuredDay.active_milliseconds, 600_000n);
+    assert.equal(configuredDay.last_credited_at.getTime(), preGoal.readyAt.getTime());
+    assert.equal(configuredDay.last_engagement_at.getTime(), preGoal.readyAt.getTime());
     await creditEligibleTime(prisma, preGoal, 12);
+    const completedDay = await day(prisma, preGoal.id);
+    const completionTime = preGoal.readyAt.getTime() + 300_000;
+    assert.equal(completedDay.last_credited_at.getTime(), completionTime);
+    assert.equal(completedDay.last_engagement_at.getTime(), completionTime);
     await assertCompletionState(prisma, preGoal.id, { milliseconds: 900_000n, totalXp: 10, rewards: 1, notifications: 1, goal: 15 });
-    evidence.mark("preGoalTime", 4);
+    evidence.mark("preGoalTime", 12);
 
     const rollback = await seedUser(prisma, users, { milliseconds: 600_000n });
     const failing = service(transactionClientWithNotificationFailure(prisma));

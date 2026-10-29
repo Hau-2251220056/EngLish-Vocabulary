@@ -44,6 +44,8 @@ jobs:
           EVENT_REPOSITORY: ${{ github.repository }}
           EVENT_SHA: ${{ github.sha }}
           EVENT_REF: ${{ github.ref }}
+          EVENT_WORKFLOW: ${{ github.workflow }}
+          EVENT_WORKFLOW_REF: ${{ github.workflow_ref }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
           EVENT_RUN_ID: ${{ github.run_id }}
           EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -61,9 +63,12 @@ jobs:
           [[ "$EXPECTED_SOURCE_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: source SHA mismatch"; exit 1; }
           [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: source ref mismatch"; exit 1; }
           [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: feature ref mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW" == "Daily Goal TASK-262 Real Stack" ]] || { echo "Refusal: workflow name mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW_REF" == "Hau-2251220056/EngLish-Vocabulary/.github/workflows/daily-goal-task262-real-stack.yml@$EVENT_REF" ]] || { echo "Refusal: workflow ref mismatch"; exit 1; }
           [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA mismatch"; exit 1; }
           [[ "$EVENT_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run ID malformed"; exit 1; }
           [[ "$EVENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run attempt malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
 
   task262-real-stack:
     needs: preflight
@@ -98,6 +103,15 @@ jobs:
       DAILY_GOAL_TASK262_POSTGRESQL_MAJOR: "17"
       DAILY_GOAL_TASK262_JOB_DATABASE_URL: postgresql://daily_goal_ephemeral:task262-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/daily_goal_ephemeral
     steps:
+      - name: Refuse TASK-262 real-stack reruns before database-capable execution
+        shell: bash
+        env:
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run attempt malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
+
       - name: Check out exact source revision
         uses: actions/checkout@v7
         with:
