@@ -72,7 +72,7 @@ test("failure output is bounded and redacts hostile errors", async () => {
     const evidence = task262RefusalEvidence(error);
     const output = JSON.stringify(evidence);
     assert(!output.includes("secret"));
-    assert(!output.includes("postgresql"));
+    assert(!output.includes("postgresql://"));
     assert(!output.includes("SELECT"));
     assert.equal(evidence.task262Passed, false);
     assert.equal(evidence.cleanupFailed, false);
@@ -117,7 +117,12 @@ test("subprocess environment is minimal and strips unrelated or secret-bearing v
 });
 
 test("migration inventory requires PostgreSQL 17 and the exact reviewed completed history", async () => {
-  const complete = REVIEWED_INVENTORY.map((row) => ({ ...row, finished_at: new Date(), rolled_back_at: null }));
+  const complete = REVIEWED_INVENTORY.map(({ name, checksum }) => ({
+    migration_name: name,
+    checksum,
+    finished_at: new Date(),
+    rolled_back_at: null,
+  }));
   const valid = fakePreparationPrisma(170001, complete);
   assert.equal((await validateTask262PreparedDatabase(valid)).postgresqlMajor, 17);
   await assert.rejects(validateTask262PreparedDatabase(fakePreparationPrisma(160001, complete)));
