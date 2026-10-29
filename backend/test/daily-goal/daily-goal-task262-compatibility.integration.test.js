@@ -90,7 +90,7 @@ async function createFixture(prisma, fixtures, { totalXp }) {
   const vocabulary = await createVocabulary(prisma, fixtures, user.id, `task262-${randomUUID()}`, "target meaning");
   const set = await createSet(prisma, user.id, vocabulary.id);
   const alternateSet = await createSet(prisma, user.id, vocabulary.id);
-  const session = await prisma.lEARNING_SESSION.create({ data: { user_id: user.id, vocabulary_set_id: set.id, set_id_snapshot: set.id, mode: "NORMAL", status: "COMPLETED", create_operation_id: randomUUID(), snapshot_size: 1, created_at: NOW, expires_at: new Date(NOW.getTime() + 86_400_000), completed_at: NOW, completion_event_id: randomUUID() } });
+  const session = await prisma.lEARNING_SESSION.create({ data: { user_id: user.id, vocabulary_set_id: set.id, set_id_snapshot: set.id, mode: "NORMAL", status: "COMPLETED", create_operation_id: randomUUID(), snapshot_size: 1, created_at: NOW, expires_at: new Date(NOW.getTime() + (7 * 86_400_000)), completed_at: NOW, completion_event_id: randomUUID() } });
   await prisma.sTREAK_DAY.create({ data: { user_id: user.id, activity_date: STREAK_DAY, first_session_id: session.id } });
   return { user, vocabulary: { ...vocabulary, meaning: "target meaning" }, set, alternateSet };
 }

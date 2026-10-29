@@ -145,7 +145,7 @@ async function seedUser(prisma, users, { milliseconds = 0n, totalXp = 0, goal = 
 async function seedTrackingUser(prisma, users, { milliseconds, goal }) {
   const user = await seedUser(prisma, users, { milliseconds, goal });
   const learning = await prisma.lEARNING_SESSION.create({
-    data: { user_id: user.id, set_id_snapshot: randomUUID(), mode: "NORMAL", status: "ACTIVE", create_operation_id: randomUUID(), snapshot_size: 1, created_at: NOW, expires_at: new Date(NOW.getTime() + 86_400_000) },
+    data: { user_id: user.id, set_id_snapshot: randomUUID(), mode: "NORMAL", status: "ACTIVE", create_operation_id: randomUUID(), snapshot_size: 1, created_at: NOW, expires_at: new Date(NOW.getTime() + (7 * 86_400_000)) },
   });
   const clock = { value: new Date(NOW) };
   const instance = service(prisma, clock);
