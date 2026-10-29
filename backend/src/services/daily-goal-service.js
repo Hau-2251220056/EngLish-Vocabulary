@@ -80,6 +80,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
           learning_session_id: request.learning_session_id ?? null,
           set_id: request.set_id ?? null, vocabulary_id: request.vocabulary_id ?? null,
           status: "ACTIVE",
+          created_at: instant,
         });
         const response = projection(session, null, 0n);
         await receipt(repository, request.operation_id, "CREATE", fingerprint, session.id, null, 0n, response, instant);
