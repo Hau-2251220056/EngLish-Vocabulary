@@ -758,6 +758,14 @@ Level	DONE	✓	✓	✓	✓	PASS	APPROVE
 Streak	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+
+### Daily Goal V1 — TASK-262 bounded acceptance checkpoint
+
+- TASK-262: `HUMAN ACCEPTED — PASS; BOUNDED POSTGRESQL 17 REWARD COMPATIBILITY AND ATOMICITY ONLY`.
+- Accepted evidence: GitHub Actions Run `40844297129`, attempt `1`, source SHA `ec0a2f0bada418ea0b507fd812ad4090ace452eb`; isolated job-local PostgreSQL 17; offline suite `12/12 PASS`; real-stack evidence `14/14 PASS` categories and `68` assertions.
+- The accepted scope covers atomic Daily Goal completion reward of exactly `+10 XP`; reward, XP and completion-notification uniqueness under concurrency/replay; failure-injection rollback and recovery; first setup, goal increase/decrease and pre-goal accumulated time; Level projection; SRS/Quiz reward compatibility; Streak isolation; and completion notifications when inactivity reminders are disabled.
+- `supabasePlatformVerified` remains `false`, and this checkpoint establishes no Preview/Production database verification or deployment readiness. TASK-263–277 remain unauthorized, DG-3 remains unopened and unauthorized, and the overall Daily Goal V1 feature remains `TODO`.
+
 XP Rules
 
 The current universal XP rules are:
