@@ -1,0 +1,183 @@
+name: Daily Goal TASK-262 Real Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact guarded TASK-262 operation
+        required: true
+        type: choice
+        default: NOT_AUTHORIZED
+        options:
+          - NOT_AUTHORIZED
+          - DAILY_GOAL_TASK262_REAL_STACK_POSTGRESQL_17
+      authorize_task262_verification:
+        description: HUMAN authorization for this exact run
+        required: true
+        type: boolean
+        default: false
+      expected_source_sha:
+        description: Exact lowercase feature commit SHA authorized by HUMAN
+        required: true
+        type: string
+      expected_source_ref:
+        description: Exact feature ref authorized by HUMAN
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-goal-task262-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify immutable TASK-262 dispatch binding
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_WORKFLOW: ${{ github.workflow }}
+          EVENT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_RUN_ID: ${{ github.run_id }}
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_AUTHORIZATION: ${{ inputs.authorize_task262_verification }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_NAME" == "workflow_dispatch" ]] || { echo "Refusal: event mismatch"; exit 1; }
+          [[ "$EVENT_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]] || { echo "Refusal: repository mismatch"; exit 1; }
+          [[ "$REQUESTED_OPERATION" == "DAILY_GOAL_TASK262_REAL_STACK_POSTGRESQL_17" ]] || { echo "Refusal: operation mismatch"; exit 1; }
+          [[ "$REQUESTED_AUTHORIZATION" == "true" ]] || { echo "Refusal: authorization missing"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: source SHA malformed"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: source SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: source ref mismatch"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: feature ref mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW" == "Daily Goal TASK-262 Real Stack" ]] || { echo "Refusal: workflow name mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW_REF" == "Hau-2251220056/EngLish-Vocabulary/.github/workflows/daily-goal-task262-real-stack.yml@$EVENT_REF" ]] || { echo "Refusal: workflow ref mismatch"; exit 1; }
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA mismatch"; exit 1; }
+          [[ "$EVENT_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run ID malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run attempt malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
+
+  task262-real-stack:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: daily_goal_ephemeral
+          POSTGRES_USER: daily_goal_ephemeral
+          POSTGRES_PASSWORD: task262-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U daily_goal_ephemeral -d daily_goal_ephemeral"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      GITHUB_ACTIONS: "true"
+      NODE_ENV: test
+      DAILY_GOAL_TASK262_OPERATION: DAILY_GOAL_TASK262_REAL_STACK_POSTGRESQL_17
+      DAILY_GOAL_TASK262_AUTHORIZED: "true"
+      DAILY_GOAL_TASK262_REPOSITORY: ${{ github.repository }}
+      DAILY_GOAL_TASK262_SOURCE_SHA: ${{ github.sha }}
+      DAILY_GOAL_TASK262_SOURCE_REF: ${{ github.ref }}
+      DAILY_GOAL_TASK262_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      DAILY_GOAL_TASK262_RUN_ID: ${{ github.run_id }}
+      DAILY_GOAL_TASK262_RUN_ATTEMPT: ${{ github.run_attempt }}
+      DAILY_GOAL_TASK262_POSTGRESQL_MAJOR: "17"
+      DAILY_GOAL_TASK262_JOB_DATABASE_URL: postgresql://daily_goal_ephemeral:task262-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/daily_goal_ephemeral
+    steps:
+      - name: Refuse TASK-262 real-stack reruns before database-capable execution
+        shell: bash
+        env:
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo "Refusal: run attempt malformed"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
+
+      - name: Check out exact source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify detached checkout binding
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          checkout_sha="$(git rev-parse HEAD)"
+          [[ "$checkout_sha" == "$EXPECTED_SOURCE_SHA" ]] || { echo "Refusal: checkout SHA mismatch"; exit 1; }
+          [[ "$checkout_sha" == "$EVENT_SHA" ]] || { echo "Refusal: event SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "$EVENT_REF" ]] || { echo "Refusal: event ref mismatch"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: feature ref mismatch"; exit 1; }
+          [[ "$WORKFLOW_SHA" == "$EVENT_SHA" ]] || { echo "Refusal: workflow SHA mismatch"; exit 1; }
+          if git symbolic-ref -q HEAD >/dev/null; then echo "Refusal: checkout is not detached"; exit 1; fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: npm ci --ignore-scripts
+
+      - name: Run TASK-262 source guards in real-stack job (not offline-isolated)
+        run: node --test --test-concurrency=1 backend/test/daily-goal/daily-goal-task262-offline.test.js
+
+      - name: Generate DG-1 raw-query client
+        working-directory: backend
+        env:
+          DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL: ${{ env.DAILY_GOAL_TASK262_JOB_DATABASE_URL }}
+        run: node test/daily-goal/daily-goal-ephemeral-migration-cli.js --generate
+
+      - name: Prepare exact reviewed 12-migration database
+        working-directory: backend
+        env:
+          DAILY_GOAL_EPHEMERAL_JOB_DATABASE_URL: ${{ env.DAILY_GOAL_TASK262_JOB_DATABASE_URL }}
+          DAILY_GOAL_EPHEMERAL_OPERATION: DAILY_GOAL_DG1_EPHEMERAL_POSTGRESQL_17
+          DAILY_GOAL_EPHEMERAL_AUTHORIZED: "true"
+          DAILY_GOAL_REPOSITORY: ${{ github.repository }}
+          DAILY_GOAL_SOURCE_SHA: ${{ github.sha }}
+          DAILY_GOAL_RUN_ID: ${{ github.run_id }}
+          DAILY_GOAL_RUN_ATTEMPT: ${{ github.run_attempt }}
+          DAILY_GOAL_WORKFLOW: Daily Goal TASK-262 Real Stack
+          DAILY_GOAL_REF: ${{ github.ref }}
+          DAILY_GOAL_POSTGRESQL_MAJOR: "17"
+          DAILY_GOAL_MIGRATION_INVENTORY_DIGEST: 833edeb16488fc71fbbea22532531699eb2ffb9334b5b4f1d6ff5bcf0d41c864
+          DAILY_GOAL_MIGRATION_SIZE: "11487"
+          DAILY_GOAL_MIGRATION_SHA256: 8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6
+        run: node test/daily-goal/daily-goal-ephemeral-migration-cli.js
+
+      - name: Generate guarded full-model client
+        working-directory: backend
+        run: node test/daily-goal/daily-goal-task262-cli.js --generate-client
+
+      - name: Run guarded TASK-262 real-stack verification
+        working-directory: backend
+        run: node test/daily-goal/daily-goal-task262-cli.js --run
