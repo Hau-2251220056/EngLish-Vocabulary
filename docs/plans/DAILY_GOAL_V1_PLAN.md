@@ -497,6 +497,8 @@ All endpoints require the existing authenticated session cookie and USER role. E
 
 ### 8.3 Monitor and reminder eligibility
 
+Implementation is staged. B3 implements authenticated owner-scoped monitor establish/close lifecycle and the internal transactional check-state machinery for server-authoritative `last_seen_at`, continuity and eligibility-baseline transitions. A check gap exceeding 150 seconds resets `continuity_started_at` and `eligible_baseline_at` to Backend `serverNow` without backfill. B3 does not evaluate final reminder eligibility, create reminder notification rows, or introduce a monitor generation/lease field. The check route remains unpublished during B3, and B3 must not return `reminder_created: false` as a placeholder for behavior not yet implemented. B4 completes the public check response, including `reminder_created`, `unread_count` and `next_check_after_seconds`, together with reminder eligibility, creation and deduplication before exposing the route. The final public check contract below remains unchanged.
+
 #### `POST /api/daily-goal/monitor-sessions`
 
 - Request: `{ operation_id }`.
@@ -511,7 +513,12 @@ All endpoints require the existing authenticated session cookie and USER role. E
 
 #### `POST /api/daily-goal/monitor-sessions/:id/close`
 
-- Best-effort idempotent close. No later server work happens because no scheduler exists.
+- Request: exactly `{ operation_id }`; both `:id` and `operation_id` are UUIDs, and missing or additional fields are rejected.
+- Response `200`, using the standard success envelope: `{ monitor_session_id, closed_at }`, where `closed_at` is the Backend-generated canonical timestamp persisted by the initial close.
+- Authentication and USER-role authorization use the existing safe `401`/`403` behavior. Ownership derives only from the authenticated USER; a foreign or unknown monitor returns safe `404` without ownership disclosure.
+- A matching operation retry returns its persisted response without mutation. Reusing the operation ID with different content or operation type returns `409 OPERATION_CONFLICT`.
+- A different operation ID closing an already closed owned monitor returns the existing closed projection without changing `closed_at`, under the same USER transaction and receipt conventions. A check with a new operation ID after close returns safe `404`.
+- Close does not evaluate reminder eligibility or create a notification. No later server work happens because no scheduler exists.
 
 ### 8.4 Notifications
 

@@ -302,6 +302,8 @@ API rules:
 - The inactivity-reminder preference has no effect on atomic completion-notification creation.
 - Notification reads and mutations never expose another USER's records.
 
+TASK-263 monitor delivery is staged without changing the approved final reminder behavior. B3 establishes, maintains, and closes authenticated owner-scoped monitor sessions and prepares the internal check lifecycle, including transactional server-authoritative continuity and eligibility-baseline transitions. A check gap exceeding 150 seconds resets both baselines without backfilling a reminder. B3 neither evaluates final reminder eligibility nor creates reminder notification rows, introduces no monitor generation/lease field, and does not publish the monitor check endpoint or return a placeholder `reminder_created: false`. B4 completes the public monitor-check contract, eligibility evaluation, reminder creation and deduplication before that route is exposed.
+
 ---
 
 ## 9. UI/UX and Accessibility Requirements
