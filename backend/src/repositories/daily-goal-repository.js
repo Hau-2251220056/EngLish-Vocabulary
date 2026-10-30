@@ -213,12 +213,28 @@ function createTransactionRepository(transaction, userId, lifecycle) {
     createNotification(data) {
       return transaction.uSER_NOTIFICATION.create({ data: ownerData(data, userId) });
     },
-    listNotifications({ cursor, take }) {
+    listNotifications({ before, take }) {
       return transaction.uSER_NOTIFICATION.findMany({
-        where: { user_id: userId },
+        where: {
+          user_id: userId,
+          ...(before ? {
+            OR: [
+              { created_at: { lt: before.createdAt } },
+              { created_at: before.createdAt, id: { lt: before.id } },
+            ],
+          } : {}),
+        },
         orderBy: [{ created_at: "desc" }, { id: "desc" }],
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         take,
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          body: true,
+          application_date: true,
+          created_at: true,
+          read_at: true,
+        },
       });
     },
     countUnreadNotifications() {

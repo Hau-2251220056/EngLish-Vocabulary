@@ -4,10 +4,84 @@ import test from "node:test";
 import { createDailyGoalService } from "../../src/services/daily-goal-service.js";
 
 const USER = "11111111-1111-4111-8111-111111111111";
+const OTHER = "11111111-1111-4111-8111-111111111112";
 const SESSION = "22222222-2222-4222-8222-222222222222";
 const SESSION_B = "22222222-2222-4222-8222-222222222223";
 const LEARNING = "33333333-3333-4333-8333-333333333333";
 const OPS = Array.from({ length: 12 }, (_, i) => `${String(i + 1).padStart(8, "0")}-4444-4444-8444-444444444444`);
+
+test("notification list defaults to 20, caps at 50, and paginates by a validated opaque boundary", async () => {
+  assert.deepEqual(await createService(createHarness()).listNotifications(USER, {}), {
+    items: [], unread_count: 0, next_cursor: null,
+  });
+  const notifications = Array.from({ length: 52 }, (_, index) => notification(index));
+  const harness = createHarness({ notifications });
+  const service = createService(harness);
+  const first = await service.listNotifications(USER, {});
+  assert.equal(first.items.length, 20);
+  assert.equal(first.unread_count, 52);
+  assert.equal(typeof first.next_cursor, "string");
+  assert.deepEqual(Object.keys(first.items[0]), ["id", "type", "title", "body", "application_date", "created_at", "read_at"]);
+  const second = await service.listNotifications(USER, { page_size: "50", cursor: first.next_cursor });
+  assert.equal(second.items.length, 32);
+  assert.equal(second.items[0].id, notifications[20].id);
+  assert.equal(second.next_cursor, null);
+  await assert.rejects(service.listNotifications(USER, { page_size: "51" }), hasCode("VALIDATION_ERROR"));
+  await assert.rejects(service.listNotifications(USER, { page_size: "0" }), hasCode("VALIDATION_ERROR"));
+});
+
+test("equal-timestamp keyset pagination yields exact descending IDs across three pages", async () => {
+  const shared = new Date("2026-10-26T12:00:00.000Z");
+  const rows = [notification(3), notification(0), notification(4), notification(1), notification(2)]
+    .map((row) => ({ ...row, created_at: shared }));
+  const expectedIds = [...rows].sort((left, right) => right.id.localeCompare(left.id)).map((row) => row.id);
+  const service = createService(createHarness({ notifications: rows }));
+  const first = await service.listNotifications(USER, { page_size: "2" });
+  const middle = await service.listNotifications(USER, { page_size: "2", cursor: first.next_cursor });
+  const last = await service.listNotifications(USER, { page_size: "2", cursor: middle.next_cursor });
+  assert.notEqual(first.next_cursor, null);
+  assert.notEqual(middle.next_cursor, null);
+  assert.equal(last.next_cursor, null);
+  const actualIds = [...first.items, ...middle.items, ...last.items].map((row) => row.id);
+  assert.deepEqual(actualIds, expectedIds);
+  assert.equal(new Set(actualIds).size, rows.length);
+  assert.deepEqual([first.items.length, middle.items.length, last.items.length], [2, 2, 1]);
+});
+
+test("notification cursor rejects malformed, oversized, modified, repeated and unexpected query values", async () => {
+  const service = createService(createHarness({ notifications: [notification(0), notification(1)] }));
+  const page = await service.listNotifications(USER, { page_size: "1" });
+  const changed = `${page.next_cursor.slice(0, -1)}${page.next_cursor.endsWith("A") ? "B" : "A"}`;
+  for (const query of [
+    { cursor: "not+base64url" }, { cursor: "x".repeat(513) }, { cursor: changed },
+    { cursor: [page.next_cursor] }, { page_size: ["20"] }, { extra: "value" },
+  ]) await assert.rejects(service.listNotifications(USER, query), hasCode("VALIDATION_ERROR"));
+});
+
+test("notification reads are owner-safe, idempotent, and return authoritative unread counts", async () => {
+  const own = notification(0);
+  const foreign = notification(1, OTHER);
+  const harness = createHarness({ notifications: [own, foreign] });
+  const service = createService(harness);
+  const listed = await service.listNotifications(USER, {});
+  assert.deepEqual(listed.items.map((row) => row.id), [own.id]);
+  assert.deepEqual(await service.countUnreadNotifications(USER), { unread_count: 1 });
+  const first = await service.markNotificationRead(USER, own.id, { read: true });
+  assert.equal(first.notification.id, own.id);
+  assert.equal(first.notification.read_at, "2026-10-26T00:00:00.000Z");
+  assert.equal(first.unread_count, 0);
+  const repeated = await service.markNotificationRead(USER, own.id, { read: true });
+  assert.equal(repeated.notification.read_at, first.notification.read_at);
+  assert.equal(harness.state.notificationUpdates, 1);
+  for (const input of [{}, { read: false }, { read: true, user_id: USER }]) {
+    await assert.rejects(service.markNotificationRead(USER, own.id, input), hasCode("VALIDATION_ERROR"));
+  }
+  await assert.rejects(service.markNotificationRead(USER, "not-a-uuid", { read: true }), hasCode("VALIDATION_ERROR"));
+  for (const id of [foreign.id, SESSION_B]) {
+    await assert.rejects(service.markNotificationRead(USER, id, { read: true }), hasCode("NOT_FOUND"));
+  }
+  assert.equal(harness.state.notifications.find((row) => row.id === foreign.id).read_at, null);
+});
 
 test("establish and READY use the locked production repository, issue server timing, and credit zero", async () => {
   const harness = createHarness();
@@ -410,22 +484,23 @@ function heartbeat(operation_id, generation) { return { operation_id, generation
 function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z")) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION }); }
 function hasCode(code) { return (error) => error?.code === code; }
 
-function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false } = {}) {
+function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false, notifications = [] } = {}) {
   const date = new Date("2026-10-26T00:00:00.000Z");
   const state = {
     sessions: [], owner: null, receipts: [],
     days: activeMilliseconds === null ? [] : [{ activity_date: date, active_milliseconds: activeMilliseconds }],
     rewards: reward ? [{ id: "reward", activity_date: date, source_operation_id: OPS[11], xp_amount: 10 }] : [],
-    notifications: [], user: { id: USER, total_xp: totalXp, daily_goal_minutes: targetMinutes, daily_goal_reminders_enabled: null, daily_goal_reminders_enabled_at: null },
+    notifications: structuredClone(notifications), notificationUpdates: 0,
+    user: { id: USER, total_xp: totalXp, daily_goal_minutes: targetMinutes, daily_goal_reminders_enabled: null, daily_goal_reminders_enabled_at: null },
     contextAccessible: true, failReceipt: false, failNotification,
   };
   const repository = {
-    async withUserTransaction(_userId, callback) {
+    async withUserTransaction(userId, callback) {
       const before = structuredClone(state);
-      try { return await callback(tx()); } catch (error) { for (const key of Object.keys(state)) state[key] = before[key]; throw error; }
+      try { return await callback(tx(userId)); } catch (error) { for (const key of Object.keys(state)) state[key] = before[key]; throw error; }
     },
   };
-  function tx() { return {
+  function tx(userId) { return {
     findAuthorizedActivityContext: async () => state.contextAccessible ? { id: LEARNING } : null,
     findTrackingSession: async (id) => state.sessions.find((x) => x.id === id) ?? null,
     createTrackingSession: async (data) => { const row = { ...data, engagement_expires_at: null, last_meaningful_at: null, closed_at: null }; state.sessions.push(row); return row; },
@@ -442,7 +517,28 @@ function createHarness({ activeMilliseconds = null, targetMinutes = null, totalX
     findPreference: async () => state.user,
     updatePreference: async (data) => { Object.assign(state.user, data); return { count: 1 }; },
     incrementTotalXp: async (amount) => { state.user.total_xp += amount; return { total_xp: state.user.total_xp }; },
-    createNotification: async (data) => { if (state.failNotification) throw new Error("injected notification failure"); state.notifications.push({ ...data, user_id: USER }); return data; },
+    createNotification: async (data) => { if (state.failNotification) throw new Error("injected notification failure"); state.notifications.push({ ...data, user_id: userId }); return data; },
+    listNotifications: async ({ before, take }) => state.notifications
+      .filter((row) => row.user_id === userId)
+      .filter((row) => !before || row.created_at < before.createdAt || (row.created_at.getTime() === before.createdAt.getTime() && row.id < before.id))
+      .sort((left, right) => right.created_at - left.created_at || right.id.localeCompare(left.id))
+      .slice(0, take),
+    countUnreadNotifications: async () => state.notifications.filter((row) => row.user_id === userId && row.read_at === null).length,
+    findNotification: async (id) => state.notifications.find((row) => row.id === id && row.user_id === userId) ?? null,
+    markNotificationRead: async (id, readAt) => { const row = state.notifications.find((item) => item.id === id && item.user_id === userId); if (!row) return { count: 0 }; row.read_at = readAt; state.notificationUpdates += 1; return { count: 1 }; },
   }; }
   return { state, repository };
+}
+
+function notification(index, userId = USER) {
+  return {
+    id: `55555555-5555-4555-8555-${String(999_999_999_999 - index).padStart(12, "0")}`,
+    user_id: userId,
+    type: "DAILY_GOAL_COMPLETED",
+    title: `Notification ${index}`,
+    body: "Body",
+    application_date: new Date("2026-10-26T00:00:00.000Z"),
+    created_at: new Date(Date.parse("2026-10-26T12:00:00.000Z") - index * 1_000),
+    read_at: null,
+  };
 }

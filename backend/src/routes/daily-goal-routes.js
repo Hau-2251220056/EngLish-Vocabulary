@@ -12,3 +12,12 @@ export function createDailyGoalRouter({ controller, authenticationMiddleware, us
   router.post("/tracking-sessions/:id/close", controller.close);
   return router;
 }
+
+export function createNotificationRouter({ controller, authenticationMiddleware, userAuthorizationMiddleware }) {
+  const router = express.Router();
+  router.use(authenticationMiddleware, userAuthorizationMiddleware);
+  router.get("/", controller.listNotifications);
+  router.get("/unread-count", controller.countUnreadNotifications);
+  router.patch("/:id/read", controller.markNotificationRead);
+  return router;
+}

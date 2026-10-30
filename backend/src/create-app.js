@@ -26,7 +26,7 @@ import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createLearningRouter } from "./routes/learning-routes.js";
 import { createQuizRouter } from "./routes/quiz-routes.js";
 import { createLearningSessionRouter, createUserStreakRouter } from "./routes/learning-session-routes.js";
-import { createDailyGoalRouter } from "./routes/daily-goal-routes.js";
+import { createDailyGoalRouter, createNotificationRouter } from "./routes/daily-goal-routes.js";
 import {
   createAdminTopicRouter,
   createPublicTopicRouter,
@@ -189,6 +189,11 @@ export function createApp({ prisma, learningNow, dailyGoalNow, coverStorage, cov
     authenticationMiddleware,
     userAuthorizationMiddleware,
   });
+  const notificationRouter = createNotificationRouter({
+    controller: dailyGoalController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
   const app = express();
 
   app.use(express.json({ strict: false }));
@@ -204,6 +209,7 @@ export function createApp({ prisma, learningNow, dailyGoalNow, coverStorage, cov
   app.use("/api/learning-sessions", learningSessionRouter);
   app.use("/api/users/me", userStreakRouter);
   app.use("/api/daily-goal", dailyGoalRouter);
+  app.use("/api/notifications", notificationRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/vocabulary", adminVocabularyRouter);
   app.use("/api/admin/vocabulary-sets", adminVocabularySetRouter);

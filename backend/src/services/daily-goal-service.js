@@ -20,6 +20,10 @@ const PAUSE_REASONS = new Set(["HIDDEN", "BLURRED", "IDLE", "ROUTE_EXIT", "LOGOU
 const REPLAYABLE_TERMINAL_CODES = new Set(["IDLE_RESUME_REQUIRED"]);
 const POSTGRESQL_BIGINT_MAX = 9_223_372_036_854_775_807n;
 const DAILY_GOAL_REWARD_XP = 10;
+const DEFAULT_NOTIFICATION_PAGE_SIZE = 20;
+const MAX_NOTIFICATION_PAGE_SIZE = 50;
+const MAX_NOTIFICATION_CURSOR_LENGTH = 512;
+const NOTIFICATION_CURSOR_VERSION = 1;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
   body: "You completed your Daily Goal and earned 10 XP.",
@@ -41,6 +45,46 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
   }
 
   return Object.freeze({
+    listNotifications(userId, query) {
+      const request = validateNotificationListQuery(query);
+      const before = request.cursor ? decodeNotificationCursor(request.cursor) : null;
+      return transact(userId, async (repository) => {
+        const rows = await repository.listNotifications({ before, take: request.pageSize + 1 });
+        const hasNextPage = rows.length > request.pageSize;
+        const items = rows.slice(0, request.pageSize).map(notificationProjection);
+        const boundary = hasNextPage ? rows[request.pageSize - 1] : null;
+        return {
+          items,
+          unread_count: await repository.countUnreadNotifications(),
+          next_cursor: boundary ? encodeNotificationCursor(boundary) : null,
+        };
+      });
+    },
+
+    countUnreadNotifications(userId) {
+      return transact(userId, async (repository) => ({
+        unread_count: await repository.countUnreadNotifications(),
+      }));
+    },
+
+    markNotificationRead(userId, notificationId, input) {
+      requireUuid(notificationId, notificationValidation);
+      validateMarkNotificationRead(input);
+      return transact(userId, async (repository, instant) => {
+        const notification = await repository.findNotification(notificationId);
+        if (!notification) throw notificationNotFound();
+        const readAt = notification.read_at ?? instant;
+        if (notification.read_at === null) {
+          const updated = await repository.markNotificationRead(notificationId, readAt);
+          if (updated.count !== 1) throw notificationNotFound();
+        }
+        return {
+          notification: notificationProjection({ ...notification, read_at: readAt }),
+          unread_count: await repository.countUnreadNotifications(),
+        };
+      });
+    },
+
     getGoal(userId) {
       return transact(userId, async (repository, instant) => projectGoal(repository, applicationDate(instant)));
     },
@@ -385,6 +429,75 @@ function validateGoalUpdate(input) {
   if (!Number.isInteger(request.target_minutes) || request.target_minutes < 10 || request.target_minutes > 240) throw validation();
   return request;
 }
+function validateNotificationListQuery(query) {
+  if (!isRecord(query) || Object.keys(query).some((key) => !["cursor", "page_size"].includes(key))) {
+    throw notificationValidation();
+  }
+  if (query.cursor !== undefined && (typeof query.cursor !== "string" || query.cursor.length === 0)) {
+    throw notificationValidation();
+  }
+  let pageSize = DEFAULT_NOTIFICATION_PAGE_SIZE;
+  if (query.page_size !== undefined) {
+    if (typeof query.page_size !== "string" || !/^[1-9]\d*$/.test(query.page_size)) throw notificationValidation();
+    pageSize = Number(query.page_size);
+    if (!Number.isSafeInteger(pageSize) || pageSize > MAX_NOTIFICATION_PAGE_SIZE) throw notificationValidation();
+  }
+  return { cursor: query.cursor, pageSize };
+}
+function validateMarkNotificationRead(input) {
+  const request = exact(input, ["read"], ["read"], notificationValidation);
+  if (request.read !== true) throw notificationValidation();
+}
+function notificationProjection(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    application_date: dateOnly(row.application_date),
+    created_at: requireDate(row.created_at).toISOString(),
+    read_at: row.read_at === null ? null : requireDate(row.read_at).toISOString(),
+  };
+}
+function encodeNotificationCursor(row) {
+  const payload = {
+    v: NOTIFICATION_CURSOR_VERSION,
+    created_at: requireDate(row.created_at).toISOString(),
+    id: requireUuid(row.id, notificationValidation),
+  };
+  const serializedPayload = JSON.stringify(payload);
+  const envelope = { payload, checksum: createHash("sha256").update(serializedPayload).digest("hex") };
+  return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+}
+function decodeNotificationCursor(cursor) {
+  if (cursor.length > MAX_NOTIFICATION_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw notificationValidation();
+  let envelope;
+  try {
+    const bytes = Buffer.from(cursor, "base64url");
+    if (bytes.toString("base64url") !== cursor) throw new Error("Non-canonical cursor encoding.");
+    envelope = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw notificationValidation();
+  }
+  if (!isRecord(envelope) || !isRecord(envelope.payload)) throw notificationValidation();
+  try {
+    requireExactKeys(envelope, ["payload", "checksum"]);
+    requireExactKeys(envelope.payload, ["v", "created_at", "id"]);
+  } catch {
+    throw notificationValidation();
+  }
+  const { payload, checksum } = envelope;
+  if (payload.v !== NOTIFICATION_CURSOR_VERSION || !isCanonicalInstant(payload.created_at)
+    || typeof checksum !== "string" || !/^[0-9a-f]{64}$/.test(checksum)) throw notificationValidation();
+  requireUuid(payload.id, notificationValidation);
+  const expected = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  if (checksum !== expected) throw notificationValidation();
+  return { createdAt: new Date(payload.created_at), id: payload.id };
+}
+function dateOnly(value) {
+  const instant = requireDate(value);
+  return instant.toISOString().slice(0, 10);
+}
 function requireExactKeys(value, expected) {
   const actual = Object.keys(value).sort();
   const wanted = [...expected].sort();
@@ -403,11 +516,13 @@ function validateEstablish(input) { const x = exact(input, ["operation_id", "act
 function validateEngagement(input) { const x = exact(input, ["operation_id", "generation", "event_type"], ["operation_id", "event_type"]); requireUuid(x.operation_id); if (typeof x.event_type !== "string") throw validation(); if (x.generation !== undefined) x.generation = generation(x.generation); return x; }
 function validateHeartbeat(input) { const x = exact(input, ["operation_id", "generation", "eligibility"], ["operation_id", "generation", "eligibility"]); requireUuid(x.operation_id); x.generation = generation(x.generation); if (x.eligibility !== ELIGIBILITY) throw validation(); return x; }
 function validateEnd(input, closing) { const allowed = closing ? ["operation_id", "generation"] : ["operation_id", "generation", "reason"]; const x = exact(input, allowed, allowed); requireUuid(x.operation_id); x.generation = generation(x.generation); if (!closing && !PAUSE_REASONS.has(x.reason)) throw validation(); return x; }
-function exact(input, allowed, required) { if (!input || typeof input !== "object" || Array.isArray(input)) throw validation(); if (Object.keys(input).some((key) => !allowed.includes(key)) || required.some((key) => !Object.hasOwn(input, key))) throw validation(); return { ...input }; }
-function requireUuid(value) { if (typeof value !== "string" || !UUID.test(value)) throw validation(); return value; }
+function exact(input, allowed, required, errorFactory = validation) { if (!input || typeof input !== "object" || Array.isArray(input)) throw errorFactory(); if (Object.keys(input).some((key) => !allowed.includes(key)) || required.some((key) => !Object.hasOwn(input, key))) throw errorFactory(); return { ...input }; }
+function requireUuid(value, errorFactory = validation) { if (typeof value !== "string" || !UUID.test(value)) throw errorFactory(); return value; }
 function generation(value) { if (!(typeof value === "string" && /^(0|[1-9]\d*)$/.test(value))) throw validation(); return BigInt(value); }
 function requireDate(value) { if (!(value instanceof Date) || Number.isNaN(value.getTime())) throw new TypeError("Server clock returned an invalid Date."); return new Date(value); }
 function validation() { return new DailyGoalServiceError("DAILY_GOAL_VALIDATION_ERROR", "The request is invalid."); }
 function notFound() { return new DailyGoalServiceError("DAILY_GOAL_NOT_FOUND", "Daily Goal tracking session or activity context was not found."); }
+function notificationValidation() { return new DailyGoalServiceError("VALIDATION_ERROR", "The notification request is invalid."); }
+function notificationNotFound() { return new DailyGoalServiceError("NOT_FOUND", "Notification was not found."); }
 function conflict(code) { return new DailyGoalServiceError(code, "The Daily Goal tracking operation conflicts with current state."); }
 function ownership(currentGeneration) { const error = conflict("TRACKING_OWNERSHIP_CONFLICT"); error.details = { owner: false, current_generation: currentGeneration.toString(), retry_after_ms: 0 }; return error; }

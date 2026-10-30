@@ -51,6 +51,31 @@ test("owned session, monitor and notification operations always include authenti
   assert.equal(JSON.stringify(harness.calls).includes(OTHER), false);
 });
 
+test("notification pagination is owner-scoped with a stable created_at and id boundary", async () => {
+  const harness = createHarness();
+  const createdAt = new Date("2026-10-26T08:00:00.000Z");
+  await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, async (repository) => {
+    await repository.listNotifications({ before: { createdAt, id: "notification" }, take: 21 });
+    await repository.countUnreadNotifications();
+  });
+  const list = harness.calls.find((call) => call.kind === "notification.findMany").args;
+  assert.deepEqual(list.where, {
+    user_id: USER,
+    OR: [
+      { created_at: { lt: createdAt } },
+      { created_at: createdAt, id: { lt: "notification" } },
+    ],
+  });
+  assert.deepEqual(list.orderBy, [{ created_at: "desc" }, { id: "desc" }]);
+  assert.equal(list.take, 21);
+  assert.deepEqual(Object.keys(list.select), [
+    "id", "type", "title", "body", "application_date", "created_at", "read_at",
+  ]);
+  assert.deepEqual(harness.calls.find((call) => call.kind === "notification.count").args.where, {
+    user_id: USER, read_at: null,
+  });
+});
+
 test("activity context queries remain owner/access scoped inside the USER transaction", async () => {
   const harness = createHarness();
   const observedAt = new Date("2026-10-26T00:00:00.000Z");
