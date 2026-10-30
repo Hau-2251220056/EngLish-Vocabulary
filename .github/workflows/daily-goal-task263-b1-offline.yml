@@ -1,0 +1,137 @@
+name: Daily Goal TASK-263 B1 Offline
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact guarded TASK-263 B1 offline operation
+        required: true
+        type: choice
+        default: NOT_AUTHORIZED
+        options:
+          - NOT_AUTHORIZED
+          - RUN_TASK263_B1_OFFLINE
+      authorize_task263_b1:
+        description: HUMAN authorization for this exact offline run
+        required: true
+        type: boolean
+        default: false
+      expected_source_sha:
+        description: Exact lowercase feature commit SHA authorized by HUMAN
+        required: true
+        type: string
+      expected_source_ref:
+        description: Exact feature ref authorized by HUMAN
+        required: true
+        type: string
+      expected_workflow_sha:
+        description: Exact lowercase main commit SHA containing this workflow
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Verify immutable TASK-263 B1 offline dispatch binding
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_WORKFLOW: ${{ github.workflow }}
+          EVENT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          EVENT_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ inputs.expected_workflow_sha }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_AUTHORIZATION: ${{ inputs.authorize_task263_b1 }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_NAME" == "workflow_dispatch" ]] || { echo "Refusal: event mismatch"; exit 1; }
+          [[ "$EVENT_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]] || { echo "Refusal: repository mismatch"; exit 1; }
+          [[ "$REQUESTED_OPERATION" == "RUN_TASK263_B1_OFFLINE" ]] || { echo "Refusal: operation mismatch"; exit 1; }
+          [[ "$REQUESTED_AUTHORIZATION" == "true" ]] || { echo "Refusal: authorization missing"; exit 1; }
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
+          [[ "$EVENT_WORKFLOW" == "Daily Goal TASK-263 B1 Offline" ]] || { echo "Refusal: workflow name mismatch"; exit 1; }
+          [[ "$EVENT_WORKFLOW_REF" == "Hau-2251220056/EngLish-Vocabulary/.github/workflows/daily-goal-task263-b1-offline.yml@refs/heads/main" ]] || { echo "Refusal: workflow ref mismatch"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/main" ]] || { echo "Refusal: dispatch ref mismatch"; exit 1; }
+          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: event SHA malformed"; exit 1; }
+          [[ "$EVENT_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: workflow SHA malformed"; exit 1; }
+          [[ "$EXPECTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: expected workflow SHA malformed"; exit 1; }
+          [[ "$EVENT_SHA" == "$EVENT_WORKFLOW_SHA" ]] || { echo "Refusal: workflow/event SHA mismatch"; exit 1; }
+          [[ "$EVENT_SHA" == "$EXPECTED_WORKFLOW_SHA" ]] || { echo "Refusal: expected workflow SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: source ref mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Refusal: source SHA malformed"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" == "9f5dc7019211e87a0d9eed472c6eada238903cec" ]] || { echo "Refusal: unauthorized source SHA"; exit 1; }
+          remote_source_sha="$(git ls-remote --exit-code --heads https://github.com/Hau-2251220056/EngLish-Vocabulary.git refs/heads/feature/daily-goal-v1 | awk 'NR == 1 { print $1 } END { if (NR != 1) exit 1 }')"
+          [[ "$remote_source_sha" == "$EXPECTED_SOURCE_SHA" ]] || { echo "Refusal: remote source HEAD mismatch"; exit 1; }
+
+  offline-verification:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Confirm TASK-263 B1 execution identity and refuse reruns
+        shell: bash
+        working-directory: .
+        env:
+          EVENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ inputs.expected_workflow_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_RUN_ATTEMPT" == "1" ]] || { echo "Refusal: workflow reruns are not authorized"; exit 1; }
+          [[ "$EVENT_REF" == "refs/heads/main" ]] || { echo "Refusal: dispatch ref mismatch"; exit 1; }
+          [[ "$EVENT_SHA" == "$EVENT_WORKFLOW_SHA" ]] || { echo "Refusal: workflow/event SHA mismatch"; exit 1; }
+          [[ "$EVENT_SHA" == "$EXPECTED_WORKFLOW_SHA" ]] || { echo "Refusal: expected workflow SHA mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_REF" == "refs/heads/feature/daily-goal-v1" ]] || { echo "Refusal: source ref mismatch"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" == "9f5dc7019211e87a0d9eed472c6eada238903cec" ]] || { echo "Refusal: unauthorized source SHA"; exit 1; }
+
+      - name: Check out exact authorized feature revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9f5dc7019211e87a0d9eed472c6eada238903cec
+          persist-credentials: false
+
+      - name: Verify detached source checkout
+        shell: bash
+        working-directory: .
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -euo pipefail
+          checkout_sha="$(git rev-parse HEAD)"
+          [[ "$checkout_sha" == "$EXPECTED_SOURCE_SHA" ]] || { echo "Refusal: checkout SHA mismatch"; exit 1; }
+          if git symbolic-ref -q HEAD >/dev/null; then echo "Refusal: checkout is not detached"; exit 1; fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+
+      - name: Install locked production dependencies
+        run: npm ci --ignore-scripts --omit=dev
+
+      - name: Run TASK-263 B1 repository tests
+        run: node --test --test-concurrency=1 test/daily-goal/daily-goal-repository.test.js
+
+      - name: Run TASK-263 B1 service tests
+        run: node --test --test-concurrency=1 test/daily-goal/daily-goal-service.test.js
+
+      - name: Run TASK-263 B1 HTTP contract tests
+        run: node --test --test-concurrency=1 test/daily-goal/daily-goal-http-contract.test.js
