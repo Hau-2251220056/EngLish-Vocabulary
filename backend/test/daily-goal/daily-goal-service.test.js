@@ -26,8 +26,8 @@ test("notification list defaults to 20, caps at 50, and paginates by a validated
   assert.equal(second.items.length, 32);
   assert.equal(second.items[0].id, notifications[20].id);
   assert.equal(second.next_cursor, null);
-  await assert.rejects(service.listNotifications(USER, { page_size: "51" }), hasCode("VALIDATION_ERROR"));
-  await assert.rejects(service.listNotifications(USER, { page_size: "0" }), hasCode("VALIDATION_ERROR"));
+  assert.throws(() => service.listNotifications(USER, { page_size: "51" }), hasCode("VALIDATION_ERROR"));
+  assert.throws(() => service.listNotifications(USER, { page_size: "0" }), hasCode("VALIDATION_ERROR"));
 });
 
 test("equal-timestamp keyset pagination yields exact descending IDs across three pages", async () => {
@@ -55,7 +55,7 @@ test("notification cursor rejects malformed, oversized, modified, repeated and u
   for (const query of [
     { cursor: "not+base64url" }, { cursor: "x".repeat(513) }, { cursor: changed },
     { cursor: [page.next_cursor] }, { page_size: ["20"] }, { extra: "value" },
-  ]) await assert.rejects(service.listNotifications(USER, query), hasCode("VALIDATION_ERROR"));
+  ]) assert.throws(() => service.listNotifications(USER, query), hasCode("VALIDATION_ERROR"));
 });
 
 test("notification reads are owner-safe, idempotent, and return authoritative unread counts", async () => {
@@ -74,9 +74,9 @@ test("notification reads are owner-safe, idempotent, and return authoritative un
   assert.equal(repeated.notification.read_at, first.notification.read_at);
   assert.equal(harness.state.notificationUpdates, 1);
   for (const input of [{}, { read: false }, { read: true, user_id: USER }]) {
-    await assert.rejects(service.markNotificationRead(USER, own.id, input), hasCode("VALIDATION_ERROR"));
+    assert.throws(() => service.markNotificationRead(USER, own.id, input), hasCode("VALIDATION_ERROR"));
   }
-  await assert.rejects(service.markNotificationRead(USER, "not-a-uuid", { read: true }), hasCode("VALIDATION_ERROR"));
+  assert.throws(() => service.markNotificationRead(USER, "not-a-uuid", { read: true }), hasCode("VALIDATION_ERROR"));
   for (const id of [foreign.id, SESSION_B]) {
     await assert.rejects(service.markNotificationRead(USER, id, { read: true }), hasCode("NOT_FOUND"));
   }
