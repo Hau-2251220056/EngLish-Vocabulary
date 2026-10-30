@@ -24,6 +24,8 @@ const DEFAULT_NOTIFICATION_PAGE_SIZE = 20;
 const MAX_NOTIFICATION_PAGE_SIZE = 50;
 const MAX_NOTIFICATION_CURSOR_LENGTH = 512;
 const NOTIFICATION_CURSOR_VERSION = 1;
+const MONITOR_CHECK_AFTER_SECONDS = 60;
+const MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS = 150_000;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
   body: "You completed your Daily Goal and earned 10 XP.",
@@ -129,6 +131,85 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         if (updated.count !== 1) throw notFound();
         const response = { reminder_enabled: request.enabled, updated_at: instant.toISOString() };
         await receipt(repository, request.operation_id, "REMINDER_PREFERENCE_UPDATE", fingerprint, null, null, 0n, response, instant);
+        return { ...response, replayed: false };
+      });
+    },
+
+    establishMonitor(userId, input) {
+      const request = validateMonitorOperation(input);
+      return transact(userId, async (repository, instant) => {
+        const fingerprint = digest(request);
+        const replay = await replayOrConflict(repository, request.operation_id, "MONITOR_CREATE", fingerprint);
+        if (replay) return replay;
+        const preference = await repository.findPreference();
+        if (!preference) throw notFound();
+        const session = await repository.createMonitorSession({
+          id: uuid(), started_at: instant, last_seen_at: instant,
+          continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null,
+        });
+        const response = {
+          monitor_session_id: session.id,
+          reminder_enabled: preference.daily_goal_reminders_enabled ?? true,
+          target_configured: preference.daily_goal_minutes !== null,
+          unread_count: await repository.countUnreadNotifications(),
+          check_after_seconds: MONITOR_CHECK_AFTER_SECONDS,
+        };
+        await monitorReceipt(repository, request.operation_id, "MONITOR_CREATE", fingerprint, session.id, response, instant);
+        return { ...response, replayed: false };
+      });
+    },
+
+    checkMonitor(userId, monitorSessionId, input) {
+      requireUuid(monitorSessionId);
+      const request = validateMonitorOperation(input);
+      return transact(userId, async (repository, instant) => {
+        const fingerprint = digest({ monitor_session_id: monitorSessionId, ...request });
+        const replay = await replayOrConflict(repository, request.operation_id, "MONITOR_CHECK", fingerprint);
+        if (replay) return replay;
+        const session = await repository.findMonitorSession(monitorSessionId);
+        if (!session || session.closed_at !== null) throw notFound();
+        const preference = await repository.findPreference();
+        if (!preference) throw notFound();
+        const longGap = instant.getTime() - requireDate(session.last_seen_at).getTime()
+          > MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS;
+        const eligibleBaseline = longGap
+          ? instant
+          : laterMonitorBaseline(session.eligible_baseline_at, preference, instant);
+        const update = {
+          last_seen_at: instant,
+          ...(longGap ? { continuity_started_at: instant } : {}),
+          ...(eligibleBaseline.getTime() !== requireDate(session.eligible_baseline_at).getTime()
+            ? { eligible_baseline_at: eligibleBaseline } : {}),
+        };
+        const updated = await repository.updateMonitorSession(monitorSessionId, update);
+        if (updated.count !== 1) throw notFound();
+        const response = {
+          monitor_session_id: session.id,
+          last_seen_at: instant.toISOString(),
+          continuity_started_at: (longGap ? instant : requireDate(session.continuity_started_at)).toISOString(),
+          eligible_baseline_at: eligibleBaseline.toISOString(),
+        };
+        await monitorReceipt(repository, request.operation_id, "MONITOR_CHECK", fingerprint, session.id, response, instant);
+        return { ...response, replayed: false };
+      });
+    },
+
+    closeMonitor(userId, monitorSessionId, input) {
+      requireUuid(monitorSessionId);
+      const request = validateMonitorOperation(input);
+      return transact(userId, async (repository, instant) => {
+        const session = await repository.findMonitorSession(monitorSessionId);
+        if (!session) throw notFound();
+        const fingerprint = digest({ monitor_session_id: monitorSessionId, ...request });
+        const replay = await replayOrConflict(repository, request.operation_id, "MONITOR_CLOSE", fingerprint);
+        if (replay) return replay;
+        const closedAt = session.closed_at === null ? instant : requireDate(session.closed_at);
+        if (session.closed_at === null) {
+          const updated = await repository.updateMonitorSession(monitorSessionId, { closed_at: closedAt });
+          if (updated.count !== 1) throw notFound();
+        }
+        const response = { monitor_session_id: session.id, closed_at: closedAt.toISOString() };
+        await monitorReceipt(repository, request.operation_id, "MONITOR_CLOSE", fingerprint, session.id, response, instant);
         return { ...response, replayed: false };
       });
     },
@@ -322,6 +403,13 @@ async function receipt(repository, operationId, operationType, requestFingerprin
     : { outcome: "SUCCESS", data: response };
   await repository.createOperationReceipt({ operation_id: operationId, tracking_session_id: trackingSessionId, generation, operation_type: operationType, request_fingerprint: requestFingerprint, credited_milliseconds: credited, response_projection: replayOutcome, created_at: instant });
 }
+async function monitorReceipt(repository, operationId, operationType, requestFingerprint, monitorSessionId, response, instant) {
+  await repository.createOperationReceipt({
+    operation_id: operationId, monitor_session_id: monitorSessionId, generation: null,
+    operation_type: operationType, request_fingerprint: requestFingerprint,
+    credited_milliseconds: 0n, response_projection: { outcome: "SUCCESS", data: response }, created_at: instant,
+  });
+}
 async function fence(repository, session, owner, instant, status) {
   if (owner) await repository.updateOwnerAtGeneration(owner.generation, { tracking_session_id: null, lease_expires_at: null, last_accounted_at: null, generation: nextOwnershipGeneration(owner.generation) });
   await repository.updateTrackingSession(session.id, { status, ...(status === "CLOSED" ? { closed_at: instant } : {}) });
@@ -342,6 +430,9 @@ function projection(session, owner, credited) { return { tracking_session_id: se
 function validateStoredSuccess(operationType, data) {
   if (operationType === "GOAL_UPDATE") return validateStoredGoalUpdate(data);
   if (operationType === "REMINDER_PREFERENCE_UPDATE") return validateStoredReminderPreferenceUpdate(data);
+  if (operationType === "MONITOR_CREATE") return validateStoredMonitorCreate(data);
+  if (operationType === "MONITOR_CHECK") return validateStoredMonitorCheck(data);
+  if (operationType === "MONITOR_CLOSE") return validateStoredMonitorClose(data);
   const operations = new Set(["CREATE", "READY", "RESUME", "INTERACTION", "HEARTBEAT", "PAUSE", "CLOSE"]);
   if (!operations.has(operationType) || !isRecord(data)) throw invalidReplay();
   const keys = ["tracking_session_id", "status", "owner", "generation", "lease_expires_at", "engagement_expires_at", "credited_milliseconds", "projection"];
@@ -376,6 +467,29 @@ function validateStoredSuccess(operationType, data) {
     credited_milliseconds: data.credited_milliseconds,
     projection: { credited_milliseconds: data.credited_milliseconds },
   };
+}
+function validateStoredMonitorCreate(data) {
+  if (!isRecord(data)) throw invalidReplay();
+  requireExactKeys(data, ["monitor_session_id", "reminder_enabled", "target_configured", "unread_count", "check_after_seconds"]);
+  requireUuid(data.monitor_session_id, invalidReplay);
+  if (typeof data.reminder_enabled !== "boolean" || typeof data.target_configured !== "boolean"
+    || !Number.isSafeInteger(data.unread_count) || data.unread_count < 0
+    || data.check_after_seconds !== MONITOR_CHECK_AFTER_SECONDS) throw invalidReplay();
+  return structuredClone(data);
+}
+function validateStoredMonitorCheck(data) {
+  if (!isRecord(data)) throw invalidReplay();
+  requireExactKeys(data, ["monitor_session_id", "last_seen_at", "continuity_started_at", "eligible_baseline_at"]);
+  requireUuid(data.monitor_session_id, invalidReplay);
+  if (![data.last_seen_at, data.continuity_started_at, data.eligible_baseline_at].every(isCanonicalInstant)) throw invalidReplay();
+  return structuredClone(data);
+}
+function validateStoredMonitorClose(data) {
+  if (!isRecord(data)) throw invalidReplay();
+  requireExactKeys(data, ["monitor_session_id", "closed_at"]);
+  requireUuid(data.monitor_session_id, invalidReplay);
+  if (!isCanonicalInstant(data.closed_at)) throw invalidReplay();
+  return structuredClone(data);
 }
 function validateStoredReminderPreferenceUpdate(data) {
   if (!isRecord(data)) throw invalidReplay();
@@ -463,6 +577,17 @@ function validateReminderPreferenceUpdate(input) {
   requireUuid(request.operation_id);
   if (typeof request.enabled !== "boolean") throw validation();
   return { operation_id: request.operation_id, enabled: request.enabled };
+}
+function validateMonitorOperation(input) {
+  const request = exact(input, ["operation_id"], ["operation_id"]);
+  requireUuid(request.operation_id);
+  return request;
+}
+function laterMonitorBaseline(currentBaseline, preference, instant) {
+  const current = requireDate(currentBaseline);
+  if (preference.daily_goal_reminders_enabled !== true || preference.daily_goal_reminders_enabled_at === null) return current;
+  const enabledAt = requireDate(preference.daily_goal_reminders_enabled_at);
+  return enabledAt.getTime() > current.getTime() && enabledAt.getTime() <= instant.getTime() ? enabledAt : current;
 }
 function validateNotificationListQuery(query) {
   if (!isRecord(query) || Object.keys(query).some((key) => !["cursor", "page_size"].includes(key))) {

@@ -337,6 +337,30 @@ Success: `200` with the standard `{ "success": true, "data": ... }` envelope.
 
 This bounded B2 contract changes no notification record, completion notification, XP, reward, Streak, goal minutes, accumulated time, monitor session, or reminder eligibility/deduplication behavior. Its focused verification is offline only and does not establish PostgreSQL, Supabase, Preview, Production, migration, deployment, B3/B4, or DG-3 readiness.
 
+### 10.4. Daily Goal V1 Monitor Lifecycle — Bounded B3 Backend Contract
+
+These endpoints require the existing authenticated session and `USER` role. Ownership is derived only from the authenticated USER; request bodies never accept a USER ID, client timestamp, monitor baseline, reminder eligibility state or notification content. Guest and authenticated non-USER requests retain the safe `401` and `403` responses.
+
+Establish monitor:
+
+```text
+POST /api/daily-goal/monitor-sessions
+```
+
+The request body contains exactly `{ "operation_id": "<uuid>" }`. Success is `201`, or `200` for a matching receipt replay, with the standard success envelope and data `{ monitor_session_id, reminder_enabled, target_configured, unread_count, check_after_seconds }`. The Backend generates the monitor UUID and initializes `started_at`, `last_seen_at`, `continuity_started_at` and `eligible_baseline_at` from its authoritative clock. Effective reminder preference continues to project an unsaved value as enabled.
+
+Close monitor:
+
+```text
+POST /api/daily-goal/monitor-sessions/:id/close
+```
+
+The request body contains exactly `{ "operation_id": "<uuid>" }`. Success is `200` with data `{ monitor_session_id, closed_at }`. Both identities must be valid UUIDs. The initial close stores a Backend-generated canonical `closed_at`; matching replay returns the stored projection. A new operation closing the same owned monitor returns that existing projection without changing the timestamp. Foreign or unknown monitors return safe `404`, and incompatible operation-ID reuse returns `409 OPERATION_CONFLICT`.
+
+B3 also implements an internal owner-scoped, transactionally locked monitor check-state operation, but no public check route is installed. An ordinary internal check advances only server-authoritative `last_seen_at` and synchronizes a later B2 re-enable baseline. A gap of exactly 150 seconds preserves continuity; a gap greater than 150 seconds resets `last_seen_at`, `continuity_started_at` and `eligible_baseline_at` to server time without backfill. Checks of closed monitors return safe `404`.
+
+B3 does not evaluate final reminder eligibility, return a placeholder public `reminder_created` result, create or deduplicate inactivity notifications, or modify XP, reward, goals, active time, tracking ownership or completion notifications. B4 must complete the approved public check response and reminder behavior before that route is exposed. B3 verification remains focused and offline until separately authorized evidence establishes otherwise; it makes no PostgreSQL, Supabase, Preview, Production, migration-activation or deployment claim.
+
 11. Topic
 
 Topic V1 classifies Vocabulary Sets conceptually, but returns and manages Topic metadata only.

@@ -167,6 +167,22 @@ test("day, receipt, reward, preference, monitor and notification writes stay own
   });
 });
 
+test("monitor operation receipts remain owner-scoped and linked only to their monitor parent", async () => {
+  const harness = createHarness();
+  await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, async (repository) => {
+    await repository.createOperationReceipt({
+      operation_id: "monitor-operation", monitor_session_id: "monitor", tracking_session_id: null,
+      operation_type: "MONITOR_CHECK", request_fingerprint: "fingerprint",
+      credited_milliseconds: 0n, response_projection: { outcome: "SUCCESS", data: {} },
+    });
+  });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "receipt.create").args.data, {
+    operation_id: "monitor-operation", monitor_session_id: "monitor", tracking_session_id: null,
+    operation_type: "MONITOR_CHECK", request_fingerprint: "fingerprint",
+    credited_milliseconds: 0n, response_projection: { outcome: "SUCCESS", data: {} }, user_id: USER,
+  });
+});
+
 test("transaction failure rolls back and never commits", async () => {
   const harness = createHarness();
   await assert.rejects(

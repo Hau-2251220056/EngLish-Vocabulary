@@ -781,6 +781,15 @@ Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 - Accepted scope: effective default-ON preference read through existing `GET /api/daily-goal`; authenticated USER-only `PUT /api/daily-goal/reminder-preference`; exact request validation and owner-scoped writes; server timestamp and re-enable baseline handling; idempotent operation receipts, safe conflicts, stored-replay validation, response DTO/error contracts, and isolation from TASK-262/B1 notifications, rewards, XP, goal and tracking behaviors.
 - Limitations: B2 GitHub Actions hosted verification `NOT RUN`; PostgreSQL/Supabase database, Preview/Production, migration and deployment behavior `NOT VERIFIED`; monitor lifecycle, reminder eligibility, creation and deduplication `NOT ACCEPTED`. TASK-263 B3–B5, TASK-264–277 and DG-3 remain unauthorized. TASK-263 and Daily Goal V1 remain `TODO`.
 
+#### Daily Goal V1 — TASK-263 B3 bounded acceptance checkpoint
+
+- TASK-263 B3: `HUMAN ACCEPTED — BOUNDED WINDOWS-HOST OFFLINE VERIFICATION PASS; MONITOR LIFECYCLE BACKEND SCOPE ONLY`.
+- Verification sequence: Gate B3-D initially passed `68/68` focused offline tests before the E3 replay correction. Gate B3-E4 passed syntax `6/6` and repository `20/20`, with service `37/38`; the single failure led to the Gate B3-E5 test-harness owner-scoping correction, where tests were not run. Gate B3-E6 passed service syntax, service `38/38`, and postflight.
+- Evidence boundary: HTTP-contract `12/12 PASS` originates from Gate B3-D and predates E3/E5. No complete `70/70` execution occurred on one final snapshot, and no committed B3 source SHA or hosted verification is claimed.
+- Accepted scope: authenticated owner-scoped monitor establishment; internal check-state lifecycle with no public check endpoint; server-authoritative continuity and the exact 150-second boundary; B2 re-enable baseline synchronization; idempotent closure; stable historical check replay after closure; owner-scoped operation receipts; focused offline coverage; and public establish/close routes.
+- Implementation state: B3 source changes remain uncommitted at the time of this acceptance record.
+- Limitations: PostgreSQL concurrency and real-stack behavior, Supabase, Preview/Production, migration activation and deployment remain `NOT VERIFIED`; B4 reminder eligibility, inactivity-notification creation and deduplication remain `NOT ACCEPTED`. TASK-263 B4–B5, TASK-264–277 and DG-3 remain unauthorized. TASK-263 and Daily Goal V1 remain `TODO`.
+
 XP Rules
 
 The current universal XP rules are:

@@ -148,6 +148,7 @@ test("reminder preference route uses exact PUT path and existing USER middleware
   const router = createDailyGoalRouter({
     controller: {
       getGoal: noop, updateGoal: noop, updateReminderPreference: noop,
+      establishMonitor: noop, closeMonitor: noop,
       establish: noop, engage: noop, heartbeat: noop, pause: noop, close: noop,
     },
     authenticationMiddleware: authentication,
@@ -168,6 +169,79 @@ test("reminder preference route uses exact PUT path and existing USER middleware
   const forbidden = response();
   installedMiddleware[1](request, forbidden, assertNoNext);
   assert.equal(forbidden.statusCode, 403);
+});
+
+test("monitor establish and close controllers derive owner and expose only approved B3 DTOs", async () => {
+  const calls = [];
+  const controller = createDailyGoalController({ dailyGoalService: {
+    establishMonitor: async (userId, body) => {
+      calls.push({ method: "establish", userId, body });
+      return { monitor_session_id: USER, reminder_enabled: true, target_configured: false, unread_count: 2, check_after_seconds: 60, replayed: false, secret: true };
+    },
+    closeMonitor: async (userId, id, body) => {
+      calls.push({ method: "close", userId, id, body });
+      return { monitor_session_id: id, closed_at: "2026-10-30T00:00:00.000Z", replayed: true, secret: true };
+    },
+  } });
+  const body = { operation_id: USER };
+  const established = response();
+  await controller.establishMonitor({ user: { id: USER }, body }, established, assertNoNext);
+  assert.equal(established.statusCode, 201);
+  assert.deepEqual(established.body.data, {
+    monitor_session_id: USER, reminder_enabled: true, target_configured: false,
+    unread_count: 2, check_after_seconds: 60,
+  });
+  const closed = response();
+  await controller.closeMonitor({ user: { id: USER }, params: { id: USER }, body }, closed, assertNoNext);
+  assert.deepEqual(closed.body.data, { monitor_session_id: USER, closed_at: "2026-10-30T00:00:00.000Z" });
+  assert.deepEqual(calls, [
+    { method: "establish", userId: USER, body },
+    { method: "close", userId: USER, id: USER, body },
+  ]);
+});
+
+test("monitor controllers map replay and safe validation, ownership and conflict failures", async () => {
+  const replayController = createDailyGoalController({ dailyGoalService: {
+    establishMonitor: async () => ({ monitor_session_id: USER, reminder_enabled: true, target_configured: false, unread_count: 0, check_after_seconds: 60, replayed: true }),
+  } });
+  const replay = response();
+  await replayController.establishMonitor({ user: { id: USER }, body: { operation_id: USER } }, replay, assertNoNext);
+  assert.equal(replay.statusCode, 200);
+
+  for (const [code, status] of [
+    ["DAILY_GOAL_VALIDATION_ERROR", 400], ["DAILY_GOAL_NOT_FOUND", 404], ["OPERATION_CONFLICT", 409],
+  ]) {
+    const controller = createDailyGoalController({ dailyGoalService: {
+      closeMonitor: async () => { const error = new Error("Safe monitor failure."); error.code = code; throw error; },
+    } });
+    const result = response();
+    await controller.closeMonitor({ user: { id: USER }, params: { id: USER }, body: { operation_id: USER } }, result, assertNoNext);
+    assert.equal(result.statusCode, status);
+    assert.deepEqual(result.body.error, { code, message: "Safe monitor failure." });
+  }
+});
+
+test("monitor routes publish establish and close behind USER middleware but not check", async () => {
+  const authentication = createAuthenticationMiddleware({ authenticationService: { getCurrentUser: async () => ({ id: USER, role: "ADMIN" }) } });
+  const authorizeUser = createRoleAuthorizationMiddleware({ allowedRoles: ["USER"] });
+  const noop = (_req, _res, next) => next?.();
+  const router = createDailyGoalRouter({
+    controller: {
+      getGoal: noop, updateGoal: noop, updateReminderPreference: noop,
+      establishMonitor: noop, closeMonitor: noop,
+      establish: noop, engage: noop, heartbeat: noop, pause: noop, close: noop,
+    },
+    authenticationMiddleware: authentication,
+    userAuthorizationMiddleware: authorizeUser,
+  });
+  const routes = router.stack.filter((layer) => layer.route).map((layer) => ({
+    path: layer.route.path, methods: Object.keys(layer.route.methods),
+  }));
+  assert.ok(routes.some((route) => route.path === "/monitor-sessions" && route.methods.includes("post")));
+  assert.ok(routes.some((route) => route.path === "/monitor-sessions/:id/close" && route.methods.includes("post")));
+  assert.equal(routes.some((route) => route.path === "/monitor-sessions/:id/check"), false);
+  const middleware = router.stack.filter((layer) => !layer.route).map((layer) => layer.handle);
+  assert.deepEqual(middleware, [authentication, authorizeUser]);
 });
 
 test("notification controllers expose only PLAN 8.4 DTO keys and safe errors", async () => {
@@ -203,6 +277,9 @@ test("production route source mounts goal, tracking and notification operations 
   assert.ok(source.includes('router.get("/", controller.getGoal)'));
   assert.ok(source.includes('router.put("/", controller.updateGoal)'));
   assert.ok(source.includes('router.put("/reminder-preference", controller.updateReminderPreference)'));
+  assert.ok(source.includes('router.post("/monitor-sessions", controller.establishMonitor)'));
+  assert.ok(source.includes('router.post("/monitor-sessions/:id/close", controller.closeMonitor)'));
+  assert.ok(!source.includes('router.post("/monitor-sessions/:id/check"'));
   for (const [path, controller] of [
     ['"/tracking-sessions"', "controller.establish"],
     ['"/tracking-sessions/:id/engagement"', "controller.engage"],
@@ -223,6 +300,8 @@ function fakeService(next) {
   return {
     getGoal: async () => goalResult(), updateGoal: async () => ({ ...goalResult(), reward: { earned_now: false, xp_earned: 0 } }),
     updateReminderPreference: async () => ({ reminder_enabled: true, updated_at: "2026-10-30T00:00:00.000Z" }),
+    establishMonitor: async () => ({ monitor_session_id: USER, reminder_enabled: true, target_configured: false, unread_count: 0, check_after_seconds: 60 }),
+    closeMonitor: async () => ({ monitor_session_id: USER, closed_at: "2026-10-30T00:00:00.000Z" }),
     establish: async () => { const result = next(); if (result?.code) { const error = new Error("Safe Daily Goal failure."); Object.assign(error, result); throw error; } return result.value; },
     engage: async () => ({}), heartbeat: async () => ({}), pause: async () => ({}), close: async () => ({}),
   };
