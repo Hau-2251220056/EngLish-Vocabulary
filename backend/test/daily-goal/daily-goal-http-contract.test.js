@@ -5,7 +5,7 @@ import test from "node:test";
 import { createDailyGoalController } from "../../src/controllers/daily-goal-controller.js";
 import { createAuthenticationMiddleware } from "../../src/middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "../../src/middleware/role-authorization-middleware.js";
-import { createNotificationRouter } from "../../src/routes/daily-goal-routes.js";
+import { createDailyGoalRouter, createNotificationRouter } from "../../src/routes/daily-goal-routes.js";
 
 const USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -116,6 +116,60 @@ test("goal GET and PUT expose only PLAN 8.1 DTO keys", async () => {
   assert.deepEqual(put.body.data.reward, { earned_now: true, xp_earned: 10 });
 });
 
+test("reminder preference controller derives owner, exposes only PLAN 8.1 keys, and maps safe errors", async () => {
+  let captured;
+  const controller = createDailyGoalController({ dailyGoalService: {
+    updateReminderPreference: async (userId, body) => {
+      captured = { userId, body };
+      return { reminder_enabled: body.enabled, updated_at: "2026-10-30T00:00:00.000Z", replayed: false, secret: true };
+    },
+  } });
+  const res = response();
+  const body = { operation_id: USER, enabled: false };
+  await controller.updateReminderPreference({ user: { id: USER }, body }, res, assertNoNext);
+  assert.deepEqual(captured, { userId: USER, body });
+  assert.deepEqual(res.body.data, { reminder_enabled: false, updated_at: "2026-10-30T00:00:00.000Z" });
+
+  for (const [code, status] of [
+    ["DAILY_GOAL_VALIDATION_ERROR", 400], ["DAILY_GOAL_NOT_FOUND", 404], ["OPERATION_CONFLICT", 409],
+  ]) {
+    const failing = createDailyGoalController({ dailyGoalService: { updateReminderPreference: async () => { const error = new Error("Safe preference failure."); error.code = code; throw error; } } });
+    const failure = response();
+    await failing.updateReminderPreference({ user: { id: USER }, body }, failure, assertNoNext);
+    assert.equal(failure.statusCode, status);
+    assert.equal(failure.body.error.code, code);
+  }
+});
+
+test("reminder preference route uses exact PUT path and existing USER middleware", async () => {
+  const authentication = createAuthenticationMiddleware({ authenticationService: { getCurrentUser: async () => ({ id: USER, role: "ADMIN" }) } });
+  const authorizeUser = createRoleAuthorizationMiddleware({ allowedRoles: ["USER"] });
+  const noop = (_req, _res, next) => next?.();
+  const router = createDailyGoalRouter({
+    controller: {
+      getGoal: noop, updateGoal: noop, updateReminderPreference: noop,
+      establish: noop, engage: noop, heartbeat: noop, pause: noop, close: noop,
+    },
+    authenticationMiddleware: authentication,
+    userAuthorizationMiddleware: authorizeUser,
+  });
+  const installedMiddleware = router.stack.filter((layer) => !layer.route).map((layer) => layer.handle);
+  assert.deepEqual(installedMiddleware, [authentication, authorizeUser]);
+  assert.deepEqual(router.stack.filter((layer) => layer.route && layer.route.path === "/reminder-preference").map((layer) => ({
+    path: layer.route.path,
+    methods: Object.keys(layer.route.methods),
+  })), [{ path: "/reminder-preference", methods: ["put"] }]);
+
+  const unauthenticated = response();
+  await installedMiddleware[0]({ cookies: {} }, unauthenticated, assertNoNext);
+  assert.equal(unauthenticated.statusCode, 401);
+  const request = { cookies: { session_id: "opaque" } };
+  await installedMiddleware[0](request, response(), assertNoNext);
+  const forbidden = response();
+  installedMiddleware[1](request, forbidden, assertNoNext);
+  assert.equal(forbidden.statusCode, 403);
+});
+
 test("notification controllers expose only PLAN 8.4 DTO keys and safe errors", async () => {
   const item = notificationResult();
   const controller = createDailyGoalController({ dailyGoalService: {
@@ -148,6 +202,7 @@ test("production route source mounts goal, tracking and notification operations 
   assert.match(source, /router\.use\(authenticationMiddleware, userAuthorizationMiddleware\)/);
   assert.ok(source.includes('router.get("/", controller.getGoal)'));
   assert.ok(source.includes('router.put("/", controller.updateGoal)'));
+  assert.ok(source.includes('router.put("/reminder-preference", controller.updateReminderPreference)'));
   for (const [path, controller] of [
     ['"/tracking-sessions"', "controller.establish"],
     ['"/tracking-sessions/:id/engagement"', "controller.engage"],
@@ -167,6 +222,7 @@ test("production route source mounts goal, tracking and notification operations 
 function fakeService(next) {
   return {
     getGoal: async () => goalResult(), updateGoal: async () => ({ ...goalResult(), reward: { earned_now: false, xp_earned: 0 } }),
+    updateReminderPreference: async () => ({ reminder_enabled: true, updated_at: "2026-10-30T00:00:00.000Z" }),
     establish: async () => { const result = next(); if (result?.code) { const error = new Error("Safe Daily Goal failure."); Object.assign(error, result); throw error; } return result.value; },
     engage: async () => ({}), heartbeat: async () => ({}), pause: async () => ({}), close: async () => ({}),
   };

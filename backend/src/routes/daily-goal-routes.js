@@ -5,6 +5,7 @@ export function createDailyGoalRouter({ controller, authenticationMiddleware, us
   router.use(authenticationMiddleware, userAuthorizationMiddleware);
   router.get("/", controller.getGoal);
   router.put("/", controller.updateGoal);
+  router.put("/reminder-preference", controller.updateReminderPreference);
   router.post("/tracking-sessions", controller.establish);
   router.post("/tracking-sessions/:id/engagement", controller.engage);
   router.post("/tracking-sessions/:id/heartbeat", controller.heartbeat);

@@ -140,7 +140,12 @@ test("day, receipt, reward, preference, monitor and notification writes stay own
     await repository.upsertDay(day, { create: { active_milliseconds: 0n }, update: { active_milliseconds: 1n } });
     await repository.createOperationReceipt({ operation_id: "op" });
     await repository.createReward({ activity_date: day, source_operation_id: "op", xp_amount: 10 });
-    await repository.updatePreference({ daily_goal_minutes: 20 });
+    await repository.updatePreference({
+      daily_goal_minutes: 20,
+      daily_goal_reminders_enabled: true,
+      daily_goal_reminders_enabled_at: day,
+    });
+    await repository.updatePreference({ daily_goal_reminders_enabled: false });
     await repository.incrementTotalXp(10);
     await repository.createMonitorSession({ id: "monitor" });
     await repository.createNotification({ id: "notification" });
@@ -149,6 +154,14 @@ test("day, receipt, reward, preference, monitor and notification writes stay own
   assert.equal(serialized.filter((data) => data.user_id === USER).length, 4);
   assert.equal(harness.calls.find((call) => call.kind === "day.upsert").args.create.user_id, USER);
   assert.deepEqual(harness.calls.find((call) => call.kind === "user.updateMany").args.where, { id: USER });
+  const preferenceWrites = harness.calls.filter((call) => call.kind === "user.updateMany").map((call) => call.args);
+  assert.deepEqual(preferenceWrites, [
+    {
+      where: { id: USER },
+      data: { daily_goal_minutes: 20, daily_goal_reminders_enabled: true, daily_goal_reminders_enabled_at: day },
+    },
+    { where: { id: USER }, data: { daily_goal_reminders_enabled: false } },
+  ]);
   assert.deepEqual(harness.calls.find((call) => call.kind === "user.update").args, {
     where: { id: USER }, data: { total_xp: { increment: 10 } }, select: { total_xp: true },
   });

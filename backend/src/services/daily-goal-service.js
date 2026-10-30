@@ -111,6 +111,28 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
       });
     },
 
+    updateReminderPreference(userId, input) {
+      const request = validateReminderPreferenceUpdate(input);
+      return transact(userId, async (repository, instant) => {
+        const fingerprint = digest(request);
+        const replay = await repository.findOperationReplay({
+          operationId: request.operation_id,
+          operationType: "REMINDER_PREFERENCE_UPDATE",
+          requestFingerprint: fingerprint,
+        });
+        if (replay.classification === "REPLAY") return replayResult(replay);
+        if (replay.classification === "OPERATION_CONFLICT") throw conflict("OPERATION_CONFLICT");
+        const updated = await repository.updatePreference({
+          daily_goal_reminders_enabled: request.enabled,
+          ...(request.enabled ? { daily_goal_reminders_enabled_at: instant } : {}),
+        });
+        if (updated.count !== 1) throw notFound();
+        const response = { reminder_enabled: request.enabled, updated_at: instant.toISOString() };
+        await receipt(repository, request.operation_id, "REMINDER_PREFERENCE_UPDATE", fingerprint, null, null, 0n, response, instant);
+        return { ...response, replayed: false };
+      });
+    },
+
     establish(userId, input) {
       const request = validateEstablish(input);
       return transact(userId, async (repository, instant) => {
@@ -319,6 +341,7 @@ async function touchEngagementDay(repository, instant, activityType) {
 function projection(session, owner, credited) { return { tracking_session_id: session.id, status: session.status, owner: owner?.tracking_session_id === session.id, generation: owner ? owner.generation.toString() : null, lease_expires_at: owner?.lease_expires_at?.toISOString?.() ?? null, engagement_expires_at: session.engagement_expires_at?.toISOString?.() ?? null, credited_milliseconds: credited.toString(), projection: { credited_milliseconds: credited.toString() } }; }
 function validateStoredSuccess(operationType, data) {
   if (operationType === "GOAL_UPDATE") return validateStoredGoalUpdate(data);
+  if (operationType === "REMINDER_PREFERENCE_UPDATE") return validateStoredReminderPreferenceUpdate(data);
   const operations = new Set(["CREATE", "READY", "RESUME", "INTERACTION", "HEARTBEAT", "PAUSE", "CLOSE"]);
   if (!operations.has(operationType) || !isRecord(data)) throw invalidReplay();
   const keys = ["tracking_session_id", "status", "owner", "generation", "lease_expires_at", "engagement_expires_at", "credited_milliseconds", "projection"];
@@ -353,6 +376,12 @@ function validateStoredSuccess(operationType, data) {
     credited_milliseconds: data.credited_milliseconds,
     projection: { credited_milliseconds: data.credited_milliseconds },
   };
+}
+function validateStoredReminderPreferenceUpdate(data) {
+  if (!isRecord(data)) throw invalidReplay();
+  requireExactKeys(data, ["reminder_enabled", "updated_at"]);
+  if (typeof data.reminder_enabled !== "boolean" || !isCanonicalInstant(data.updated_at)) throw invalidReplay();
+  return { reminder_enabled: data.reminder_enabled, updated_at: data.updated_at };
 }
 
 async function projectGoal(repository, date) {
@@ -428,6 +457,12 @@ function validateGoalUpdate(input) {
   requireUuid(request.operation_id);
   if (!Number.isInteger(request.target_minutes) || request.target_minutes < 10 || request.target_minutes > 240) throw validation();
   return request;
+}
+function validateReminderPreferenceUpdate(input) {
+  const request = exact(input, ["operation_id", "enabled"], ["operation_id", "enabled"]);
+  requireUuid(request.operation_id);
+  if (typeof request.enabled !== "boolean") throw validation();
+  return { operation_id: request.operation_id, enabled: request.enabled };
 }
 function validateNotificationListQuery(query) {
   if (!isRecord(query) || Object.keys(query).some((key) => !["cursor", "page_size"].includes(key))) {

@@ -374,6 +374,106 @@ test("goal projection floors seconds and minutes at the HUMAN-approved boundarie
   assert.deepEqual((({ active_seconds, actual_minutes }) => ({ active_seconds, actual_minutes }))(await createService(subsecond).getGoal(USER)), { active_seconds: 60, actual_minutes: 1 });
 });
 
+test("reminder preference defaults ON, persists OFF, and re-enable uses the server instant", async () => {
+  const priorBaseline = new Date("2026-10-25T12:00:00.000Z");
+  const harness = createHarness({ reminderEnabledAt: priorBaseline });
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const service = createService(harness, () => now);
+
+  assert.equal((await service.getGoal(USER)).reminder_enabled, true);
+  const disabled = await service.updateReminderPreference(USER, { operation_id: OPS[8], enabled: false });
+  assert.deepEqual(disabled, { reminder_enabled: false, updated_at: now.toISOString(), replayed: false });
+  assert.equal(harness.state.user.daily_goal_reminders_enabled, false);
+  assert.equal(harness.state.user.daily_goal_reminders_enabled_at.getTime(), priorBaseline.getTime());
+  assert.equal((await service.getGoal(USER)).reminder_enabled, false);
+
+  now = new Date("2026-10-26T01:00:00.000Z");
+  const enabled = await service.updateReminderPreference(USER, { operation_id: OPS[9], enabled: true });
+  assert.deepEqual(enabled, { reminder_enabled: true, updated_at: now.toISOString(), replayed: false });
+  assert.equal(harness.state.user.daily_goal_reminders_enabled, true);
+  assert.equal(harness.state.user.daily_goal_reminders_enabled_at.getTime(), now.getTime());
+  assert.equal((await service.getGoal(USER)).reminder_enabled, true);
+});
+
+test("reminder preference update replays exactly and conflicts across values or operation types", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  const request = { operation_id: OPS[8], enabled: false };
+  const first = await service.updateReminderPreference(USER, request);
+  const snapshot = structuredClone(harness.state);
+  const replay = await service.updateReminderPreference(USER, { enabled: false, operation_id: OPS[8] });
+  assert.deepEqual(replay, { ...first, replayed: true });
+  assert.deepEqual(harness.state, snapshot);
+  await assert.rejects(service.updateReminderPreference(USER, { ...request, enabled: true }), hasCode("OPERATION_CONFLICT"));
+
+  await service.updateGoal(USER, { operation_id: OPS[9], target_minutes: 10 });
+  await assert.rejects(
+    service.updateReminderPreference(USER, { operation_id: OPS[9], enabled: true }),
+    hasCode("OPERATION_CONFLICT"),
+  );
+});
+
+test("reminder preference validates exact input, missing USER, and stored replay shape", async () => {
+  const service = createService(createHarness());
+  for (const request of [
+    {},
+    { operation_id: "invalid", enabled: true },
+    { operation_id: OPS[8] },
+    { operation_id: OPS[8], enabled: "true" },
+    { operation_id: OPS[8], enabled: 1 },
+    { operation_id: OPS[8], enabled: true, user_id: USER },
+    { operation_id: OPS[8], enabled: true, updated_at: "2026-10-26T00:00:00.000Z" },
+  ]) assert.throws(() => service.updateReminderPreference(USER, request), hasCode("DAILY_GOAL_VALIDATION_ERROR"));
+
+  await assert.rejects(
+    createService(createHarness({ userExists: false })).updateReminderPreference(USER, { operation_id: OPS[8], enabled: true }),
+    hasCode("DAILY_GOAL_NOT_FOUND"),
+  );
+
+  const harness = createHarness();
+  const guarded = createService(harness);
+  const request = { operation_id: OPS[8], enabled: true };
+  await guarded.updateReminderPreference(USER, request);
+  harness.state.receipts[0].response_projection.data.updated_at = "not-an-instant";
+  const snapshot = structuredClone(harness.state);
+  await assert.rejects(guarded.updateReminderPreference(USER, request), /Stored Daily Goal replay outcome is invalid/);
+  assert.deepEqual(harness.state, snapshot);
+});
+
+test("reminder preference update is isolated from goal, XP, rewards, notifications, and completion", async () => {
+  const completion = notification(0);
+  const harness = createHarness({
+    activeMilliseconds: 600_000n, targetMinutes: 10, totalXp: 40, reward: true,
+    reminderEnabled: true, notifications: [completion],
+  });
+  const before = structuredClone({
+    days: harness.state.days, rewards: harness.state.rewards,
+    notifications: harness.state.notifications, totalXp: harness.state.user.total_xp,
+    goal: harness.state.user.daily_goal_minutes,
+  });
+  await createService(harness).updateReminderPreference(USER, { operation_id: OPS[8], enabled: false });
+  assert.deepEqual({
+    days: harness.state.days, rewards: harness.state.rewards,
+    notifications: harness.state.notifications, totalXp: harness.state.user.total_xp,
+    goal: harness.state.user.daily_goal_minutes,
+  }, before);
+
+  const rewardHarness = createHarness({ activeMilliseconds: 600_000n, totalXp: 40, reminderEnabled: false });
+  const result = await createService(rewardHarness).updateGoal(USER, { operation_id: OPS[0], target_minutes: 10 });
+  assert.equal(result.reward.earned_now, true);
+  assert.equal(rewardHarness.state.notifications.length, 1);
+  assert.equal(rewardHarness.state.notifications[0].type, "DAILY_GOAL_COMPLETED");
+
+  const failing = createHarness({ reminderEnabled: true });
+  failing.state.failReceipt = true;
+  const failingBefore = structuredClone(failing.state);
+  await assert.rejects(
+    createService(failing).updateReminderPreference(USER, { operation_id: OPS[8], enabled: false }),
+    /injected receipt failure/,
+  );
+  assert.deepEqual(failing.state, failingBefore);
+});
+
 test("599 seconds does not complete a ten-minute goal; 600 seconds rewards exactly once", async () => {
   const below = createHarness({ activeMilliseconds: 599_999n, targetMinutes: 10, totalXp: 49 });
   assert.equal((await createService(below).getGoal(USER)).completed, false);
@@ -484,14 +584,14 @@ function heartbeat(operation_id, generation) { return { operation_id, generation
 function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z")) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION }); }
 function hasCode(code) { return (error) => error?.code === code; }
 
-function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false, notifications = [] } = {}) {
+function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false, notifications = [], reminderEnabled = null, reminderEnabledAt = null, userExists = true } = {}) {
   const date = new Date("2026-10-26T00:00:00.000Z");
   const state = {
     sessions: [], owner: null, receipts: [],
     days: activeMilliseconds === null ? [] : [{ activity_date: date, active_milliseconds: activeMilliseconds }],
     rewards: reward ? [{ id: "reward", activity_date: date, source_operation_id: OPS[11], xp_amount: 10 }] : [],
     notifications: structuredClone(notifications), notificationUpdates: 0,
-    user: { id: USER, total_xp: totalXp, daily_goal_minutes: targetMinutes, daily_goal_reminders_enabled: null, daily_goal_reminders_enabled_at: null },
+    user: userExists ? { id: USER, total_xp: totalXp, daily_goal_minutes: targetMinutes, daily_goal_reminders_enabled: reminderEnabled, daily_goal_reminders_enabled_at: reminderEnabledAt } : null,
     contextAccessible: true, failReceipt: false, failNotification,
   };
   const repository = {
@@ -515,7 +615,7 @@ function createHarness({ activeMilliseconds = null, targetMinutes = null, totalX
     findReward: async (date) => state.rewards.find((x) => x.activity_date.getTime() === date.getTime()) ?? null,
     createReward: async (data) => { state.rewards.push({ ...data, user_id: USER }); return data; },
     findPreference: async () => state.user,
-    updatePreference: async (data) => { Object.assign(state.user, data); return { count: 1 }; },
+    updatePreference: async (data) => { if (!state.user) return { count: 0 }; Object.assign(state.user, data); return { count: 1 }; },
     incrementTotalXp: async (amount) => { state.user.total_xp += amount; return { total_xp: state.user.total_xp }; },
     createNotification: async (data) => { if (state.failNotification) throw new Error("injected notification failure"); state.notifications.push({ ...data, user_id: userId }); return data; },
     listNotifications: async ({ before, take }) => state.notifications
