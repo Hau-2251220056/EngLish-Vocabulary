@@ -267,6 +267,8 @@ Phase B authorization additionally requires the exact approved Session Pooler pr
 **SPEC / PLAN:** BR-DG-060–078; AC-DG-029–039, 050–055; PLAN §§7.4, 8.3–8.5.\
 **Acceptance / evidence:** API tests cover auth isolation, default/OFF/ON, no goal, active eligible owner, idle-modal timing, close/sleep gaps, concurrency, pagination and idempotent read.
 
+**Accepted TASK-263 B1 checkpoint:** HUMAN accepted the bounded notification-read Backend scope at source SHA `b7aeff82020ad6c14b687584c37ba403662fc57c`, verified by GitHub Actions Run `41041795091`, attempt `1`, using verification workflow/main SHA `49436ebaee5f3eb3bb8c0cc7f7d5388417360e86`. Hosted offline verification concluded `SUCCESS`: repository `19/19 PASS`, service `27/27 PASS`, HTTP contract `7/7 PASS`, total `53/53 PASS`, with syntax check and preflight both `PASS`. This checkpoint accepts only authenticated USER notification list pagination, unread-count retrieval, idempotent single-notification mark-read behavior, request/cursor validation, safe not-found behavior, owner-scoped repository/service access, and the bounded notification HTTP contract. It does not verify Supabase platform behavior, a real Supabase or Preview/Production database, deployment readiness, preference or monitor behavior, reminder eligibility/deduplication, or any other TASK-263 scope. TASK-263 B2–B5, TASK-264–277, and DG-3 remain unauthorized. Daily Goal V1 remains `TODO`.
+
 ### TASK-264 — Implement and verify bounded operational cleanup
 
 **Status:** `TODO`\

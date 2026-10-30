@@ -766,6 +766,13 @@ Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 - The accepted scope covers atomic Daily Goal completion reward of exactly `+10 XP`; reward, XP and completion-notification uniqueness under concurrency/replay; failure-injection rollback and recovery; first setup, goal increase/decrease and pre-goal accumulated time; Level projection; SRS/Quiz reward compatibility; Streak isolation; and completion notifications when inactivity reminders are disabled.
 - `supabasePlatformVerified` remains `false`, and this checkpoint establishes no Preview/Production database verification or deployment readiness. TASK-263–277 remain unauthorized, DG-3 remains unopened and unauthorized, and the overall Daily Goal V1 feature remains `TODO`.
 
+### Daily Goal V1 — TASK-263 B1 bounded acceptance checkpoint
+
+- TASK-263 B1: `HUMAN ACCEPTED — PASS; BOUNDED NOTIFICATION READ BACKEND SCOPE ONLY`.
+- Accepted evidence: GitHub Actions Run `41041795091`, attempt `1`, accepted source SHA `b7aeff82020ad6c14b687584c37ba403662fc57c`, verification workflow/main SHA `49436ebaee5f3eb3bb8c0cc7f7d5388417360e86`; hosted offline repository `19/19 PASS`, service `27/27 PASS`, HTTP contract `7/7 PASS`, total `53/53 PASS`; syntax check and preflight `PASS`; conclusion `SUCCESS`.
+- The accepted scope covers authenticated USER notification list pagination, unread-count retrieval, idempotent single-notification mark-read behavior, validation of notification identifiers, query shape, page size and opaque cursors, safe not-found behavior, owner-scoped repository/service access, and the bounded notification HTTP contract.
+- This hosted offline checkpoint makes no claim of Supabase platform, real Supabase database, Preview or Production verification or deployment readiness. It does not accept preference, monitor or reminder behavior and does not authorize TASK-263 B2–B5, TASK-264–277, or DG-3. Daily Goal V1 remains `TODO`.
+
 XP Rules
 
 The current universal XP rules are:
