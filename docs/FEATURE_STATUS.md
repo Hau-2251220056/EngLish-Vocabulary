@@ -773,6 +773,14 @@ Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 - The accepted scope covers authenticated USER notification list pagination, unread-count retrieval, idempotent single-notification mark-read behavior, validation of notification identifiers, query shape, page size and opaque cursors, safe not-found behavior, owner-scoped repository/service access, and the bounded notification HTTP contract.
 - This hosted offline checkpoint makes no claim of Supabase platform, real Supabase database, Preview or Production verification or deployment readiness. It does not accept preference, monitor or reminder behavior and does not authorize TASK-263 B2–B5, TASK-264–277, or DG-3. Daily Goal V1 remains `TODO`.
 
+#### Daily Goal V1 — TASK-263 B2 bounded acceptance checkpoint
+
+- TASK-263 B2: `HUMAN ACCEPTED — PASS; BOUNDED WINDOWS-HOST OFFLINE NOTIFICATION PREFERENCE BACKEND SCOPE ONLY`.
+- Accepted source SHA: `79429df1eaccdda6aebbc289438a1a0944fcb4db`.
+- Verification: Windows host PowerShell, Node.js `v22.20.0`; six JavaScript syntax checks `6/6 PASS`; repository `19/19 PASS`, service `31/31 PASS`, HTTP contract `9/9 PASS`, total `59/59 PASS`, with zero failures or skipped tests.
+- Accepted scope: effective default-ON preference read through existing `GET /api/daily-goal`; authenticated USER-only `PUT /api/daily-goal/reminder-preference`; exact request validation and owner-scoped writes; server timestamp and re-enable baseline handling; idempotent operation receipts, safe conflicts, stored-replay validation, response DTO/error contracts, and isolation from TASK-262/B1 notifications, rewards, XP, goal and tracking behaviors.
+- Limitations: B2 GitHub Actions hosted verification `NOT RUN`; PostgreSQL/Supabase database, Preview/Production, migration and deployment behavior `NOT VERIFIED`; monitor lifecycle, reminder eligibility, creation and deduplication `NOT ACCEPTED`. TASK-263 B3–B5, TASK-264–277 and DG-3 remain unauthorized. TASK-263 and Daily Goal V1 remain `TODO`.
+
 XP Rules
 
 The current universal XP rules are:
