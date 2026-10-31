@@ -790,6 +790,15 @@ Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 - Implementation state: B3 source changes remain uncommitted at the time of this acceptance record.
 - Limitations: PostgreSQL concurrency and real-stack behavior, Supabase, Preview/Production, migration activation and deployment remain `NOT VERIFIED`; B4 reminder eligibility, inactivity-notification creation and deduplication remain `NOT ACCEPTED`. TASK-263 B4–B5, TASK-264–277 and DG-3 remain unauthorized. TASK-263 and Daily Goal V1 remain `TODO`.
 
+#### Daily Goal V1 — TASK-263 B4 bounded acceptance checkpoint
+
+- TASK-263 B4: `HUMAN ACCEPTED — BOUNDED WINDOWS-HOST OFFLINE VERIFICATION PASS; REMINDER ELIGIBILITY & NOTIFICATION CREATION SCOPE ONLY`.
+- Reviewed snapshot: uncommitted authorized B4 working-tree changes and exact SPEC/PLAN notification-content clarification based on HEAD `1cd413c0530276f40855660dc51694a80dfa2621`; the B4 changes are not claimed to be contained in that HEAD.
+- Verification: Windows host, Node.js `v22.20.0`; JavaScript syntax `7/7 PASS`; repository `21/21 PASS`; service `42/42 PASS`; HTTP contract `13/13 PASS`; total focused offline tests `76/76 PASS`; `git diff --check` no whitespace errors; expected preflight/postflight state and protected-observer SHA-256 integrity `PASS`; no retry or corrective implementation after verification.
+- Accepted scope: server-authoritative inactivity eligibility; ten-minute threshold and continuity reset; effective preference and incomplete-goal rules; `Asia/Ho_Chi_Minh` application-day logic; exact approved notification title/body; one inactivity reminder per USER/application day; existing USER advisory-lock transaction and database uniqueness identity in code; atomic notification/check-state/receipt behavior covered by offline mocks; owner-scoped replay/conflicts; public monitor-check endpoint with strict three-field DTO; focused offline tests, bounded API documentation and SPEC/PLAN content clarification.
+- Limitations: real PostgreSQL advisory-lock concurrency, PostgreSQL uniqueness races, real-database transaction rollback, Supabase, migration activation, Preview/Production deployment and runtime behavior, performance, scale and production readiness remain `NOT VERIFIED`.
+- Authorization boundary: B1/B2/B3 acceptance remains unchanged. B5, TASK-264–277 and DG-3 remain unauthorized. TASK-263 overall and Daily Goal V1 remain `TODO`; no additional implementation, CI, database operation, staging, commit or push is authorized by this checkpoint.
+
 XP Rules
 
 The current universal XP rules are:

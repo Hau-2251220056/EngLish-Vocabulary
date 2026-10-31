@@ -252,6 +252,8 @@ Unique `(user_id, activity_date)` and unique `(user_id, source_operation_id)`. T
 
 Unique `(user_id, type, application_date)`; indexes `(user_id, read_at, created_at DESC)` and `(user_id, created_at DESC)`.
 
+For `DAILY_GOAL_INACTIVITY_REMINDER`, persist the exact Backend-authored plain-text title `Nhắc nhở học từ vựng` and body `Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!`. The client cannot submit or override this content, and no USER data or runtime value is interpolated.
+
 #### `DAILY_GOAL_MONITOR_SESSION`
 
 One server-recognized authenticated app-tab monitor identity.

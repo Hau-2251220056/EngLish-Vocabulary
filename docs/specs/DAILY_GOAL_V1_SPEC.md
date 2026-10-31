@@ -253,6 +253,8 @@ Client requests must not choose another owner, authoritative elapsed seconds, ap
 - **BR-DG-077:** The inactivity-reminder preference never suppresses the completion notification created with the first Daily Goal reward of an application day.
 - **BR-DG-078:** V1 provides no separate completion-notification toggle and requires no full notification Settings module.
 
+For `DAILY_GOAL_INACTIVITY_REMINDER`, Backend persists the exact plain-text title `Nhắc nhở học từ vựng` and body `Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!`. The client cannot submit or override either string, and Backend does not interpolate USER data or runtime values into them.
+
 ---
 
 ## 7. Data Requirements

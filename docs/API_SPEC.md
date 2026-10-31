@@ -361,6 +361,32 @@ B3 also implements an internal owner-scoped, transactionally locked monitor chec
 
 B3 does not evaluate final reminder eligibility, return a placeholder public `reminder_created` result, create or deduplicate inactivity notifications, or modify XP, reward, goals, active time, tracking ownership or completion notifications. B4 must complete the approved public check response and reminder behavior before that route is exposed. B3 verification remains focused and offline until separately authorized evidence establishes otherwise; it makes no PostgreSQL, Supabase, Preview, Production, migration-activation or deployment claim.
 
+### 10.5. Daily Goal V1 Reminder Eligibility — Bounded B4 Backend Contract
+
+```text
+POST /api/daily-goal/monitor-sessions/:id/check
+```
+
+This authenticated USER-only endpoint accepts exactly `{ "operation_id": "<uuid>" }`; the monitor identity and operation identity must be UUIDs. Success is `200` with the standard envelope and exactly these public data fields:
+
+```json
+{
+  "reminder_created": false,
+  "unread_count": 0,
+  "next_check_after_seconds": 60
+}
+```
+
+The Backend evaluates reminder eligibility under the existing owner-scoped transaction and USER advisory lock. Effective preference must be enabled (`NULL` remains default ON), a target must be configured and incomplete for the current `Asia/Ho_Chi_Minh` application day, the monitor must remain continuous, ten minutes (`600000` milliseconds) must have elapsed from the authoritative origin, no eligible active tracking owner may remain, and no same-day inactivity reminder may already exist. The origin is the latest of the application-day start, monitor continuity start, applicable preference re-enable baseline and current-day `last_engagement_at`; `last_credited_at` does not postpone a reminder. Eligibility begins exactly at the ten-minute boundary.
+
+A check gap of exactly 150 seconds preserves continuity. A gap greater than 150 seconds resets monitor continuity and eligibility baselines to Backend time and returns `reminder_created: false` without backfill. Database identity `(user_id, type, application_date)` and the USER lock enforce at most one inactivity reminder per application day. Other notification types, including the completion notification, remain independent.
+
+A newly created notification has type `DAILY_GOAL_INACTIVITY_REMINDER`, title `Nhắc nhở học từ vựng`, body `Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!`, Backend-generated creation time and initial unread state. The client cannot submit or override notification content.
+
+The monitor update, optional notification insert, unread count and successful operation receipt commit atomically. An exact owner-scoped retry returns the original stored public response without mutation, including after the monitor later closes. Incompatible operation reuse returns `409 OPERATION_CONFLICT`; a new check against an unknown, foreign or closed monitor returns safe `404`. Invalid identifiers or request fields return safe `400`; existing authentication and USER-role middleware retain safe `401` and `403` behavior. No internal timestamps, baselines, monitor identity, replay marker or receipt metadata are exposed.
+
+B4 verification remains pending and bounded to separately authorized offline evidence. This contract does not claim PostgreSQL concurrency execution, Supabase, Preview, Production, migration activation or deployment readiness, and it does not authorize B5, TASK-264–277 or DG-3.
+
 11. Topic
 
 Topic V1 classifies Vocabulary Sets conceptually, but returns and manages Topic metadata only.

@@ -148,7 +148,7 @@ test("reminder preference route uses exact PUT path and existing USER middleware
   const router = createDailyGoalRouter({
     controller: {
       getGoal: noop, updateGoal: noop, updateReminderPreference: noop,
-      establishMonitor: noop, closeMonitor: noop,
+      establishMonitor: noop, checkMonitor: noop, closeMonitor: noop,
       establish: noop, engage: noop, heartbeat: noop, pause: noop, close: noop,
     },
     authenticationMiddleware: authentication,
@@ -200,6 +200,25 @@ test("monitor establish and close controllers derive owner and expose only appro
   ]);
 });
 
+test("monitor check exposes exactly the approved B4 public DTO and derives owner and monitor identity", async () => {
+  let captured;
+  const controller = createDailyGoalController({ dailyGoalService: {
+    checkMonitor: async (userId, id, body) => {
+      captured = { userId, id, body };
+      return { reminder_created: true, unread_count: 3, next_check_after_seconds: 60, replayed: false, last_seen_at: "hidden" };
+    },
+  } });
+  const body = { operation_id: USER };
+  const res = response();
+  await controller.checkMonitor({ user: { id: USER }, params: { id: USER }, body }, res, assertNoNext);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(captured, { userId: USER, id: USER, body });
+  assert.deepEqual(res.body.data, { reminder_created: true, unread_count: 3, next_check_after_seconds: 60 });
+  for (const field of ["monitor_session_id", "last_seen_at", "continuity_started_at", "eligible_baseline_at", "replayed"]) {
+    assert.equal(Object.hasOwn(res.body.data, field), false);
+  }
+});
+
 test("monitor controllers map replay and safe validation, ownership and conflict failures", async () => {
   const replayController = createDailyGoalController({ dailyGoalService: {
     establishMonitor: async () => ({ monitor_session_id: USER, reminder_enabled: true, target_configured: false, unread_count: 0, check_after_seconds: 60, replayed: true }),
@@ -221,14 +240,14 @@ test("monitor controllers map replay and safe validation, ownership and conflict
   }
 });
 
-test("monitor routes publish establish and close behind USER middleware but not check", async () => {
+test("monitor routes publish establish, check and close behind USER middleware", async () => {
   const authentication = createAuthenticationMiddleware({ authenticationService: { getCurrentUser: async () => ({ id: USER, role: "ADMIN" }) } });
   const authorizeUser = createRoleAuthorizationMiddleware({ allowedRoles: ["USER"] });
   const noop = (_req, _res, next) => next?.();
   const router = createDailyGoalRouter({
     controller: {
       getGoal: noop, updateGoal: noop, updateReminderPreference: noop,
-      establishMonitor: noop, closeMonitor: noop,
+      establishMonitor: noop, checkMonitor: noop, closeMonitor: noop,
       establish: noop, engage: noop, heartbeat: noop, pause: noop, close: noop,
     },
     authenticationMiddleware: authentication,
@@ -239,7 +258,7 @@ test("monitor routes publish establish and close behind USER middleware but not 
   }));
   assert.ok(routes.some((route) => route.path === "/monitor-sessions" && route.methods.includes("post")));
   assert.ok(routes.some((route) => route.path === "/monitor-sessions/:id/close" && route.methods.includes("post")));
-  assert.equal(routes.some((route) => route.path === "/monitor-sessions/:id/check"), false);
+  assert.ok(routes.some((route) => route.path === "/monitor-sessions/:id/check" && route.methods.includes("post")));
   const middleware = router.stack.filter((layer) => !layer.route).map((layer) => layer.handle);
   assert.deepEqual(middleware, [authentication, authorizeUser]);
 });
@@ -278,8 +297,8 @@ test("production route source mounts goal, tracking and notification operations 
   assert.ok(source.includes('router.put("/", controller.updateGoal)'));
   assert.ok(source.includes('router.put("/reminder-preference", controller.updateReminderPreference)'));
   assert.ok(source.includes('router.post("/monitor-sessions", controller.establishMonitor)'));
+  assert.ok(source.includes('router.post("/monitor-sessions/:id/check", controller.checkMonitor)'));
   assert.ok(source.includes('router.post("/monitor-sessions/:id/close", controller.closeMonitor)'));
-  assert.ok(!source.includes('router.post("/monitor-sessions/:id/check"'));
   for (const [path, controller] of [
     ['"/tracking-sessions"', "controller.establish"],
     ['"/tracking-sessions/:id/engagement"', "controller.engage"],
@@ -301,6 +320,7 @@ function fakeService(next) {
     getGoal: async () => goalResult(), updateGoal: async () => ({ ...goalResult(), reward: { earned_now: false, xp_earned: 0 } }),
     updateReminderPreference: async () => ({ reminder_enabled: true, updated_at: "2026-10-30T00:00:00.000Z" }),
     establishMonitor: async () => ({ monitor_session_id: USER, reminder_enabled: true, target_configured: false, unread_count: 0, check_after_seconds: 60 }),
+    checkMonitor: async () => ({ reminder_created: false, unread_count: 0, next_check_after_seconds: 60 }),
     closeMonitor: async () => ({ monitor_session_id: USER, closed_at: "2026-10-30T00:00:00.000Z" }),
     establish: async () => { const result = next(); if (result?.code) { const error = new Error("Safe Daily Goal failure."); Object.assign(error, result); throw error; } return result.value; },
     engage: async () => ({}), heartbeat: async () => ({}), pause: async () => ({}), close: async () => ({}),

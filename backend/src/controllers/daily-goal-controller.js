@@ -8,6 +8,7 @@ export function createDailyGoalController({ dailyGoalService }) {
     updateGoal: handler((req) => dailyGoalService.updateGoal(req.user.id, req.body), undefined, goalUpdateDto),
     updateReminderPreference: handler((req) => dailyGoalService.updateReminderPreference(req.user.id, req.body), undefined, reminderPreferenceDto),
     establishMonitor: handler((req) => dailyGoalService.establishMonitor(req.user.id, req.body), (data) => data.replayed ? 200 : 201, monitorEstablishDto),
+    checkMonitor: handler((req) => dailyGoalService.checkMonitor(req.user.id, req.params.id, req.body), undefined, monitorCheckDto),
     closeMonitor: handler((req) => dailyGoalService.closeMonitor(req.user.id, req.params.id, req.body), undefined, monitorCloseDto),
     establish: handler((req) => dailyGoalService.establish(req.user.id, req.body), (data) => data.replayed ? 200 : 201, establishDto),
     engage: handler((req) => dailyGoalService.engage(req.user.id, req.params.id, req.body), undefined, engagementDto),
@@ -24,6 +25,7 @@ function goalDto(data) { return pick(data, ["application_date", "target_minutes"
 function goalUpdateDto(data) { return { ...goalDto(data), reward: pick(data.reward, ["earned_now", "xp_earned"]) }; }
 function reminderPreferenceDto(data) { return pick(data, ["reminder_enabled", "updated_at"]); }
 function monitorEstablishDto(data) { return pick(data, ["monitor_session_id", "reminder_enabled", "target_configured", "unread_count", "check_after_seconds"]); }
+function monitorCheckDto(data) { return pick(data, ["reminder_created", "unread_count", "next_check_after_seconds"]); }
 function monitorCloseDto(data) { return pick(data, ["monitor_session_id", "closed_at"]); }
 function handler(action, status = () => 200, serialize = (data) => data) { return async (req, res, next) => { try { const result = await action(req); res.status(status(result)).json({ success: true, data: serialize(result) }); } catch (error) { const statusCode = statusByCode(error?.code); if (!statusCode) return next(error); res.status(statusCode).json({ success: false, error: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) } }); } }; }
 function establishDto(data) { return pick(data, ["tracking_session_id", "status", "owner", "generation", "projection"]); }

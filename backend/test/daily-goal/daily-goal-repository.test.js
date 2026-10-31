@@ -76,6 +76,22 @@ test("notification pagination is owner-scoped with a stable created_at and id bo
   });
 });
 
+test("notification type/day lookup uses the authenticated owner and exact unique identity", async () => {
+  const harness = createHarness();
+  const date = new Date("2026-10-26T00:00:00.000Z");
+  await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, (repository) => (
+    repository.findNotificationByTypeAndDate("DAILY_GOAL_INACTIVITY_REMINDER", date)
+  ));
+  assert.deepEqual(harness.calls.find((call) => call.kind === "notification.findUnique").args.where, {
+    user_id_type_application_date: {
+      user_id: USER,
+      type: "DAILY_GOAL_INACTIVITY_REMINDER",
+      application_date: date,
+    },
+  });
+  assert.deepEqual(harness.calls.map((call) => call.kind), ["lock", "notification.findUnique", "commit"]);
+});
+
 test("activity context queries remain owner/access scoped inside the USER transaction", async () => {
   const harness = createHarness();
   const observedAt = new Date("2026-10-26T00:00:00.000Z");

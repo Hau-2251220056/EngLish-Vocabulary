@@ -26,9 +26,15 @@ const MAX_NOTIFICATION_CURSOR_LENGTH = 512;
 const NOTIFICATION_CURSOR_VERSION = 1;
 const MONITOR_CHECK_AFTER_SECONDS = 60;
 const MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS = 150_000;
+const REMINDER_INACTIVITY_MILLISECONDS = 600_000;
+const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1_000;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
   body: "You completed your Daily Goal and earned 10 XP.",
+});
+const INACTIVITY_NOTIFICATION = Object.freeze({
+  title: "Nhắc nhở học từ vựng",
+  body: "Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!",
 });
 
 export class DailyGoalServiceError extends Error {
@@ -172,9 +178,22 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         if (!preference) throw notFound();
         const longGap = instant.getTime() - requireDate(session.last_seen_at).getTime()
           > MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS;
-        const eligibleBaseline = longGap
-          ? instant
-          : laterMonitorBaseline(session.eligible_baseline_at, preference, instant);
+        const date = applicationDate(instant);
+        const day = longGap ? null : await repository.findDay(date);
+        const eligibleBaseline = longGap ? instant : latestDate(
+          requireDate(session.continuity_started_at),
+          laterMonitorBaseline(session.eligible_baseline_at, preference, instant),
+          applicationDayStart(date),
+          ...(day?.last_engagement_at ? [requireDate(day.last_engagement_at)] : []),
+        );
+        let reminderCreated = false;
+        if (!longGap && await reminderEligible(repository, preference, day, date, eligibleBaseline, instant)) {
+          await repository.createNotification({
+            id: uuid(), type: "DAILY_GOAL_INACTIVITY_REMINDER", application_date: date,
+            ...INACTIVITY_NOTIFICATION, created_at: instant, read_at: null,
+          });
+          reminderCreated = true;
+        }
         const update = {
           last_seen_at: instant,
           ...(longGap ? { continuity_started_at: instant } : {}),
@@ -184,10 +203,9 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const updated = await repository.updateMonitorSession(monitorSessionId, update);
         if (updated.count !== 1) throw notFound();
         const response = {
-          monitor_session_id: session.id,
-          last_seen_at: instant.toISOString(),
-          continuity_started_at: (longGap ? instant : requireDate(session.continuity_started_at)).toISOString(),
-          eligible_baseline_at: eligibleBaseline.toISOString(),
+          reminder_created: reminderCreated,
+          unread_count: await repository.countUnreadNotifications(),
+          next_check_after_seconds: MONITOR_CHECK_AFTER_SECONDS,
         };
         await monitorReceipt(repository, request.operation_id, "MONITOR_CHECK", fingerprint, session.id, response, instant);
         return { ...response, replayed: false };
@@ -479,9 +497,10 @@ function validateStoredMonitorCreate(data) {
 }
 function validateStoredMonitorCheck(data) {
   if (!isRecord(data)) throw invalidReplay();
-  requireExactKeys(data, ["monitor_session_id", "last_seen_at", "continuity_started_at", "eligible_baseline_at"]);
-  requireUuid(data.monitor_session_id, invalidReplay);
-  if (![data.last_seen_at, data.continuity_started_at, data.eligible_baseline_at].every(isCanonicalInstant)) throw invalidReplay();
+  requireExactKeys(data, ["reminder_created", "unread_count", "next_check_after_seconds"]);
+  if (typeof data.reminder_created !== "boolean"
+    || !Number.isSafeInteger(data.unread_count) || data.unread_count < 0
+    || data.next_check_after_seconds !== MONITOR_CHECK_AFTER_SECONDS) throw invalidReplay();
   return structuredClone(data);
 }
 function validateStoredMonitorClose(data) {
@@ -539,6 +558,28 @@ async function awardCompletion(repository, date, operationId, instant, uuid = ra
 function applicationDate(instant) {
   const part = splitIntervalByApplicationDay(instant.getTime(), instant.getTime() + 1)[0];
   return new Date(`${part.applicationDate}T00:00:00.000Z`);
+}
+
+function applicationDayStart(date) {
+  return new Date(requireDate(date).getTime() - VIETNAM_UTC_OFFSET_MILLISECONDS);
+}
+
+function latestDate(...values) {
+  return new Date(Math.max(...values.map((value) => requireDate(value).getTime())));
+}
+
+async function reminderEligible(repository, preference, day, date, baseline, instant) {
+  if ((preference.daily_goal_reminders_enabled ?? true) !== true || preference.daily_goal_minutes === null) return false;
+  const activeMilliseconds = day?.active_milliseconds ?? 0n;
+  if (activeMilliseconds >= BigInt(preference.daily_goal_minutes) * 60_000n) return false;
+  if (instant.getTime() - baseline.getTime() < REMINDER_INACTIVITY_MILLISECONDS) return false;
+  const owner = await repository.findOwner();
+  if (owner?.tracking_session_id) {
+    const tracking = await repository.findTrackingSession(owner.tracking_session_id);
+    if (tracking?.status === "ACTIVE" && tracking.engagement_expires_at
+      && instant.getTime() < requireDate(tracking.engagement_expires_at).getTime()) return false;
+  }
+  return await repository.findNotificationByTypeAndDate("DAILY_GOAL_INACTIVITY_REMINDER", date) === null;
 }
 
 function validateStoredGoalUpdate(data) {

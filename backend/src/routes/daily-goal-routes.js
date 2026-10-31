@@ -7,6 +7,7 @@ export function createDailyGoalRouter({ controller, authenticationMiddleware, us
   router.put("/", controller.updateGoal);
   router.put("/reminder-preference", controller.updateReminderPreference);
   router.post("/monitor-sessions", controller.establishMonitor);
+  router.post("/monitor-sessions/:id/check", controller.checkMonitor);
   router.post("/monitor-sessions/:id/close", controller.closeMonitor);
   router.post("/tracking-sessions", controller.establish);
   router.post("/tracking-sessions/:id/engagement", controller.engage);

@@ -210,6 +210,17 @@ function createTransactionRepository(transaction, userId, lifecycle) {
         where: { id: notificationId, user_id: userId },
       });
     },
+    findNotificationByTypeAndDate(type, applicationDate) {
+      return transaction.uSER_NOTIFICATION.findUnique({
+        where: {
+          user_id_type_application_date: {
+            user_id: userId,
+            type,
+            application_date: applicationDate,
+          },
+        },
+      });
+    },
     createNotification(data) {
       return transaction.uSER_NOTIFICATION.create({ data: ownerData(data, userId) });
     },

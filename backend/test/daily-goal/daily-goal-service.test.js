@@ -608,7 +608,7 @@ test("monitor establish validates exact input and projects server-owned bounded 
   await assert.rejects(createService(enabled).establishMonitor(USER, { operation_id: OPS[0] }), hasCode("OPERATION_CONFLICT"));
 });
 
-test("internal monitor checks preserve continuity at 150 seconds and reset only above it", async () => {
+test("monitor checks preserve continuity at 150 seconds and reset only above it", async () => {
   const start = new Date("2026-10-26T00:00:00.000Z");
   let now = new Date(start);
   const harness = createHarness();
@@ -616,15 +616,16 @@ test("internal monitor checks preserve continuity at 150 seconds and reset only 
   await service.establishMonitor(USER, { operation_id: OPS[0] });
   now = new Date(start.getTime() + 150_000);
   const boundary = await service.checkMonitor(USER, SESSION, { operation_id: OPS[1] });
-  assert.equal(boundary.last_seen_at, now.toISOString());
-  assert.equal(boundary.continuity_started_at, start.toISOString());
-  assert.equal(boundary.eligible_baseline_at, start.toISOString());
+  assert.deepEqual(boundary, { reminder_created: false, unread_count: 0, next_check_after_seconds: 60, replayed: false });
+  assert.equal(harness.state.monitors[0].last_seen_at.toISOString(), now.toISOString());
+  assert.equal(harness.state.monitors[0].continuity_started_at.toISOString(), start.toISOString());
 
   now = new Date(now.getTime() + 150_001);
   const reset = await service.checkMonitor(USER, SESSION, { operation_id: OPS[2] });
-  assert.equal(reset.last_seen_at, now.toISOString());
-  assert.equal(reset.continuity_started_at, now.toISOString());
-  assert.equal(reset.eligible_baseline_at, now.toISOString());
+  assert.equal(reset.reminder_created, false);
+  assert.equal(harness.state.monitors[0].last_seen_at.toISOString(), now.toISOString());
+  assert.equal(harness.state.monitors[0].continuity_started_at.toISOString(), now.toISOString());
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), now.toISOString());
   const snapshot = structuredClone(harness.state.monitors[0]);
   now = new Date(now.getTime() + 60_000);
   const replay = await service.checkMonitor(USER, SESSION, { operation_id: OPS[2] });
@@ -650,12 +651,14 @@ test("monitor check synchronizes a later enabled baseline but disabled preferenc
   harness.state.user.daily_goal_reminders_enabled_at = new Date(start.getTime() + 30_000);
   now = new Date(start.getTime() + 60_000);
   const enabled = await service.checkMonitor(USER, SESSION, { operation_id: OPS[1] });
-  assert.equal(enabled.eligible_baseline_at, "2026-10-26T00:00:30.000Z");
+  assert.equal(enabled.reminder_created, false);
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), "2026-10-26T00:00:30.000Z");
   harness.state.user.daily_goal_reminders_enabled = false;
   harness.state.user.daily_goal_reminders_enabled_at = new Date(start.getTime() + 90_000);
   now = new Date(start.getTime() + 120_000);
   const disabled = await service.checkMonitor(USER, SESSION, { operation_id: OPS[2] });
-  assert.equal(disabled.eligible_baseline_at, enabled.eligible_baseline_at);
+  assert.equal(disabled.reminder_created, false);
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), "2026-10-26T00:00:30.000Z");
   assert.equal(harness.state.monitors[0].closed_at, null);
 });
 
@@ -694,7 +697,7 @@ test("historical monitor check replay survives close while new and foreign check
   now = new Date("2026-10-26T00:02:00.000Z");
   const replay = await service.checkMonitor(USER, SESSION, { operation_id: OPS[1] });
   assert.deepEqual(replay, { ...original, replayed: true });
-  assert.equal(replay.last_seen_at, checkedState.last_seen_at.toISOString());
+  assert.equal(replay.reminder_created, original.reminder_created);
   assert.deepEqual(harness.state.monitors[0], closedState);
   assert.equal(harness.state.receipts.length, receiptCount);
   assert.equal(harness.state.notifications.length, notificationCount);
@@ -725,13 +728,14 @@ test("preference toggles and repeated ON advance only the accepted baseline with
 
   now = new Date(start.getTime() + 30_000);
   const firstCheck = await service.checkMonitor(USER, SESSION, { operation_id: OPS[3] });
-  assert.equal(firstCheck.eligible_baseline_at, firstEnabledAt.toISOString());
+  assert.equal(firstCheck.reminder_created, false);
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), firstEnabledAt.toISOString());
   now = new Date(start.getTime() + 40_000);
   await service.updateReminderPreference(USER, { operation_id: OPS[4], enabled: false });
   assert.equal(harness.state.user.daily_goal_reminders_enabled_at.getTime(), firstEnabledAt.getTime());
   now = new Date(start.getTime() + 50_000);
   const disabledCheck = await service.checkMonitor(USER, SESSION, { operation_id: OPS[5] });
-  assert.equal(disabledCheck.eligible_baseline_at, firstCheck.eligible_baseline_at);
+  assert.equal(disabledCheck.reminder_created, false);
   assert.equal(harness.state.monitors[0].closed_at, null);
 
   now = new Date(start.getTime() + 60_000);
@@ -743,15 +747,16 @@ test("preference toggles and repeated ON advance only the accepted baseline with
 
   now = new Date(start.getTime() + 200_000);
   const boundary = await service.checkMonitor(USER, SESSION, { operation_id: OPS[8] });
-  assert.equal(boundary.continuity_started_at, start.toISOString());
-  assert.equal(boundary.eligible_baseline_at, latestEnabledAt.toISOString());
-  assert.ok(new Date(boundary.eligible_baseline_at) >= new Date(disabledCheck.eligible_baseline_at));
+  assert.equal(boundary.reminder_created, false);
+  assert.equal(harness.state.monitors[0].continuity_started_at.toISOString(), start.toISOString());
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), latestEnabledAt.toISOString());
 
   now = new Date(now.getTime() + 150_001);
   const reset = await service.checkMonitor(USER, SESSION, { operation_id: OPS[9] });
-  assert.equal(reset.last_seen_at, now.toISOString());
-  assert.equal(reset.continuity_started_at, now.toISOString());
-  assert.equal(reset.eligible_baseline_at, now.toISOString());
+  assert.equal(reset.reminder_created, false);
+  assert.equal(harness.state.monitors[0].last_seen_at.toISOString(), now.toISOString());
+  assert.equal(harness.state.monitors[0].continuity_started_at.toISOString(), now.toISOString());
+  assert.equal(harness.state.monitors[0].eligible_baseline_at.toISOString(), now.toISOString());
   assert.equal(harness.state.notifications.length, 0);
 });
 
@@ -770,6 +775,87 @@ test("monitor receipt failure rolls back lifecycle state and unrelated domains r
   assert.deepEqual(closeHarness.state, before);
   assert.equal(closeHarness.state.notifications.length, 0);
   assert.equal(closeHarness.state.user.total_xp, 0);
+});
+
+test("B4 creates the exact reminder at 600000ms and deduplicates by owner, type and application day", async () => {
+  const start = new Date("2026-10-26T00:00:00.000Z");
+  let now = new Date(start.getTime() + 599_999);
+  const harness = createHarness({ targetMinutes: 10 });
+  const service = createService(harness, () => now);
+  harness.state.monitors.push(monitorAt(start, new Date(now.getTime() - 60_000)));
+  assert.equal((await service.checkMonitor(USER, SESSION, { operation_id: OPS[1] })).reminder_created, false);
+  now = new Date(start.getTime() + 600_000);
+  const created = await service.checkMonitor(USER, SESSION, { operation_id: OPS[2] });
+  assert.deepEqual(created, { reminder_created: true, unread_count: 1, next_check_after_seconds: 60, replayed: false });
+  assert.deepEqual(harness.state.notifications[0], {
+    id: SESSION, user_id: USER, type: "DAILY_GOAL_INACTIVITY_REMINDER",
+    application_date: new Date("2026-10-26T00:00:00.000Z"),
+    title: "Nhắc nhở học từ vựng",
+    body: "Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!",
+    created_at: now, read_at: null,
+  });
+  now = new Date(start.getTime() + 660_000);
+  assert.equal((await service.checkMonitor(USER, SESSION, { operation_id: OPS[3] })).reminder_created, false);
+  assert.equal(harness.state.notifications.length, 1);
+});
+
+test("B4 eligibility honors preference, target completion, engagement origin and active owner suppression", async () => {
+  const due = new Date("2026-10-26T00:10:00.000Z");
+  for (const settings of [
+    { targetMinutes: null },
+    { targetMinutes: 10, reminderEnabled: false },
+    { targetMinutes: 10, activeMilliseconds: 600_000n },
+  ]) {
+    const harness = createHarness(settings);
+    const service = createService(harness, () => due);
+    harness.state.monitors.push(monitorAt(new Date("2026-10-26T00:00:00.000Z"), new Date(due.getTime() - 60_000)));
+    assert.equal((await service.checkMonitor(USER, SESSION, { operation_id: OPS[0] })).reminder_created, false);
+  }
+  const engaged = createHarness({ targetMinutes: 10, activeMilliseconds: 1n });
+  engaged.state.days[0].last_engagement_at = new Date("2026-10-26T00:05:00.000Z");
+  engaged.state.days[0].last_credited_at = new Date("2026-10-25T23:00:00.000Z");
+  engaged.state.monitors.push(monitorAt(new Date("2026-10-26T00:00:00.000Z"), new Date(due.getTime() - 60_000)));
+  assert.equal((await createService(engaged, () => due).checkMonitor(USER, SESSION, { operation_id: OPS[1] })).reminder_created, false);
+
+  const active = createHarness({ targetMinutes: 10 });
+  active.state.monitors.push(monitorAt(new Date("2026-10-26T00:00:00.000Z"), new Date(due.getTime() - 60_000)));
+  active.state.owner = { tracking_session_id: SESSION_B };
+  active.state.sessions.push({ id: SESSION_B, status: "ACTIVE", engagement_expires_at: new Date(due.getTime() + 1) });
+  assert.equal((await createService(active, () => due).checkMonitor(USER, SESSION, { operation_id: OPS[2] })).reminder_created, false);
+  active.state.sessions[0].engagement_expires_at = due;
+  assert.equal((await createService(active, () => due).checkMonitor(USER, SESSION, { operation_id: OPS[3] })).reminder_created, true);
+});
+
+test("B4 reminder and monitor changes roll back on notification or receipt failure", async () => {
+  const due = new Date("2026-10-26T00:10:00.000Z");
+  for (const failure of ["notification", "receipt"]) {
+    const harness = createHarness({ targetMinutes: 10, failNotification: failure === "notification" });
+    harness.state.monitors.push(monitorAt(new Date("2026-10-26T00:00:00.000Z"), new Date(due.getTime() - 60_000)));
+    harness.state.failReceipt = failure === "receipt";
+    const before = structuredClone(harness.state);
+    await assert.rejects(createService(harness, () => due).checkMonitor(USER, SESSION, { operation_id: OPS[0] }), /injected/);
+    assert.deepEqual(harness.state, before);
+  }
+});
+
+test("B4 uses the Vietnam day start, allows a different notification type and fails closed on malformed replay", async () => {
+  const dayStart = new Date("2026-10-26T17:00:00.000Z");
+  let now = new Date(dayStart.getTime() + 599_999);
+  const completion = {
+    id: "55555555-5555-4555-8555-555555555555", user_id: USER, type: "DAILY_GOAL_COMPLETED",
+    application_date: new Date("2026-10-27T00:00:00.000Z"), title: "Daily Goal completed", body: "Completed",
+    created_at: dayStart, read_at: null,
+  };
+  const harness = createHarness({ targetMinutes: 10, notifications: [completion] });
+  harness.state.monitors.push(monitorAt(dayStart, new Date(now.getTime() - 60_000)));
+  const service = createService(harness, () => now);
+  assert.equal((await service.checkMonitor(USER, SESSION, { operation_id: OPS[0] })).reminder_created, false);
+  now = new Date(dayStart.getTime() + 600_000);
+  assert.equal((await service.checkMonitor(USER, SESSION, { operation_id: OPS[1] })).reminder_created, true);
+  assert.equal(harness.state.notifications[1].application_date.toISOString(), "2026-10-27T00:00:00.000Z");
+  const receipt = harness.state.receipts.find((row) => row.operation_id === OPS[1]);
+  receipt.response_projection.data.unread_count = -1;
+  await assert.rejects(service.checkMonitor(USER, SESSION, { operation_id: OPS[1] }), /Stored Daily Goal replay outcome is invalid/);
 });
 
 function establish(operation_id) { return { operation_id, activity_type: "NORMAL", learning_session_id: LEARNING }; }
@@ -821,9 +907,14 @@ function createHarness({ activeMilliseconds = null, targetMinutes = null, totalX
       .slice(0, take),
     countUnreadNotifications: async () => state.notifications.filter((row) => row.user_id === userId && row.read_at === null).length,
     findNotification: async (id) => state.notifications.find((row) => row.id === id && row.user_id === userId) ?? null,
+    findNotificationByTypeAndDate: async (type, date) => state.notifications.find((row) => row.user_id === userId && row.type === type && row.application_date.getTime() === date.getTime()) ?? null,
     markNotificationRead: async (id, readAt) => { const row = state.notifications.find((item) => item.id === id && item.user_id === userId); if (!row) return { count: 0 }; row.read_at = readAt; state.notificationUpdates += 1; return { count: 1 }; },
   }; }
   return { state, repository };
+}
+
+function monitorAt(instant, lastSeen = instant) {
+  return { id: SESSION, user_id: USER, started_at: instant, last_seen_at: lastSeen, continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null };
 }
 
 function notification(index, userId = USER) {
