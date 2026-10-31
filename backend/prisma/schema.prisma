@@ -57,6 +57,7 @@ enum DAILY_GOAL_TRACKING_STATUS {
   ACTIVE
   PAUSED
   CLOSED
+  EXPIRED
 }
 
 enum DAILY_GOAL_OPERATION_TYPE {
@@ -347,6 +348,8 @@ model DAILY_GOAL_TRACKING_SESSION {
   last_meaningful_at    DateTime?                      @db.Timestamptz(3)
   created_at            DateTime                       @default(now()) @db.Timestamptz(3)
   updated_at            DateTime                       @updatedAt @db.Timestamptz(3)
+  paused_at             DateTime?                      @db.Timestamptz(3)
+  expired_at            DateTime?                      @db.Timestamptz(3)
   closed_at             DateTime?                      @db.Timestamptz(3)
   user                  USER                           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   learning_session      LEARNING_SESSION?              @relation(fields: [learning_session_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
@@ -357,6 +360,10 @@ model DAILY_GOAL_TRACKING_SESSION {
 
   @@index([user_id, status, updated_at])
   @@index([updated_at])
+  @@index([status, created_at, id])
+  @@index([status, engagement_expires_at, id])
+  @@index([status, paused_at, id])
+  @@index([expired_at, id])
   @@index([learning_session_id])
   @@index([set_id])
   @@index([vocabulary_id])
@@ -432,10 +439,13 @@ model DAILY_GOAL_MONITOR_SESSION {
   last_seen_at          DateTime                       @db.Timestamptz(3)
   continuity_started_at DateTime                       @db.Timestamptz(3)
   eligible_baseline_at  DateTime                       @db.Timestamptz(3)
+  expired_at            DateTime?                      @db.Timestamptz(3)
   closed_at             DateTime?                      @db.Timestamptz(3)
   user                  USER                           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   operation_receipts    DAILY_GOAL_OPERATION_RECEIPT[]
 
   @@index([user_id, last_seen_at])
   @@index([last_seen_at])
+  @@index([closed_at, expired_at, last_seen_at, id], map: "DG_MONITOR_closed_expired_seen_id_idx")
+  @@index([expired_at, id])
 }

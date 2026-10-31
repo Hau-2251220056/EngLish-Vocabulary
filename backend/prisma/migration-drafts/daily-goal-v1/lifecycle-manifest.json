@@ -1,0 +1,32 @@
+{
+  "artifact": "Daily Goal lifecycle expiry follow-on migration review set",
+  "base_dependency": {
+    "migration_name": "20261022000000_add_daily_goal_v1",
+    "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261022000000_add_daily_goal_v1/migration.sql",
+    "byte_count": 11487,
+    "sha256": "8e468739c3f60693e9ff53d1c3d4107124ac1feaa9d95ac3a665ea8b8c89edb6"
+  },
+  "execution_order": [
+    "20261022000000_add_daily_goal_v1",
+    "20261031000000_add_daily_goal_tracking_expired_status",
+    "20261031000001_add_daily_goal_lifecycle_expiry"
+  ],
+  "artifacts": [
+    {
+      "migration_name": "20261031000000_add_daily_goal_tracking_expired_status",
+      "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261031000000_add_daily_goal_tracking_expired_status/migration.sql",
+      "byte_count": 159,
+      "sha256": "83946b364ab9acefb9dabb1e42e415171b99d05bf6a4d12b0485d76ee8ff0c52"
+    },
+    {
+      "migration_name": "20261031000001_add_daily_goal_lifecycle_expiry",
+      "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261031000001_add_daily_goal_lifecycle_expiry/migration.sql",
+      "byte_count": 3062,
+      "sha256": "dabb0febe7ad18eaff8321e07b6cd9b28506c290f6b6e0a71e51d32f48c8ef02"
+    }
+  ],
+  "human_approval_status": "ARTIFACT AUTHORING AUTHORIZED; MIGRATION ACTIVATION REQUIRES SEPARATE HUMAN AUTHORIZATION",
+  "activation_status": "NOT AUTHORIZED",
+  "database_execution": "NOT RUN",
+  "verification_status": "STATIC AUTHORING ONLY; REAL POSTGRESQL NOT RUN"
+}
