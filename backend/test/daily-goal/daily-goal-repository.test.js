@@ -322,6 +322,64 @@ test("cleanup is lock-first and child-first; parent queries and deletes exclude 
   }
 });
 
+test("cleanup shares one 100-row budget receipt-first across tracking and monitor parents", async () => {
+  const evaluatedAt = new Date("2026-10-26T12:00:00.000Z");
+  const receiptCutoff = new Date(evaluatedAt.getTime() - 30 * 86_400_000);
+  const parentCutoff = new Date(evaluatedAt.getTime() - 31 * 86_400_000);
+  const fixtures = (field, prefix, count, timeField, cutoff) => Array.from({ length: count }, (_, index) => ({
+    [field]: `${prefix}-${String(index).padStart(3, "0")}`,
+    [timeField]: new Date(cutoff.getTime() - count + index),
+  }));
+  const harness = createHarness({ cleanupFixtures: {
+    receipts: fixtures("operation_id", "receipt", 99, "created_at", receiptCutoff),
+    tracking: fixtures("id", "tracking", 10, "closed_at", parentCutoff),
+    monitors: fixtures("id", "monitor", 10, "closed_at", parentCutoff),
+  } });
+  const result = await createDailyGoalRepositoryForTest(harness.prisma, { now: () => evaluatedAt })
+    .withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(result, { receiptsDeleted: 99, trackingSessionsDeleted: 1, monitorSessionsDeleted: 0 });
+  assert.equal(harness.calls.find((call) => call.kind === "receipt.findMany").args.take, 100);
+  assert.equal(harness.calls.find((call) => call.kind === "tracking.findMany").args.take, 1);
+  assert.equal(
+    harness.calls.some((call) => call.kind === "monitor.findMany"),
+    false,
+  );
+  assert.equal(Object.values(result).reduce((sum, count) => sum + count, 0), 100);
+});
+
+test("zero receipts preserve the budget and unused tracking budget flows to monitors", async () => {
+  const evaluatedAt = new Date("2026-10-26T12:00:00.000Z");
+  const parentCutoff = new Date(evaluatedAt.getTime() - 31 * 86_400_000);
+  const parents = (prefix, count) => Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}-${String(index).padStart(3, "0")}`,
+    closed_at: new Date(parentCutoff.getTime() - count + index),
+  }));
+  const harness = createHarness({ cleanupFixtures: {
+    receipts: [], tracking: parents("tracking", 60), monitors: parents("monitor", 60),
+  } });
+  const result = await createDailyGoalRepositoryForTest(harness.prisma, { now: () => evaluatedAt })
+    .withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(result, { receiptsDeleted: 0, trackingSessionsDeleted: 60, monitorSessionsDeleted: 40 });
+  assert.equal(harness.calls.find((call) => call.kind === "tracking.findMany").args.take, 100);
+  assert.equal(harness.calls.find((call) => call.kind === "monitor.findMany").args.take, 40);
+});
+
+test("cleanup selection is deterministic and ACTIVE tracking sessions remain ineligible", async () => {
+  const harness = createHarness({ cleanupRows: 1 });
+  await createDailyGoalRepository(harness.prisma)
+    .withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  const receipt = harness.calls.find((call) => call.kind === "receipt.findMany").args;
+  const tracking = harness.calls.find((call) => call.kind === "tracking.findMany").args;
+  const monitor = harness.calls.find((call) => call.kind === "monitor.findMany").args;
+  assert.deepEqual(receipt.orderBy, [{ created_at: "asc" }, { operation_id: "asc" }]);
+  assert.deepEqual(tracking.orderBy, [{ closed_at: "asc" }, { id: "asc" }]);
+  assert.deepEqual(monitor.orderBy, [{ closed_at: "asc" }, { id: "asc" }]);
+  assert.equal(tracking.where.status, "CLOSED");
+  assert.deepEqual(tracking.where.owner_records, { none: {} });
+  assert.deepEqual(tracking.where.operation_receipts, { none: {} });
+  assert.deepEqual(monitor.where.operation_receipts, { none: {} });
+});
+
 test("cleanup derives strict 30/31-day cutoffs once and retains rows exactly at each boundary", async () => {
   const evaluatedAt = new Date("2026-10-26T12:00:00.000Z");
   const receiptCutoff = new Date(evaluatedAt.getTime() - 30 * 86_400_000);

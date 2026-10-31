@@ -27,6 +27,7 @@ const NOTIFICATION_CURSOR_VERSION = 1;
 const MONITOR_CHECK_AFTER_SECONDS = 60;
 const MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS = 150_000;
 const REMINDER_INACTIVITY_MILLISECONDS = 600_000;
+const CLEANUP_WARM_WINDOW_MILLISECONDS = 600_000;
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1_000;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
@@ -41,14 +42,40 @@ export class DailyGoalServiceError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-export function createDailyGoalService({ dailyGoalRepository, now = () => new Date(), uuid = randomUUID }) {
-  if (!dailyGoalRepository?.withUserTransaction) throw new TypeError("Daily Goal repository is required.");
+export function createDailyGoalCleanupScheduler({
+  dailyGoalRepository,
+  monotonicNow = () => performance.now(),
+  logFailure = () => console.error("Daily Goal operational cleanup failed."),
+}) {
+  if (!dailyGoalRepository?.withCleanupTransaction) throw new TypeError("Daily Goal cleanup repository is required.");
+  if (typeof monotonicNow !== "function" || typeof logFailure !== "function") throw new TypeError("Daily Goal cleanup dependencies are invalid.");
+  let reservedAt = Number.NEGATIVE_INFINITY;
 
-  async function transact(userId, callback) {
+  return function scheduleOperationalCleanup() {
+    let observedAt;
+    try { observedAt = monotonicNow(); } catch { safeCleanupLog(logFailure); return false; }
+    if (!Number.isFinite(observedAt) || observedAt < reservedAt
+      || observedAt - reservedAt < CLEANUP_WARM_WINDOW_MILLISECONDS) return false;
+    reservedAt = observedAt;
+    void Promise.resolve()
+      .then(() => dailyGoalRepository.withCleanupTransaction((repository) => repository.cleanupExpiredOperationalState()))
+      .catch(() => safeCleanupLog(logFailure));
+    return true;
+  };
+}
+
+export function createDailyGoalService({ dailyGoalRepository, now = () => new Date(), uuid = randomUUID, scheduleOperationalCleanup = () => false }) {
+  if (!dailyGoalRepository?.withUserTransaction) throw new TypeError("Daily Goal repository is required.");
+  if (typeof scheduleOperationalCleanup !== "function") throw new TypeError("Daily Goal cleanup scheduler is invalid.");
+
+  async function transact(userId, callback, cleanupEligible = false) {
     requireUuid(userId);
     const instant = requireDate(now());
     const outcome = await dailyGoalRepository.withUserTransaction(userId, (repository) => callback(repository, instant));
     if (outcome?.deferredError) throw outcome.deferredError;
+    if (cleanupEligible) {
+      try { scheduleOperationalCleanup(); } catch { /* Cleanup cannot change a successful command. */ }
+    }
     return outcome;
   }
 
@@ -90,7 +117,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
           notification: notificationProjection({ ...notification, read_at: readAt }),
           unread_count: await repository.countUnreadNotifications(),
         };
-      });
+      }, true);
     },
 
     getGoal(userId) {
@@ -116,7 +143,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const response = { ...goal, reward: { earned_now: earnedNow, xp_earned: earnedNow ? DAILY_GOAL_REWARD_XP : 0 } };
         await receipt(repository, request.operation_id, "GOAL_UPDATE", fingerprint, null, null, 0n, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     updateReminderPreference(userId, input) {
@@ -138,7 +165,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const response = { reminder_enabled: request.enabled, updated_at: instant.toISOString() };
         await receipt(repository, request.operation_id, "REMINDER_PREFERENCE_UPDATE", fingerprint, null, null, 0n, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     establishMonitor(userId, input) {
@@ -162,7 +189,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         };
         await monitorReceipt(repository, request.operation_id, "MONITOR_CREATE", fingerprint, session.id, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     checkMonitor(userId, monitorSessionId, input) {
@@ -209,7 +236,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         };
         await monitorReceipt(repository, request.operation_id, "MONITOR_CHECK", fingerprint, session.id, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     closeMonitor(userId, monitorSessionId, input) {
@@ -229,7 +256,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const response = { monitor_session_id: session.id, closed_at: closedAt.toISOString() };
         await monitorReceipt(repository, request.operation_id, "MONITOR_CLOSE", fingerprint, session.id, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     establish(userId, input) {
@@ -250,7 +277,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const response = projection(session, null, 0n);
         await receipt(repository, request.operation_id, "CREATE", fingerprint, session.id, null, 0n, response, instant);
         return { ...response, replayed: false };
-      });
+      }, true);
     },
 
     engage(userId, sessionId, input) {
@@ -319,7 +346,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const response = projection({ ...session, status: "ACTIVE", engagement_expires_at: deadline }, { tracking_session_id: session.id, generation, lease_expires_at: new Date(createLeaseExpiry(instant.getTime())) }, credited);
         await receipt(repository, request.operation_id, type, fingerprint, session.id, generation, credited, response, instant);
         return response;
-      });
+      }, true);
     },
 
     heartbeat(userId, sessionId, input) {
@@ -367,7 +394,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         await receipt(repository, request.operation_id, "HEARTBEAT", fingerprint, session.id, owner.generation, decision.creditedMilliseconds, response, instant, terminalCode);
         if (terminalCode) return { deferredError: conflict(terminalCode) };
         return response;
-      });
+      }, true);
     },
 
     pause(userId, sessionId, input) { return endSession(userId, sessionId, input, false); },
@@ -390,8 +417,12 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
       const response = projection({ ...session, status: closing ? "CLOSED" : "PAUSED" }, null, 0n);
       await receipt(repository, request.operation_id, type, fingerprint, session.id, request.generation, 0n, response, instant);
       return response;
-    });
+    }, true);
   }
+}
+
+function safeCleanupLog(logFailure) {
+  try { logFailure("DAILY_GOAL_OPERATIONAL_CLEANUP_FAILED"); } catch { /* Logging must remain non-fatal. */ }
 }
 
 async function requireSessionAndContext(repository, id, instant) {

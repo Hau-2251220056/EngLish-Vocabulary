@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createDailyGoalService } from "../../src/services/daily-goal-service.js";
+import {
+  createDailyGoalCleanupScheduler,
+  createDailyGoalService,
+} from "../../src/services/daily-goal-service.js";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "11111111-1111-4111-8111-111111111112";
@@ -858,9 +861,117 @@ test("B4 uses the Vietnam day start, allows a different notification type and fa
   await assert.rejects(service.checkMonitor(USER, SESSION, { operation_id: OPS[1] }), /Stored Daily Goal replay outcome is invalid/);
 });
 
+test("successful mutations schedule cleanup only after the primary USER transaction commits", async () => {
+  const harness = createHarness({ notifications: [notification(0)] });
+  const events = [];
+  const original = harness.repository.withUserTransaction;
+  harness.repository.withUserTransaction = async (...args) => {
+    const result = await original(...args);
+    events.push("commit");
+    return result;
+  };
+  const service = createService(harness, undefined, { scheduleOperationalCleanup: () => events.push("cleanup") });
+  await service.markNotificationRead(USER, notification(0).id, { read: true });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+  events.length = 0;
+  await service.updateGoal(USER, { operation_id: OPS[0], target_minutes: 10 });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+  events.length = 0;
+  await service.updateReminderPreference(USER, { operation_id: OPS[1], enabled: false });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+  events.length = 0;
+  await service.establishMonitor(USER, { operation_id: OPS[2] });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+  events.length = 0;
+  await service.checkMonitor(USER, SESSION, { operation_id: OPS[3] });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+  events.length = 0;
+  await service.closeMonitor(USER, SESSION, { operation_id: OPS[4] });
+  assert.deepEqual(events, ["commit", "cleanup"]);
+});
+
+test("tracking mutations schedule cleanup while reads and failed commands do not", async () => {
+  const harness = createHarness();
+  let scheduled = 0;
+  const service = createService(harness, undefined, { scheduleOperationalCleanup: () => { scheduled += 1; } });
+  await service.listNotifications(USER, {});
+  await service.countUnreadNotifications(USER);
+  await service.getGoal(USER);
+  assert.equal(scheduled, 0);
+  assert.throws(
+    () => service.updateGoal(USER, { operation_id: OPS[0], target_minutes: 9 }),
+    hasCode("DAILY_GOAL_VALIDATION_ERROR"),
+  );
+  assert.equal(scheduled, 0);
+  const established = await service.establish(USER, establish(OPS[1]));
+  assert.equal(scheduled, 1);
+  const engaged = await service.engage(USER, established.tracking_session_id, { operation_id: OPS[2], event_type: "READY" });
+  assert.equal(scheduled, 2);
+  await service.heartbeat(USER, established.tracking_session_id, heartbeat(OPS[3], engaged.generation));
+  assert.equal(scheduled, 3);
+  await service.pause(USER, established.tracking_session_id, { operation_id: OPS[4], generation: engaged.generation, reason: "HIDDEN" });
+  assert.equal(scheduled, 4);
+
+  const closeHarness = createHarness();
+  let closeScheduled = 0;
+  const closeService = createService(closeHarness, undefined, { scheduleOperationalCleanup: () => { closeScheduled += 1; } });
+  const closeSession = await closeService.establish(USER, establish(OPS[5]));
+  const closeEngaged = await closeService.engage(USER, closeSession.tracking_session_id, { operation_id: OPS[6], event_type: "READY" });
+  closeScheduled = 0;
+  await closeService.close(USER, closeSession.tracking_session_id, { operation_id: OPS[7], generation: closeEngaged.generation });
+  assert.equal(closeScheduled, 1);
+});
+
+test("cleanup scheduler reserves one monotonic 600000ms window before asynchronous launch", async () => {
+  let now = 0;
+  let cleanups = 0;
+  const repository = {
+    async withCleanupTransaction(callback) {
+      cleanups += 1;
+      return callback({ cleanupExpiredOperationalState: async () => ({ receiptsDeleted: 0, trackingSessionsDeleted: 0, monitorSessionsDeleted: 0 }) });
+    },
+  };
+  const schedule = createDailyGoalCleanupScheduler({ dailyGoalRepository: repository, monotonicNow: () => now, logFailure: () => assert.fail("unexpected cleanup failure") });
+  assert.equal(schedule(), true);
+  assert.equal(schedule(), false);
+  await new Promise(setImmediate);
+  assert.equal(cleanups, 1);
+  now = 599_999;
+  assert.equal(schedule(), false);
+  now = 600_000;
+  assert.equal(schedule(), true);
+  await new Promise(setImmediate);
+  assert.equal(cleanups, 2);
+});
+
+test("cleanup scheduling contains synchronous and asynchronous failures with static safe logging", async () => {
+  const logs = [];
+  const synchronous = createDailyGoalCleanupScheduler({
+    dailyGoalRepository: { withCleanupTransaction() { throw new Error("sensitive synchronous detail"); } },
+    monotonicNow: () => 0,
+    logFailure: (message) => logs.push(message),
+  });
+  assert.equal(synchronous(), true);
+  await new Promise(setImmediate);
+  const asynchronous = createDailyGoalCleanupScheduler({
+    dailyGoalRepository: { async withCleanupTransaction() { throw new Error("sensitive asynchronous detail"); } },
+    monotonicNow: () => 0,
+    logFailure: (message) => logs.push(message),
+  });
+  assert.equal(asynchronous(), true);
+  await new Promise(setImmediate);
+  assert.deepEqual(logs, ["DAILY_GOAL_OPERATIONAL_CLEANUP_FAILED", "DAILY_GOAL_OPERATIONAL_CLEANUP_FAILED"]);
+
+  const harness = createHarness();
+  const service = createService(harness, undefined, { scheduleOperationalCleanup: () => { throw new Error("scheduler failure"); } });
+  const response = await service.updateGoal(USER, { operation_id: OPS[8], target_minutes: 10 });
+  assert.equal(response.target_minutes, 10);
+  assert.equal(harness.state.receipts.some((row) => row.operation_id === OPS[8]), true);
+});
+
 function establish(operation_id) { return { operation_id, activity_type: "NORMAL", learning_session_id: LEARNING }; }
 function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
-function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z")) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION }); }
+function createService(harness, now = () => new Date("2026-10-26T00:00:00.000Z"), options = {}) { return createDailyGoalService({ dailyGoalRepository: harness.repository, now, uuid: () => SESSION, ...options }); }
 function hasCode(code) { return (error) => error?.code === code; }
 
 function createHarness({ activeMilliseconds = null, targetMinutes = null, totalXp = 0, reward = false, failNotification = false, notifications = [], reminderEnabled = null, reminderEnabledAt = null, userExists = true } = {}) {

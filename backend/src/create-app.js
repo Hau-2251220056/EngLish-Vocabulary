@@ -48,7 +48,7 @@ import { createVocabularySetService } from "./services/vocabulary-set-service.js
 import { createLearningService } from "./services/learning-service.js";
 import { createQuizService } from "./services/quiz-service.js";
 import { createLearningSessionService, createStreakService } from "./services/learning-session-service.js";
-import { createDailyGoalService } from "./services/daily-goal-service.js";
+import { createDailyGoalCleanupScheduler, createDailyGoalService } from "./services/daily-goal-service.js";
 import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
 import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
@@ -179,8 +179,10 @@ export function createApp({ prisma, learningNow, dailyGoalNow, coverStorage, cov
   const dailyGoalRepository = dailyGoalNow
     ? createDailyGoalRepositoryForTest(prisma, { now: dailyGoalNow })
     : createDailyGoalRepository(prisma);
+  const scheduleOperationalCleanup = createDailyGoalCleanupScheduler({ dailyGoalRepository });
   const dailyGoalService = createDailyGoalService({
     dailyGoalRepository,
+    scheduleOperationalCleanup,
     ...(dailyGoalNow ? { now: dailyGoalNow } : {}),
   });
   const dailyGoalController = createDailyGoalController({ dailyGoalService });

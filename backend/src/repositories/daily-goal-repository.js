@@ -286,6 +286,8 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         receiptsDeleted = deletion.count;
       }
 
+      let remaining = Math.max(0, limit - receiptsDeleted);
+
       const trackingIds = await listIds(
         transaction.dAILY_GOAL_TRACKING_SESSION,
         {
@@ -296,7 +298,7 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         },
         [{ closed_at: "asc" }, { id: "asc" }],
         "id",
-        limit,
+        remaining,
       );
       let trackingSessionsDeleted = 0;
       if (trackingIds.length > 0) {
@@ -312,6 +314,8 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         trackingSessionsDeleted = deletion.count;
       }
 
+      remaining = Math.max(0, remaining - trackingSessionsDeleted);
+
       const monitorIds = await listIds(
         transaction.dAILY_GOAL_MONITOR_SESSION,
         {
@@ -320,7 +324,7 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         },
         [{ closed_at: "asc" }, { id: "asc" }],
         "id",
-        limit,
+        remaining,
       );
       let monitorSessionsDeleted = 0;
       if (monitorIds.length > 0) {
