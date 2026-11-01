@@ -2,6 +2,7 @@
 
 const DEFAULT_TRANSACTION_OPTIONS = Object.freeze({ maxWait: 10_000, timeout: 30_000 });
 export const DAILY_GOAL_CLEANUP_BATCH_LIMIT = 100;
+export const DAILY_GOAL_LIFECYCLE_PAGE_LIMIT = 25;
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1_000;
 const RECEIPT_RETENTION_MILLISECONDS = 30 * DAY_MILLISECONDS;
 const PARENT_RETENTION_MILLISECONDS = 31 * DAY_MILLISECONDS;
@@ -52,6 +53,135 @@ function createRepository(prisma, now) {
           lifecycle.active = false;
         }
       }, DEFAULT_TRANSACTION_OPTIONS);
+    },
+
+    claimLifecycleJournal({ policyVersion, leaseToken, leaseDurationMilliseconds }) {
+      requirePositiveInteger(policyVersion, "policyVersion");
+      requireNonemptyString(leaseToken, "leaseToken");
+      requirePositiveInteger(leaseDurationMilliseconds, "leaseDurationMilliseconds");
+      return prisma.$transaction(async (transaction) => {
+        const [policy] = await transaction.$queryRaw`
+          SELECT "policy_version", "activated_at", clock_timestamp() AS "database_now"
+          FROM "DAILY_GOAL_LIFECYCLE_POLICY"
+          WHERE "policy_version" = ${policyVersion}
+        `;
+        if (!policy) return Object.freeze({ classification: "POLICY_MISSING" });
+        await transaction.dAILY_GOAL_LIFECYCLE_JOURNAL.upsert({
+          where: { policy_version: policyVersion },
+          create: { policy_version: policyVersion, updated_at: policy.database_now },
+          update: {},
+        });
+        const [journal] = await transaction.$queryRaw`
+          SELECT * FROM "DAILY_GOAL_LIFECYCLE_JOURNAL"
+          WHERE "policy_version" = ${policyVersion}
+          FOR UPDATE
+        `;
+        const databaseNow = requireDate(policy.database_now, "databaseNow");
+        if (journal.lease_token !== null
+          && journal.lease_token !== leaseToken
+          && requireDate(journal.lease_expires_at, "leaseExpiresAt") > databaseNow) {
+          return Object.freeze({ classification: "LEASE_BUSY", policy, journal });
+        }
+        const nextRevision = requireNonnegativeBigInt(journal.revision, "revision") + 1n;
+        const leaseExpiresAt = new Date(databaseNow.getTime() + leaseDurationMilliseconds);
+        const claimed = await transaction.dAILY_GOAL_LIFECYCLE_JOURNAL.updateMany({
+          where: { policy_version: policyVersion, revision: journal.revision },
+          data: {
+            lease_token: leaseToken,
+            lease_expires_at: leaseExpiresAt,
+            revision: nextRevision,
+            updated_at: databaseNow,
+          },
+        });
+        if (claimed.count !== 1) return Object.freeze({ classification: "LEASE_LOST" });
+        return Object.freeze({
+          classification: "CLAIMED",
+          policy,
+          journal: { ...journal, lease_token: leaseToken, lease_expires_at: leaseExpiresAt, revision: nextRevision },
+        });
+      });
+    },
+
+    checkLifecycleLease({ policyVersion, leaseToken, revision }) {
+      return prisma.$transaction(async (transaction) => {
+        const [row] = await transaction.$queryRaw`
+          SELECT "lease_token", "lease_expires_at", "revision", clock_timestamp() AS "database_now"
+          FROM "DAILY_GOAL_LIFECYCLE_JOURNAL"
+          WHERE "policy_version" = ${policyVersion}
+        `;
+        return row?.lease_token === leaseToken
+          && row.revision === revision
+          && requireDate(row.lease_expires_at, "leaseExpiresAt") > requireDate(row.database_now, "databaseNow");
+      });
+    },
+
+    discoverLifecycleCandidates({ activatedAt, evaluatedAt, cursor = null, limit = DAILY_GOAL_LIFECYCLE_PAGE_LIMIT }) {
+      const activation = requireDate(activatedAt, "activatedAt");
+      const instant = requireDate(evaluatedAt, "evaluatedAt");
+      if (!Number.isInteger(limit) || limit < 1 || limit > DAILY_GOAL_LIFECYCLE_PAGE_LIMIT) {
+        throw new RangeError(`limit must be an integer from 1 through ${DAILY_GOAL_LIFECYCLE_PAGE_LIMIT}.`);
+      }
+      const cursorEligibility = cursor?.eligibilityAt ?? null;
+      const cursorKindOrder = cursor?.candidateKindOrder ?? null;
+      const cursorStableId = cursor?.stableId ?? null;
+      return prisma.$queryRaw`
+        WITH candidates AS (
+          SELECT "user_id", 'TRACKING'::text AS "candidate_kind", 0 AS "candidate_kind_order",
+                 "id" AS "stable_id", "status"::text AS "expected_state",
+                 CASE WHEN "status" = 'PAUSED' THEN 'PAUSED'
+                      WHEN "engagement_expires_at" IS NULL THEN 'NEVER_READY'
+                      ELSE 'ACTIVE_DEADLINE' END AS "eligibility",
+                 CASE WHEN "status" = 'PAUSED' THEN "paused_at"
+                      WHEN "engagement_expires_at" IS NULL THEN "created_at"
+                      ELSE "engagement_expires_at" END AS "anchor",
+                 CASE WHEN "status" = 'PAUSED' THEN "paused_at" + INTERVAL '7 days'
+                      WHEN "engagement_expires_at" IS NULL THEN "created_at" + INTERVAL '24 hours'
+                      ELSE "engagement_expires_at" + INTERVAL '24 hours' END AS "eligibility_at"
+          FROM "DAILY_GOAL_TRACKING_SESSION"
+          WHERE "created_at" >= ${activation} AND "closed_at" IS NULL AND "expired_at" IS NULL
+            AND (("status" = 'ACTIVE') OR ("status" = 'PAUSED' AND "paused_at" IS NOT NULL))
+          UNION ALL
+          SELECT "user_id", 'MONITOR'::text, 1, "id", 'OPEN'::text, 'MONITOR', "last_seen_at",
+                 "last_seen_at" + INTERVAL '24 hours'
+          FROM "DAILY_GOAL_MONITOR_SESSION"
+          WHERE "started_at" >= ${activation} AND "closed_at" IS NULL AND "expired_at" IS NULL
+        )
+        SELECT * FROM candidates
+        WHERE "eligibility_at" <= ${instant}
+          AND (${cursorEligibility}::timestamptz IS NULL OR
+               ("eligibility_at", "candidate_kind_order", "stable_id") >
+               (${cursorEligibility}::timestamptz, ${cursorKindOrder}::integer, ${cursorStableId}::uuid))
+        ORDER BY "eligibility_at" ASC, "candidate_kind_order" ASC, "stable_id" ASC
+        LIMIT ${limit}
+      `;
+    },
+
+    updateLifecycleJournal({
+      policyVersion, leaseToken, revision, pendingIndex, pendingDescriptors,
+      nextPendingDescriptors, nextPendingIndex, nextCursor, wrappedEpoch,
+    }) {
+      return prisma.$transaction(async (transaction) => {
+        const [clock] = await transaction.$queryRaw`SELECT clock_timestamp() AS "database_now"`;
+        return transaction.dAILY_GOAL_LIFECYCLE_JOURNAL.updateMany({
+          where: {
+            policy_version: policyVersion,
+            lease_token: leaseToken,
+            lease_expires_at: { gt: requireDate(clock.database_now, "databaseNow") },
+            revision,
+            pending_index: pendingIndex,
+            pending_descriptors: { equals: pendingDescriptors },
+          },
+          data: {
+            pending_descriptors: nextPendingDescriptors,
+            pending_index: nextPendingIndex,
+            scan_eligibility_at: nextCursor?.eligibilityAt ?? null,
+            scan_candidate_kind: nextCursor?.candidateKind ?? null,
+            scan_stable_id: nextCursor?.stableId ?? null,
+            wrapped_epoch: wrappedEpoch,
+            revision: revision + 1n,
+          },
+        });
+      });
     },
   });
 }
@@ -315,15 +445,18 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
 
       let remaining = Math.max(0, limit - receiptsDeleted);
 
+      const trackingWhere = {
+        OR: [
+          { status: "CLOSED", closed_at: { lt: parentBefore } },
+          { status: "EXPIRED", expired_at: { lt: parentBefore } },
+        ],
+        operation_receipts: { none: {} },
+        owner_records: { none: {} },
+      };
       const trackingIds = await listIds(
         transaction.dAILY_GOAL_TRACKING_SESSION,
-        {
-          status: "CLOSED",
-          closed_at: { lt: parentBefore },
-          operation_receipts: { none: {} },
-          owner_records: { none: {} },
-        },
-        [{ closed_at: "asc" }, { id: "asc" }],
+        trackingWhere,
+        [{ closed_at: "asc" }, { expired_at: "asc" }, { id: "asc" }],
         "id",
         remaining,
       );
@@ -332,10 +465,7 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         const deletion = await transaction.dAILY_GOAL_TRACKING_SESSION.deleteMany({
           where: {
             id: { in: trackingIds },
-            status: "CLOSED",
-            closed_at: { lt: parentBefore },
-            operation_receipts: { none: {} },
-            owner_records: { none: {} },
+            ...trackingWhere,
           },
         });
         trackingSessionsDeleted = deletion.count;
@@ -343,13 +473,17 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
 
       remaining = Math.max(0, remaining - trackingSessionsDeleted);
 
+      const monitorWhere = {
+        OR: [
+          { closed_at: { lt: parentBefore } },
+          { expired_at: { lt: parentBefore } },
+        ],
+        operation_receipts: { none: {} },
+      };
       const monitorIds = await listIds(
         transaction.dAILY_GOAL_MONITOR_SESSION,
-        {
-          closed_at: { lt: parentBefore },
-          operation_receipts: { none: {} },
-        },
-        [{ closed_at: "asc" }, { id: "asc" }],
+        monitorWhere,
+        [{ closed_at: "asc" }, { expired_at: "asc" }, { id: "asc" }],
         "id",
         remaining,
       );
@@ -358,8 +492,7 @@ function createCleanupRepository(transaction, lifecycle, evaluatedAt) {
         const deletion = await transaction.dAILY_GOAL_MONITOR_SESSION.deleteMany({
           where: {
             id: { in: monitorIds },
-            closed_at: { lt: parentBefore },
-            operation_receipts: { none: {} },
+            ...monitorWhere,
           },
         });
         monitorSessionsDeleted = deletion.count;
@@ -447,4 +580,13 @@ function requireNonemptyString(value, name) {
 function requireDate(value, name) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) throw new TypeError(`${name} must be a valid Date.`);
   return new Date(value.getTime());
+}
+
+function requirePositiveInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${name} must be a positive integer.`);
+}
+
+function requireNonnegativeBigInt(value, name) {
+  if (typeof value !== "bigint" || value < 0n) throw new TypeError(`${name} must be a nonnegative bigint.`);
+  return value;
 }

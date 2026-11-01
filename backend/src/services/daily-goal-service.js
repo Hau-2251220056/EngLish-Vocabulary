@@ -31,6 +31,10 @@ const CLEANUP_WARM_WINDOW_MILLISECONDS = 600_000;
 const TRACKING_ACTIVE_EXPIRY_MILLISECONDS = 24 * 60 * 60 * 1_000;
 const TRACKING_PAUSED_EXPIRY_MILLISECONDS = 7 * TRACKING_ACTIVE_EXPIRY_MILLISECONDS;
 const MONITOR_EXPIRY_MILLISECONDS = 24 * 60 * 60 * 1_000;
+const LIFECYCLE_POLICY_VERSION = 1;
+const LIFECYCLE_PAGE_LIMIT = 25;
+const LIFECYCLE_ATTEMPT_LIMIT = 300;
+const LIFECYCLE_TRANSITION_LIMIT = 100;
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1_000;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
@@ -40,6 +44,8 @@ const INACTIVITY_NOTIFICATION = Object.freeze({
   title: "Nhắc nhở học từ vựng",
   body: "Bạn chưa có hoạt động học từ vựng trong khoảng 10 phút. Hãy tiếp tục học để hoàn thành mục tiêu hôm nay nhé!",
 });
+
+class TrackingExpiryRollback extends Error {}
 
 export class DailyGoalServiceError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -98,6 +104,134 @@ export function createDailyGoalCleanupScheduler({
       .catch(() => safeCleanupLog(logFailure));
     return true;
   };
+}
+
+export function createDailyGoalLifecycleMaintenanceRunner({
+  dailyGoalRepository,
+  leaseDurationMilliseconds,
+  uuid = randomUUID,
+  logFailure = () => console.error("Daily Goal lifecycle maintenance failed."),
+}) {
+  const required = [
+    "claimLifecycleJournal", "checkLifecycleLease", "discoverLifecycleCandidates",
+    "updateLifecycleJournal", "withUserTransaction", "withCleanupTransaction",
+  ];
+  if (required.some((method) => typeof dailyGoalRepository?.[method] !== "function")) {
+    throw new TypeError("Daily Goal lifecycle maintenance repository is required.");
+  }
+  if (!Number.isSafeInteger(leaseDurationMilliseconds) || leaseDurationMilliseconds <= 0) {
+    throw new TypeError("An explicit positive lease duration is required.");
+  }
+  if (typeof uuid !== "function" || typeof logFailure !== "function") {
+    throw new TypeError("Daily Goal lifecycle maintenance dependencies are invalid.");
+  }
+
+  return async function runLifecycleMaintenance() {
+    let expiry;
+    try {
+      expiry = await runExpiry();
+    } catch {
+      safeLifecycleLog(logFailure, "DAILY_GOAL_LIFECYCLE_EXPIRY_FAILED");
+      expiry = Object.freeze({ classification: "FAILED", attempted: 0, transitioned: 0 });
+    }
+    let cleanup;
+    try {
+      cleanup = await dailyGoalRepository.withCleanupTransaction((repository) => (
+        repository.cleanupExpiredOperationalState()
+      ));
+    } catch {
+      safeLifecycleLog(logFailure, "DAILY_GOAL_LIFECYCLE_CLEANUP_FAILED");
+      cleanup = Object.freeze({ classification: "FAILED" });
+    }
+    return Object.freeze({ expiry, cleanup });
+  };
+
+  async function runExpiry() {
+    const leaseToken = uuid();
+    requireUuid(leaseToken);
+    const claim = await dailyGoalRepository.claimLifecycleJournal({
+      policyVersion: LIFECYCLE_POLICY_VERSION,
+      leaseToken,
+      leaseDurationMilliseconds,
+    });
+    if (claim.classification !== "CLAIMED") {
+      return Object.freeze({ classification: claim.classification, attempted: 0, transitioned: 0 });
+    }
+    const policy = validateLifecyclePolicy(claim.policy);
+    let journal = validateLifecycleJournal(claim.journal, leaseToken);
+    let attempted = 0;
+    let transitioned = 0;
+    let wraps = 0;
+
+    while (attempted < LIFECYCLE_ATTEMPT_LIMIT && transitioned < LIFECYCLE_TRANSITION_LIMIT) {
+      if (journal.pendingIndex >= journal.pendingDescriptors.length) {
+        const cursor = journal.cursor;
+        const rows = await dailyGoalRepository.discoverLifecycleCandidates({
+          activatedAt: policy.activatedAt,
+          evaluatedAt: policy.databaseNow,
+          cursor,
+          limit: LIFECYCLE_PAGE_LIMIT,
+        });
+        const descriptors = validateLifecycleDescriptors(rows, policy.activatedAt, cursor);
+        if (descriptors.length === 0) {
+          if (cursor === null || wraps === 1) break;
+          const updated = await writeJournal(leaseToken, journal, [], 0, null, journal.wrappedEpoch + 1n);
+          if (!updated) return Object.freeze({ classification: "LEASE_LOST", attempted, transitioned });
+          journal = updated;
+          wraps += 1;
+          continue;
+        }
+        const updated = await writeJournal(leaseToken, journal, descriptors, 0, cursor, journal.wrappedEpoch);
+        if (!updated) return Object.freeze({ classification: "LEASE_LOST", attempted, transitioned });
+        journal = updated;
+      }
+
+      if (!await dailyGoalRepository.checkLifecycleLease({
+        policyVersion: LIFECYCLE_POLICY_VERSION, leaseToken, revision: journal.revision,
+      })) {
+        return Object.freeze({ classification: "LEASE_LOST", attempted, transitioned });
+      }
+      const descriptor = journal.pendingDescriptors[journal.pendingIndex];
+      const changed = await attemptLifecycleExpiry(dailyGoalRepository, descriptor, policy);
+      attempted += 1;
+      if (changed) transitioned += 1;
+      const nextCursor = descriptorCursor(descriptor);
+      const updated = await writeJournal(
+        leaseToken,
+        journal,
+        journal.pendingDescriptors,
+        journal.pendingIndex + 1,
+        nextCursor,
+        journal.wrappedEpoch,
+      );
+      if (!updated) return Object.freeze({ classification: "LEASE_LOST", attempted, transitioned });
+      journal = updated;
+    }
+    return Object.freeze({ classification: "COMPLETED", attempted, transitioned });
+  }
+
+  async function writeJournal(leaseToken, journal, nextPendingDescriptors, nextPendingIndex, nextCursor, wrappedEpoch) {
+    const update = await dailyGoalRepository.updateLifecycleJournal({
+      policyVersion: LIFECYCLE_POLICY_VERSION,
+      leaseToken,
+      revision: journal.revision,
+      pendingIndex: journal.pendingIndex,
+      pendingDescriptors: journal.pendingDescriptors,
+      nextPendingDescriptors,
+      nextPendingIndex,
+      nextCursor,
+      wrappedEpoch,
+    });
+    if (update.count !== 1) return null;
+    return Object.freeze({
+      ...journal,
+      pendingDescriptors: nextPendingDescriptors,
+      pendingIndex: nextPendingIndex,
+      cursor: nextCursor,
+      wrappedEpoch,
+      revision: journal.revision + 1n,
+    });
+  }
 }
 
 export function createDailyGoalService({ dailyGoalRepository, now = () => new Date(), uuid = randomUUID, scheduleOperationalCleanup = () => false }) {
@@ -466,6 +600,206 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
 
 function safeCleanupLog(logFailure) {
   try { logFailure("DAILY_GOAL_OPERATIONAL_CLEANUP_FAILED"); } catch { /* Logging must remain non-fatal. */ }
+}
+
+function safeLifecycleLog(logFailure, code) {
+  try { logFailure(code); } catch { /* Maintenance logging must remain non-fatal. */ }
+}
+
+function validateLifecyclePolicy(value) {
+  requireExactRecordKeys(value, ["policy_version", "activated_at", "database_now"]);
+  if (value.policy_version !== LIFECYCLE_POLICY_VERSION) throw new Error("Lifecycle policy version mismatch.");
+  const activatedAt = requireDate(value.activated_at);
+  const databaseNow = requireDate(value.database_now);
+  if (activatedAt > databaseNow) throw new Error("Lifecycle activation instant is invalid.");
+  return Object.freeze({ activatedAt, databaseNow });
+}
+
+function validateLifecycleJournal(value, leaseToken) {
+  requireExactRecordKeys(value, [
+    "policy_version", "scan_eligibility_at", "scan_candidate_kind", "scan_stable_id",
+    "pending_descriptors", "pending_index", "lease_token", "lease_expires_at",
+    "wrapped_epoch", "revision", "updated_at",
+  ]);
+  if (value.policy_version !== LIFECYCLE_POLICY_VERSION || value.lease_token !== leaseToken) {
+    throw new Error("Lifecycle journal authority mismatch.");
+  }
+  const leaseExpiresAt = requireDate(value.lease_expires_at);
+  requireDate(value.updated_at);
+  if (typeof value.revision !== "bigint" || value.revision < 0n
+    || typeof value.wrapped_epoch !== "bigint" || value.wrapped_epoch < 0n) {
+    throw new Error("Lifecycle journal counters are invalid.");
+  }
+  const cursorNull = value.scan_eligibility_at === null
+    && value.scan_candidate_kind === null && value.scan_stable_id === null;
+  const cursorFull = value.scan_eligibility_at !== null
+    && new Set(["TRACKING", "MONITOR"]).has(value.scan_candidate_kind)
+    && typeof value.scan_stable_id === "string" && UUID.test(value.scan_stable_id);
+  if (!cursorNull && !cursorFull) throw new Error("Lifecycle journal cursor is invalid.");
+  const cursor = cursorNull ? null : Object.freeze({
+    eligibilityAt: requireDate(value.scan_eligibility_at),
+    candidateKind: value.scan_candidate_kind,
+    candidateKindOrder: value.scan_candidate_kind === "TRACKING" ? 0 : 1,
+    stableId: value.scan_stable_id.toLowerCase(),
+  });
+  if (!Array.isArray(value.pending_descriptors) || value.pending_descriptors.length > LIFECYCLE_PAGE_LIMIT
+    || !Number.isSafeInteger(value.pending_index) || value.pending_index < 0
+    || value.pending_index > value.pending_descriptors.length) {
+    throw new Error("Lifecycle journal pending state is invalid.");
+  }
+  const pendingDescriptors = validateLifecycleDescriptors(value.pending_descriptors, null, null);
+  if (cursor && value.pending_index < pendingDescriptors.length
+    && compareLifecycleCursor(descriptorCursor(pendingDescriptors[value.pending_index]), cursor) <= 0) {
+    throw new Error("Lifecycle journal cursor is incompatible with pending work.");
+  }
+  return Object.freeze({
+    pendingDescriptors,
+    pendingIndex: value.pending_index,
+    cursor,
+    leaseExpiresAt,
+    wrappedEpoch: value.wrapped_epoch,
+    revision: value.revision,
+  });
+}
+
+function validateLifecycleDescriptors(rows, activatedAt, cursor) {
+  if (!Array.isArray(rows) || rows.length > LIFECYCLE_PAGE_LIMIT) {
+    throw new Error("Lifecycle descriptor page is invalid.");
+  }
+  const descriptors = rows.map((row) => {
+    requireExactRecordKeys(row, [
+      "user_id", "candidate_kind", "candidate_kind_order", "stable_id", "expected_state",
+      "eligibility", "anchor", "eligibility_at",
+    ]);
+    requireUuid(row.user_id);
+    requireUuid(row.stable_id);
+    if ((row.candidate_kind === "TRACKING" && row.candidate_kind_order !== 0)
+      || (row.candidate_kind === "MONITOR" && row.candidate_kind_order !== 1)) {
+      throw new Error("Lifecycle descriptor kind is invalid.");
+    }
+    const expectedStates = row.candidate_kind === "TRACKING"
+      ? { NEVER_READY: "ACTIVE", ACTIVE_DEADLINE: "ACTIVE", PAUSED: "PAUSED" }
+      : { MONITOR: "OPEN" };
+    if (expectedStates[row.eligibility] !== row.expected_state
+      || (row.candidate_kind === "MONITOR" && row.expected_state !== "OPEN")) {
+      throw new Error("Lifecycle descriptor state is invalid.");
+    }
+    const anchor = parseLifecycleInstant(row.anchor);
+    const eligibilityAt = parseLifecycleInstant(row.eligibility_at);
+    const duration = row.eligibility === "PAUSED"
+      ? TRACKING_PAUSED_EXPIRY_MILLISECONDS : TRACKING_ACTIVE_EXPIRY_MILLISECONDS;
+    if (eligibilityAt.getTime() !== anchor.getTime() + duration) {
+      throw new Error("Lifecycle descriptor eligibility is invalid.");
+    }
+    if (activatedAt && anchor < activatedAt) throw new Error("Lifecycle descriptor predates activation.");
+    return Object.freeze({
+      user_id: row.user_id.toLowerCase(),
+      candidate_kind: row.candidate_kind,
+      candidate_kind_order: row.candidate_kind_order,
+      stable_id: row.stable_id.toLowerCase(),
+      expected_state: row.expected_state,
+      eligibility: row.eligibility,
+      anchor: anchor.toISOString(),
+      eligibility_at: eligibilityAt.toISOString(),
+    });
+  });
+  const identities = new Set();
+  for (let index = 0; index < descriptors.length; index += 1) {
+    const descriptor = descriptors[index];
+    const identity = `${descriptor.candidate_kind}:${descriptor.stable_id}`;
+    if (identities.has(identity)) throw new Error("Lifecycle descriptor is duplicated.");
+    identities.add(identity);
+    const current = descriptorCursor(descriptor);
+    if ((index > 0 && compareLifecycleCursor(current, descriptorCursor(descriptors[index - 1])) <= 0)
+      || (cursor && compareLifecycleCursor(current, cursor) <= 0)) {
+      throw new Error("Lifecycle descriptor order is invalid.");
+    }
+  }
+  return Object.freeze(descriptors);
+}
+
+function descriptorCursor(descriptor) {
+  return Object.freeze({
+    eligibilityAt: new Date(descriptor.eligibility_at),
+    candidateKind: descriptor.candidate_kind,
+    candidateKindOrder: descriptor.candidate_kind_order,
+    stableId: descriptor.stable_id,
+  });
+}
+
+function compareLifecycleCursor(left, right) {
+  return left.eligibilityAt - right.eligibilityAt
+    || left.candidateKindOrder - right.candidateKindOrder
+    || (left.stableId < right.stableId ? -1 : left.stableId > right.stableId ? 1 : 0);
+}
+
+function parseLifecycleInstant(value) {
+  if (value instanceof Date) return requireDate(value);
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    throw new Error("Lifecycle timestamp is invalid.");
+  }
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime()) || instant.toISOString() !== value) {
+    throw new Error("Lifecycle timestamp is invalid.");
+  }
+  return instant;
+}
+
+async function attemptLifecycleExpiry(dailyGoalRepository, descriptor, policy) {
+  try {
+    return await dailyGoalRepository.withUserTransaction(descriptor.user_id, async (repository) => {
+      const anchor = new Date(descriptor.anchor);
+      if (descriptor.candidate_kind !== "TRACKING") {
+        const session = await repository.findMonitorSession(descriptor.stable_id);
+        if (!session || requireDate(session.started_at) < policy.activatedAt) return false;
+        const decision = evaluateMonitorExpiryEligibility(session, policy.databaseNow);
+        if (!decision?.eligible || decision.anchor.getTime() !== anchor.getTime()) return false;
+        const update = await repository.expireMonitorSession({
+          monitorSessionId: session.id,
+          expectedLastSeenAt: anchor,
+          expiredAt: policy.databaseNow,
+        });
+        return update.count === 1;
+      }
+      const session = await repository.findTrackingSession(descriptor.stable_id);
+      if (!session || requireDate(session.created_at) < policy.activatedAt) return false;
+      const decision = evaluateTrackingExpiryEligibility(session, policy.databaseNow);
+      if (!decision?.eligible || decision.eligibility !== descriptor.eligibility
+        || decision.anchor.getTime() !== anchor.getTime() || session.status !== descriptor.expected_state) return false;
+      const owner = await repository.findOwner();
+      let ownerCleared = false;
+      if (owner?.tracking_session_id === session.id) {
+        const cleared = await repository.updateOwnerAtGeneration(owner.generation, {
+          tracking_session_id: null,
+          lease_expires_at: null,
+          last_accounted_at: null,
+          generation: nextOwnershipGeneration(owner.generation),
+        });
+        if (cleared.count !== 1) return false;
+        ownerCleared = true;
+      }
+      const update = await repository.expireTrackingSession({
+        sessionId: session.id,
+        eligibility: descriptor.eligibility,
+        expectedAnchor: anchor,
+        expiredAt: policy.databaseNow,
+      });
+      if (update.count !== 1 && ownerCleared) throw new TrackingExpiryRollback();
+      return update.count === 1;
+    });
+  } catch (error) {
+    if (error instanceof TrackingExpiryRollback) return false;
+    throw error;
+  }
+}
+
+function requireExactRecordKeys(value, expected) {
+  if (!isRecord(value)) throw new Error("Lifecycle persistence data is invalid.");
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+    throw new Error("Lifecycle persistence data is invalid.");
+  }
 }
 
 async function requireSessionAndContext(repository, id, instant) {

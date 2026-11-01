@@ -5,6 +5,7 @@ import {
   createDailyGoalRepository,
   createDailyGoalRepositoryForTest,
   DAILY_GOAL_CLEANUP_BATCH_LIMIT,
+  DAILY_GOAL_LIFECYCLE_PAGE_LIMIT,
 } from "../../src/repositories/daily-goal-repository.js";
 
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -168,6 +169,62 @@ test("tracking expiry primitive rejects unsupported eligibility before writing",
     /Unsupported tracking expiry eligibility/,
   );
   assert.equal(harness.calls.some((call) => call.kind === "tracking.updateMany"), false);
+});
+
+test("lifecycle journal claim uses database time, preserves pending work, and fences a live lease", async () => {
+  const databaseNow = new Date("2026-10-31T00:00:00.000Z");
+  const pending = [{ stable_id: "pending" }];
+  const harness = createHarness({
+    lifecyclePolicy: { policy_version: 1, activated_at: new Date("2026-10-30T00:00:00.000Z"), database_now: databaseNow },
+    lifecycleJournal: lifecycleJournal({ pending_descriptors: pending, lease_token: null }),
+  });
+  const repository = createDailyGoalRepository(harness.prisma);
+  const claim = await repository.claimLifecycleJournal({
+    policyVersion: 1, leaseToken: SESSION_UUID, leaseDurationMilliseconds: 5_000,
+  });
+  assert.equal(claim.classification, "CLAIMED");
+  assert.deepEqual(claim.journal.pending_descriptors, pending);
+  assert.equal(claim.journal.revision, 8n);
+  assert.equal(claim.journal.lease_expires_at.toISOString(), "2026-10-31T00:00:05.000Z");
+  assert.deepEqual(harness.calls.map((call) => call.kind), [
+    "lifecycle.policy", "journal.upsert", "lifecycle.journal-lock", "journal.updateMany", "commit",
+  ]);
+
+  const busy = createHarness({
+    lifecyclePolicy: { policy_version: 1, activated_at: databaseNow, database_now: databaseNow },
+    lifecycleJournal: lifecycleJournal({ lease_token: OTHER, lease_expires_at: new Date(databaseNow.getTime() + 1_000) }),
+  });
+  assert.equal((await createDailyGoalRepository(busy.prisma).claimLifecycleJournal({
+    policyVersion: 1, leaseToken: SESSION_UUID, leaseDurationMilliseconds: 5_000,
+  })).classification, "LEASE_BUSY");
+  assert.equal(busy.calls.some((call) => call.kind === "journal.updateMany"), false);
+});
+
+test("lifecycle discovery is bounded and journal progress is token revision index and descriptor fenced", async () => {
+  const activation = new Date("2026-10-30T00:00:00.000Z");
+  const evaluatedAt = new Date("2026-10-31T00:00:00.000Z");
+  const harness = createHarness({ lifecycleCandidates: [{ stable_id: SESSION_UUID }] });
+  const repository = createDailyGoalRepository(harness.prisma);
+  const rows = await repository.discoverLifecycleCandidates({ activatedAt: activation, evaluatedAt });
+  assert.equal(rows.length, 1);
+  const query = harness.calls.find((call) => call.kind === "lifecycle.discover");
+  assert.match(query.sql, /UNION ALL/);
+  assert.match(query.sql, /ORDER BY "eligibility_at" ASC, "candidate_kind_order" ASC, "stable_id" ASC/);
+  assert.equal(query.values.at(-1), DAILY_GOAL_LIFECYCLE_PAGE_LIMIT);
+
+  const pending = [{ stable_id: SESSION_UUID }];
+  await repository.updateLifecycleJournal({
+    policyVersion: 1, leaseToken: SESSION_UUID, revision: 3n,
+    pendingIndex: 0, pendingDescriptors: pending,
+    nextPendingDescriptors: pending, nextPendingIndex: 1,
+    nextCursor: { eligibilityAt: evaluatedAt, candidateKind: "TRACKING", stableId: SESSION_UUID },
+    wrappedEpoch: 0n,
+  });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "journal.updateMany").args.where, {
+    policy_version: 1, lease_token: SESSION_UUID, revision: 3n,
+    lease_expires_at: { gt: new Date(0) },
+    pending_index: 0, pending_descriptors: { equals: pending },
+  });
 });
 
 test("receipt replay accepts only exact stored type and server-derived fingerprint", async () => {
@@ -348,18 +405,20 @@ test("cleanup is lock-first and child-first; parent queries and deletes exclude 
   ]);
   for (const kind of ["tracking.findMany", "tracking.deleteMany"]) {
     const where = harness.calls.find((call) => call.kind === kind).args.where;
-    assert.equal(where.status, "CLOSED");
-    assert.ok(where.closed_at.lt instanceof Date);
+    assert.deepEqual(where.OR.map((entry) => entry.status), ["CLOSED", "EXPIRED"]);
+    assert.ok(where.OR[0].closed_at.lt instanceof Date);
+    assert.ok(where.OR[1].expired_at.lt instanceof Date);
     assert.deepEqual(where.operation_receipts, { none: {} });
     assert.deepEqual(where.owner_records, { none: {} });
   }
   assert.deepEqual(
-    harness.calls.find((call) => call.kind === "tracking.deleteMany").args.where.closed_at,
-    harness.calls.find((call) => call.kind === "tracking.findMany").args.where.closed_at,
+    harness.calls.find((call) => call.kind === "tracking.deleteMany").args.where.OR,
+    harness.calls.find((call) => call.kind === "tracking.findMany").args.where.OR,
   );
   for (const kind of ["monitor.findMany", "monitor.deleteMany"]) {
     const where = harness.calls.find((call) => call.kind === kind).args.where;
-    assert.ok(where.closed_at.lt instanceof Date);
+    assert.ok(where.OR[0].closed_at.lt instanceof Date);
+    assert.ok(where.OR[1].expired_at.lt instanceof Date);
     assert.deepEqual(where.operation_receipts, { none: {} });
   }
 });
@@ -414,9 +473,9 @@ test("cleanup selection is deterministic and ACTIVE tracking sessions remain ine
   const tracking = harness.calls.find((call) => call.kind === "tracking.findMany").args;
   const monitor = harness.calls.find((call) => call.kind === "monitor.findMany").args;
   assert.deepEqual(receipt.orderBy, [{ created_at: "asc" }, { operation_id: "asc" }]);
-  assert.deepEqual(tracking.orderBy, [{ closed_at: "asc" }, { id: "asc" }]);
-  assert.deepEqual(monitor.orderBy, [{ closed_at: "asc" }, { id: "asc" }]);
-  assert.equal(tracking.where.status, "CLOSED");
+  assert.deepEqual(tracking.orderBy, [{ closed_at: "asc" }, { expired_at: "asc" }, { id: "asc" }]);
+  assert.deepEqual(monitor.orderBy, [{ closed_at: "asc" }, { expired_at: "asc" }, { id: "asc" }]);
+  assert.deepEqual(tracking.where.OR.map((entry) => entry.status), ["CLOSED", "EXPIRED"]);
   assert.deepEqual(tracking.where.owner_records, { none: {} });
   assert.deepEqual(tracking.where.operation_receipts, { none: {} });
   assert.deepEqual(monitor.where.operation_receipts, { none: {} });
@@ -437,8 +496,13 @@ test("cleanup derives strict 30/31-day cutoffs once and retains rows exactly at 
   const result = await repository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
   assert.deepEqual(result, { receiptsDeleted: 1, trackingSessionsDeleted: 1, monitorSessionsDeleted: 1 });
   assert.deepEqual(harness.calls.find((call) => call.kind === "receipt.findMany").args.where.created_at, { lt: receiptCutoff });
-  assert.deepEqual(harness.calls.find((call) => call.kind === "tracking.findMany").args.where.closed_at, { lt: parentCutoff });
-  assert.deepEqual(harness.calls.find((call) => call.kind === "monitor.findMany").args.where.closed_at, { lt: parentCutoff });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "tracking.findMany").args.where.OR, [
+    { status: "CLOSED", closed_at: { lt: parentCutoff } },
+    { status: "EXPIRED", expired_at: { lt: parentCutoff } },
+  ]);
+  assert.deepEqual(harness.calls.find((call) => call.kind === "monitor.findMany").args.where.OR, [
+    { closed_at: { lt: parentCutoff } }, { expired_at: { lt: parentCutoff } },
+  ]);
 });
 
 test("parent delete rechecks status, cutoff, receipts and owner after selection", async () => {
@@ -449,11 +513,16 @@ test("parent delete rechecks status, cutoff, receipts and owner after selection"
     .withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
   assert.deepEqual(result, { receiptsDeleted: 1, trackingSessionsDeleted: 0, monitorSessionsDeleted: 0 });
   assert.deepEqual(harness.calls.find((call) => call.kind === "tracking.deleteMany").args.where, {
-    id: { in: ["tracking-0"] }, status: "CLOSED", closed_at: { lt: parentCutoff },
+    id: { in: ["tracking-0"] }, OR: [
+      { status: "CLOSED", closed_at: { lt: parentCutoff } },
+      { status: "EXPIRED", expired_at: { lt: parentCutoff } },
+    ],
     operation_receipts: { none: {} }, owner_records: { none: {} },
   });
   assert.deepEqual(harness.calls.find((call) => call.kind === "monitor.deleteMany").args.where, {
-    id: { in: ["monitor-0"] }, closed_at: { lt: parentCutoff }, operation_receipts: { none: {} },
+    id: { in: ["monitor-0"] }, OR: [
+      { closed_at: { lt: parentCutoff } }, { expired_at: { lt: parentCutoff } },
+    ], operation_receipts: { none: {} },
   });
 });
 
@@ -476,6 +545,9 @@ function createHarness({
   cleanupFixtures = null,
   parentEligibilityChangesAfterSelection = false,
   failAt = null,
+  lifecyclePolicy = null,
+  lifecycleJournal: lifecycleJournalState = lifecycleJournal(),
+  lifecycleCandidates = [],
 } = {}) {
   const calls = [];
   const record = (kind, result) => async (args) => {
@@ -499,8 +571,9 @@ function createHarness({
   });
   const ids = (field, prefix, fixtureKey, timeField) => ({ take, where }) => {
     if (cleanupFixtures) {
+      const cutoff = where[timeField]?.lt ?? where.OR?.find((entry) => entry[timeField])?.[timeField].lt;
       return cleanupFixtures[fixtureKey]
-        .filter((row) => row[timeField] < where[timeField].lt)
+        .filter((row) => row[timeField] < cutoff)
         .slice(0, take)
         .map((row) => ({ [field]: row[field] }));
     }
@@ -511,7 +584,24 @@ function createHarness({
   };
   const transaction = {
     $queryRaw(strings, ...values) {
-      calls.push({ kind: "lock", sql: String.raw({ raw: strings }, ...values), values });
+      const sql = String.raw({ raw: strings }, ...values);
+      if (sql.includes('FROM "DAILY_GOAL_LIFECYCLE_POLICY"')) {
+        calls.push({ kind: "lifecycle.policy", sql, values });
+        return Promise.resolve(lifecyclePolicy ? [lifecyclePolicy] : []);
+      }
+      if (sql.includes('FROM "DAILY_GOAL_LIFECYCLE_JOURNAL"') && sql.includes("FOR UPDATE")) {
+        calls.push({ kind: "lifecycle.journal-lock", sql, values });
+        return Promise.resolve([lifecycleJournalState]);
+      }
+      if (sql.includes('FROM "DAILY_GOAL_LIFECYCLE_JOURNAL"')) {
+        calls.push({ kind: "lifecycle.lease-check", sql, values });
+        return Promise.resolve([{ ...lifecycleJournalState, database_now: lifecyclePolicy?.database_now ?? new Date(0) }]);
+      }
+      if (sql.includes("clock_timestamp()")) {
+        calls.push({ kind: "lifecycle.clock", sql, values });
+        return Promise.resolve([{ database_now: lifecyclePolicy?.database_now ?? new Date(0) }]);
+      }
+      calls.push({ kind: "lock", sql, values });
       if (failLock) return Promise.reject(new Error("lock failed"));
       return Promise.resolve([{ lock_result: null }]);
     },
@@ -538,6 +628,7 @@ function createHarness({
     uSER_NOTIFICATION: delegate("notification"),
     lEARNING_SESSION: delegate("learning-session"),
     vOCABULARY_SET: delegate("set"),
+    dAILY_GOAL_LIFECYCLE_JOURNAL: delegate("journal"),
   };
   const prisma = {
     async $transaction(callback) {
@@ -550,8 +641,33 @@ function createHarness({
         throw error;
       }
     },
+    $queryRaw(strings, ...values) {
+      const sql = String.raw({ raw: strings }, ...values);
+      calls.push({ kind: "lifecycle.discover", sql, values });
+      return Promise.resolve(lifecycleCandidates);
+    },
+    dAILY_GOAL_LIFECYCLE_JOURNAL: transaction.dAILY_GOAL_LIFECYCLE_JOURNAL,
   };
   return { prisma, transaction, calls };
+}
+
+const SESSION_UUID = "33333333-3333-4333-8333-333333333333";
+
+function lifecycleJournal(overrides = {}) {
+  return {
+    policy_version: 1,
+    scan_eligibility_at: null,
+    scan_candidate_kind: null,
+    scan_stable_id: null,
+    pending_descriptors: [],
+    pending_index: 0,
+    lease_token: null,
+    lease_expires_at: null,
+    wrapped_epoch: 0n,
+    revision: 7n,
+    updated_at: new Date("2026-10-31T00:00:00.000Z"),
+    ...overrides,
+  };
 }
 
 function boundaryRows(idField, prefix, cutoff, timeField) {

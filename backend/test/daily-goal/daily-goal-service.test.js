@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createDailyGoalCleanupScheduler,
+  createDailyGoalLifecycleMaintenanceRunner,
   createDailyGoalService,
   evaluateMonitorExpiryEligibility,
   evaluateTrackingExpiryEligibility,
@@ -1048,6 +1049,363 @@ test("cleanup scheduling contains synchronous and asynchronous failures with sta
   assert.equal(response.target_minutes, 10);
   assert.equal(harness.state.receipts.some((row) => row.operation_id === OPS[8]), true);
 });
+
+test("lifecycle maintenance fails closed on missing or malformed activation while cleanup still runs", async () => {
+  for (const claim of [
+    { classification: "POLICY_MISSING" },
+    { classification: "CLAIMED", policy: { policy_version: 1, activated_at: "invalid", database_now: new Date() }, journal: maintenanceJournal() },
+  ]) {
+    const harness = createMaintenanceHarness({ claim });
+    const logs = [];
+    const run = createDailyGoalLifecycleMaintenanceRunner({
+      dailyGoalRepository: harness.repository,
+      leaseDurationMilliseconds: 5_000,
+      uuid: () => OPS[0],
+      logFailure: (code) => logs.push(code),
+    });
+    const result = await run();
+    assert.equal(result.cleanup.receiptsDeleted, 0);
+    assert.equal(harness.calls.at(-1), "cleanup");
+    assert.equal(harness.calls.some((call) => call === "discover"), false);
+    if (claim.classification === "CLAIMED") {
+      assert.equal(result.expiry.classification, "FAILED");
+      assert.deepEqual(logs, ["DAILY_GOAL_LIFECYCLE_EXPIRY_FAILED"]);
+    } else {
+      assert.equal(result.expiry.classification, "POLICY_MISSING");
+    }
+  }
+});
+
+test("lifecycle maintenance processes ordered pending work with USER isolation and no side effects", async () => {
+  const activation = new Date("2026-10-01T00:00:00.000Z");
+  const now = new Date("2026-10-04T00:00:00.000Z");
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const descriptors = [
+    maintenanceDescriptor({ user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 0, stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor }),
+    maintenanceDescriptor({ user_id: OTHER, candidate_kind: "MONITOR", candidate_kind_order: 1, stable_id: SESSION_B, expected_state: "OPEN", eligibility: "MONITOR", anchor }),
+  ];
+  const harness = createMaintenanceHarness({ activation, now, pages: [descriptors, [], []] });
+  harness.sessions.set(SESSION, {
+    id: SESSION, user_id: USER, status: "ACTIVE", created_at: anchor,
+    engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+  });
+  harness.monitors.set(SESSION_B, {
+    id: SESSION_B, user_id: OTHER, started_at: anchor, last_seen_at: anchor,
+    closed_at: null, expired_at: null,
+  });
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(result.expiry, { classification: "COMPLETED", attempted: 2, transitioned: 2 });
+  assert.equal(harness.sessions.get(SESSION).status, "EXPIRED");
+  assert.equal(harness.monitors.get(SESSION_B).expired_at.getTime(), now.getTime());
+  assert.deepEqual(harness.sideEffects, { rewards: 0, xp: 0, notifications: 0, receipts: 0, credit: 0 });
+  assert.ok(harness.calls.indexOf("expire:TRACKING") < harness.calls.indexOf("expire:MONITOR"));
+  assert.ok(harness.calls.indexOf("expire:MONITOR") < harness.calls.indexOf("cleanup"));
+});
+
+test("tracking owner clear rolls back when guarded expiry updates zero rows but journal records the attempt", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const descriptor = maintenanceDescriptor({
+    user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 0,
+    stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor,
+  });
+  const harness = createMaintenanceHarness({ pages: [[descriptor], [], []], trackingExpiryCount: 0 });
+  harness.sessions.set(SESSION, {
+    id: SESSION, user_id: USER, status: "ACTIVE", created_at: anchor,
+    engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+  });
+  harness.ownerState.current = {
+    user_id: USER, tracking_session_id: SESSION, generation: 7n,
+    lease_expires_at: new Date("2026-10-02T00:00:00.000Z"), last_accounted_at: anchor,
+  };
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(result.expiry, { classification: "COMPLETED", attempted: 1, transitioned: 0 });
+  assert.equal(harness.sessions.get(SESSION).status, "ACTIVE");
+  assert.equal(harness.sessions.get(SESSION).expired_at, null);
+  assert.equal(harness.ownerState.current.tracking_session_id, SESSION);
+  assert.equal(harness.ownerState.current.generation, 7n);
+  assert.equal(harness.calls.includes("user-rollback"), true);
+  assert.equal(harness.journalWrites[1].nextPendingIndex, 1);
+  assert.equal(harness.journalWrites[1].nextCursor.stableId, SESSION);
+});
+
+test("ordinary tracking expiry errors roll back and remain maintenance failures", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const descriptor = maintenanceDescriptor({
+    user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 0,
+    stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor,
+  });
+  const harness = createMaintenanceHarness({ pages: [[descriptor]], trackingExpiryError: new Error("database failure") });
+  harness.sessions.set(SESSION, {
+    id: SESSION, user_id: USER, status: "ACTIVE", created_at: anchor,
+    engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+  });
+  harness.ownerState.current = { user_id: USER, tracking_session_id: SESSION, generation: 7n };
+  const logs = [];
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+    logFailure: (code) => logs.push(code),
+  })();
+  assert.deepEqual(result.expiry, { classification: "FAILED", attempted: 0, transitioned: 0 });
+  assert.equal(harness.ownerState.current.tracking_session_id, SESSION);
+  assert.equal(harness.ownerState.current.generation, 7n);
+  assert.equal(harness.journalWrites.length, 1);
+  assert.deepEqual(logs, ["DAILY_GOAL_LIFECYCLE_EXPIRY_FAILED"]);
+  assert.equal(harness.calls.at(-1), "cleanup");
+});
+
+test("successful tracking owner clear and expiry commit together", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const descriptor = maintenanceDescriptor({
+    user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 0,
+    stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor,
+  });
+  const harness = createMaintenanceHarness({ pages: [[descriptor], [], []] });
+  harness.sessions.set(SESSION, {
+    id: SESSION, user_id: USER, status: "ACTIVE", created_at: anchor,
+    engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+  });
+  harness.ownerState.current = { user_id: USER, tracking_session_id: SESSION, generation: 7n };
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(result.expiry, { classification: "COMPLETED", attempted: 1, transitioned: 1 });
+  assert.equal(harness.sessions.get(SESSION).status, "EXPIRED");
+  assert.equal(harness.ownerState.current.tracking_session_id, null);
+  assert.equal(harness.ownerState.current.generation, 8n);
+  assert.equal(harness.calls.includes("user-rollback"), false);
+});
+
+test("lifecycle journal finalization loss preserves the attempted transition and stops further work", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const descriptor = maintenanceDescriptor({
+    user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 0,
+    stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor,
+  });
+  const harness = createMaintenanceHarness({ pages: [[descriptor]], loseFinalizeAfter: 1 });
+  harness.sessions.set(SESSION, {
+    id: SESSION, user_id: USER, status: "ACTIVE", created_at: anchor,
+    engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+  });
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(result.expiry, { classification: "LEASE_LOST", attempted: 1, transitioned: 1 });
+  assert.equal(harness.calls.filter((call) => call.startsWith("expire:")).length, 1);
+  assert.equal(harness.calls.at(-1), "cleanup");
+});
+
+test("lifecycle maintenance rejects malformed or unordered descriptor pages before USER work", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const invalid = maintenanceDescriptor({
+    user_id: USER, candidate_kind: "TRACKING", candidate_kind_order: 1,
+    stable_id: SESSION, expected_state: "ACTIVE", eligibility: "NEVER_READY", anchor,
+  });
+  const harness = createMaintenanceHarness({ pages: [[invalid]] });
+  const result = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: harness.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.equal(result.expiry.classification, "FAILED");
+  assert.equal(harness.calls.some((call) => call.startsWith("expire:")), false);
+  assert.equal(harness.calls.at(-1), "cleanup");
+});
+
+test("lifecycle maintenance enforces independent 300-attempt and 100-transition ceilings", async () => {
+  const anchor = new Date("2026-10-02T00:00:00.000Z");
+  const makeDescriptors = (count) => Array.from({ length: count }, (_, index) => maintenanceDescriptor({
+    user_id: USER,
+    candidate_kind: "TRACKING",
+    candidate_kind_order: 0,
+    stable_id: numberedUuid(index + 1),
+    expected_state: "ACTIVE",
+    eligibility: "NEVER_READY",
+    anchor: new Date(anchor.getTime() + index),
+  }));
+  const attemptedDescriptors = makeDescriptors(300);
+  const attempts = createMaintenanceHarness({ pages: chunk(attemptedDescriptors, 25) });
+  const attemptResult = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: attempts.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(attemptResult.expiry, { classification: "COMPLETED", attempted: 300, transitioned: 0 });
+
+  const transitionDescriptors = makeDescriptors(125);
+  const transitions = createMaintenanceHarness({ pages: chunk(transitionDescriptors, 25) });
+  for (const descriptor of transitionDescriptors) {
+    transitions.sessions.set(descriptor.stable_id, {
+      id: descriptor.stable_id, user_id: USER, status: "ACTIVE", created_at: new Date(descriptor.anchor),
+      engagement_expires_at: null, paused_at: null, closed_at: null, expired_at: null,
+    });
+  }
+  const transitionResult = await createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: transitions.repository,
+    leaseDurationMilliseconds: 5_000,
+    uuid: () => OPS[0],
+  })();
+  assert.deepEqual(transitionResult.expiry, { classification: "COMPLETED", attempted: 100, transitioned: 100 });
+  assert.equal(transitions.calls.filter((call) => call === "expire:TRACKING").length, 100);
+});
+
+function createMaintenanceHarness({
+  activation = new Date("2026-10-01T00:00:00.000Z"),
+  now = new Date("2026-10-04T00:00:00.000Z"),
+  claim = null,
+  pages = [],
+  loseFinalizeAfter = Number.POSITIVE_INFINITY,
+  trackingExpiryCount = 1,
+  trackingExpiryError = null,
+} = {}) {
+  const calls = [];
+  const sessions = new Map();
+  const monitors = new Map();
+  const sideEffects = { rewards: 0, xp: 0, notifications: 0, receipts: 0, credit: 0 };
+  const ownerState = { current: null };
+  const journalWrites = [];
+  let journal = maintenanceJournal();
+  let pageIndex = 0;
+  let journalUpdates = 0;
+  const repository = {
+    async claimLifecycleJournal() {
+      calls.push("claim");
+      return claim ?? {
+        classification: "CLAIMED",
+        policy: { policy_version: 1, activated_at: activation, database_now: now },
+        journal: { ...journal, lease_token: OPS[0], lease_expires_at: new Date(now.getTime() + 5_000) },
+      };
+    },
+    async checkLifecycleLease() { calls.push("lease-check"); return true; },
+    async discoverLifecycleCandidates() { calls.push("discover"); return pages[pageIndex++] ?? []; },
+    async updateLifecycleJournal(input) {
+      calls.push("journal-update");
+      journalWrites.push(structuredClone(input));
+      journalUpdates += 1;
+      if (journalUpdates > loseFinalizeAfter) return { count: 0 };
+      journal = {
+        ...journal,
+        pending_descriptors: input.nextPendingDescriptors,
+        pending_index: input.nextPendingIndex,
+        scan_eligibility_at: input.nextCursor?.eligibilityAt ?? null,
+        scan_candidate_kind: input.nextCursor?.candidateKind ?? null,
+        scan_stable_id: input.nextCursor?.stableId ?? null,
+        wrapped_epoch: input.wrappedEpoch,
+        revision: input.revision + 1n,
+      };
+      return { count: 1 };
+    },
+    async withUserTransaction(userId, callback) {
+      calls.push(`user:${userId}`);
+      const before = structuredClone({ sessions, monitors, owner: ownerState.current });
+      try {
+        return await callback({
+          findTrackingSession: async (id) => sessions.get(id) ?? null,
+          findMonitorSession: async (id) => monitors.get(id) ?? null,
+          findOwner: async () => ownerState.current,
+          updateOwnerAtGeneration: async (generation, data) => {
+            if (ownerState.current?.generation !== generation) return { count: 0 };
+            Object.assign(ownerState.current, data);
+            calls.push("owner-clear");
+            return { count: 1 };
+          },
+          expireTrackingSession: async ({ sessionId, expiredAt }) => {
+            if (trackingExpiryError) throw trackingExpiryError;
+            const row = sessions.get(sessionId);
+            if (!row || row.expired_at !== null || trackingExpiryCount === 0) return { count: 0 };
+            row.status = "EXPIRED"; row.expired_at = expiredAt; row.paused_at = null;
+            calls.push("expire:TRACKING");
+            return { count: 1 };
+          },
+          expireMonitorSession: async ({ monitorSessionId, expiredAt }) => {
+            const row = monitors.get(monitorSessionId);
+            if (!row || row.expired_at !== null) return { count: 0 };
+            row.expired_at = expiredAt;
+            calls.push("expire:MONITOR");
+            return { count: 1 };
+          },
+          createReward: unexpectedSideEffect("rewards"),
+          incrementTotalXp: unexpectedSideEffect("xp"),
+          createNotification: unexpectedSideEffect("notifications"),
+          createOperationReceipt: unexpectedSideEffect("receipts"),
+          upsertDay: unexpectedSideEffect("credit"),
+        });
+      } catch (error) {
+        sessions.clear();
+        for (const [key, value] of before.sessions) sessions.set(key, value);
+        monitors.clear();
+        for (const [key, value] of before.monitors) monitors.set(key, value);
+        ownerState.current = before.owner;
+        calls.push("user-rollback");
+        throw error;
+      }
+    },
+    async withCleanupTransaction(callback) {
+      return callback({ async cleanupExpiredOperationalState() {
+        calls.push("cleanup");
+        return { receiptsDeleted: 0, trackingSessionsDeleted: 0, monitorSessionsDeleted: 0 };
+      } });
+    },
+  };
+  function unexpectedSideEffect(kind) {
+    return async () => {
+      sideEffects[kind] += 1;
+      throw new Error(`unexpected lifecycle ${kind} side effect`);
+    };
+  }
+  return { repository, calls, sessions, monitors, ownerState, sideEffects, journalWrites, get journal() { return journal; } };
+}
+
+function maintenanceJournal(overrides = {}) {
+  return {
+    policy_version: 1,
+    scan_eligibility_at: null,
+    scan_candidate_kind: null,
+    scan_stable_id: null,
+    pending_descriptors: [],
+    pending_index: 0,
+    lease_token: OPS[0],
+    lease_expires_at: new Date("2026-10-04T00:00:05.000Z"),
+    wrapped_epoch: 0n,
+    revision: 1n,
+    updated_at: new Date("2026-10-04T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function maintenanceDescriptor({
+  user_id, candidate_kind, candidate_kind_order, stable_id, expected_state, eligibility, anchor,
+}) {
+  const duration = eligibility === "PAUSED" ? 7 * 86_400_000 : 86_400_000;
+  return {
+    user_id, candidate_kind, candidate_kind_order, stable_id, expected_state, eligibility,
+    anchor,
+    eligibility_at: new Date(anchor.getTime() + duration),
+  };
+}
+
+function numberedUuid(value) {
+  return `aaaaaaaa-aaaa-4aaa-8aaa-${String(value).padStart(12, "0")}`;
+}
+
+function chunk(values, size) {
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => (
+    values.slice(index * size, (index + 1) * size)
+  ));
+}
 
 function establish(operation_id) { return { operation_id, activity_type: "NORMAL", learning_session_id: LEARNING }; }
 function heartbeat(operation_id, generation) { return { operation_id, generation, eligibility: "VISIBLE_FOCUSED_ACTIVE" }; }
