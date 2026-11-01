@@ -29,8 +29,9 @@ const lifecycleManifest = JSON.parse(await readFile(lifecycleManifestPath, "utf8
 const lifecycleNames = [
   "20261031000000_add_daily_goal_tracking_expired_status",
   "20261031000001_add_daily_goal_lifecycle_expiry",
+  "20261031000002_add_daily_goal_lifecycle_maintenance",
 ];
-const lifecycleManifestSha256 = "0f98081807cf15380baaeafa71acd85a0fdb0e956f9ddc6dcf472dbd2d80d574";
+const lifecycleManifestSha256 = "616d5545bbd8aa58448877c1e94496603dc35e49787bc09ef15438d62c80e4fa";
 const expectedLifecycleArtifacts = [
   {
     migration_name: lifecycleNames[0],
@@ -43,6 +44,12 @@ const expectedLifecycleArtifacts = [
     quarantined_path: `backend/prisma/migration-drafts/daily-goal-v1/${lifecycleNames[1]}/migration.sql`,
     byte_count: 3062,
     sha256: "dabb0febe7ad18eaff8321e07b6cd9b28506c290f6b6e0a71e51d32f48c8ef02",
+  },
+  {
+    migration_name: lifecycleNames[2],
+    quarantined_path: `backend/prisma/migration-drafts/daily-goal-v1/${lifecycleNames[2]}/migration.sql`,
+    byte_count: 2801,
+    sha256: "7998de79c935dedece401ac851d543b4189e73b11ccff7dab6a110f131fc8b05",
   },
 ];
 
@@ -148,21 +155,21 @@ test("Q2 rejects lifecycle manifest tampering and coordinated SQL/manifest ident
   });
   assert.throws(() => verifyLifecycleManifest({
     ...lifecycleManifest,
-    artifacts: [changedArtifact, lifecycleManifest.artifacts[1]],
+    artifacts: [changedArtifact, ...lifecycleManifest.artifacts.slice(1)],
   }, manifest, expectedLifecycleArtifacts), /reviewed identity mismatch/);
   assert.throws(() => verifyLifecycleManifest({
     ...lifecycleManifest,
     artifacts: [{
       ...lifecycleManifest.artifacts[0],
       quarantined_path: "backend/prisma/migration-drafts/daily-goal-v1/../escape/migration.sql",
-    }, lifecycleManifest.artifacts[1]],
+    }, ...lifecycleManifest.artifacts.slice(1)],
   }, manifest, expectedLifecycleArtifacts), /traversal is prohibited/);
   assert.throws(() => verifyLifecycleManifest({
     ...lifecycleManifest,
     artifacts: [{
       ...lifecycleManifest.artifacts[0],
       quarantined_path: `backend\\prisma\\migration-drafts\\daily-goal-v1\\${lifecycleNames[0]}\\migration.sql`,
-    }, lifecycleManifest.artifacts[1]],
+    }, ...lifecycleManifest.artifacts.slice(1)],
   }, manifest, expectedLifecycleArtifacts), /path is malformed/);
 });
 
@@ -181,11 +188,11 @@ test("Q2 rejects an extra physical lifecycle draft directory", async () => {
   }
 });
 
-test("Q2 lifecycle SQL is enum-only first and data-free additive schema second", async () => {
-  const [enumSql, lifecycleSql] = await Promise.all(lifecycleManifest.artifacts.map(async (artifact) => (
+test("Q2 lifecycle SQL is ordered, additive, data-free and persistence-only", async () => {
+  const [enumSql, lifecycleSql, maintenanceSql] = await Promise.all(lifecycleManifest.artifacts.map(async (artifact) => (
     readFile(path.join(repositoryRoot, ...artifact.quarantined_path.split("/")), "utf8")
   )));
-  assert.doesNotThrow(() => assertLifecycleMigrationSql(enumSql, lifecycleSql));
+  assert.doesNotThrow(() => assertLifecycleMigrationSql(enumSql, lifecycleSql, maintenanceSql));
   for (const changedSql of [
     lifecycleSql.replace('ADD CONSTRAINT "DAILY_GOAL_MONITOR_SESSION_terminal_check"',
       'ADD CONSTRAINT "DAILY_GOAL_MONITOR_SESSION_terminal_check_omitted"'),
@@ -197,14 +204,39 @@ test("Q2 lifecycle SQL is enum-only first and data-free additive schema second",
     lifecycleSql.replace("BEGIN;", "COMMIT;").replace(/COMMIT;\s*$/, "BEGIN;"),
   ]) {
     assert.throws(
-      () => assertLifecycleMigrationSql(enumSql, changedSql),
+      () => assertLifecycleMigrationSql(enumSql, changedSql, maintenanceSql),
       /differs from the approved SQL structure/,
     );
   }
   assert.throws(
-    () => assertLifecycleMigrationSql(`${enumSql}\nCREATE TYPE "UNAPPROVED" AS ENUM ('VALUE');`, lifecycleSql),
+    () => assertLifecycleMigrationSql(`${enumSql}\nCREATE TYPE "UNAPPROVED" AS ENUM ('VALUE');`, lifecycleSql, maintenanceSql),
     /unexpected statement/,
   );
+  for (const changedSql of [
+    maintenanceSql.replace('CHECK ("policy_version" > 0)', 'CHECK ("policy_version" >= 0)'),
+    maintenanceSql.replace("jsonb_array_length(\"pending_descriptors\") <= 25", "jsonb_array_length(\"pending_descriptors\") <= 26"),
+    maintenanceSql.replace("ON DELETE RESTRICT ON UPDATE CASCADE", "ON DELETE CASCADE ON UPDATE CASCADE"),
+    `${maintenanceSql}\nINSERT INTO "DAILY_GOAL_LIFECYCLE_POLICY" VALUES (1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);\n`,
+  ]) {
+    assert.throws(
+      () => assertLifecycleMigrationSql(enumSql, lifecycleSql, changedSql),
+      /maintenance migration differs from the approved SQL structure/,
+    );
+  }
+});
+
+test("Q2 Prisma declares the approved policy and journal while runtime remains disconnected", async () => {
+  const [schema, repository, service, createApp] = await Promise.all([
+    readFile(path.join(backendRoot, "prisma/schema.prisma"), "utf8"),
+    readFile(path.join(backendRoot, "src/repositories/daily-goal-repository.js"), "utf8"),
+    readFile(path.join(backendRoot, "src/services/daily-goal-service.js"), "utf8"),
+    readFile(path.join(backendRoot, "src/create-app.js"), "utf8"),
+  ]);
+  assert.match(schema, /model DAILY_GOAL_LIFECYCLE_POLICY \{[\s\S]*policy_version Int\s+@id[\s\S]*activated_at\s+DateTime\s+@db\.Timestamptz\(3\)[\s\S]*journal\s+DAILY_GOAL_LIFECYCLE_JOURNAL\?/);
+  assert.match(schema, /model DAILY_GOAL_LIFECYCLE_JOURNAL \{[\s\S]*scan_candidate_kind\s+String\?\s+@db\.VarChar\(16\)[\s\S]*pending_descriptors\s+Json\s+@default\("\[\]"\) @db\.JsonB[\s\S]*policy\s+DAILY_GOAL_LIFECYCLE_POLICY\s+@relation\([^\n]*onDelete: Restrict/);
+  for (const source of [repository, service, createApp]) {
+    assert.doesNotMatch(source, /DAILY_GOAL_LIFECYCLE_POLICY|DAILY_GOAL_LIFECYCLE_JOURNAL|20261031000002_add_daily_goal_lifecycle_maintenance/);
+  }
 });
 
 test("Q2 rejects linked lifecycle artifact files", async (context) => {

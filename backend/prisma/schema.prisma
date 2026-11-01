@@ -449,3 +449,25 @@ model DAILY_GOAL_MONITOR_SESSION {
   @@index([closed_at, expired_at, last_seen_at, id], map: "DG_MONITOR_closed_expired_seen_id_idx")
   @@index([expired_at, id])
 }
+
+model DAILY_GOAL_LIFECYCLE_POLICY {
+  policy_version Int                          @id
+  activated_at  DateTime                     @db.Timestamptz(3)
+  created_at    DateTime                     @default(now()) @db.Timestamptz(3)
+  journal       DAILY_GOAL_LIFECYCLE_JOURNAL?
+}
+
+model DAILY_GOAL_LIFECYCLE_JOURNAL {
+  policy_version      Int                         @id
+  scan_eligibility_at DateTime?                   @db.Timestamptz(3)
+  scan_candidate_kind String?                     @db.VarChar(16)
+  scan_stable_id      String?                     @db.Uuid
+  pending_descriptors Json                        @default("[]") @db.JsonB
+  pending_index       Int                         @default(0)
+  lease_token         String?                     @db.Uuid
+  lease_expires_at    DateTime?                   @db.Timestamptz(3)
+  wrapped_epoch       BigInt                      @default(0)
+  revision            BigInt                      @default(0)
+  updated_at          DateTime                    @updatedAt @db.Timestamptz(3)
+  policy              DAILY_GOAL_LIFECYCLE_POLICY @relation(fields: [policy_version], references: [policy_version], onDelete: Restrict, onUpdate: Cascade)
+}

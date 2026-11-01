@@ -9,7 +9,8 @@
   "execution_order": [
     "20261022000000_add_daily_goal_v1",
     "20261031000000_add_daily_goal_tracking_expired_status",
-    "20261031000001_add_daily_goal_lifecycle_expiry"
+    "20261031000001_add_daily_goal_lifecycle_expiry",
+    "20261031000002_add_daily_goal_lifecycle_maintenance"
   ],
   "artifacts": [
     {
@@ -23,6 +24,12 @@
       "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261031000001_add_daily_goal_lifecycle_expiry/migration.sql",
       "byte_count": 3062,
       "sha256": "dabb0febe7ad18eaff8321e07b6cd9b28506c290f6b6e0a71e51d32f48c8ef02"
+    },
+    {
+      "migration_name": "20261031000002_add_daily_goal_lifecycle_maintenance",
+      "quarantined_path": "backend/prisma/migration-drafts/daily-goal-v1/20261031000002_add_daily_goal_lifecycle_maintenance/migration.sql",
+      "byte_count": 2801,
+      "sha256": "7998de79c935dedece401ac851d543b4189e73b11ccff7dab6a110f131fc8b05"
     }
   ],
   "human_approval_status": "ARTIFACT AUTHORING AUTHORIZED; MIGRATION ACTIVATION REQUIRES SEPARATE HUMAN AUTHORIZATION",
