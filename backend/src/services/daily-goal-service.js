@@ -28,6 +28,9 @@ const MONITOR_CHECK_AFTER_SECONDS = 60;
 const MONITOR_CONTINUITY_TOLERANCE_MILLISECONDS = 150_000;
 const REMINDER_INACTIVITY_MILLISECONDS = 600_000;
 const CLEANUP_WARM_WINDOW_MILLISECONDS = 600_000;
+const TRACKING_ACTIVE_EXPIRY_MILLISECONDS = 24 * 60 * 60 * 1_000;
+const TRACKING_PAUSED_EXPIRY_MILLISECONDS = 7 * TRACKING_ACTIVE_EXPIRY_MILLISECONDS;
+const MONITOR_EXPIRY_MILLISECONDS = 24 * 60 * 60 * 1_000;
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1_000;
 const COMPLETION_NOTIFICATION = Object.freeze({
   title: "Daily Goal completed",
@@ -40,6 +43,39 @@ const INACTIVITY_NOTIFICATION = Object.freeze({
 
 export class DailyGoalServiceError extends Error {
   constructor(code, message) { super(message); this.code = code; }
+}
+
+export function evaluateTrackingExpiryEligibility(session, instant) {
+  const evaluatedAt = requireDate(instant);
+  if (!session || session.expired_at != null || session.closed_at != null) return null;
+  let eligibility;
+  let anchor;
+  let duration;
+  if (session.status === "ACTIVE" && session.engagement_expires_at === null) {
+    eligibility = "NEVER_READY";
+    anchor = requireDate(session.created_at);
+    duration = TRACKING_ACTIVE_EXPIRY_MILLISECONDS;
+  } else if (session.status === "ACTIVE" && session.engagement_expires_at !== null) {
+    eligibility = "ACTIVE_DEADLINE";
+    anchor = requireDate(session.engagement_expires_at);
+    duration = TRACKING_ACTIVE_EXPIRY_MILLISECONDS;
+  } else if (session.status === "PAUSED" && session.paused_at !== null) {
+    eligibility = "PAUSED";
+    anchor = requireDate(session.paused_at);
+    duration = TRACKING_PAUSED_EXPIRY_MILLISECONDS;
+  } else {
+    return null;
+  }
+  const eligibilityAt = new Date(anchor.getTime() + duration);
+  return Object.freeze({ eligibility, anchor, eligibilityAt, eligible: evaluatedAt >= eligibilityAt });
+}
+
+export function evaluateMonitorExpiryEligibility(session, instant) {
+  const evaluatedAt = requireDate(instant);
+  if (!session || session.closed_at != null || session.expired_at != null) return null;
+  const anchor = requireDate(session.last_seen_at);
+  const eligibilityAt = new Date(anchor.getTime() + MONITOR_EXPIRY_MILLISECONDS);
+  return Object.freeze({ anchor, eligibilityAt, eligible: evaluatedAt >= eligibilityAt });
 }
 
 export function createDailyGoalCleanupScheduler({
@@ -178,7 +214,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         if (!preference) throw notFound();
         const session = await repository.createMonitorSession({
           id: uuid(), started_at: instant, last_seen_at: instant,
-          continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null,
+          continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null, expired_at: null,
         });
         const response = {
           monitor_session_id: session.id,
@@ -200,7 +236,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const replay = await replayOrConflict(repository, request.operation_id, "MONITOR_CHECK", fingerprint);
         if (replay) return replay;
         const session = await repository.findMonitorSession(monitorSessionId);
-        if (!session || session.closed_at !== null) throw notFound();
+        if (!session || session.closed_at !== null || session.expired_at != null) throw notFound();
         const preference = await repository.findPreference();
         if (!preference) throw notFound();
         const longGap = instant.getTime() - requireDate(session.last_seen_at).getTime()
@@ -248,6 +284,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const fingerprint = digest({ monitor_session_id: monitorSessionId, ...request });
         const replay = await replayOrConflict(repository, request.operation_id, "MONITOR_CLOSE", fingerprint);
         if (replay) return replay;
+        if (session.expired_at != null) throw notFound();
         const closedAt = session.closed_at === null ? instant : requireDate(session.closed_at);
         if (session.closed_at === null) {
           const updated = await repository.updateMonitorSession(monitorSessionId, { closed_at: closedAt });
@@ -273,6 +310,8 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
           set_id: request.set_id ?? null, vocabulary_id: request.vocabulary_id ?? null,
           status: "ACTIVE",
           created_at: instant,
+          paused_at: null,
+          expired_at: null,
         });
         const response = projection(session, null, 0n);
         await receipt(repository, request.operation_id, "CREATE", fingerprint, session.id, null, 0n, response, instant);
@@ -290,6 +329,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const fingerprint = digest({ session_id: sessionId, ...request });
         const replay = await replayOrConflict(repository, request.operation_id, type, fingerprint);
         if (replay) return replay;
+        if (session.status === "CLOSED" || session.status === "EXPIRED" || session.expired_at != null) throw notFound();
         const owner = await repository.findOwner();
         const currentGeneration = owner?.generation ?? 0n;
         if (request.generation !== undefined && request.generation !== currentGeneration) {
@@ -336,7 +376,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const deadline = new Date(createEngagementDeadline(instant.getTime()));
         await repository.updateTrackingSession(session.id, {
           status: "ACTIVE", engagement_expires_at: deadline,
-          last_meaningful_at: instant, closed_at: null,
+          last_meaningful_at: instant, closed_at: null, paused_at: null,
         });
         await repository.upsertOwner({
           create: { tracking_session_id: session.id, generation, lease_expires_at: new Date(createLeaseExpiry(instant.getTime())), last_accounted_at: instant },
@@ -357,6 +397,7 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
         const fingerprint = digest({ session_id: sessionId, ...request, generation: request.generation.toString() });
         const replay = await replayOrConflict(repository, request.operation_id, "HEARTBEAT", fingerprint);
         if (replay) return replay;
+        if (session.status === "CLOSED" || session.status === "EXPIRED" || session.expired_at != null) throw notFound();
         const owner = await repository.findOwner();
         if (!owner || owner.tracking_session_id !== session.id || owner.generation !== request.generation) {
           throw ownership(owner?.generation ?? 0n);
@@ -408,9 +449,11 @@ export function createDailyGoalService({ dailyGoalRepository, now = () => new Da
     return transact(userId, async (repository, instant) => {
       const session = await repository.findTrackingSession(sessionId);
       if (!session) throw notFound();
+      if (!await repository.findAuthorizedActivityContext({ ...contextOf(session), observedAt: instant })) throw notFound();
       const fingerprint = digest({ session_id: sessionId, ...request, generation: request.generation.toString() });
       const replay = await replayOrConflict(repository, request.operation_id, type, fingerprint);
       if (replay) return replay;
+      if (session.status === "EXPIRED" || session.expired_at != null) throw notFound();
       const owner = await repository.findOwner();
       if (owner?.tracking_session_id === session.id && owner.generation === request.generation) await fence(repository, session, owner, instant, closing ? "CLOSED" : "PAUSED");
       else if (!closing || session.status !== "CLOSED") throw ownership(owner?.generation ?? 0n);
@@ -427,7 +470,7 @@ function safeCleanupLog(logFailure) {
 
 async function requireSessionAndContext(repository, id, instant) {
   const session = await repository.findTrackingSession(id);
-  if (!session || session.status === "CLOSED" || !await repository.findAuthorizedActivityContext({ ...contextOf(session), observedAt: instant })) throw notFound();
+  if (!session || !await repository.findAuthorizedActivityContext({ ...contextOf(session), observedAt: instant })) throw notFound();
   return session;
 }
 function contextOf(value) { return { activityType: value.activity_type, learningSessionId: value.learning_session_id, setId: value.set_id, vocabularyId: value.vocabulary_id }; }
@@ -461,7 +504,11 @@ async function monitorReceipt(repository, operationId, operationType, requestFin
 }
 async function fence(repository, session, owner, instant, status) {
   if (owner) await repository.updateOwnerAtGeneration(owner.generation, { tracking_session_id: null, lease_expires_at: null, last_accounted_at: null, generation: nextOwnershipGeneration(owner.generation) });
-  await repository.updateTrackingSession(session.id, { status, ...(status === "CLOSED" ? { closed_at: instant } : {}) });
+  await repository.updateTrackingSession(session.id, {
+    status,
+    paused_at: status === "PAUSED" ? instant : null,
+    ...(status === "CLOSED" ? { closed_at: instant } : {}),
+  });
 }
 async function creditInterval(repository, interval, activityType, operationId, instant, uuid) {
   for (const part of splitIntervalByApplicationDay(interval.startMs, interval.endMs)) {

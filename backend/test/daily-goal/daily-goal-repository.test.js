@@ -128,6 +128,48 @@ test("generation updates and expired-owner fencing are conditional and clear the
   });
 });
 
+test("lifecycle expiry writes are owner-scoped guarded conditional transitions", async () => {
+  const harness = createHarness();
+  const anchor = new Date("2026-10-26T00:00:00.000Z");
+  const expiredAt = new Date("2026-10-27T00:00:00.000Z");
+  await createDailyGoalRepository(harness.prisma).withUserTransaction(USER, async (repository) => {
+    await repository.expireTrackingSession({
+      sessionId: "tracking", eligibility: "NEVER_READY", expectedAnchor: anchor, expiredAt,
+    });
+    await repository.expireTrackingSession({
+      sessionId: "tracking", eligibility: "ACTIVE_DEADLINE", expectedAnchor: anchor, expiredAt,
+    });
+    await repository.expireTrackingSession({
+      sessionId: "tracking", eligibility: "PAUSED", expectedAnchor: anchor, expiredAt,
+    });
+    await repository.expireMonitorSession({ monitorSessionId: "monitor", expectedLastSeenAt: anchor, expiredAt });
+  });
+  const tracking = harness.calls.filter((call) => call.kind === "tracking.updateMany").map((call) => call.args);
+  assert.deepEqual(tracking.map(({ where }) => where), [
+    { id: "tracking", user_id: USER, expired_at: null, closed_at: null, status: "ACTIVE", created_at: anchor, engagement_expires_at: null },
+    { id: "tracking", user_id: USER, expired_at: null, closed_at: null, status: "ACTIVE", engagement_expires_at: anchor },
+    { id: "tracking", user_id: USER, expired_at: null, closed_at: null, status: "PAUSED", paused_at: anchor },
+  ]);
+  assert.deepEqual(tracking[0].data, { status: "EXPIRED", expired_at: expiredAt, paused_at: null });
+  assert.deepEqual(harness.calls.find((call) => call.kind === "monitor.updateMany").args, {
+    where: { id: "monitor", user_id: USER, closed_at: null, expired_at: null, last_seen_at: anchor },
+    data: { expired_at: expiredAt },
+  });
+});
+
+test("tracking expiry primitive rejects unsupported eligibility before writing", async () => {
+  const harness = createHarness();
+  await assert.rejects(
+    createDailyGoalRepository(harness.prisma).withUserTransaction(USER, (repository) => (
+      repository.expireTrackingSession({
+        sessionId: "tracking", eligibility: "UNKNOWN", expectedAnchor: new Date(0), expiredAt: new Date(1),
+      })
+    )),
+    /Unsupported tracking expiry eligibility/,
+  );
+  assert.equal(harness.calls.some((call) => call.kind === "tracking.updateMany"), false);
+});
+
 test("receipt replay accepts only exact stored type and server-derived fingerprint", async () => {
   const harness = createHarness({ receipt: {
     operation_id: "op", user_id: USER, operation_type: "HEARTBEAT",

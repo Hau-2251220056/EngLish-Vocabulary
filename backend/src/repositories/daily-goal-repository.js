@@ -93,6 +93,21 @@ function createTransactionRepository(transaction, userId, lifecycle) {
         where: { id: sessionId, user_id: userId }, data,
       });
     },
+    expireTrackingSession({ sessionId, eligibility, expectedAnchor, expiredAt }) {
+      const anchor = requireDate(expectedAnchor, "expectedAnchor");
+      const expiry = requireDate(expiredAt, "expiredAt");
+      const lifecycleWhere = trackingExpiryWhere(eligibility, anchor);
+      return transaction.dAILY_GOAL_TRACKING_SESSION.updateMany({
+        where: {
+          id: sessionId,
+          user_id: userId,
+          expired_at: null,
+          closed_at: null,
+          ...lifecycleWhere,
+        },
+        data: { status: "EXPIRED", expired_at: expiry, paused_at: null },
+      });
+    },
 
     findOwner() {
       return transaction.dAILY_GOAL_OWNER.findUnique({ where: { user_id: userId } });
@@ -202,6 +217,18 @@ function createTransactionRepository(transaction, userId, lifecycle) {
     updateMonitorSession(monitorSessionId, data) {
       return transaction.dAILY_GOAL_MONITOR_SESSION.updateMany({
         where: { id: monitorSessionId, user_id: userId }, data,
+      });
+    },
+    expireMonitorSession({ monitorSessionId, expectedLastSeenAt, expiredAt }) {
+      return transaction.dAILY_GOAL_MONITOR_SESSION.updateMany({
+        where: {
+          id: monitorSessionId,
+          user_id: userId,
+          closed_at: null,
+          expired_at: null,
+          last_seen_at: requireDate(expectedLastSeenAt, "expectedLastSeenAt"),
+        },
+        data: { expired_at: requireDate(expiredAt, "expiredAt") },
       });
     },
 
@@ -371,6 +398,19 @@ async function lockCleanupBoundary(transaction) {
 
 function ownerData(data, userId) {
   return { ...data, user_id: userId };
+}
+
+function trackingExpiryWhere(eligibility, expectedAnchor) {
+  if (eligibility === "NEVER_READY") {
+    return { status: "ACTIVE", created_at: expectedAnchor, engagement_expires_at: null };
+  }
+  if (eligibility === "ACTIVE_DEADLINE") {
+    return { status: "ACTIVE", engagement_expires_at: expectedAnchor };
+  }
+  if (eligibility === "PAUSED") {
+    return { status: "PAUSED", paused_at: expectedAnchor };
+  }
+  throw new TypeError("Unsupported tracking expiry eligibility.");
 }
 
 function guardRepository(methods, lifecycle) {

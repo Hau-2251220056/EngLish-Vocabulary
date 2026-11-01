@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   createDailyGoalCleanupScheduler,
   createDailyGoalService,
+  evaluateMonitorExpiryEligibility,
+  evaluateTrackingExpiryEligibility,
 } from "../../src/services/daily-goal-service.js";
 
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -12,6 +14,27 @@ const SESSION = "22222222-2222-4222-8222-222222222222";
 const SESSION_B = "22222222-2222-4222-8222-222222222223";
 const LEARNING = "33333333-3333-4333-8333-333333333333";
 const OPS = Array.from({ length: 12 }, (_, i) => `${String(i + 1).padStart(8, "0")}-4444-4444-8444-444444444444`);
+
+test("lifecycle eligibility uses exact inclusive server-time boundaries", () => {
+  const start = new Date("2026-10-26T00:00:00.000Z");
+  const day = 24 * 60 * 60 * 1_000;
+  const cases = [
+    [{ status: "ACTIVE", created_at: start, engagement_expires_at: null, closed_at: null, expired_at: null }, "NEVER_READY", day],
+    [{ status: "ACTIVE", created_at: start, engagement_expires_at: new Date(start.getTime() + 1_000), closed_at: null, expired_at: null }, "ACTIVE_DEADLINE", day + 1_000],
+    [{ status: "PAUSED", paused_at: start, closed_at: null, expired_at: null }, "PAUSED", 7 * day],
+  ];
+  for (const [session, eligibility, offset] of cases) {
+    assert.equal(evaluateTrackingExpiryEligibility(session, new Date(start.getTime() + offset - 1)).eligible, false);
+    const boundary = evaluateTrackingExpiryEligibility(session, new Date(start.getTime() + offset));
+    assert.equal(boundary.eligible, true);
+    assert.equal(boundary.eligibility, eligibility);
+  }
+  const monitor = { last_seen_at: start, closed_at: null, expired_at: null };
+  assert.equal(evaluateMonitorExpiryEligibility(monitor, new Date(start.getTime() + day - 1)).eligible, false);
+  assert.equal(evaluateMonitorExpiryEligibility(monitor, new Date(start.getTime() + day)).eligible, true);
+  assert.equal(evaluateTrackingExpiryEligibility({ ...cases[0][0], expired_at: start }, new Date(start.getTime() + day)), null);
+  assert.equal(evaluateMonitorExpiryEligibility({ ...monitor, closed_at: start }, new Date(start.getTime() + day)), null);
+});
 
 test("notification list defaults to 20, caps at 50, and paginates by a validated opaque boundary", async () => {
   assert.deepEqual(await createService(createHarness()).listNotifications(USER, {}), {
@@ -364,6 +387,46 @@ test("pause and close add no tail; close replay is idempotent; injected failure 
   assert.equal(failing.state.sessions.length, 0);
 });
 
+test("PAUSED timestamps are authoritative and successful RESUME clears the pause anchor", async () => {
+  let now = new Date("2026-10-26T00:00:00.000Z");
+  const harness = createHarness();
+  const service = createService(harness, () => now);
+  await service.establish(USER, establish(OPS[0]));
+  const ready = await service.engage(USER, SESSION, { operation_id: OPS[1], event_type: "READY" });
+  now = new Date("2026-10-26T00:01:00.000Z");
+  await service.pause(USER, SESSION, { operation_id: OPS[2], generation: ready.generation, reason: "HIDDEN" });
+  assert.equal(harness.state.sessions[0].paused_at.toISOString(), now.toISOString());
+  now = new Date("2026-10-26T00:02:00.000Z");
+  await service.engage(USER, SESSION, { operation_id: OPS[3], generation: "2", event_type: "RESUME" });
+  assert.equal(harness.state.sessions[0].paused_at, null);
+});
+
+test("tracking expiry blocks new mutations but preserves authorized exact historical replay", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  await service.establish(USER, establish(OPS[0]));
+  const readyRequest = { operation_id: OPS[1], event_type: "READY" };
+  const ready = await service.engage(USER, SESSION, readyRequest);
+  Object.assign(harness.state.sessions[0], { status: "EXPIRED", expired_at: new Date("2026-10-27T00:00:00.000Z") });
+  harness.state.owner = null;
+  const snapshot = structuredClone(harness.state);
+  assert.deepEqual(await service.engage(USER, SESSION, readyRequest), { ...ready, replayed: true });
+  assert.deepEqual(harness.state, snapshot);
+  await assert.rejects(
+    service.engage(USER, SESSION, { operation_id: OPS[2], event_type: "REVEAL" }),
+    hasCode("DAILY_GOAL_NOT_FOUND"),
+  );
+  await assert.rejects(
+    service.close(USER, SESSION, { operation_id: OPS[3], generation: "2" }),
+    hasCode("DAILY_GOAL_NOT_FOUND"),
+  );
+  harness.state.contextAccessible = false;
+  await assert.rejects(service.engage(USER, SESSION, readyRequest), hasCode("DAILY_GOAL_NOT_FOUND"));
+  assert.equal(harness.state.days[0].active_milliseconds, 0n);
+  assert.equal(harness.state.notifications.length, 0);
+  assert.equal(harness.state.rewards.length, 0);
+});
+
 test("goal projection floors seconds and minutes at the HUMAN-approved boundaries", async () => {
   for (const [seconds, minutes] of [[0, 0], [59, 0], [60, 1], [119, 1], [120, 2], [599, 9], [600, 10]]) {
     const harness = createHarness({ activeMilliseconds: BigInt(seconds) * 1_000n });
@@ -594,7 +657,7 @@ test("monitor establish validates exact input and projects server-owned bounded 
     started_at: new Date("2026-10-26T00:00:00.000Z"),
     last_seen_at: new Date("2026-10-26T00:00:00.000Z"),
     continuity_started_at: new Date("2026-10-26T00:00:00.000Z"),
-    eligible_baseline_at: new Date("2026-10-26T00:00:00.000Z"), closed_at: null,
+    eligible_baseline_at: new Date("2026-10-26T00:00:00.000Z"), closed_at: null, expired_at: null,
   });
   const replay = await createService(enabled, () => new Date("2026-10-26T01:00:00.000Z"))
     .establishMonitor(USER, { operation_id: OPS[0] });
@@ -709,6 +772,23 @@ test("historical monitor check replay survives close while new and foreign check
   await assert.rejects(service.checkMonitor(USER, SESSION, { operation_id: OPS[3] }), hasCode("DAILY_GOAL_NOT_FOUND"));
   await assert.rejects(service.checkMonitor(USER, SESSION, { operation_id: OPS[2] }), hasCode("OPERATION_CONFLICT"));
   await assert.rejects(service.checkMonitor(OTHER, SESSION, { operation_id: OPS[1] }), hasCode("DAILY_GOAL_NOT_FOUND"));
+});
+
+test("monitor expiry preserves owner replay and returns safe not-found for every new mutation", async () => {
+  const harness = createHarness();
+  const service = createService(harness);
+  await service.establishMonitor(USER, { operation_id: OPS[0] });
+  const request = { operation_id: OPS[1] };
+  const checked = await service.checkMonitor(USER, SESSION, request);
+  harness.state.monitors[0].expired_at = new Date("2026-10-27T00:00:00.000Z");
+  const snapshot = structuredClone(harness.state);
+  assert.deepEqual(await service.checkMonitor(USER, SESSION, request), { ...checked, replayed: true });
+  assert.deepEqual(harness.state, snapshot);
+  await assert.rejects(service.checkMonitor(USER, SESSION, { operation_id: OPS[2] }), hasCode("DAILY_GOAL_NOT_FOUND"));
+  await assert.rejects(service.closeMonitor(USER, SESSION, { operation_id: OPS[3] }), hasCode("DAILY_GOAL_NOT_FOUND"));
+  await assert.rejects(service.checkMonitor(OTHER, SESSION, request), hasCode("DAILY_GOAL_NOT_FOUND"));
+  assert.equal(harness.state.notifications.length, 0);
+  assert.equal(harness.state.rewards.length, 0);
 });
 
 test("preference toggles and repeated ON advance only the accepted baseline without reminder creation", async () => {
@@ -993,7 +1073,7 @@ function createHarness({ activeMilliseconds = null, targetMinutes = null, totalX
   function tx(userId) { return {
     findAuthorizedActivityContext: async () => state.contextAccessible ? { id: LEARNING } : null,
     findTrackingSession: async (id) => state.sessions.find((x) => x.id === id) ?? null,
-    createTrackingSession: async (data) => { const row = { ...data, engagement_expires_at: null, last_meaningful_at: null, closed_at: null }; state.sessions.push(row); return row; },
+    createTrackingSession: async (data) => { const row = { ...data, engagement_expires_at: null, last_meaningful_at: null, closed_at: null, paused_at: data.paused_at ?? null, expired_at: data.expired_at ?? null }; state.sessions.push(row); return row; },
     updateTrackingSession: async (id, data) => { Object.assign(state.sessions.find((x) => x.id === id), data); return { count: 1 }; },
     findOwner: async () => state.owner,
     upsertOwner: async ({ create, update }) => { state.owner = state.owner ? { ...state.owner, ...update } : { user_id: USER, ...create }; return state.owner; },
@@ -1025,7 +1105,7 @@ function createHarness({ activeMilliseconds = null, targetMinutes = null, totalX
 }
 
 function monitorAt(instant, lastSeen = instant) {
-  return { id: SESSION, user_id: USER, started_at: instant, last_seen_at: lastSeen, continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null };
+  return { id: SESSION, user_id: USER, started_at: instant, last_seen_at: lastSeen, continuity_started_at: instant, eligible_baseline_at: instant, closed_at: null, expired_at: null };
 }
 
 function notification(index, userId = USER) {
