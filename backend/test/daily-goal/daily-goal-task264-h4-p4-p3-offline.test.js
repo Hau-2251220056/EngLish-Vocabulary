@@ -67,7 +67,17 @@ test("job-local target is exact and does not permit arbitrary host, port, databa
 test("database observation requires PostgreSQL 17 exact identity and optional empty schema", () => {
   const valid = { database: DATABASE_IDENTITY.database, username: DATABASE_IDENTITY.username, host: "127.0.0.1", port: 5432, major: 17, publicTables: 0 };
   assert.equal(validateDatabaseObservation(valid, { requireEmpty: true }), true);
-  refusal(() => validateDatabaseObservation({ ...valid, major: 16 }), "DATABASE_IDENTITY_MISMATCH");
+  assert.equal(validateDatabaseObservation({ ...valid, host: "172.18.0.2" }, { requireEmpty: true }), true);
+  assert.equal(validateDatabaseObservation({ ...valid, host: "::1" }, { requireEmpty: true }), true);
+  for (const observation of [
+    { ...valid, host: "172.18.0.2/32" },
+    { ...valid, host: "::1/128" },
+    { ...valid, host: "not-an-ip" },
+    { ...valid, database: "other" },
+    { ...valid, username: "other" },
+    { ...valid, port: 5433 },
+    { ...valid, major: 16 },
+  ]) refusal(() => validateDatabaseObservation(observation), "DATABASE_IDENTITY_MISMATCH");
   refusal(() => validateDatabaseObservation({ ...valid, publicTables: 1 }, { requireEmpty: true }), "DATABASE_NOT_EMPTY");
 });
 
@@ -241,6 +251,8 @@ test("workflow is manual-only, default-deny, least privilege and guards precede 
 
 test("CLI source preserves identity-to-cleanup phase order and has no automatic invocation", async () => {
   const source = await readFile(cliPath, "utf8");
+  assert.match(source, /host\(inet_server_addr\(\)\) AS host/);
+  assert.doesNotMatch(source, /inet_server_addr\(\)::text AS host/);
   let prior = -1;
   for (const phase of PHASES) { const position = source.indexOf(`phases.enter("${phase}")`); assert.ok(position > prior, phase); prior = position; }
   const generateSubphase = source.indexOf('currentSubphase = "GENERATE"');

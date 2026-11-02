@@ -321,7 +321,7 @@ export async function validateCanonicalMigrationDirectory(directory) {
 async function observeDatabase(prisma) {
   // The server socket may use a container bridge address; TARGET already binds the client to loopback.
   const rows = await prisma.$queryRaw`SELECT current_database() AS database,
-    current_user AS username, inet_server_addr()::text AS host, inet_server_port()::int AS port,
+    current_user AS username, host(inet_server_addr()) AS host, inet_server_port()::int AS port,
     (current_setting('server_version_num')::int / 10000)::int AS major,
     (SELECT count(*)::int FROM pg_catalog.pg_tables WHERE schemaname = 'public') AS "publicTables"`;
   if (rows.length !== 1) throw new Error("Database observation failed.");
