@@ -23,6 +23,39 @@ const dependencyRoot = path.join(backendRoot, "node_modules");
 const prismaClientPackage = path.join(dependencyRoot, "@prisma/client");
 const PRISMA_CLIENT_VERSION = "6.19.3";
 export const CLIENT_SUBPHASES = Object.freeze(["GENERATE", "IMPORT", "CONSTRUCT"]);
+export const INTEGRATION_TEST_NAMES = Object.freeze([
+  "migration history contains the reviewed four-draft suffix and lifecycle delegates are usable",
+  "database identity is PostgreSQL 17 on the exact isolated target",
+  "constraints reject malformed terminal, journal cursor, lease and pending state",
+  "missing activation fails closed and concurrent journal initialization has one authority",
+  "wrong policy version does not activate version 1 and activation boundary excludes only historical rows",
+  "expired lease takeover rejects stale token and revision finalization while preserving pending work",
+  "candidate discovery is inclusive, globally ordered and continues across the 25/26 boundary",
+  "equal-time candidates order tracking before monitor and UUIDs ascending within each kind",
+  "cursor wrap resumes before the persisted high cursor without skipping an eligible descriptor",
+  "F2 owner clear and zero-row expiry roll back atomically in PostgreSQL",
+  "successful owner clear and tracking expiry commit together without durable side effects",
+  "USER advisory lock serializes same-owner transactions",
+  "ordinary transaction error rolls owner mutation back",
+  "crash after USER commit but before journal finalization replays without duplicate transition",
+  "cleanup uses a shared 100-row ceiling and preserves retained receipts and current owners",
+  "cleanup deletes an expired receipt before its newly unprotected parent",
+  "cleanup retains rows exactly at 30/31-day cutoffs and deletes rows one millisecond older",
+  "cleanup advisory lock serializes concurrent cleanup transactions",
+  "lifecycle runner commits at most 100 transitions per invocation",
+  "lifecycle runner stops after 300 attempted stale descriptors",
+]);
+const INTEGRATION_SUMMARY_FIELDS = Object.freeze(["tests", "pass", "fail", "cancelled", "skipped", "todo"]);
+const MAX_REPORTED_INTEGRATION_FAILURES = 3;
+const MAX_INTEGRATION_TEST_NAME_BYTES = 160;
+
+export class IntegrationTestFailure extends Error {
+  constructor(diagnostic) {
+    super("PostgreSQL integration tests failed.");
+    this.name = "IntegrationTestFailure";
+    this.diagnostic = diagnostic;
+  }
+}
 
 export class HarnessPhaseFailure extends Error {
   constructor(cause, phase, subphase) {
@@ -41,7 +74,14 @@ export function classifyHarnessFailure(error) {
   if (error instanceof HarnessPhaseFailure) {
     const result = classifyHarnessFailure(error.cause);
     return result.outcome === "FAILED" && result.code === "INTERNAL_FAILURE"
-      ? Object.freeze({ ...result, phase: error.phase, ...(error.subphase === undefined ? {} : { subphase: error.subphase }) })
+      ? Object.freeze({
+          ...result,
+          phase: error.phase,
+          ...(error.subphase === undefined ? {} : { subphase: error.subphase }),
+          ...(error.phase === "INTEGRATION" && error.cause instanceof IntegrationTestFailure
+            ? { diagnostic: error.cause.diagnostic }
+            : {}),
+        })
       : result;
   }
   if (error instanceof AggregateError) {
@@ -150,7 +190,12 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
     phases.enter("INTEGRATION");
     currentPhase = "INTEGRATION";
     await prisma.$disconnect(); prisma = null;
-    await runBounded(process.execPath, ["--test", "--test-concurrency=1", path.join(here, "daily-goal-task264-h4-p4-p3-postgresql.integration.test.js")], { cwd: backendRoot, env: childEnvironment }, spawnProcess);
+    await runIntegrationBounded(
+      process.execPath,
+      ["--test", "--test-concurrency=1", "--test-reporter=tap", path.join(here, "daily-goal-task264-h4-p4-p3-postgresql.integration.test.js")],
+      { cwd: backendRoot, env: childEnvironment },
+      spawnProcess,
+    );
 
     phases.enter("CLEANUP");
     currentPhase = "CLEANUP";
@@ -340,6 +385,83 @@ function requireTestInteger(value, minimum, maximum) {
   if (!/^[1-9][0-9]*$/.test(String(value))) throw new Error("Test-only timing configuration is invalid.");
   const number = Number(value); if (!Number.isSafeInteger(number) || number < minimum || number > maximum) throw new Error("Test-only timing configuration is invalid.");
   return String(number);
+}
+
+export function parseIntegrationTap(output, exitCode) {
+  if (typeof output !== "string" || Buffer.byteLength(output) > LIMITS.outputBytes) throw new Error("Integration test output is invalid.");
+  const summary = new Map();
+  const failures = [];
+  const seenFailures = new Set();
+  for (const rawLine of output.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    const summaryMatch = /^# (tests|pass|fail|cancelled|skipped|todo) ([0-9]+)$/.exec(line);
+    if (summaryMatch) {
+      if (summary.has(summaryMatch[1])) throw new Error("Integration test output is invalid.");
+      const value = Number(summaryMatch[2]);
+      if (!Number.isSafeInteger(value)) throw new Error("Integration test output is invalid.");
+      summary.set(summaryMatch[1], value);
+      continue;
+    }
+    const failureMatch = /^not ok [1-9][0-9]* - (.+)$/.exec(line);
+    if (!failureMatch) continue;
+    const name = failureMatch[1];
+    if (Buffer.byteLength(name) > MAX_INTEGRATION_TEST_NAME_BYTES
+      || !INTEGRATION_TEST_NAMES.includes(name)
+      || seenFailures.has(name)) {
+      throw new Error("Integration test output is invalid.");
+    }
+    seenFailures.add(name);
+    if (failures.length < MAX_REPORTED_INTEGRATION_FAILURES) failures.push(name);
+  }
+  if (INTEGRATION_SUMMARY_FIELDS.some((field) => !summary.has(field))) throw new Error("Integration test output is invalid.");
+  const total = summary.get("tests");
+  const passed = summary.get("pass");
+  const failed = summary.get("fail");
+  const skipped = summary.get("skipped");
+  if (total !== INTEGRATION_TEST_NAMES.length
+    || passed + failed + skipped !== total
+    || summary.get("cancelled") !== 0
+    || summary.get("todo") !== 0
+    || seenFailures.size !== failed
+    || (exitCode === 0 && (passed !== total || failed !== 0 || skipped !== 0 || failures.length !== 0))
+    || (exitCode !== 0 && (failed === 0 || failures.length === 0))) {
+    throw new Error("Integration test output is invalid.");
+  }
+  return Object.freeze({
+    total,
+    passed,
+    failed,
+    skipped,
+    ...(failures.length === 0 ? {} : { failures: Object.freeze(failures) }),
+  });
+}
+
+export function runIntegrationBounded(executable, args, options, spawnProcess, { timeoutMilliseconds = 120_000 } = {}) {
+  if (!Number.isSafeInteger(timeoutMilliseconds) || timeoutMilliseconds < 1 || timeoutMilliseconds > 120_000) {
+    return Promise.reject(new Error("Integration subprocess timeout is invalid."));
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess(executable, args, { ...options, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = [];
+    let bytes = 0; let settled = false; let timer;
+    const finish = (error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
+    const consume = (chunk, capture) => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > LIMITS.outputBytes) { child.kill(); finish(new Error("Subprocess output limit exceeded.")); return; }
+      if (capture) stdout.push(Buffer.from(chunk));
+    };
+    child.stdout?.on("data", (chunk) => consume(chunk, true));
+    child.stderr?.on("data", (chunk) => consume(chunk, false));
+    child.once("error", () => finish(new Error("Guarded subprocess failed.")));
+    child.once("close", (code) => {
+      if (settled) return;
+      let diagnostic;
+      try { diagnostic = parseIntegrationTap(Buffer.concat(stdout).toString("utf8"), code); }
+      catch { finish(new Error("Integration test output is invalid.")); return; }
+      finish(code === 0 ? null : new IntegrationTestFailure(diagnostic));
+    });
+    timer = setTimeout(() => { child.kill(); finish(new Error("Guarded subprocess timeout.")); }, timeoutMilliseconds);
+  });
 }
 
 function runBounded(executable, args, options, spawnProcess) {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { PassThrough } from "node:stream";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,7 +14,8 @@ import {
   validateLocalDatabaseTarget, validateManifest, validateTemporaryWorkspace,
 } from "./daily-goal-task264-h4-p4-p3-core.js";
 import {
-  CLIENT_SUBPHASES, HarnessPhaseFailure, classifyHarnessFailure, materializePrismaRuntime,
+  CLIENT_SUBPHASES, INTEGRATION_TEST_NAMES, HarnessPhaseFailure, IntegrationTestFailure,
+  classifyHarnessFailure, materializePrismaRuntime, parseIntegrationTap, runIntegrationBounded,
   validateCanonicalMigrationDirectory,
 } from "./daily-goal-task264-h4-p4-p3-cli.js";
 
@@ -20,6 +23,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, "../../..");
 const workflowPath = path.join(repositoryRoot, WORKFLOW_PATH);
 const cliPath = path.join(here, "daily-goal-task264-h4-p4-p3-cli.js");
+const integrationPath = path.join(here, "daily-goal-task264-h4-p4-p3-postgresql.integration.test.js");
 const SHA = "a".repeat(40);
 
 function identity(overrides = {}) {
@@ -30,6 +34,37 @@ function identity(overrides = {}) {
   };
 }
 function refusal(fn, code) { assert.throws(fn, (error) => error instanceof HarnessRefusal && error.code === code); }
+
+function integrationTap({ failedNames = [], passed = INTEGRATION_TEST_NAMES.length - failedNames.length, skipped = 0 } = {}) {
+  return [
+    "TAP version 13",
+    ...failedNames.map((name, index) => `not ok ${index + 1} - ${name}`),
+    `1..${INTEGRATION_TEST_NAMES.length}`,
+    `# tests ${INTEGRATION_TEST_NAMES.length}`,
+    `# pass ${passed}`,
+    `# fail ${failedNames.length}`,
+    "# cancelled 0",
+    `# skipped ${skipped}`,
+    "# todo 0",
+    "",
+  ].join("\n");
+}
+
+function subprocessFixture({ stdout = "", stderr = "", code = 0, close = true } = {}) {
+  return () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { child.killed = true; };
+    queueMicrotask(() => {
+      if (stdout) child.stdout.write(stdout);
+      if (stderr) child.stderr.write(stderr);
+      child.stdout.end(); child.stderr.end();
+      if (close) child.emit("close", code);
+    });
+    return child;
+  };
+}
 
 test("authorization is default-deny and requires exact operation plus HUMAN boolean", () => {
   refusal(() => validateExecutionIdentity(identity({ operation: "NOT_AUTHORIZED" })), "AUTHORIZATION_DENIED");
@@ -173,6 +208,44 @@ test("CLIENT subphase survives cleanup aggregation while refusals remain unchang
   );
 });
 
+test("integration diagnostics expose only bounded counts and static failed test names", () => {
+  const failedName = INTEGRATION_TEST_NAMES[1];
+  const diagnostic = parseIntegrationTap(integrationTap({ failedNames: [failedName] }), 1);
+  assert.deepEqual(diagnostic, { total: 20, passed: 19, failed: 1, skipped: 0, failures: [failedName] });
+  assert.deepEqual(
+    classifyHarnessFailure(new HarnessPhaseFailure(new IntegrationTestFailure(diagnostic), "INTEGRATION")),
+    { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "INTEGRATION", diagnostic },
+  );
+});
+
+test("integration diagnostics fail closed for unknown, malformed and oversized output", () => {
+  const sensitive = "postgresql://user:secret@host/db SELECT private C:\\private\\fixture";
+  const unknown = integrationTap({ failedNames: [INTEGRATION_TEST_NAMES[0]] }).replace(INTEGRATION_TEST_NAMES[0], sensitive);
+  for (const output of [unknown, "malformed", "x".repeat(1_048_577)]) {
+    assert.throws(() => parseIntegrationTap(output, 1), /Integration test output is invalid/);
+  }
+  const result = classifyHarnessFailure(new HarnessPhaseFailure(new Error(sensitive), "INTEGRATION"));
+  assert.deepEqual(result, { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "INTEGRATION" });
+  assert.doesNotMatch(JSON.stringify(result), /secret|private|postgresql:/);
+});
+
+test("integration subprocess preserves success and failure while timeout remains bounded", async () => {
+  await runIntegrationBounded("node", [], {}, subprocessFixture({ stdout: integrationTap() }));
+  const failedName = INTEGRATION_TEST_NAMES[2];
+  await assert.rejects(
+    runIntegrationBounded("node", [], {}, subprocessFixture({ stdout: integrationTap({ failedNames: [failedName] }), code: 1 })),
+    (error) => error instanceof IntegrationTestFailure && error.diagnostic.failures[0] === failedName,
+  );
+  await assert.rejects(
+    runIntegrationBounded("node", [], {}, subprocessFixture({ close: false }), { timeoutMilliseconds: 5 }),
+    /Guarded subprocess timeout/,
+  );
+  await assert.rejects(
+    runIntegrationBounded("node", [], {}, subprocessFixture({ stdout: "x".repeat(1_048_577) })),
+    /Subprocess output limit exceeded/,
+  );
+});
+
 test("temporary workspaces must be below the OS temp root and outside repository", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "task264-offline-"));
   try { assert.equal(await validateTemporaryWorkspace(directory, repositoryRoot), directory); }
@@ -249,6 +322,16 @@ test("workflow is manual-only, default-deny, least privilege and guards precede 
   assert.doesNotMatch(workflow, /pull_request_target|schedule:|\n\s+(DATABASE_URL|TEST_DATABASE_URL|CI_TEST_DATABASE_URL):|supabase|upload-artifact|git push|prisma migrate deploy/iu);
 });
 
+test("PostgreSQL integration identity uses a plain host and preserves the static 20-test inventory", async () => {
+  const source = await readFile(integrationPath, "utf8");
+  assert.match(source, /host\(inet_server_addr\(\)\) AS host/);
+  assert.doesNotMatch(source, /inet_server_addr\(\)::text AS host/);
+  assert.match(source, /assert\.notEqual\(isIP\(row\.host\), 0\)/);
+  const names = [...source.matchAll(/^test\("([^"]+)"/gm)].map((match) => match[1]);
+  assert.deepEqual(names, INTEGRATION_TEST_NAMES);
+  assert.equal(names.length, 20);
+});
+
 test("CLI source preserves identity-to-cleanup phase order and has no automatic invocation", async () => {
   const source = await readFile(cliPath, "utf8");
   assert.match(source, /host\(inet_server_addr\(\)\) AS host/);
@@ -267,6 +350,8 @@ test("CLI source preserves identity-to-cleanup phase order and has no automatic 
   assert.ok(runtimeMaterialization < importOperation);
   assert.ok(importOperation < constructSubphase && constructSubphase < constructOperation && constructOperation < clearSubphase);
   assert.match(source, /process\.argv\.length !== 3 \|\| process\.argv\[2\] !== "--run"/);
+  assert.match(source, /"--test-reporter=tap"/);
+  assert.match(source, /await runIntegrationBounded\(/);
   assert.ok(source.indexOf('phases.enter("DATABASE_IDENTITY")') < source.indexOf('phases.enter("MIGRATE")'));
   assert.doesNotMatch(source, /shell:\s*true/);
 });

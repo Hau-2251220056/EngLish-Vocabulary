@@ -51,7 +51,7 @@ test("migration history contains the reviewed four-draft suffix and lifecycle de
 
 test("database identity is PostgreSQL 17 on the exact isolated target", { timeout: TIMEOUT_MS }, async () => {
   const [row] = await prisma.$queryRaw`SELECT current_database() AS database, current_user AS username,
-    inet_server_addr()::text AS host, inet_server_port()::int AS port,
+    host(inet_server_addr()) AS host, inet_server_port()::int AS port,
     (current_setting('server_version_num')::int / 10000)::int AS major`;
   assert.deepEqual(
     { database: row.database, username: row.username, port: row.port, major: row.major },
