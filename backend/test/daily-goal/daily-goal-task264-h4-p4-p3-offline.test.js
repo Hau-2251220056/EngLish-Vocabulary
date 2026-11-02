@@ -256,6 +256,24 @@ test("CLI source preserves identity-to-cleanup phase order and has no automatic 
   assert.doesNotMatch(source, /shell:\s*true/);
 });
 
+test("disposable Prisma config resolves without package imports and fails closed on its job-local binding", async () => {
+  const source = await readFile(cliPath, "utf8");
+  const configStart = source.indexOf("const config = `");
+  const configEnd = source.indexOf("await writeFile(configPath, config", configStart);
+  assert.ok(configStart >= 0 && configEnd > configStart);
+  const configMaterializer = source.slice(configStart, configEnd);
+
+  assert.doesNotMatch(configMaterializer, /prisma\/config|defineConfig|\benv\s*\(/);
+  assert.match(configMaterializer, /process\.env\.TASK264_P3_JOB_DATABASE_URL/);
+  assert.match(configMaterializer, /if \(!datasourceUrl\) throw new Error\("Disposable datasource binding is missing\."\)/);
+  assert.match(configMaterializer, /export default \{/);
+  assert.match(configMaterializer, /schema: \$\{JSON\.stringify\(schemaPath/);
+  assert.match(configMaterializer, /migrations: \{ path: \$\{JSON\.stringify\(migrationsPath/);
+  assert.match(configMaterializer, /engine: "classic"/);
+  assert.match(configMaterializer, /datasource: \{ url: datasourceUrl \}/);
+  assert.doesNotMatch(configMaterializer, /process\.env\.(?:DATABASE_URL|DIRECT_URL|SHADOW_DATABASE_URL|SUPABASE_DB_URL|PREVIEW_DATABASE_URL|PRODUCTION_DATABASE_URL)/);
+});
+
 test("production migration tree and scheduler remain disconnected", async () => {
   const migrationFiles = await import("node:fs/promises").then(({ readdir }) => readdir(path.join(repositoryRoot, "backend/prisma/migrations"), { recursive: true }));
   assert.equal(migrationFiles.some((entry) => /lifecycle|20261031|expired/i.test(entry)), false);

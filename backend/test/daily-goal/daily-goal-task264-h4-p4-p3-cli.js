@@ -192,7 +192,7 @@ async function materializeWorkspace({ workspace, artifacts }) {
   const schemaPath = path.join(prismaPath, "schema.prisma");
   await writeFile(schemaPath, schema, { flag: "wx" });
   const configPath = path.join(workspace, "prisma.config.ts");
-  const config = `import { defineConfig, env } from "prisma/config";\nexport default defineConfig({\n  schema: ${JSON.stringify(schemaPath.replaceAll("\\", "/"))},\n  migrations: { path: ${JSON.stringify(migrationsPath.replaceAll("\\", "/"))} },\n  engine: "classic",\n  datasource: { url: env("TASK264_P3_JOB_DATABASE_URL") },\n});\n`;
+  const config = `const datasourceUrl = process.env.TASK264_P3_JOB_DATABASE_URL;\nif (!datasourceUrl) throw new Error("Disposable datasource binding is missing.");\nexport default {\n  schema: ${JSON.stringify(schemaPath.replaceAll("\\", "/"))},\n  migrations: { path: ${JSON.stringify(migrationsPath.replaceAll("\\", "/"))} },\n  engine: "classic",\n  datasource: { url: datasourceUrl },\n};\n`;
   await writeFile(configPath, config, { flag: "wx" });
   return Object.freeze({ migrationsPath, schemaPath, configPath, generatedClient });
 }
