@@ -12,7 +12,7 @@ import {
   validateLocalDatabaseTarget, validateManifest, validateTemporaryWorkspace,
 } from "./daily-goal-task264-h4-p4-p3-core.js";
 import {
-  HarnessPhaseFailure, classifyHarnessFailure, validateCanonicalMigrationDirectory,
+  CLIENT_SUBPHASES, HarnessPhaseFailure, classifyHarnessFailure, validateCanonicalMigrationDirectory,
 } from "./daily-goal-task264-h4-p4-p3-cli.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +122,46 @@ test("phase diagnostics preserve refusals and reject forged phase names", () => 
   );
 });
 
+test("CLIENT diagnostics expose only fixed GENERATE, IMPORT and CONSTRUCT subphases", () => {
+  const sensitive = "postgresql://user:secret@host/db SELECT * FROM private_table C:\\private\\fixture";
+  for (const subphase of CLIENT_SUBPHASES) {
+    const result = classifyHarnessFailure(new HarnessPhaseFailure(new Error(sensitive), "CLIENT", subphase));
+    assert.deepEqual(result, { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "CLIENT", subphase });
+    assert.doesNotMatch(JSON.stringify(result), /secret|private_table|private\\fixture|postgresql:\/\//);
+  }
+});
+
+test("CLIENT subphases cannot be forged and remain absent from other phases", () => {
+  assert.throws(
+    () => new HarnessPhaseFailure(new Error("forged"), "CLIENT", "FORGED"),
+    /diagnostic subphase is invalid/,
+  );
+  assert.throws(
+    () => new HarnessPhaseFailure(new Error("forged"), "CLEANUP", "GENERATE"),
+    /diagnostic subphase is invalid/,
+  );
+  assert.deepEqual(
+    classifyHarnessFailure(Object.assign(new Error("forged"), { phase: "CLIENT", subphase: "IMPORT" })),
+    { outcome: "FAILED", code: "INTERNAL_FAILURE" },
+  );
+  assert.deepEqual(
+    classifyHarnessFailure(new HarnessPhaseFailure(new Error("cleanup"), "CLEANUP")),
+    { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "CLEANUP" },
+  );
+});
+
+test("CLIENT subphase survives cleanup aggregation while refusals remain unchanged", () => {
+  const primary = new HarnessPhaseFailure(new Error("client"), "CLIENT", "IMPORT");
+  assert.deepEqual(
+    classifyHarnessFailure(new AggregateError([primary, new Error("cleanup")])),
+    { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "CLIENT", subphase: "IMPORT" },
+  );
+  assert.deepEqual(
+    classifyHarnessFailure(new HarnessPhaseFailure(new HarnessRefusal("AUTHORIZATION_DENIED"), "CLIENT", "GENERATE")),
+    { outcome: "REFUSED", code: "AUTHORIZATION_DENIED" },
+  );
+});
+
 test("temporary workspaces must be below the OS temp root and outside repository", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "task264-offline-"));
   try { assert.equal(await validateTemporaryWorkspace(directory, repositoryRoot), directory); }
@@ -202,6 +242,15 @@ test("CLI source preserves identity-to-cleanup phase order and has no automatic 
   const source = await readFile(cliPath, "utf8");
   let prior = -1;
   for (const phase of PHASES) { const position = source.indexOf(`phases.enter("${phase}")`); assert.ok(position > prior, phase); prior = position; }
+  const generateSubphase = source.indexOf('currentSubphase = "GENERATE"');
+  const generateOperation = source.indexOf('await runBounded(process.execPath, [prismaCli, "generate"');
+  const importSubphase = source.indexOf('currentSubphase = "IMPORT"');
+  const importOperation = source.indexOf('const module = await import(');
+  const constructSubphase = source.indexOf('currentSubphase = "CONSTRUCT"');
+  const constructOperation = source.indexOf('prisma = new module.PrismaClient(');
+  const clearSubphase = source.indexOf("currentSubphase = undefined;");
+  assert.ok(generateSubphase < generateOperation && generateOperation < importSubphase && importSubphase < importOperation);
+  assert.ok(importOperation < constructSubphase && constructSubphase < constructOperation && constructOperation < clearSubphase);
   assert.match(source, /process\.argv\.length !== 3 \|\| process\.argv\[2\] !== "--run"/);
   assert.ok(source.indexOf('phases.enter("DATABASE_IDENTITY")') < source.indexOf('phases.enter("MIGRATE")'));
   assert.doesNotMatch(source, /shell:\s*true/);

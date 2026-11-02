@@ -19,13 +19,18 @@ const manifestPath = path.join(backendRoot, "prisma/migration-drafts/daily-goal-
 const activeMigrations = path.join(backendRoot, "prisma/migrations");
 const productionSchema = path.join(backendRoot, "prisma/schema.prisma");
 const prismaCli = path.join(backendRoot, "node_modules/prisma/build/index.js");
+export const CLIENT_SUBPHASES = Object.freeze(["GENERATE", "IMPORT", "CONSTRUCT"]);
 
 export class HarnessPhaseFailure extends Error {
-  constructor(cause, phase) {
+  constructor(cause, phase, subphase) {
     if (!PHASES.includes(phase)) throw new Error("Harness diagnostic phase is invalid.");
+    if (subphase !== undefined && (phase !== "CLIENT" || !CLIENT_SUBPHASES.includes(subphase))) {
+      throw new Error("Harness diagnostic subphase is invalid.");
+    }
     super("Harness phase failed.", { cause });
     this.name = "HarnessPhaseFailure";
     this.phase = phase;
+    if (subphase !== undefined) this.subphase = subphase;
   }
 }
 
@@ -33,7 +38,7 @@ export function classifyHarnessFailure(error) {
   if (error instanceof HarnessPhaseFailure) {
     const result = classifyHarnessFailure(error.cause);
     return result.outcome === "FAILED" && result.code === "INTERNAL_FAILURE"
-      ? Object.freeze({ ...result, phase: error.phase })
+      ? Object.freeze({ ...result, phase: error.phase, ...(error.subphase === undefined ? {} : { subphase: error.subphase }) })
       : result;
   }
   if (error instanceof AggregateError) {
@@ -61,6 +66,7 @@ export function identityFromEnvironment(environment) {
 export async function runHarness({ environment = process.env, spawnProcess = spawn, hooks = {} } = {}) {
   const phases = createPhaseSequence();
   let currentPhase;
+  let currentSubphase;
   let workspace;
   let prisma;
   let primaryFailure;
@@ -104,10 +110,14 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
       TASK264_P3_TEST_ONLY_TIMEOUT_MS: requireTestInteger(environment.TASK264_P3_TEST_ONLY_TIMEOUT_MS, 1_000, 120_000),
       TASK264_P3_INTEGRATION_AUTHORIZED: "true",
     });
+    currentSubphase = "GENERATE";
     await runBounded(process.execPath, [prismaCli, "generate", "--config", materialized.configPath, "--schema", materialized.schemaPath], { cwd: backendRoot, env: childEnvironment }, spawnProcess);
+    currentSubphase = "IMPORT";
     const module = await import(`${pathToFileURL(path.join(materialized.generatedClient, "client.ts")).href}?v=${Date.now()}`);
+    currentSubphase = "CONSTRUCT";
     prisma = new module.PrismaClient({ datasourceUrl: environment.TASK264_P3_JOB_DATABASE_URL });
 
+    currentSubphase = undefined;
     phases.enter("DATABASE_IDENTITY");
     currentPhase = "DATABASE_IDENTITY";
     await prisma.$connect();
@@ -144,7 +154,7 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
     phases.complete();
     return Object.freeze({ outcome: "PASS", phases: PHASES.length, migrations: MIGRATIONS.length });
   } catch (error) {
-    primaryFailure = error instanceof HarnessPhaseFailure ? error : new HarnessPhaseFailure(error, currentPhase);
+    primaryFailure = error instanceof HarnessPhaseFailure ? error : new HarnessPhaseFailure(error, currentPhase, currentSubphase);
     throw primaryFailure;
   } finally {
     const cleanupFailures = [];
