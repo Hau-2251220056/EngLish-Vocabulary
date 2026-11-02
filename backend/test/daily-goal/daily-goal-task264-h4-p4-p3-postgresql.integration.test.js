@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import { pathToFileURL } from "node:url";
 
 import { createDailyGoalRepository, createDailyGoalRepositoryForTest } from "../../src/repositories/daily-goal-repository.js";
-import { createDailyGoalLifecycleMaintenanceRunner } from "../../src/services/daily-goal-service.js";
+import { createDailyGoalLifecycleMaintenanceRunner, createDailyGoalService } from "../../src/services/daily-goal-service.js";
 import { DATABASE_IDENTITY, MIGRATIONS, validateLocalDatabaseTarget } from "./daily-goal-task264-h4-p4-p3-core.js";
 
 const authorized = process.env.TASK264_P3_INTEGRATION_AUTHORIZED === "true";
@@ -386,6 +387,246 @@ test("lifecycle runner stops after 300 attempted stale descriptors", { timeout: 
   assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { status: "EXPIRED" } }), 0);
 });
 
+test("G1 physical cleanup rolls every category back after a later failure and retry succeeds", { timeout: TIMEOUT_MS }, async () => {
+  await resetTracking(); await prisma.dAILY_GOAL_MONITOR_SESSION.deleteMany();
+  const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+  const monitorId = "81000000-0000-4000-8000-000000000001";
+  await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: {
+    id: SESSION_A, user_id: USER_A, activity_type: "NORMAL", status: "CLOSED",
+    created_at: old, updated_at: old, closed_at: old,
+  } });
+  await prisma.dAILY_GOAL_MONITOR_SESSION.create({ data: {
+    id: monitorId, user_id: USER_B, started_at: old, last_seen_at: old,
+    continuity_started_at: old, eligible_baseline_at: old, closed_at: old,
+  } });
+  await prisma.dAILY_GOAL_OPERATION_RECEIPT.createMany({ data: [
+    { operation_id: "81100000-0000-4000-8000-000000000001", user_id: USER_A, tracking_session_id: SESSION_A, operation_type: "CREATE", request_fingerprint: "g1-tracking", response_projection: {}, created_at: old },
+    { operation_id: "81100000-0000-4000-8000-000000000002", user_id: USER_B, monitor_session_id: monitorId, operation_type: "MONITOR_CREATE", request_fingerprint: "g1-monitor", response_projection: {}, created_at: old },
+  ] });
+  await prisma.$executeRawUnsafe(`CREATE FUNCTION public.task264_fail_monitor_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'task264 bounded monitor cleanup failure'; END $$`);
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER task264_fail_monitor_cleanup BEFORE DELETE ON "DAILY_GOAL_MONITOR_SESSION" FOR EACH ROW EXECUTE FUNCTION public.task264_fail_monitor_cleanup()`);
+  try {
+    await assert.rejects(repository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState()));
+    assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count({ where: { operation_id: { in: ["81100000-0000-4000-8000-000000000001", "81100000-0000-4000-8000-000000000002"] } } }), 2);
+    assert.ok(await prisma.dAILY_GOAL_TRACKING_SESSION.findUnique({ where: { id: SESSION_A } }));
+    assert.ok(await prisma.dAILY_GOAL_MONITOR_SESSION.findUnique({ where: { id: monitorId } }));
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS task264_fail_monitor_cleanup ON "DAILY_GOAL_MONITOR_SESSION"`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.task264_fail_monitor_cleanup()`);
+  }
+  const retry = await repository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(retry, { receiptsDeleted: 2, trackingSessionsDeleted: 1, monitorSessionsDeleted: 1 });
+});
+
+test("G2 concurrent receipt and owner protection prevent stale cleanup deletion", { timeout: TIMEOUT_MS }, async () => {
+  await resetTracking();
+  const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+  await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: {
+    id: SESSION_A, user_id: USER_A, activity_type: "NORMAL", status: "CLOSED",
+    created_at: old, updated_at: old, closed_at: old,
+  } });
+  const blocker = new PrismaClient({ datasourceUrl: process.env.TASK264_P3_JOB_DATABASE_URL });
+  await blocker.$connect();
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const lockHeld = blocker.$transaction(async (transaction) => {
+    await transaction.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended('daily-goal:cleanup', 0))`);
+    await held;
+  });
+  await waitForCondition(async () => (await prisma.$queryRawUnsafe(`SELECT count(*)::int AS count FROM pg_locks WHERE locktype='advisory' AND granted`))[0].count >= 1);
+  const cleanup = repository.withCleanupTransaction((candidate) => candidate.cleanupExpiredOperationalState());
+  try {
+    await waitForAdvisoryContention();
+    await repository.withUserTransaction(USER_A, async (userRepository) => {
+      await userRepository.createOperationReceipt({
+        operation_id: "81200000-0000-4000-8000-000000000001", tracking_session_id: SESSION_A,
+        operation_type: "CREATE", request_fingerprint: "g2-retained", response_projection: {}, created_at: new Date(),
+      });
+      await userRepository.upsertOwner({
+        create: { tracking_session_id: SESSION_A, generation: 1n },
+        update: { tracking_session_id: SESSION_A, generation: 1n },
+      });
+    });
+  } finally {
+    release(); await lockHeld;
+  }
+  assert.deepEqual(await cleanup, { receiptsDeleted: 0, trackingSessionsDeleted: 0, monitorSessionsDeleted: 0 });
+  assert.ok(await prisma.dAILY_GOAL_TRACKING_SESSION.findUnique({ where: { id: SESSION_A } }));
+  assert.ok(await prisma.dAILY_GOAL_OPERATION_RECEIPT.findUnique({ where: { operation_id: "81200000-0000-4000-8000-000000000001" } }));
+  assert.equal((await prisma.dAILY_GOAL_OWNER.findUnique({ where: { user_id: USER_A } })).tracking_session_id, SESSION_A);
+  await blocker.$disconnect();
+});
+
+test("G3 monitor cleanup matches strict retention receipt ordering and shared budget", { timeout: TIMEOUT_MS }, async () => {
+  await resetTracking(); await prisma.dAILY_GOAL_MONITOR_SESSION.deleteMany();
+  const now = new Date("2026-11-01T00:00:00.000Z");
+  const boundary = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000);
+  const older = new Date(boundary.getTime() - 1);
+  const ids = ["81300000-0000-4000-8000-000000000001", "81300000-0000-4000-8000-000000000002", "81300000-0000-4000-8000-000000000003"];
+  await prisma.dAILY_GOAL_MONITOR_SESSION.createMany({ data: [
+    { id: ids[0], user_id: USER_A, started_at: boundary, last_seen_at: boundary, continuity_started_at: boundary, eligible_baseline_at: boundary, closed_at: boundary },
+    { id: ids[1], user_id: USER_A, started_at: older, last_seen_at: older, continuity_started_at: older, eligible_baseline_at: older, closed_at: older },
+    { id: ids[2], user_id: USER_B, started_at: older, last_seen_at: older, continuity_started_at: older, eligible_baseline_at: older, expired_at: older },
+  ] });
+  await prisma.dAILY_GOAL_OPERATION_RECEIPT.create({ data: {
+    operation_id: "81310000-0000-4000-8000-000000000001", user_id: USER_B, monitor_session_id: ids[2],
+    operation_type: "MONITOR_CREATE", request_fingerprint: "g3-retained", response_projection: {}, created_at: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+  } });
+  const cleanupRepository = createDailyGoalRepositoryForTest(prisma, { now: () => now });
+  const first = await cleanupRepository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(first, { receiptsDeleted: 0, trackingSessionsDeleted: 0, monitorSessionsDeleted: 1 });
+  assert.ok(await prisma.dAILY_GOAL_MONITOR_SESSION.findUnique({ where: { id: ids[0] } }));
+  assert.equal(await prisma.dAILY_GOAL_MONITOR_SESSION.findUnique({ where: { id: ids[1] } }), null);
+  assert.ok(await prisma.dAILY_GOAL_MONITOR_SESSION.findUnique({ where: { id: ids[2] } }));
+  await prisma.dAILY_GOAL_OPERATION_RECEIPT.update({ where: { operation_id: "81310000-0000-4000-8000-000000000001" }, data: { created_at: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000 - 1) } });
+  const second = await cleanupRepository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(second, { receiptsDeleted: 1, trackingSessionsDeleted: 0, monitorSessionsDeleted: 1 });
+
+  const budgetMonitors = Array.from({ length: 2 }, (_, index) => ({
+    id: `81320000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    user_id: index === 0 ? USER_A : USER_B, started_at: older, last_seen_at: older,
+    continuity_started_at: older, eligible_baseline_at: older, closed_at: older,
+  }));
+  await prisma.dAILY_GOAL_MONITOR_SESSION.createMany({ data: budgetMonitors });
+  await prisma.dAILY_GOAL_OPERATION_RECEIPT.createMany({ data: Array.from({ length: 99 }, (_, index) => ({
+    operation_id: `81330000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    user_id: index % 2 === 0 ? USER_A : USER_B, operation_type: "GOAL_UPDATE",
+    request_fingerprint: `g3-budget-${index}`, response_projection: {}, created_at: new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000 - index),
+  })) });
+  const budget = await cleanupRepository.withCleanupTransaction((cleanup) => cleanup.cleanupExpiredOperationalState());
+  assert.deepEqual(budget, { receiptsDeleted: 99, trackingSessionsDeleted: 0, monitorSessionsDeleted: 1 });
+  assert.equal(Object.values(budget).reduce((sum, count) => sum + count, 0), 100);
+  assert.equal(await prisma.dAILY_GOAL_MONITOR_SESSION.count({ where: { id: { in: budgetMonitors.map(({ id }) => id) } } }), 1);
+});
+
+test("G4 lifecycle matrix expires every approved kind at the inclusive boundary without side effects", { timeout: TIMEOUT_MS }, async () => {
+  await resetTracking(); await prisma.dAILY_GOAL_MONITOR_SESSION.deleteMany();
+  const evaluatedAt = new Date("2026-11-01T00:00:00.000Z");
+  const activation = new Date(evaluatedAt.getTime() - 10 * 24 * 60 * 60 * 1000);
+  await prisma.dAILY_GOAL_LIFECYCLE_POLICY.update({ where: { policy_version: 1 }, data: { activated_at: activation } });
+  const tracking = [
+    { id: "81400000-0000-4000-8000-000000000001", user_id: USER_A, activity_type: "NORMAL", status: "ACTIVE", created_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000), updated_at: activation },
+    { id: "81400000-0000-4000-8000-000000000002", user_id: USER_B, activity_type: "NORMAL", status: "ACTIVE", created_at: activation, updated_at: activation, engagement_expires_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000) },
+    { id: "81400000-0000-4000-8000-000000000003", user_id: USER_A, activity_type: "NORMAL", status: "PAUSED", created_at: activation, updated_at: activation, paused_at: new Date(evaluatedAt.getTime() - 7 * 24 * 60 * 60 * 1000) },
+    { id: "81400000-0000-4000-8000-000000000004", user_id: USER_B, activity_type: "NORMAL", status: "ACTIVE", created_at: new Date(activation.getTime() - 1), updated_at: activation },
+  ];
+  await prisma.dAILY_GOAL_TRACKING_SESSION.createMany({ data: tracking });
+  const monitorId = "81410000-0000-4000-8000-000000000001";
+  await prisma.dAILY_GOAL_MONITOR_SESSION.create({ data: {
+    id: monitorId, user_id: USER_B, started_at: activation, last_seen_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000),
+    continuity_started_at: activation, eligible_baseline_at: activation,
+  } });
+  const trackingReplayOperation = "81420000-0000-4000-8000-000000000001";
+  const trackingReplayRequest = {
+    operation_id: trackingReplayOperation, activity_type: "SPEAKING",
+    set_id: "81440000-0000-4000-8000-000000000001",
+    vocabulary_id: "81440000-0000-4000-8000-000000000002",
+  };
+  const historicalTrackingProjection = {
+    tracking_session_id: tracking[0].id, status: "ACTIVE", owner: false, generation: null,
+    lease_expires_at: null, engagement_expires_at: null, credited_milliseconds: "0",
+    projection: { credited_milliseconds: "0" },
+  };
+  const monitorReplayOperation = "81430000-0000-4000-8000-000000000001";
+  const monitorReplayRequest = { operation_id: monitorReplayOperation };
+  const historicalMonitorProjection = { reminder_created: false, unread_count: 0, next_check_after_seconds: 60 };
+  await prisma.dAILY_GOAL_OPERATION_RECEIPT.createMany({ data: [
+    {
+      operation_id: trackingReplayOperation, user_id: USER_A, tracking_session_id: tracking[0].id,
+      operation_type: "CREATE", request_fingerprint: sha256Json(trackingReplayRequest),
+      response_projection: { outcome: "SUCCESS", data: historicalTrackingProjection }, created_at: evaluatedAt,
+    },
+    {
+      operation_id: monitorReplayOperation, user_id: USER_B, monitor_session_id: monitorId,
+      operation_type: "MONITOR_CHECK", request_fingerprint: sha256Json({ monitor_session_id: monitorId, ...monitorReplayRequest }),
+      response_projection: { outcome: "SUCCESS", data: historicalMonitorProjection }, created_at: evaluatedAt,
+    },
+  ] });
+  const clockedRepository = Object.freeze({
+    ...repository,
+    async claimLifecycleJournal(args) {
+      const claim = await repository.claimLifecycleJournal(args);
+      return claim.classification === "CLAIMED" ? { ...claim, policy: { ...claim.policy, database_now: evaluatedAt } } : claim;
+    },
+  });
+  const result = await createDailyGoalLifecycleMaintenanceRunner({ dailyGoalRepository: clockedRepository, leaseDurationMilliseconds: LEASE_MS })();
+  assert.equal(result.expiry.transitioned, 4);
+  assert.equal(await prisma.dAILY_GOAL_TRACKING_SESSION.count({ where: { id: { in: tracking.slice(0, 3).map(({ id }) => id) }, status: "EXPIRED" } }), 3);
+  assert.equal((await prisma.dAILY_GOAL_TRACKING_SESSION.findUnique({ where: { id: tracking[3].id } })).status, "ACTIVE");
+  assert.ok((await prisma.dAILY_GOAL_MONITOR_SESSION.findUnique({ where: { id: monitorId } })).expired_at);
+  const service = createDailyGoalService({ dailyGoalRepository: repository });
+  const trackingReplay = await service.establish(USER_A, trackingReplayRequest);
+  assert.deepEqual(trackingReplay, { ...historicalTrackingProjection, replayed: true });
+  assert.notEqual(trackingReplay.status, "EXPIRED");
+  const monitorReplay = await service.checkMonitor(USER_B, monitorId, monitorReplayRequest);
+  assert.deepEqual(monitorReplay, { ...historicalMonitorProjection, replayed: true });
+  await assert.rejects(
+    service.checkMonitor(USER_B, monitorId, { operation_id: "81430000-0000-4000-8000-000000000002" }),
+    (error) => error?.code === "DAILY_GOAL_NOT_FOUND",
+  );
+  assert.equal(await prisma.dAILY_GOAL_REWARD.count(), 0); assert.equal(await prisma.uSER_NOTIFICATION.count(), 0);
+  assert.equal(await prisma.dAILY_GOAL_OPERATION_RECEIPT.count(), 2); assert.equal(await prisma.dAILY_GOAL_DAY.count(), 0);
+});
+
+test("G5 maintenance failures remain outside a committed authenticated USER mutation", { timeout: TIMEOUT_MS }, async () => {
+  await resetTracking(); await prisma.uSER_NOTIFICATION.deleteMany();
+  const notificationId = "81500000-0000-4000-8000-000000000001";
+  await prisma.uSER_NOTIFICATION.create({ data: {
+    id: notificationId, user_id: USER_A, type: "DAILY_GOAL_COMPLETED", application_date: new Date("2026-11-01T00:00:00.000Z"),
+    title: "bounded", body: "bounded", created_at: new Date("2026-11-01T00:00:00.000Z"), read_at: null,
+  } });
+  const calls = []; const logs = []; let maintenance;
+  const failingRepository = Object.freeze({
+    ...repository,
+    async claimLifecycleJournal() { calls.push("expiry"); throw new Error("injected expiry failure"); },
+    withCleanupTransaction(callback) {
+      calls.push("cleanup");
+      return repository.withCleanupTransaction(callback);
+    },
+  });
+  const runner = createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: failingRepository, leaseDurationMilliseconds: LEASE_MS,
+    logFailure: (code) => logs.push(code),
+  });
+  const service = createDailyGoalService({
+    dailyGoalRepository: repository,
+    scheduleOperationalCleanup: () => { maintenance = runner(); return true; },
+  });
+  const response = await service.markNotificationRead(USER_A, notificationId, { read: true });
+  assert.equal(response.notification.id, notificationId); assert.ok(response.notification.read_at);
+  const maintenanceResult = await maintenance;
+  assert.equal(maintenanceResult.expiry.classification, "FAILED");
+  assert.deepEqual(calls, ["expiry", "cleanup"]);
+  assert.deepEqual(logs, ["DAILY_GOAL_LIFECYCLE_EXPIRY_FAILED"]);
+  assert.ok((await prisma.uSER_NOTIFICATION.findUnique({ where: { id: notificationId } })).read_at);
+  assert.doesNotMatch(JSON.stringify(logs), new RegExp(`${USER_A}|${notificationId}|postgresql|SELECT`, "i"));
+
+  await prisma.uSER_NOTIFICATION.update({ where: { id: notificationId }, data: { read_at: null } });
+  calls.length = 0; logs.length = 0; maintenance = null;
+  const cleanupFailureRepository = Object.freeze({
+    ...repository,
+    async claimLifecycleJournal() { calls.push("expiry"); return { classification: "POLICY_MISSING" }; },
+    async withCleanupTransaction() { calls.push("cleanup"); throw new Error("injected cleanup failure"); },
+  });
+  const cleanupFailureRunner = createDailyGoalLifecycleMaintenanceRunner({
+    dailyGoalRepository: cleanupFailureRepository, leaseDurationMilliseconds: LEASE_MS,
+    logFailure: (code) => logs.push(code),
+  });
+  const secondService = createDailyGoalService({
+    dailyGoalRepository: repository,
+    scheduleOperationalCleanup: () => { maintenance = cleanupFailureRunner(); return true; },
+  });
+  const secondResponse = await secondService.markNotificationRead(USER_A, notificationId, { read: true });
+  assert.equal(secondResponse.notification.id, notificationId); assert.ok(secondResponse.notification.read_at);
+  const cleanupFailureResult = await maintenance;
+  assert.equal(cleanupFailureResult.expiry.classification, "POLICY_MISSING");
+  assert.equal(cleanupFailureResult.cleanup.classification, "FAILED");
+  assert.deepEqual(calls, ["expiry", "cleanup"]);
+  assert.deepEqual(logs, ["DAILY_GOAL_LIFECYCLE_CLEANUP_FAILED"]);
+  assert.ok((await prisma.uSER_NOTIFICATION.findUnique({ where: { id: notificationId } })).read_at);
+  assert.doesNotMatch(JSON.stringify(logs), new RegExp(`${USER_A}|${notificationId}|postgresql|SELECT`, "i"));
+});
+
 async function seedTrackingOwner(created) {
   await prisma.dAILY_GOAL_TRACKING_SESSION.create({ data: { id: SESSION_A, user_id: USER_A, activity_type: "NORMAL", status: "ACTIVE", created_at: created, updated_at: created } });
   await prisma.dAILY_GOAL_OWNER.create({ data: { user_id: USER_A, tracking_session_id: SESSION_A, generation: 7n, lease_expires_at: new Date(Date.now() - 1000), updated_at: new Date() } });
@@ -443,7 +684,16 @@ async function waitForAdvisoryContention() {
   }
   throw new Error("Timed out waiting for bounded advisory-lock contention evidence.");
 }
+async function waitForCondition(predicate) {
+  const deadline = performance.now() + Math.min(5_000, Math.floor(TIMEOUT_MS / 4));
+  while (performance.now() < deadline) {
+    if (await predicate()) return;
+    await delay(10);
+  }
+  throw new Error("Timed out waiting for bounded PostgreSQL fixture state.");
+}
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+function sha256Json(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function boundedInteger(value, minimum, maximum) {
   if (!/^[1-9][0-9]*$/.test(String(value))) throw new Error("Explicit test-only timing is required.");
   const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error("Test-only timing is out of bounds."); return parsed;

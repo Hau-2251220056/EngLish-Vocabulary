@@ -211,7 +211,7 @@ test("CLIENT subphase survives cleanup aggregation while refusals remain unchang
 test("integration diagnostics expose only bounded counts and static failed test names", () => {
   const failedName = INTEGRATION_TEST_NAMES[1];
   const diagnostic = parseIntegrationTap(integrationTap({ failedNames: [failedName] }), 1);
-  assert.deepEqual(diagnostic, { total: 20, passed: 19, failed: 1, skipped: 0, failures: [failedName] });
+  assert.deepEqual(diagnostic, { total: 25, passed: 24, failed: 1, skipped: 0, failures: [failedName] });
   assert.deepEqual(
     classifyHarnessFailure(new HarnessPhaseFailure(new IntegrationTestFailure(diagnostic), "INTEGRATION")),
     { outcome: "FAILED", code: "INTERNAL_FAILURE", phase: "INTEGRATION", diagnostic },
@@ -322,14 +322,14 @@ test("workflow is manual-only, default-deny, least privilege and guards precede 
   assert.doesNotMatch(workflow, /pull_request_target|schedule:|\n\s+(DATABASE_URL|TEST_DATABASE_URL|CI_TEST_DATABASE_URL):|supabase|upload-artifact|git push|prisma migrate deploy/iu);
 });
 
-test("PostgreSQL integration identity uses a plain host and preserves the static 20-test inventory", async () => {
+test("PostgreSQL integration identity uses a plain host and preserves the static 25-test inventory", async () => {
   const source = await readFile(integrationPath, "utf8");
   assert.match(source, /host\(inet_server_addr\(\)\) AS host/);
   assert.doesNotMatch(source, /inet_server_addr\(\)::text AS host/);
   assert.match(source, /assert\.notEqual\(isIP\(row\.host\), 0\)/);
   const names = [...source.matchAll(/^test\("([^"]+)"/gm)].map((match) => match[1]);
   assert.deepEqual(names, INTEGRATION_TEST_NAMES);
-  assert.equal(names.length, 20);
+  assert.equal(names.length, 25);
 });
 
 test("CLI source preserves identity-to-cleanup phase order and has no automatic invocation", async () => {

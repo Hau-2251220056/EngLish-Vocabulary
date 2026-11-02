@@ -44,6 +44,11 @@ export const INTEGRATION_TEST_NAMES = Object.freeze([
   "cleanup advisory lock serializes concurrent cleanup transactions",
   "lifecycle runner commits at most 100 transitions per invocation",
   "lifecycle runner stops after 300 attempted stale descriptors",
+  "G1 physical cleanup rolls every category back after a later failure and retry succeeds",
+  "G2 concurrent receipt and owner protection prevent stale cleanup deletion",
+  "G3 monitor cleanup matches strict retention receipt ordering and shared budget",
+  "G4 lifecycle matrix expires every approved kind at the inclusive boundary without side effects",
+  "G5 maintenance failures remain outside a committed authenticated USER mutation",
 ]);
 const INTEGRATION_SUMMARY_FIELDS = Object.freeze(["tests", "pass", "fail", "cancelled", "skipped", "todo"]);
 const MAX_REPORTED_INTEGRATION_FAILURES = 3;
