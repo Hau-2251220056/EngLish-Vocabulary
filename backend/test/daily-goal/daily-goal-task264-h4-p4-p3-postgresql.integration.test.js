@@ -83,7 +83,9 @@ test("missing activation fails closed and concurrent journal initialization has 
   assert.equal(missing.classification, "POLICY_MISSING");
   await prisma.dAILY_GOAL_LIFECYCLE_POLICY.create({ data: { policy_version: 1, activated_at: new Date(Date.now() - 1000) } });
   const tokens = [crypto.randomUUID(), crypto.randomUUID()];
-  const results = await Promise.all(tokens.map((leaseToken) => repository.claimLifecycleJournal({ policyVersion: 1, leaseToken, leaseDurationMilliseconds: LEASE_MS })));
+  const results = await Promise.all(tokens.map((leaseToken) => repository.claimLifecycleJournal({
+    policyVersion: 1, leaseToken, leaseDurationMilliseconds: 60_000,
+  })));
   assert.equal(results.filter(({ classification }) => classification === "CLAIMED").length, 1);
   assert.equal(results.filter(({ classification }) => classification === "LEASE_BUSY").length, 1);
   assert.equal(await prisma.dAILY_GOAL_LIFECYCLE_JOURNAL.count(), 1);
@@ -506,7 +508,7 @@ test("G4 lifecycle matrix expires every approved kind at the inclusive boundary 
   await prisma.dAILY_GOAL_LIFECYCLE_POLICY.update({ where: { policy_version: 1 }, data: { activated_at: activation } });
   const tracking = [
     { id: "81400000-0000-4000-8000-000000000001", user_id: USER_A, activity_type: "NORMAL", status: "ACTIVE", created_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000), updated_at: activation },
-    { id: "81400000-0000-4000-8000-000000000002", user_id: USER_B, activity_type: "NORMAL", status: "ACTIVE", created_at: activation, updated_at: activation, engagement_expires_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000) },
+    { id: "81400000-0000-4000-8000-000000000002", user_id: USER_B, activity_type: "NORMAL", status: "ACTIVE", created_at: activation, updated_at: activation, last_meaningful_at: activation, engagement_expires_at: new Date(evaluatedAt.getTime() - 24 * 60 * 60 * 1000) },
     { id: "81400000-0000-4000-8000-000000000003", user_id: USER_A, activity_type: "NORMAL", status: "PAUSED", created_at: activation, updated_at: activation, paused_at: new Date(evaluatedAt.getTime() - 7 * 24 * 60 * 60 * 1000) },
     { id: "81400000-0000-4000-8000-000000000004", user_id: USER_B, activity_type: "NORMAL", status: "ACTIVE", created_at: new Date(activation.getTime() - 1), updated_at: activation },
   ];
