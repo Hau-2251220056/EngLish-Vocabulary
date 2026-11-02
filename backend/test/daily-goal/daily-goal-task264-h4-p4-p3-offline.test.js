@@ -11,7 +11,9 @@ import {
   readBoundedRegularFile, sanitizeEnvironment, sha256, validateDatabaseObservation, validateExecutionIdentity,
   validateLocalDatabaseTarget, validateManifest, validateTemporaryWorkspace,
 } from "./daily-goal-task264-h4-p4-p3-core.js";
-import { validateCanonicalMigrationDirectory } from "./daily-goal-task264-h4-p4-p3-cli.js";
+import {
+  HarnessPhaseFailure, classifyHarnessFailure, validateCanonicalMigrationDirectory,
+} from "./daily-goal-task264-h4-p4-p3-cli.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, "../../..");
@@ -93,6 +95,31 @@ test("phase state machine rejects reordering, omission and repetition", () => {
 test("failure classification exposes only bounded codes", () => {
   assert.deepEqual(classifyFailure(new HarnessRefusal("AUTHORIZATION_DENIED")), { outcome: "REFUSED", code: "AUTHORIZATION_DENIED" });
   assert.deepEqual(classifyFailure(new Error("postgresql://user:secret@host/db")), { outcome: "FAILED", code: "INTERNAL_FAILURE" });
+});
+
+test("internal failures expose only the fixed current phase", () => {
+  const sensitive = "postgresql://user:secret@host/db SELECT * FROM private_table C:\\private\\fixture";
+  for (const phase of ["IDENTITY", "CLIENT", "INTEGRATION", "CLEANUP"]) {
+    const result = classifyHarnessFailure(new HarnessPhaseFailure(new Error(sensitive), phase));
+    assert.deepEqual(result, { outcome: "FAILED", code: "INTERNAL_FAILURE", phase });
+    const serialized = JSON.stringify(result);
+    assert.doesNotMatch(serialized, /secret|private_table|private\\fixture|postgresql:\/\//);
+  }
+});
+
+test("phase diagnostics preserve refusals and reject forged phase names", () => {
+  assert.deepEqual(
+    classifyHarnessFailure(new HarnessPhaseFailure(new HarnessRefusal("AUTHORIZATION_DENIED"), "IDENTITY")),
+    { outcome: "REFUSED", code: "AUTHORIZATION_DENIED" },
+  );
+  assert.throws(
+    () => new HarnessPhaseFailure(Object.assign(new Error("forged"), { phase: "FORGED" }), "FORGED"),
+    /diagnostic phase is invalid/,
+  );
+  assert.deepEqual(
+    classifyHarnessFailure(Object.assign(new Error("forged"), { phase: "CLIENT" })),
+    { outcome: "FAILED", code: "INTERNAL_FAILURE" },
+  );
 });
 
 test("temporary workspaces must be below the OS temp root and outside repository", async () => {

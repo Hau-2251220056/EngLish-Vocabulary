@@ -20,6 +20,29 @@ const activeMigrations = path.join(backendRoot, "prisma/migrations");
 const productionSchema = path.join(backendRoot, "prisma/schema.prisma");
 const prismaCli = path.join(backendRoot, "node_modules/prisma/build/index.js");
 
+export class HarnessPhaseFailure extends Error {
+  constructor(cause, phase) {
+    if (!PHASES.includes(phase)) throw new Error("Harness diagnostic phase is invalid.");
+    super("Harness phase failed.", { cause });
+    this.name = "HarnessPhaseFailure";
+    this.phase = phase;
+  }
+}
+
+export function classifyHarnessFailure(error) {
+  if (error instanceof HarnessPhaseFailure) {
+    const result = classifyHarnessFailure(error.cause);
+    return result.outcome === "FAILED" && result.code === "INTERNAL_FAILURE"
+      ? Object.freeze({ ...result, phase: error.phase })
+      : result;
+  }
+  if (error instanceof AggregateError) {
+    const phaseFailure = error.errors.find((entry) => entry instanceof HarnessPhaseFailure);
+    if (phaseFailure) return classifyHarnessFailure(phaseFailure);
+  }
+  return classifyFailure(error);
+}
+
 export function identityFromEnvironment(environment) {
   return {
     operation: environment.TASK264_P3_OPERATION,
@@ -37,33 +60,42 @@ export function identityFromEnvironment(environment) {
 
 export async function runHarness({ environment = process.env, spawnProcess = spawn, hooks = {} } = {}) {
   const phases = createPhaseSequence();
+  let currentPhase;
   let workspace;
   let prisma;
   let primaryFailure;
   try {
     phases.enter("IDENTITY");
+    currentPhase = "IDENTITY";
     validateExecutionIdentity(identityFromEnvironment(environment));
 
     phases.enter("ENVIRONMENT");
+    currentPhase = "ENVIRONMENT";
     const childBase = sanitizeEnvironment(environment);
 
     phases.enter("ARTIFACTS");
+    currentPhase = "ARTIFACTS";
     const artifacts = await verifyReviewedArtifacts({ repositoryRoot, manifestPath });
 
     phases.enter("TARGET");
+    currentPhase = "TARGET";
     validateLocalDatabaseTarget(environment.TASK264_P3_JOB_DATABASE_URL);
 
     phases.enter("WORKSPACE");
+    currentPhase = "WORKSPACE";
     workspace = await mkdtemp(path.join(os.tmpdir(), "task264-p3-"));
     await validateTemporaryWorkspace(workspace, repositoryRoot);
 
     phases.enter("MATERIALIZE");
+    currentPhase = "MATERIALIZE";
     const materialized = await materializeWorkspace({ workspace, artifacts });
 
     phases.enter("INVENTORY");
+    currentPhase = "INVENTORY";
     await verifyMaterializedInventory(materialized.migrationsPath);
 
     phases.enter("CLIENT");
+    currentPhase = "CLIENT";
     const childEnvironment = Object.freeze({
       ...childBase,
       TASK264_P3_JOB_DATABASE_URL: environment.TASK264_P3_JOB_DATABASE_URL,
@@ -77,36 +109,43 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
     prisma = new module.PrismaClient({ datasourceUrl: environment.TASK264_P3_JOB_DATABASE_URL });
 
     phases.enter("DATABASE_IDENTITY");
+    currentPhase = "DATABASE_IDENTITY";
     await prisma.$connect();
     validateDatabaseObservation(await observeDatabase(prisma), { requireEmpty: true });
     await hooks.afterDatabaseIdentity?.({ prisma });
 
     phases.enter("MIGRATE");
+    currentPhase = "MIGRATE";
     await runBounded(process.execPath, [prismaCli, "migrate", "deploy", "--config", materialized.configPath, "--schema", materialized.schemaPath], { cwd: backendRoot, env: childEnvironment }, spawnProcess);
 
     phases.enter("HISTORY");
+    currentPhase = "HISTORY";
     await verifyMigrationHistory(prisma);
 
     phases.enter("EMPTY_STATE");
+    currentPhase = "EMPTY_STATE";
     const empty = await prisma.$queryRaw`SELECT
       (SELECT count(*)::int FROM "DAILY_GOAL_LIFECYCLE_POLICY") AS policy_count,
       (SELECT count(*)::int FROM "DAILY_GOAL_LIFECYCLE_JOURNAL") AS journal_count`;
     if (empty.length !== 1 || empty[0].policy_count !== 0 || empty[0].journal_count !== 0) throw new Error("Lifecycle state is not empty.");
 
     phases.enter("TEST_ACTIVATION");
+    currentPhase = "TEST_ACTIVATION";
     await prisma.dAILY_GOAL_LIFECYCLE_POLICY.create({ data: { policy_version: 1, activated_at: new Date() } });
 
     phases.enter("INTEGRATION");
+    currentPhase = "INTEGRATION";
     await prisma.$disconnect(); prisma = null;
     await runBounded(process.execPath, ["--test", "--test-concurrency=1", path.join(here, "daily-goal-task264-h4-p4-p3-postgresql.integration.test.js")], { cwd: backendRoot, env: childEnvironment }, spawnProcess);
 
     phases.enter("CLEANUP");
+    currentPhase = "CLEANUP";
     await rm(workspace, { recursive: true, force: true }); workspace = null;
     phases.complete();
     return Object.freeze({ outcome: "PASS", phases: PHASES.length, migrations: MIGRATIONS.length });
   } catch (error) {
-    primaryFailure = error;
-    throw error;
+    primaryFailure = error instanceof HarnessPhaseFailure ? error : new HarnessPhaseFailure(error, currentPhase);
+    throw primaryFailure;
   } finally {
     const cleanupFailures = [];
     try { await prisma?.$disconnect(); } catch { cleanupFailures.push(new Error("Disposable database client cleanup failed.")); }
@@ -116,8 +155,10 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
     }
     if (cleanupFailures.length) {
       if (primaryFailure) throw new AggregateError([primaryFailure, ...cleanupFailures], "Harness execution and cleanup failed.");
-      if (cleanupFailures.length === 1) throw cleanupFailures[0];
-      throw new AggregateError(cleanupFailures, "Harness cleanup failed.");
+      const cleanupFailure = cleanupFailures.length === 1
+        ? cleanupFailures[0]
+        : new AggregateError(cleanupFailures, "Harness cleanup failed.");
+      throw new HarnessPhaseFailure(cleanupFailure, "CLEANUP");
     }
   }
 }
@@ -238,7 +279,7 @@ async function main() {
     if (process.argv.length !== 3 || process.argv[2] !== "--run") throw new Error("Explicit --run is required.");
     process.stdout.write(`${JSON.stringify(await runHarness())}\n`);
   } catch (error) {
-    process.stdout.write(`${JSON.stringify(classifyFailure(error))}\n`); process.exitCode = 1;
+    process.stdout.write(`${JSON.stringify(classifyHarnessFailure(error))}\n`); process.exitCode = 1;
   }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
