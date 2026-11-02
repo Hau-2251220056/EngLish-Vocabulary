@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { COPYFILE_EXCL } from "node:constants";
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -19,6 +19,9 @@ const manifestPath = path.join(backendRoot, "prisma/migration-drafts/daily-goal-
 const activeMigrations = path.join(backendRoot, "prisma/migrations");
 const productionSchema = path.join(backendRoot, "prisma/schema.prisma");
 const prismaCli = path.join(backendRoot, "node_modules/prisma/build/index.js");
+const dependencyRoot = path.join(backendRoot, "node_modules");
+const prismaClientPackage = path.join(dependencyRoot, "@prisma/client");
+const PRISMA_CLIENT_VERSION = "6.19.3";
 export const CLIENT_SUBPHASES = Object.freeze(["GENERATE", "IMPORT", "CONSTRUCT"]);
 
 export class HarnessPhaseFailure extends Error {
@@ -113,6 +116,7 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
     currentSubphase = "GENERATE";
     await runBounded(process.execPath, [prismaCli, "generate", "--config", materialized.configPath, "--schema", materialized.schemaPath], { cwd: backendRoot, env: childEnvironment }, spawnProcess);
     currentSubphase = "IMPORT";
+    await materializePrismaRuntime({ workspace });
     const module = await import(`${pathToFileURL(path.join(materialized.generatedClient, "client.ts")).href}?v=${Date.now()}`);
     currentSubphase = "CONSTRUCT";
     prisma = new module.PrismaClient({ datasourceUrl: environment.TASK264_P3_JOB_DATABASE_URL });
@@ -170,6 +174,73 @@ export async function runHarness({ environment = process.env, spawnProcess = spa
         : new AggregateError(cleanupFailures, "Harness cleanup failed.");
       throw new HarnessPhaseFailure(cleanupFailure, "CLEANUP");
     }
+  }
+}
+
+export async function materializePrismaRuntime({
+  workspace,
+  sourceRoot = dependencyRoot,
+  source = prismaClientPackage,
+} = {}) {
+  const workspaceStats = await lstat(workspace);
+  if (!workspaceStats.isDirectory() || workspaceStats.isSymbolicLink()) throw new Error("Prisma runtime workspace is invalid.");
+  const sourceRootStats = await lstat(sourceRoot);
+  if (!sourceRootStats.isDirectory() || sourceRootStats.isSymbolicLink()) throw new Error("Prisma runtime source root is invalid.");
+  const workspaceReal = await realpath(workspace);
+  const sourceRootReal = await realpath(sourceRoot);
+  const sourceReal = await realpath(source);
+  if (!isStrictDescendant(sourceRootReal, sourceReal)
+    || path.relative(sourceRootReal, sourceReal) !== path.join("@prisma", "client")) {
+    throw new Error("Prisma runtime source is invalid.");
+  }
+
+  const sourceStats = await lstat(source);
+  if (!sourceStats.isDirectory() || sourceStats.isSymbolicLink()) throw new Error("Prisma runtime source is invalid.");
+  const sourcePackage = JSON.parse(await readRegularFile(path.join(sourceReal, "package.json"), "Prisma runtime metadata is invalid."));
+  if (sourcePackage.version !== PRISMA_CLIENT_VERSION) throw new Error("Prisma runtime version is invalid.");
+
+  const nodeModules = path.join(workspaceReal, "node_modules");
+  const scope = path.join(nodeModules, "@prisma");
+  const destination = path.join(scope, "client");
+  if (!isStrictDescendant(workspaceReal, destination)) throw new Error("Prisma runtime destination is invalid.");
+  await mkdir(nodeModules, { recursive: false });
+  await mkdir(scope, { recursive: false });
+  await copyRegularTree(sourceReal, destination);
+
+  const destinationReal = await realpath(destination);
+  if (!isStrictDescendant(workspaceReal, destinationReal)) throw new Error("Prisma runtime destination is invalid.");
+  const copiedPackage = JSON.parse(await readRegularFile(path.join(destinationReal, "package.json"), "Copied Prisma runtime metadata is invalid."));
+  if (copiedPackage.version !== PRISMA_CLIENT_VERSION) throw new Error("Copied Prisma runtime version is invalid.");
+  await readRegularFile(path.join(destinationReal, "runtime", "library.js"), "Copied Prisma runtime is incomplete.");
+  await readRegularFile(path.join(destinationReal, "runtime", "library.mjs"), "Copied Prisma runtime is incomplete.");
+  return destinationReal;
+}
+
+function isStrictDescendant(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function readRegularFile(file, message) {
+  const stats = await lstat(file);
+  if (!stats.isFile() || stats.isSymbolicLink()) throw new Error(message);
+  return readFile(file, "utf8");
+}
+
+async function copyRegularTree(source, destination) {
+  const sourceStats = await lstat(source);
+  if (!sourceStats.isDirectory() || sourceStats.isSymbolicLink()) throw new Error("Prisma runtime package tree is invalid.");
+  await mkdir(destination, { recursive: false });
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) throw new Error("Prisma runtime package links are prohibited.");
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) await copyRegularTree(from, to);
+    else if (entry.isFile()) {
+      const stats = await lstat(from);
+      if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("Prisma runtime package file is invalid.");
+      await copyFile(from, to, COPYFILE_EXCL);
+    } else throw new Error("Prisma runtime package entry is invalid.");
   }
 }
 

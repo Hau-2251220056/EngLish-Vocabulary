@@ -12,7 +12,8 @@ import {
   validateLocalDatabaseTarget, validateManifest, validateTemporaryWorkspace,
 } from "./daily-goal-task264-h4-p4-p3-core.js";
 import {
-  CLIENT_SUBPHASES, HarnessPhaseFailure, classifyHarnessFailure, validateCanonicalMigrationDirectory,
+  CLIENT_SUBPHASES, HarnessPhaseFailure, classifyHarnessFailure, materializePrismaRuntime,
+  validateCanonicalMigrationDirectory,
 } from "./daily-goal-task264-h4-p4-p3-cli.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -245,11 +246,13 @@ test("CLI source preserves identity-to-cleanup phase order and has no automatic 
   const generateSubphase = source.indexOf('currentSubphase = "GENERATE"');
   const generateOperation = source.indexOf('await runBounded(process.execPath, [prismaCli, "generate"');
   const importSubphase = source.indexOf('currentSubphase = "IMPORT"');
+  const runtimeMaterialization = source.indexOf("await materializePrismaRuntime({ workspace })");
   const importOperation = source.indexOf('const module = await import(');
   const constructSubphase = source.indexOf('currentSubphase = "CONSTRUCT"');
   const constructOperation = source.indexOf('prisma = new module.PrismaClient(');
   const clearSubphase = source.indexOf("currentSubphase = undefined;");
-  assert.ok(generateSubphase < generateOperation && generateOperation < importSubphase && importSubphase < importOperation);
+  assert.ok(generateSubphase < generateOperation && generateOperation < importSubphase && importSubphase < runtimeMaterialization);
+  assert.ok(runtimeMaterialization < importOperation);
   assert.ok(importOperation < constructSubphase && constructSubphase < constructOperation && constructOperation < clearSubphase);
   assert.match(source, /process\.argv\.length !== 3 \|\| process\.argv\[2\] !== "--run"/);
   assert.ok(source.indexOf('phases.enter("DATABASE_IDENTITY")') < source.indexOf('phases.enter("MIGRATE")'));
@@ -274,6 +277,61 @@ test("disposable Prisma config resolves without package imports and fails closed
   assert.doesNotMatch(configMaterializer, /process\.env\.(?:DATABASE_URL|DIRECT_URL|SHADOW_DATABASE_URL|SUPABASE_DB_URL|PREVIEW_DATABASE_URL|PRODUCTION_DATABASE_URL)/);
 });
 
+test("Prisma runtime materialization creates the pinned package-resolution tree inside the workspace", async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "task264-runtime-"));
+  const sourceRoot = path.join(parent, "dependencies", "node_modules");
+  const source = path.join(sourceRoot, "@prisma", "client");
+  const workspace = path.join(parent, "workspace");
+  await createPrismaRuntimeFixture(source);
+  await mkdir(workspace);
+  const sourceMetadata = await readFile(path.join(source, "package.json"), "utf8");
+  try {
+    const destination = await materializePrismaRuntime({ workspace, sourceRoot, source });
+    assert.equal(destination, path.join(workspace, "node_modules", "@prisma", "client"));
+    assert.equal(JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).version, "6.19.3");
+    assert.equal(await readFile(path.join(destination, "runtime", "library.js"), "utf8"), "export {};\n");
+    assert.equal(await readFile(path.join(destination, "runtime", "library.mjs"), "utf8"), "export {};\n");
+    assert.equal(await readFile(path.join(source, "package.json"), "utf8"), sourceMetadata);
+    throw new Error("simulated post-materialization failure");
+  } catch (error) {
+    assert.match(error.message, /simulated post-materialization failure/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+  await assert.rejects(readFile(path.join(workspace, "node_modules", "@prisma", "client", "package.json")), (error) => error.code === "ENOENT");
+  assert.equal(await readFile(path.join(source, "package.json"), "utf8"), sourceMetadata);
+  await rm(parent, { recursive: true, force: true });
+});
+
+test("Prisma runtime materialization rejects version mismatch and source path escape", async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "task264-runtime-invalid-"));
+  const sourceRoot = path.join(parent, "dependencies", "node_modules");
+  const source = path.join(sourceRoot, "@prisma", "client");
+  const outside = path.join(parent, "outside", "@prisma", "client");
+  try {
+    await createPrismaRuntimeFixture(source, "6.19.2");
+    const versionWorkspace = path.join(parent, "version-workspace"); await mkdir(versionWorkspace);
+    await assert.rejects(materializePrismaRuntime({ workspace: versionWorkspace, sourceRoot, source }), /version is invalid/);
+    await createPrismaRuntimeFixture(outside);
+    const escapeWorkspace = path.join(parent, "escape-workspace"); await mkdir(escapeWorkspace);
+    await assert.rejects(materializePrismaRuntime({ workspace: escapeWorkspace, sourceRoot, source: outside }), /source is invalid/);
+  } finally { await rm(parent, { recursive: true, force: true }); }
+});
+
+test("Prisma runtime materialization rejects linked package entries when host permits symlink creation", async (context) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "task264-runtime-link-"));
+  const sourceRoot = path.join(parent, "dependencies", "node_modules");
+  const source = path.join(sourceRoot, "@prisma", "client");
+  const workspace = path.join(parent, "workspace");
+  await createPrismaRuntimeFixture(source);
+  await mkdir(workspace);
+  const linked = path.join(source, "runtime", "linked.js");
+  try { await symlink(path.join(source, "runtime", "library.js"), linked, "file"); }
+  catch (error) { await rm(parent, { recursive: true, force: true }); context.skip(`host cannot create Prisma runtime symlink: ${error.code}`); return; }
+  try { await assert.rejects(materializePrismaRuntime({ workspace, sourceRoot, source }), /links are prohibited/); }
+  finally { await rm(parent, { recursive: true, force: true }); }
+});
+
 test("production migration tree and scheduler remain disconnected", async () => {
   const migrationFiles = await import("node:fs/promises").then(({ readdir }) => readdir(path.join(repositoryRoot, "backend/prisma/migrations"), { recursive: true }));
   assert.equal(migrationFiles.some((entry) => /lifecycle|20261031|expired/i.test(entry)), false);
@@ -292,4 +350,11 @@ function manifestFixture() {
   const [base, ...rest] = MIGRATIONS;
   const record = (item) => ({ migration_name: item.name, quarantined_path: `backend/prisma/migration-drafts/daily-goal-v1/${item.name}/migration.sql`, byte_count: item.bytes, sha256: item.sha256 });
   return { base_dependency: record(base), execution_order: MIGRATIONS.map(({ name }) => name), artifacts: rest.map(record), activation_status: "NOT AUTHORIZED", database_execution: "NOT RUN" };
+}
+
+async function createPrismaRuntimeFixture(source, version = "6.19.3") {
+  await mkdir(path.join(source, "runtime"), { recursive: true });
+  await writeFile(path.join(source, "package.json"), `${JSON.stringify({ name: "@prisma/client", version })}\n`);
+  await writeFile(path.join(source, "runtime", "library.js"), "export {};\n");
+  await writeFile(path.join(source, "runtime", "library.mjs"), "export {};\n");
 }
