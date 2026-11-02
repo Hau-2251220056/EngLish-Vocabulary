@@ -1,0 +1,234 @@
+name: TASK-264 H4 P4 P3 Linux Offline
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact guarded TASK-264 Phase 3 Linux offline operation
+        required: true
+        type: choice
+        default: NOT_AUTHORIZED
+        options:
+          - NOT_AUTHORIZED
+          - TASK264_H4_P4_P3_LINUX_OFFLINE
+      authorize_linux_offline:
+        description: HUMAN authorization for this exact Linux offline run
+        required: true
+        type: boolean
+        default: false
+      expected_workflow_sha:
+        description: Exact lowercase commit containing this reviewed workflow on main
+        required: true
+        type: string
+      expected_source_sha:
+        description: Exact lowercase feature source SHA authorized by HUMAN
+        required: true
+        type: string
+      expected_source_ref:
+        description: Exact feature source ref authorized by HUMAN
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: task264-h4-p4-p3-linux-offline-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Phase 3 offline safety suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Fail-closed dispatch, workflow and source-ref guard
+        shell: bash
+        env:
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_AUTHORIZATION: ${{ inputs.authorize_linux_offline }}
+          EXPECTED_WORKFLOW_SHA: ${{ inputs.expected_workflow_sha }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+          ACTUAL_EVENT: ${{ github.event_name }}
+          ACTUAL_REF: ${{ github.ref }}
+          ACTUAL_SHA: ${{ github.sha }}
+          ACTUAL_WORKFLOW_REF: ${{ github.workflow_ref }}
+          ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          pinned_repository="Hau-2251220056/EngLish-Vocabulary"
+          pinned_workflow_ref="Hau-2251220056/EngLish-Vocabulary/.github/workflows/daily-goal-task264-h4-p4-p3-offline.yml@refs/heads/main"
+          pinned_source_ref="refs/heads/feature/daily-goal-v1"
+          pinned_source_sha="a357a60988ccf11134340e05d0b7244340e49253"
+          remote_url="https://github.com/Hau-2251220056/EngLish-Vocabulary.git"
+
+          [[ "$REQUESTED_OPERATION" == "TASK264_H4_P4_P3_LINUX_OFFLINE" ]]
+          [[ "$REQUESTED_AUTHORIZATION" == "true" ]]
+          [[ "$ACTUAL_REPOSITORY" == "$pinned_repository" ]]
+          [[ "$ACTUAL_EVENT" == "workflow_dispatch" ]]
+          [[ "$ACTUAL_REF" == "refs/heads/main" ]]
+          [[ "$ACTUAL_WORKFLOW_REF" == "$pinned_workflow_ref" ]]
+          [[ "$RUN_ATTEMPT" == "1" ]]
+
+          [[ "$EXPECTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SOURCE_REF" == "$pinned_source_ref" ]]
+          [[ "$EXPECTED_SOURCE_SHA" == "$pinned_source_sha" ]]
+
+          [[ "$ACTUAL_SHA" == "$EXPECTED_WORKFLOW_SHA" ]]
+          [[ "$ACTUAL_WORKFLOW_SHA" == "$EXPECTED_WORKFLOW_SHA" ]]
+          [[ "$ACTUAL_SHA" == "$ACTUAL_WORKFLOW_SHA" ]]
+
+          mapfile -t remote_lines < <(
+            git ls-remote --heads "$remote_url" "$pinned_source_ref"
+          )
+          [[ "${#remote_lines[@]}" -eq 1 ]]
+          read -r remote_sha remote_ref <<< "${remote_lines[0]}"
+          [[ "$remote_sha" == "$pinned_source_sha" ]]
+          [[ "$remote_ref" == "$pinned_source_ref" ]]
+
+      - name: Checkout immutable Phase 3 source
+        id: source_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a357a60988ccf11134340e05d0b7244340e49253
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+
+      - name: Verify detached source identity and clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "a357a60988ccf11134340e05d0b7244340e49253" ]]
+          if git symbolic-ref -q HEAD >/dev/null 2>&1; then
+            echo "Expected detached HEAD." >&2
+            exit 1
+          fi
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+
+      - name: Set up Node.js 22.20.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.20.0"
+          package-manager-cache: false
+
+      - name: Verify exact Node version
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(node --version)" == "v22.20.0" ]]
+
+      - name: Prepare isolated fixture directory
+        id: fixture_prepare
+        shell: bash
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/task264-h4-p4-p3-linux-offline-fixtures
+        run: |
+          set -euo pipefail
+          test ! -e "$FIXTURE_ROOT"
+          mkdir -m 700 "$FIXTURE_ROOT"
+
+      - name: Run Phase 3 offline safety suite exactly once
+        id: offline_test
+        shell: bash
+        working-directory: backend
+        env:
+          TMPDIR: ${{ runner.temp }}/task264-h4-p4-p3-linux-offline-fixtures
+          TAP_REPORT: ${{ runner.temp }}/task264-h4-p4-p3-linux-offline.tap
+        run: |
+          set -euo pipefail
+          test ! -e "$TAP_REPORT"
+
+          set +e
+          node --test --test-concurrency=1 --test-reporter=tap \
+            test/daily-goal/daily-goal-task264-h4-p4-p3-offline.test.js \
+            | tee "$TAP_REPORT"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+
+          [[ "${#pipeline_status[@]}" -eq 2 ]]
+          [[ "${pipeline_status[0]}" -eq 0 ]]
+          [[ "${pipeline_status[1]}" -eq 0 ]]
+
+      - name: Verify deterministic 19-of-19 TAP result
+        shell: bash
+        env:
+          TAP_REPORT: ${{ runner.temp }}/task264-h4-p4-p3-linux-offline.tap
+        run: |
+          set -euo pipefail
+          test -s "$TAP_REPORT"
+
+          grep -Eq '^[[:space:]]*1\.\.19[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# tests 19[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# pass 19[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# fail 0[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# skipped 0[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# cancelled 0[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*# todo 0[[:space:]]*$' "$TAP_REPORT"
+
+          grep -Eq '^[[:space:]]*ok [0-9]+ - symlinked workspace is rejected when host permits symlink creation[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*ok [0-9]+ - bounded artifact reader rejects traversal, directories, empty/oversized files and symlinks[[:space:]]*$' "$TAP_REPORT"
+          grep -Eq '^[[:space:]]*ok [0-9]+ - canonical migration directories reject extra files, nested directories and linked SQL[[:space:]]*$' "$TAP_REPORT"
+
+          if grep -Eq '^[[:space:]]*not ok([[:space:]]|$)' "$TAP_REPORT"; then
+            echo "TAP contains a failing test." >&2
+            exit 1
+          fi
+
+          if grep -Eiq '^[[:space:]]*(not )?ok [0-9]+ - .*#[[:space:]]*(SKIP|TODO)([[:space:]]|$)' "$TAP_REPORT"; then
+            echo "TAP contains a skipped or TODO test directive." >&2
+            exit 1
+          fi
+
+      - name: Verify fixture cleanup and clean Git postflight
+        if: ${{ always() && steps.source_checkout.outcome == 'success' }}
+        shell: bash
+        env:
+          FIXTURE_PREPARE_OUTCOME: ${{ steps.fixture_prepare.outcome }}
+          TEST_OUTCOME: ${{ steps.offline_test.outcome }}
+          FIXTURE_ROOT: ${{ runner.temp }}/task264-h4-p4-p3-linux-offline-fixtures
+        run: |
+          set -euo pipefail
+          cleanup_failed=0
+
+          expected_fixture_root="${RUNNER_TEMP}/task264-h4-p4-p3-linux-offline-fixtures"
+          [[ "$FIXTURE_ROOT" == "$expected_fixture_root" ]]
+
+          if [[ "$FIXTURE_PREPARE_OUTCOME" == "success" ]]; then
+            [[ "$TEST_OUTCOME" == "success" || "$TEST_OUTCOME" == "failure" ]]
+            if ! test -d "$FIXTURE_ROOT"; then
+              echo "Prepared fixture root is unexpectedly absent." >&2
+              cleanup_failed=1
+            fi
+          elif test -e "$FIXTURE_ROOT" && ! test -d "$FIXTURE_ROOT"; then
+            echo "Fixture path exists but is not a directory." >&2
+            cleanup_failed=1
+          fi
+
+          if test -d "$FIXTURE_ROOT"; then
+            if find "$FIXTURE_ROOT" -mindepth 1 -print -quit | grep -q .; then
+              echo "Temporary fixture content remains." >&2
+              find "$FIXTURE_ROOT" -mindepth 1 -maxdepth 3 -print >&2
+              cleanup_failed=1
+            fi
+            rm -rf -- "$FIXTURE_ROOT"
+          fi
+
+          if test -e "$FIXTURE_ROOT"; then
+            echo "Temporary fixture root removal failed." >&2
+            cleanup_failed=1
+          fi
+
+          [[ "$(git rev-parse HEAD)" == "a357a60988ccf11134340e05d0b7244340e49253" ]]
+          if git symbolic-ref -q HEAD >/dev/null 2>&1; then
+            echo "HEAD is no longer detached." >&2
+            exit 1
+          fi
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+          [[ "$cleanup_failed" -eq 0 ]]
