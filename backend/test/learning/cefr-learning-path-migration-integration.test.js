@@ -115,11 +115,12 @@ async function seedLegacyRows(prisma) {
 }
 
 async function seedCurriculum(prisma, suffix) {
-  const userId = randomUUID(), vocabularyId = randomUUID(), setId = randomUUID();
+  const userId = randomUUID(), vocabularyId = randomUUID(), setId = randomUUID(), topicId = randomUUID();
   await prisma.uSER.create({ data: { id: userId, email: `${suffix}-${randomUUID()}@cefr.integration.test`, password_hash: "test-only", display_name: `CEFR ${suffix}` } });
   await prisma.vOCABULARY.create({ data: { id: vocabularyId, word: `cefr-${suffix}-${randomUUID()}` } });
+  await prisma.tOPIC.create({ data: { id: topicId, name: `CEFR ${suffix} ${randomUUID()}` } });
   await prisma.vOCABULARY_SET.create({ data: {
-    id: setId, owner_id: userId, name: `CEFR ${suffix}`, is_public: true, cefr_level: "A1",
+    id: setId, topic_id: topicId, owner_id: userId, name: `CEFR ${suffix}`, is_public: true, cefr_level: "A1",
     items: { create: [{ vocabulary_id: vocabularyId, position: 1 }] },
   } });
   return { userId, vocabularyId, setId };
