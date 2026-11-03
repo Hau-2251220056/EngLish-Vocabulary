@@ -130,7 +130,7 @@ jobs:
           POSTGRES_PASSWORD: cefr_bootstrap_ci_only
           POSTGRES_DB: postgres
         ports:
-          - 5432:5432
+          - "127.0.0.1:5432:5432"
         options: >-
           --health-cmd "pg_isready -U cefr_bootstrap -d postgres"
           --health-interval 5s
