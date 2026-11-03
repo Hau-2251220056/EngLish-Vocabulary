@@ -1,0 +1,301 @@
+name: CEFR Learning Path V1 Phase C Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Exact authorized Phase C operation
+        required: true
+        default: NOT_AUTHORIZED
+        type: string
+      authorize_cefr_phase_c:
+        description: Confirm separate HUMAN authorization for CEFR Phase C
+        required: true
+        default: false
+        type: boolean
+      authorize_disposable_postgres:
+        description: Confirm use of the job-local disposable PostgreSQL service
+        required: true
+        default: false
+        type: boolean
+      expected_repository:
+        description: Exact approved owner/repository identity
+        required: true
+        default: ""
+        type: string
+      expected_source_sha:
+        description: Exact reviewed CEFR source snapshot SHA
+        required: true
+        default: ""
+        type: string
+      expected_source_ref:
+        description: Exact approved publication ref for the source snapshot
+        required: true
+        default: ""
+        type: string
+      expected_workflow_sha:
+        description: Exact separately reviewed commit containing this workflow
+        required: true
+        default: ""
+        type: string
+      expected_workflow_path:
+        description: Exact trusted workflow path
+        required: true
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cefr-learning-path-phase-c
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize immutable Phase C verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      authorized: ${{ steps.guard.outputs.authorized }}
+    steps:
+      - name: Enforce default-deny authorization
+        id: guard
+        shell: bash
+        env:
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+          ACTUAL_EVENT: ${{ github.event_name }}
+          ACTUAL_DISPATCH_REF: ${{ github.ref }}
+          ACTUAL_WORKFLOW_REF: ${{ github.workflow_ref }}
+          ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ACTUAL_RUN_ATTEMPT: ${{ github.run_attempt }}
+          INPUT_OPERATION: ${{ inputs.operation }}
+          INPUT_AUTHORIZE_PHASE_C: ${{ inputs.authorize_cefr_phase_c }}
+          INPUT_AUTHORIZE_POSTGRES: ${{ inputs.authorize_disposable_postgres }}
+          INPUT_REPOSITORY: ${{ inputs.expected_repository }}
+          INPUT_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          INPUT_SOURCE_REF: ${{ inputs.expected_source_ref }}
+          INPUT_WORKFLOW_SHA: ${{ inputs.expected_workflow_sha }}
+          INPUT_WORKFLOW_PATH: ${{ inputs.expected_workflow_path }}
+        run: |
+          set -euo pipefail
+
+          approved_repository="Hau-2251220056/EngLish-Vocabulary"
+          approved_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
+          approved_source_sha="dff03dd682d1a7bf36a6c2ebda55c4e251304cdf"
+          approved_source_ref="refs/heads/verification/cefr-learning-path-v1-phase-c"
+          approved_workflow_path=".github/workflows/cefr-learning-path-phase-c.yml"
+          approved_dispatch_ref="refs/heads/main"
+          approved_workflow_ref="${approved_repository}/${approved_workflow_path}@${approved_dispatch_ref}"
+
+          [[ "$ACTUAL_REPOSITORY" == "$approved_repository" ]]
+          [[ "$ACTUAL_EVENT" == "workflow_dispatch" ]]
+          [[ "$ACTUAL_DISPATCH_REF" == "$approved_dispatch_ref" ]]
+          [[ "$ACTUAL_WORKFLOW_REF" == "$approved_workflow_ref" ]]
+          [[ "$ACTUAL_RUN_ATTEMPT" == "1" ]]
+
+          [[ "$INPUT_OPERATION" == "$approved_operation" ]]
+          [[ "$INPUT_AUTHORIZE_PHASE_C" == "true" ]]
+          [[ "$INPUT_AUTHORIZE_POSTGRES" == "true" ]]
+          [[ "$INPUT_REPOSITORY" == "$approved_repository" ]]
+          [[ "$INPUT_SOURCE_SHA" == "$approved_source_sha" ]]
+          [[ "$INPUT_SOURCE_REF" == "$approved_source_ref" ]]
+          [[ "$INPUT_WORKFLOW_PATH" == "$approved_workflow_path" ]]
+
+          [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$INPUT_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTUAL_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTUAL_WORKFLOW_SHA" == "$INPUT_WORKFLOW_SHA" ]]
+
+          echo "authorized=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "## CEFR Phase C authorization: PASS"
+            echo "- Repository: \`$ACTUAL_REPOSITORY\`"
+            echo "- Source SHA: \`$approved_source_sha\`"
+            echo "- Workflow path: \`$approved_workflow_path\`"
+            echo "- Run: \`${GITHUB_RUN_ID}\`, attempt \`$ACTUAL_RUN_ATTEMPT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-postgres:
+    name: Verify CEFR migrations on disposable PostgreSQL 17
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cefr_bootstrap
+          POSTGRES_PASSWORD: cefr_bootstrap_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cefr_bootstrap -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      NODE_ENV: test
+      CEFR_TEST_DATABASE_ALLOW_OPERATION: "true"
+      CEFR_TEST_DATABASE_EXCLUSIVE: "true"
+      CEFR_TEST_RUN_ID: ${{ github.run_id }}
+      CEFR_TEST_RUN_ATTEMPT: ${{ github.run_attempt }}
+      CEFR_TEST_DATABASE_EXPECTED_HOST: 127.0.0.1
+      CEFR_TEST_DATABASE_EXPECTED_PORT: "5432"
+      CEFR_TEST_DATABASE_EXPECTED_NAME: elvocab_cefr_ci
+      TEST_DATABASE_URL: postgresql://cefr_ci_runner:cefr_runner_ci_only@127.0.0.1:5432/elvocab_cefr_ci
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact reviewed CEFR source snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: dff03dd682d1a7bf36a6c2ebda55c4e251304cdf
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable source identity and required assets
+        working-directory: .
+        run: |
+          set -euo pipefail
+          approved_source_sha="dff03dd682d1a7bf36a6c2ebda55c4e251304cdf"
+          [[ "$(git rev-parse HEAD)" == "$approved_source_sha" ]]
+          [[ "$GITHUB_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]]
+          test -f backend/test/learning/cefr-learning-path-guard-offline.test.js
+          test -f backend/test/learning/cefr-learning-path-migration-safety.test.js
+          test -f backend/test/learning/cefr-learning-path-migration-integration.test.js
+          test -f backend/test/learning/cefr-learning-path-migration-harness.js
+          test -f backend/prisma/migrations/20261103000000_add_cefr_learning_path_v1/migration.sql
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Initialize restricted disposable database owner
+        id: database_setup
+        env:
+          PGPASSWORD: cefr_bootstrap_ci_only
+          PGCONNECT_TIMEOUT: "5"
+        run: |
+          set -euo pipefail
+          command -v psql >/dev/null
+          psql --version
+          psql --host=127.0.0.1 --port=5432 --username=cefr_bootstrap --dbname=postgres \
+            --set=ON_ERROR_STOP=1 --command="SELECT 1;" >/dev/null
+          psql --host=127.0.0.1 --port=5432 --username=cefr_bootstrap --dbname=postgres \
+            --set=ON_ERROR_STOP=1 \
+            --command="CREATE ROLE cefr_ci_runner LOGIN PASSWORD 'cefr_runner_ci_only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;"
+          psql --host=127.0.0.1 --port=5432 --username=cefr_bootstrap --dbname=postgres \
+            --set=ON_ERROR_STOP=1 \
+            --command="CREATE DATABASE elvocab_cefr_ci OWNER cefr_ci_runner;"
+
+      - name: Install locked backend dependencies and generate Prisma Client
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://cefr_ci_runner:cefr_runner_ci_only@127.0.0.1:5432/elvocab_cefr_ci
+        run: npm ci
+
+      - name: Validate approved Prisma schema
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://cefr_ci_runner:cefr_runner_ci_only@127.0.0.1:5432/elvocab_cefr_ci
+        run: node node_modules/prisma/build/index.js validate
+
+      - name: Run CEFR offline guard and migration-safety checks
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          node --test --test-concurrency=1 \
+            test/learning/cefr-learning-path-guard-offline.test.js \
+            test/learning/cefr-learning-path-migration-safety.test.js \
+            | tee phase-c-offline.tap
+          tests="$(awk '/^# tests / { value=$3 } END { print value+0 }' phase-c-offline.tap)"
+          failures="$(awk '/^# fail / { value=$3 } END { print value+0 }' phase-c-offline.tap)"
+          skipped="$(awk '/^# skipped / { value=$3 } END { print value+0 }' phase-c-offline.tap)"
+          [[ "$tests" -gt 0 ]]
+          [[ "$failures" -eq 0 ]]
+          [[ "$skipped" -eq 0 ]]
+          {
+            echo "- Offline/static checks: PASS ($tests tests, $skipped skipped)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run guarded CEFR PostgreSQL migration integration
+        id: postgres_integration
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          echo "status=started" >> "$GITHUB_OUTPUT"
+          node --test --test-concurrency=1 \
+            test/learning/cefr-learning-path-migration-integration.test.js \
+            | tee phase-c-postgres.tap
+          tests="$(awk '/^# tests / { value=$3 } END { print value+0 }' phase-c-postgres.tap)"
+          passes="$(awk '/^# pass / { value=$3 } END { print value+0 }' phase-c-postgres.tap)"
+          failures="$(awk '/^# fail / { value=$3 } END { print value+0 }' phase-c-postgres.tap)"
+          skipped="$(awk '/^# skipped / { value=$3 } END { print value+0 }' phase-c-postgres.tap)"
+          [[ "$tests" -gt 0 ]]
+          [[ "$passes" -gt 0 ]]
+          [[ "$failures" -eq 0 ]]
+          [[ "$skipped" -eq 0 ]]
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+          {
+            echo "- PostgreSQL migration integration: PASS ($passes passed, $skipped skipped)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect run-owned schema cleanup
+        id: cleanup_inspection
+        if: ${{ always() && !cancelled() && steps.database_setup.outcome == 'success' }}
+        env:
+          PGPASSWORD: cefr_runner_ci_only
+          PGCONNECT_TIMEOUT: "5"
+        run: |
+          set -euo pipefail
+          echo "status=not_verified" >> "$GITHUB_OUTPUT"
+          if ! remaining="$(psql --host=127.0.0.1 --port=5432 --username=cefr_ci_runner \
+              --dbname=elvocab_cefr_ci --tuples-only --no-align \
+              --command="SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'elvocab_cefr_%';" \
+              2>/dev/null)"; then
+            echo "- Run-owned schema cleanup: NOT VERIFIED (connection unavailable)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [[ "$remaining" != "0" ]]; then
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            echo "- Run-owned schema cleanup: FAIL (owned schemas remain)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+          {
+            echo "- Run-owned schema cleanup: PASS"
+            echo "- PostgreSQL: \`17\` at \`127.0.0.1:5432/elvocab_cefr_ci\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report successful Phase C execution
+        if: ${{ success() && steps.postgres_integration.outputs.status == 'pass' && steps.cleanup_inspection.outputs.status == 'pass' }}
+        run: echo "- Overall verdict: PASS" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report incomplete Phase C execution
+        if: failure()
+        run: |
+          case "${{ steps.postgres_integration.outcome }}" in
+            success) integration_status="PASS" ;;
+            failure) integration_status="FAIL" ;;
+            *) integration_status="NOT RUN" ;;
+          esac
+          case "${{ steps.cleanup_inspection.outputs.status }}" in
+            pass) cleanup_status="PASS" ;;
+            fail) cleanup_status="FAIL" ;;
+            *) cleanup_status="NOT VERIFIED" ;;
+          esac
+          {
+            echo "## CEFR Phase C verification: FAIL"
+            echo "- Integration: $integration_status"
+            echo "- Cleanup: $cleanup_status"
+            echo "- Overall verdict: FAIL"
+            echo "A required authorization, setup, test, or cleanup assertion failed."
+            echo "Any unexecuted downstream check is NOT RUN, not PASS."
+          } >> "$GITHUB_STEP_SUMMARY"
