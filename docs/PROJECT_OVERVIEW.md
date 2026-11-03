@@ -497,13 +497,9 @@ Progress phải được tính dựa trên dữ liệu học tập thực tế, 
 
 ## 12.3. Words to Review
 
-Dashboard có thể hiển thị số Vocabulary cần review.
+Authenticated USER Dashboard hiển thị summary authoritative của Vocabulary đang đến hạn review. Global Review tạo một fixed snapshot tối đa 10 exact Vocabulary ID từ các từ đã học, đang đến hạn và còn truy cập được qua public Set đã mở khóa hoặc private Set do USER sở hữu.
 
-Ví dụ:
-
-    12 words to review
-
-Danh sách này được xác định dựa trên SRS và Learning Progress.
+Eligibility, thứ tự, thời gian và bốn rating `AGAIN`, `HARD`, `GOOD`, `EASY` tiếp tục do Backend SRS quyết định. `AGAIN` requeue trong phiên; **Ôn tiếp** yêu cầu một eligibility evaluation mới. Review không hoàn thành Set và không mở khóa CEFR.
 
 ## 12.4. Learning Statistics
 
@@ -796,27 +792,13 @@ Hiển thị progress của ngày hiện tại.
 
 ## 14.3. Continue Learning
 
-Hiển thị các Topic/Vocabulary Set User đang học hoặc học gần đây.
+Dashboard hiển thị tối đa một recommendation authoritative cho required public Vocabulary Set ở CEFR level cao nhất đã mở khóa. Active full-pass ở level đó được ưu tiên resume; nếu không có, Backend chọn incomplete Set sớm nhất theo `created_at`, rồi Set ID.
 
-Ví dụ:
-
-    Travel
-    72%
-    144 / 200 words learned
-
-    12 words to review
-
-    [Continue Learning]
-
-Có thể hiển thị khoảng 2–3 nội dung học tập phù hợp.
+Các Set chưa học ở level cũ vẫn truy cập được nhưng không kéo recommendation chính lùi lại. Recommendation không dựa trên Learning Progress, Quiz, SRS, private Set preview hoặc Featured content.
 
 ## 14.4. Today's Review
 
-Hiển thị số Vocabulary đang đến hạn review.
-
-Ví dụ:
-
-    18 words to review
+Hiển thị số Vocabulary đang đến hạn từ global-review summary và action vào `/review`. Trạng thái không có từ đến hạn, future-due, loading, error và retry được xử lý độc lập với các Dashboard section khác.
 
 ## 14.5. Dashboard Principle
 

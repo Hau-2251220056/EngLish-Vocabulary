@@ -6,6 +6,8 @@ import {
   Flame,
   FolderOpen,
   LibraryBig,
+  LockKeyhole,
+  Map,
   Plus,
   RefreshCw,
   Zap,
@@ -15,6 +17,7 @@ import { Link } from "react-router-dom";
 import dashboardLearningIllustration from "../assets/images/banner.png";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { learningService } from "../services/learning-service.js";
+import { learningPathService } from "../services/learning-path-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
@@ -38,6 +41,8 @@ const loadProgress = () =>
   learningService.getLearningProgress({ page: 1, page_size: 1 });
 const loadCurrentStreak = () => learningSessionService.getCurrentStreak();
 const loadMySets = () => vocabularySetService.listMySets();
+const loadLearningPath = () => learningPathService.getPath();
+const loadReviewSummary = () => learningService.getGlobalReviewSummary();
 
 export function DashboardPage() {
   const { user } = useAuthentication();
@@ -45,12 +50,34 @@ export function DashboardPage() {
   const progress = useDashboardSource(isUser, loadProgress, "progress");
   const streak = useDashboardSource(isUser, loadCurrentStreak, "streak");
   const mySets = useDashboardSource(isUser, loadMySets, "sets");
+  const learningPath = useDashboardSource(isUser, loadLearningPath, "learning-path");
+  const review = useDashboardSource(isUser, loadReviewSummary, "review");
 
   if (!isUser) return <DashboardAdminLanding displayName={user.display_name} />;
 
   return (
     <section aria-labelledby="dashboard-title" className="dashboard-page mx-auto min-w-0 w-full max-w-6xl p-[clamp(1.5rem,3vw,3rem)] text-[var(--color-body)] max-[760px]:px-4 max-[760px]:pb-8 max-[760px]:pt-5">
       <DashboardIntroduction displayName={user.display_name} />
+
+      <DashboardSection
+        errorMessage="Không thể tải lộ trình CEFR. Các khu vực khác vẫn dùng được."
+        loadingMessage="Đang tải lộ trình CEFR…"
+        source={learningPath}
+        title="Lộ trình CEFR"
+        type="learning-path"
+      >
+        {(data) => <LearningPathSummary path={data} />}
+      </DashboardSection>
+
+      <DashboardSection
+        errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được."
+        loadingMessage="Đang tải từ cần ôn…"
+        source={review}
+        title="Từ cần ôn"
+        type="review"
+      >
+        {(data) => <ReviewSummary summary={data} />}
+      </DashboardSection>
 
       <DashboardSection
         action={<Link to="/my/learning-progress">Xem tiến độ chi tiết</Link>}
@@ -77,6 +104,76 @@ export function DashboardPage() {
       </DashboardSection>
 
     </section>
+  );
+}
+
+function ReviewSummary({ summary }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-4 rounded-[var(--radius-xl)] border border-[#d8eadf] bg-[#f3fbf6] p-[clamp(1rem,3vw,1.4rem)] shadow-[var(--shadow-sm)] max-[560px]:items-start max-[560px]:flex-col">
+      <div className="min-w-0">
+        <p className="m-0 text-[0.76rem] font-extrabold uppercase tracking-[0.08em] text-[#28704a]">Ôn tập toàn cục</p>
+        {summary.has_due_items ? <h3 className="mb-0 mt-1 text-[clamp(1.15rem,3vw,1.4rem)] text-[var(--color-heading)]">{summary.due_count} từ đang đến hạn</h3> : <h3 className="mb-0 mt-1 text-[clamp(1.15rem,3vw,1.4rem)] text-[var(--color-heading)]">Đã ôn tập đầy đủ</h3>}
+        {!summary.has_due_items && summary.nearest_future_review_at ? <p className="mb-0 mt-2 text-sm text-[var(--color-muted)]">Lần ôn gần nhất: {new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.nearest_future_review_at))}</p> : null}
+      </div>
+      {summary.has_due_items ? <Link className={PRIMARY_LINK_CLASSES} to="/review">Ôn ngay <ArrowRight aria-hidden="true" /></Link> : null}
+    </div>
+  );
+}
+
+function LearningPathSummary({ path }) {
+  const primaryLevel = path.levels.find(({ level }) => level === path.highest_unlocked_level);
+  const recommendation = path.recommendation;
+  const preservedCompletion = Boolean(path.path_completed_at) && !path.all_current_sets_complete;
+  const configurationMessage = primaryLevel?.configuration === "NO_REQUIRED_SETS"
+    ? "Cấp độ này chưa có bộ từ bắt buộc. Hệ thống chưa thể mở khóa cấp tiếp theo."
+    : primaryLevel?.configuration === "EMPTY_REQUIRED_SET"
+      ? "Có bộ từ bắt buộc chưa có nội dung. Hệ thống chưa thể đề xuất lượt học an toàn."
+      : null;
+  const earlierIncomplete = path.levels
+    .filter(({ level, unlocked }) => unlocked && level !== path.highest_unlocked_level)
+    .flatMap(({ level, incomplete_sets: sets }) => sets.map((set) => ({ ...set, level })));
+
+  return (
+    <div className="dashboard-path-card min-w-0 rounded-[var(--radius-xl)] border border-[#d9e2ff] bg-[linear-gradient(135deg,#f8faff,#eef4ff)] p-[clamp(1rem,3vw,1.4rem)] shadow-[var(--shadow-sm)]">
+      <div className="flex min-w-0 items-start justify-between gap-4 max-[560px]:flex-col">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[var(--radius-lg)] bg-[#dce6ff] text-[var(--color-primary)] [&_svg]:size-6" aria-hidden="true"><Map /></span>
+          <div className="min-w-0">
+            <p className="m-0 text-[0.76rem] font-extrabold uppercase tracking-[0.08em] text-[#526aa8]">Cấp độ đang học</p>
+            <h3 className="mb-0 mt-1 text-[clamp(1.2rem,3vw,1.55rem)] text-[var(--color-heading)]">{path.highest_unlocked_level}</h3>
+            {primaryLevel ? <p className="mb-0 mt-1 text-[0.85rem] text-[var(--color-muted)]">Đã hoàn thành {primaryLevel.completed_count} / {primaryLevel.required_count} bộ từ hiện tại.</p> : null}
+          </div>
+        </div>
+        {recommendation ? (
+          <Link className={PRIMARY_LINK_CLASSES} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: recommendation.action, passId: recommendation.pass_id }}>
+            {recommendation.action === "RESUME" ? "Tiếp tục học" : "Bắt đầu học"} <ArrowRight aria-hidden="true" />
+          </Link>
+        ) : null}
+      </div>
+
+      <ol className="dashboard-path-levels mt-5 grid list-none grid-cols-5 gap-2 p-0 max-[620px]:grid-cols-1" aria-label="Các cấp độ CEFR">
+        {path.levels.map((level) => (
+          <li className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm font-extrabold ${level.unlocked ? "border-[#bdcbed] bg-white text-[#304d9b]" : "border-slate-200 bg-slate-100 text-slate-500"}`} key={level.level}>
+            {!level.unlocked ? <LockKeyhole className="size-4" aria-hidden="true" /> : null}{level.level}
+            <span className="sr-only">{level.unlocked ? "đã mở" : "đang khóa"}</span>
+          </li>
+        ))}
+      </ol>
+
+      {path.path_completed_at && path.all_current_sets_complete ? <p className="mb-0 mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-bold text-emerald-800" role="status">Đã hoàn thành lộ trình hiện tại.</p> : null}
+      {preservedCompletion ? <p className="mb-0 mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900" role="status">Bạn đã đạt thành tích hoàn thành lộ trình. Chương trình hiện có thêm nội dung chưa học.</p> : null}
+      {configurationMessage ? <p className="mb-0 mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">{configurationMessage}</p> : null}
+      {!recommendation && !configurationMessage && !path.all_current_sets_complete ? <p className="mb-0 mt-4 text-sm text-[var(--color-muted)]" role="status">Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.</p> : null}
+
+      {earlierIncomplete.length > 0 ? (
+        <details className="mt-4 rounded-lg border border-[#d9e2ff] bg-white p-3">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-extrabold text-[#304d9b] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]">Nội dung chưa học ở cấp trước ({earlierIncomplete.length})</summary>
+          <ul className="mb-0 mt-2 grid list-none gap-2 p-0">
+            {earlierIncomplete.map((set) => <li className="flex min-w-0 items-center justify-between gap-3 max-[520px]:items-start max-[520px]:flex-col" key={set.id}><span className="min-w-0 text-sm [overflow-wrap:anywhere]"><strong>{set.level}</strong> — {set.name}</span><Link className={SECONDARY_LINK_CLASSES} to={`/learn/vocabulary-sets/${set.id}`} state={{ returnTo: "/dashboard", learningPathAction: "START" }}>Mở bộ từ</Link></li>)}
+          </ul>
+        </details>
+      ) : null}
+    </div>
   );
 }
 

@@ -926,22 +926,20 @@ Authenticated User.
 
 Purpose
 
-Lấy các Vocabulary đang đến hạn review.
+Return the authoritative global-review summary for accessible studied Vocabulary.
 
 Response
 {
   "success": true,
   "data": {
-    "items": [],
-    "count": 0
+    "evaluated_at": "2026-11-03T00:00:00.000Z",
+    "due_count": 0,
+    "has_due_items": false,
+    "nearest_future_review_at": null
   }
 }
 
-Backend quyết định Vocabulary nào thuộc nhóm:
-
-NEEDS_REVIEW
-
-và đã đến thời điểm review.
+Backend decides eligibility from current SRS state and reachability through an unlocked public A1–C1 Set or a USER-owned private Set. Session creation uses `POST /api/learning/review/sessions` as defined in section 75.3; this read creates no session and performs no mutation.
 
 26. Quiz V1
 
@@ -1292,18 +1290,20 @@ Exact achievement list không được tự ý mở rộng trong IMPLEMENT nếu
 
 Dashboard V1 is a read-only frontend composition for authenticated users at `/dashboard`. It does not add a Dashboard backend endpoint.
 
-For `USER`, the frontend composes only these completed sources:
+For `USER`, the frontend composes these independent sources:
 
 - the existing Authentication context for `display_name` and role;
 - `GET /api/learning/progress?page=1&page_size=1` for persisted `total_started`, `learning` and `learned` summary values;
 - `GET /api/my/vocabulary-sets` for the exact owned private Set count and a UI preview of at most the first three records in existing deterministic server order;
-- `GET /api/users/me/streak` for the independently loaded authoritative current-Streak projection.
+- `GET /api/users/me/streak` for the independently loaded authoritative current-Streak projection;
+- `GET /api/learning-path` for current A1–C1 curriculum projection, monotonic entitlement and one primary recommendation;
+- `GET /api/learning/review` for the global due-review summary and action.
 
-The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. The three USER data sources load and retry independently; a failure in one source must not discard successful data from the others.
+The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. USER data sources load and retry independently; a failure in one source must not discard successful data from the others.
 
 Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call any USER-only Dashboard data endpoint. Guest access remains protected by the existing Authentication route behavior.
 
-Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set, Streak day or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the Progress response. Streak V1 adds a separate compact USER card from the Streak read, without a Dashboard endpoint or frontend-calculated increment. Daily Goal, achievement, history, weekly calendar, charts and Admin Dashboard expansion remain deferred.
+Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set, pass, unlock, review event, Streak day or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the Progress response. Streak V1 adds a separate compact USER card from the Streak read. Daily Goal, achievement, history, weekly calendar, charts, Topic percentages and Admin Dashboard expansion remain deferred.
 
 ### 43.1 Future Dashboard Aggregation — Deferred
 
@@ -1332,9 +1332,8 @@ Conceptual:
       "today_xp": 30,
       "goal_completed": false
     },
-    "continue_learning": [],
     "topic_progress": [],
-    "words_to_review": 5
+    "future_aggregate_fields": []
   }
 }
 
@@ -1346,8 +1345,7 @@ Streak.
 Daily Goal.
 Today's XP.
 Topic progress.
-Continue Learning.
-Words to Review.
+Any future fields not already supplied by the active Learning Path and global-review endpoints.
 
 Implementation remains deferred to a future approved workflow.
 
@@ -1381,21 +1379,7 @@ Tránh duplicate derived data không cần thiết.
 
 45. Continue Learning
 
-Dashboard có thể trả các Set/Topic User đang học gần đây hoặc đang có progress.
-
-Ví dụ:
-
-{
-  "set_id": 1,
-  "set_name": "Daily Life",
-  "progress_percent": 65,
-  "learned_words": 130,
-  "total_words": 200
-}
-
-Tiêu chí lựa chọn cụ thể phải được quyết định trong PLAN.
-
-Không tự ý tạo thêm recommendation algorithm nếu chưa có requirement.
+The earlier conceptual recent-Set/Topic recommendation is superseded for CEFR Learning Path V1 by `GET /api/learning-path` in section 75.1. Dashboard displays at most one Backend-selected required public Set at the highest unlocked CEFR level, with active-pass resume priority and deterministic Set ordering. It does not infer a recommendation from Topic percentage, recency, private Sets, Featured content, Learning Progress, Quiz, or SRS.
 
 46. Pronunciation
 
@@ -2026,3 +2010,41 @@ SPEC
 → REVIEW
 
 trước khi thay đổi implementation.
+
+75. CEFR Learning Path V1 Active API Contract
+
+All endpoints below use the existing `/api` base, success envelope `{ "success": true, "data": ... }`, error envelope `{ "success": false, "error": { "code", "message" } }`, Authentication middleware, and USER-role authorization. USER identity comes from `req.user.id`; no endpoint accepts a user ID, unlocked level, count, or completion timestamp from the client.
+
+### 75.1 Learning Path read
+
+`GET /api/learning-path` is side-effect-free. Its data contains `evaluated_at`, `highest_unlocked_level`, nullable `path_completed_at`, `all_current_sets_complete`, exactly A1–C1 `levels`, and nullable `recommendation`.
+
+Each level has `level`, `unlocked`, `required_count`, `completed_count`, `configuration` (`READY`, `NO_REQUIRED_SETS`, or `EMPTY_REQUIRED_SET`), `current_complete`, and ordered `incomplete_sets` summaries (`id`, `name`, `created_at`). A recommendation is `{ action: "START" | "RESUME", set_id, pass_id }`; START has null `pass_id`, while RESUME has an owned pass UUID. The highest unlocked level, active-pass priority, and `created_at` then Set ID order are Backend-owned.
+
+### 75.2 Full-pass lifecycle
+
+All mutation bodies allow exactly `{ "operation_id": "<uuid>" }`.
+
+- `POST /api/learning-path/sets/:setId/passes`: `201` new; `200` exact replay or active-pass resume.
+- `GET /api/learning-path/passes/:passId`: owner-scoped, side-effect-free pass projection.
+- `POST /api/learning-path/passes/:passId/sessions`: `201` new linked bounded NORMAL session; `200` replay/resume or `{ session: null, reason: "PASS_READY_TO_COMPLETE", replayed: false }`.
+- `POST /api/learning-path/passes/:passId/restart`: explicitly invalidates the active pass and returns a new snapshot (`201`) or exact replay (`200`).
+- `POST /api/learning-path/passes/:passId/complete`: explicit final Set completion, returning `{ pass, path, replayed }` with `200`.
+
+A pass projection has `id`, `set_id`, `state`, `snapshot_size`, `studied_items`, `remaining_items`, `created_at`, and nullable `completed_at`. Pass reads may additionally include `can_continue` and `restart_reason: "SNAPSHOT_CHANGED"`. Linked session projections retain the existing contract plus `scope`; pass-linked batches are `SET`/`NORMAL` and cannot be attached by a client.
+
+Learning Path domain mappings are: `CEFR_PATH_VALIDATION_ERROR` -> `400`; `CEFR_PASS_NOT_FOUND` -> `404`; `CEFR_LEVEL_LOCKED` -> `403`; and `CEFR_CURRICULUM_NOT_CONFIGURED`, `CEFR_SET_ALREADY_COMPLETED`, `CEFR_PASS_RESTART_REQUIRED`, `CEFR_PASS_INCOMPLETE`, `CEFR_PASS_OPERATION_CONFLICT`, and `CEFR_PASS_TERMINAL` -> `409`. Missing and foreign passes share the concealed not-found response.
+
+### 75.3 Global review
+
+`GET /api/learning/review` is side-effect-free and returns `evaluated_at`, exact `due_count`, `has_due_items`, and nullable `nearest_future_review_at` for accessible studied candidates.
+
+`POST /api/learning/review/sessions` accepts exactly `{ "operation_id": "<uuid>" }`. It returns `201` for a new fixed `GLOBAL`/`SRS` session and `200` for replay or an empty result. A non-empty result contains `session`, `cards`, `evaluated_at`, and `replayed`. An empty result contains `session: null`, `cards: []`, `reason: "REVIEW_UP_TO_DATE" | "REVIEW_FUTURE_DUE"`, `evaluated_at`, nullable `nearest_future_review_at`, and `replayed: false`.
+
+Global cards reuse the existing SRS card/rating-preview projection. The session has `set_id: null`, `scope: "GLOBAL"`, and mode `SRS`. Existing `POST /api/learning/events` remains the rating boundary; a global event supplies the session UUID and `set_id: null`. The Backend revalidates all unresolved exact Vocabulary identities before accepting a rating. `GLOBAL_REVIEW_OPERATION_CONFLICT` maps to `409`; existing validation, session-not-found, inaccessible, expired, event-conflict, and progress-conflict codes remain active.
+
+### 75.4 Locked activity and compatibility boundary
+
+Public discovery/detail/copy APIs remain unchanged. Backend service boundaries reject NORMAL, per-Set SRS, Quiz reads/answers, and the Speaking Learning dependency when a USER targets a locked public A1–C1 Set. Owned private/copied Sets retain existing activity authorization and never earn CEFR completion. Public null-CEFR Sets remain outside progression and retain existing access.
+
+Existing Learning Session endpoints remain active: `POST /api/learning-sessions`, `GET /api/learning-sessions/:sessionId`, `PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal`, `POST /api/learning-sessions/:sessionId/complete`, and `POST /api/learning/events`. Ordinary callers continue as `scope: "SET"`, including the projection compatibility default. Formal HTTP, real-stack, and database verification remains outside TASK-014.

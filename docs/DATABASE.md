@@ -1917,4 +1917,43 @@ Dễ sử dụng với Prisma.
 Dễ test.
 Dễ mở rộng khi feature thực sự cần.
 Phù hợp với kiến trúc Backend REST API.
+
+43. CEFR Learning Path V1 Active Data Contract
+
+The additive forward migration is `backend/prisma/migrations/20261103000000_add_cefr_learning_path_v1/migration.sql`. It is authored but has not been applied or database-verified under the current authorized worktree activity.
+
+### 43.1 Enums
+
+- `CEFR_LEARNING_PASS_STATUS`: `ACTIVE`, `INVALIDATED`, `COMPLETED`.
+- `LEARNING_SESSION_SCOPE`: `SET`, `GLOBAL`; existing and ordinary sessions default to `SET`.
+
+### 43.2 CEFR_LEARNING_PASS
+
+One row represents one backend-owned full NORMAL pass attempt for one USER and exact Set identity. It has a UUID primary key, required `user_id`, nullable current `vocabulary_set_id` using `ON DELETE SET NULL`, immutable `set_id_snapshot`, required `create_operation_id`, positive `snapshot_size`, lifecycle status/timestamps, and nullable terminal `completion_event_id`. Lifecycle checks enforce compatible ACTIVE, INVALIDATED, and COMPLETED timestamps.
+
+USER-scoped unique creation/completion operation identities provide replay boundaries. Partial unique indexes allow at most one ACTIVE and one COMPLETED pass for `(user_id, set_id_snapshot)`; invalidated attempts may remain as narrowly scoped retry history. Historical scalar Set identity survives deletion without making inaccessible content readable.
+
+### 43.3 CEFR_LEARNING_PASS_ITEM
+
+Each row stores an immutable Vocabulary UUID and zero-based position for the ordered full-pass snapshot. There is deliberately no Vocabulary foreign key. Unique `(pass_id, vocabulary_id)` and `(pass_id, position)` constraints enforce exact coverage and order. Deleting the owning pass cascades to its items; V1 exposes no pass-delete API. Reveal evidence is not duplicated here: accepted proof remains `NORMAL_REVEALED` evidence in completed linked `LEARNING_SESSION_ITEM` rows.
+
+### 43.4 CEFR_LEARNING_PATH_STATE
+
+One optional row per USER stores `highest_unlocked_level` (`A1`–`C1`) and nullable `path_completed_at`. Absence means initial A1 entitlement and no terminal completion; reads do not create a row. Updates only advance entitlement. Current required/completed counts are projections, not stored percentages.
+
+### 43.5 LEARNING_SESSION extension
+
+`LEARNING_SESSION.scope` is required and defaults to `SET`; `cefr_learning_pass_id` is nullable; `set_id_snapshot` is nullable only for a valid global session.
+
+- `SET` requires a non-null Set snapshot.
+- `GLOBAL` requires mode `SRS`, null current/snapshot Set identities, and no pass relation.
+- A pass relation requires `SET` scope and `NORMAL` mode.
+- Existing 1–10 snapshot size, evidence, lifecycle, expiry, operation identity, receipt/revision, XP, and Streak constraints remain active.
+- The optional pass foreign key uses `ON DELETE RESTRICT` and is indexed.
+
+### 43.6 Migration and compatibility boundary
+
+The migration adds enums, tables, relations, checks, and indexes and assigns existing Learning Sessions the default `SET` meaning. It creates no pass, completion, unlock, or path-complete rows from legacy Learning Progress, Quiz, rewards, Streak, Learning Sessions, or client state. It changes no Set CEFR value and has no C2, `is_required`, analytics, or Daily Goal data.
+
+Static migration assertions exist, but migration application, PostgreSQL constraints, transaction concurrency, deletion/reclassification behavior, and no-backfill preservation remain `NOT RUN` until a separately authorized isolated TEST stage.
 ```

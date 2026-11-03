@@ -1490,4 +1490,20 @@ Refactor when necessary
 thay vì tạo một architecture mới cho từng feature.
 
 Build what the project needs, not what the technology makes possible.
+
+29. CEFR Learning Path V1 Active Architecture
+
+CEFR Learning Path V1 extends the existing monolith; it introduces no new service, scheduler, role, or external dependency. The authenticated USER flow remains `UI -> frontend API service -> authenticated USER route -> controller -> service -> repository/Prisma transaction -> PostgreSQL`.
+
+The Backend owns one `CEFR_LEARNING_PASS` for a USER and exact required public System Set. Its ordered `CEFR_LEARNING_PASS_ITEM` snapshot is frozen when the pass starts. The service partitions unresolved items into linked `SET`/`NORMAL` Learning Sessions of at most 10 items. Bounded session completion remains distinct from full-Set completion: only explicit final pass completion after every snapshot item has accepted `NORMAL_REVEALED` evidence in a completed linked session creates historical Set completion.
+
+Current required curriculum is derived from public System Sets whose Set-level CEFR is A1–C1. `CEFR_LEARNING_PATH_STATE` separately preserves the highest earned unlock and terminal completion timestamp. Reads combine current curriculum counts, exact historical Set completion, and monotonic entitlement; later curriculum mutation can change current counts without relocking earned levels or erasing terminal achievement. A1 is initial, later levels unlock sequentially, C1 is terminal, and neither C2 nor an `is_required` flag participates.
+
+One shared transaction-aware activity authorizer locks the current Set classification before protected mutations. Public A1–C1 NORMAL, per-Set SRS, Quiz, and the Speaking Learning dependency require the Set level to be unlocked. Public discovery/detail/copy and independently owned private/copied Set activity retain their existing authorization. Session read/reveal/complete and rating paths revalidate current access; frontend lock presentation is advisory only.
+
+Global review reuses `LEARNING_PROGRESS`, the existing SRS scheduler, `LEARNING_SESSION`, receipts, XP, and Streak behavior. The Backend selects at most 10 exact-ID-deduplicated, studied, due Vocabulary identities reachable through an unlocked public A1–C1 Set or a USER-owned private Set. A global snapshot is `GLOBAL`/`SRS`, has no Set or pass identity, remains fixed, and revalidates every unresolved identity before a rating mutation. `AGAIN` remains unresolved; `HARD`, `GOOD`, and `EASY` resolve existing session items. Explicit continuation creates a fresh eligibility evaluation.
+
+The frontend treats path, pass, session, and review responses as authoritative. Dashboard loads CEFR and global-review sources independently from Progress, Streak, and My Sets; ADMIN does not call USER-only sources. NORMAL full-pass orchestration and global-review queue state may use namespaced `sessionStorage` only for presentation/recovery and reconcile against Backend state. CEFR completion is independent of Learning Progress, Quiz, SRS, XP, Streak, and Daily Goal; this feature has no Daily Goal dependency.
+
+The forward migration and integrated PostgreSQL behavior are not verified merely by this documentation synchronization. Formal database, real-stack, UI/UX, TEST, and REVIEW evidence remains a later gated stage.
 ```

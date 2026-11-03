@@ -80,6 +80,7 @@ test("Set authorization precedes bounded membership disclosure and preserves con
   const repository = {
     findAccessibleSetForUser: async () => null,
     findCanonicalDistractorCandidates: async () => { distractorReads += 1; return []; },
+    withTransaction(callback) { return callback(this, {}); },
   };
   const service = createQuizService({ quizRepository: repository });
   await assert.rejects(
@@ -204,7 +205,11 @@ test("canonical fallback query enforces canonical ownership, exclusions, determi
 });
 
 function readRepository(set, external) {
-  return { findAccessibleSetForUser: async () => structuredClone(set), findCanonicalDistractorCandidates: async () => structuredClone(external) };
+  return {
+    findAccessibleSetForUser: async () => structuredClone(set),
+    findCanonicalDistractorCandidates: async () => structuredClone(external),
+    withTransaction(callback) { return callback(this, {}); },
+  };
 }
 function boundedQuery(ids) {
   return { type: "MULTIPLE_CHOICE", run_id: RUN, vocabulary_ids: ids.join(",") };

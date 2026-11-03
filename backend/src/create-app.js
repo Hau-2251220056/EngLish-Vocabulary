@@ -9,6 +9,7 @@ import { createVocabularySetController } from "./controllers/vocabulary-set-cont
 import { createLearningController } from "./controllers/learning-controller.js";
 import { createQuizController } from "./controllers/quiz-controller.js";
 import { createLearningSessionController } from "./controllers/learning-session-controller.js";
+import { createLearningPathController } from "./controllers/learning-path-controller.js";
 import { createAuthenticationMiddleware } from "./middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "./middleware/role-authorization-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
@@ -20,10 +21,12 @@ import { createLearningRepository } from "./repositories/learning-repository.js"
 import { createQuizRepository } from "./repositories/quiz-repository.js";
 import { createLearningSessionRepository } from "./repositories/learning-session-repository.js";
 import { createStreakRepository } from "./repositories/streak-repository.js";
+import { createLearningPathRepository } from "./repositories/learning-path-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createLearningRouter } from "./routes/learning-routes.js";
 import { createQuizRouter } from "./routes/quiz-routes.js";
 import { createLearningSessionRouter, createUserStreakRouter } from "./routes/learning-session-routes.js";
+import { createLearningPathRouter } from "./routes/learning-path-routes.js";
 import {
   createAdminTopicRouter,
   createPublicTopicRouter,
@@ -42,9 +45,13 @@ import { createAuthenticationService } from "./services/authentication-service.j
 import { createTopicService } from "./services/topic-service.js";
 import { createVocabularyService } from "./services/vocabulary-service.js";
 import { createVocabularySetService } from "./services/vocabulary-set-service.js";
-import { createLearningService } from "./services/learning-service.js";
+import { createGlobalReviewAuthorizer, createLearningService } from "./services/learning-service.js";
 import { createQuizService } from "./services/quiz-service.js";
 import { createLearningSessionService, createStreakService } from "./services/learning-session-service.js";
+import {
+  createLearningPathActivityAuthorizer,
+  createLearningPathService,
+} from "./services/learning-path-service.js";
 import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
 import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
@@ -120,10 +127,32 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     authenticationMiddleware,
   });
   const learningRepository = createLearningRepository(prisma);
+  const learningPathRepository = createLearningPathRepository(prisma);
+  const authorizeSetActivity = createLearningPathActivityAuthorizer({
+    createLearningPathRepository,
+  });
+  const authorizeGlobalReview = createGlobalReviewAuthorizer({
+    createLearningRepository,
+    createLearningPathRepository,
+  });
+  const learningPathService = createLearningPathService({
+    learningPathRepository,
+    createSessionRepository: createLearningSessionRepository,
+    ...(learningNow ? { now: learningNow } : {}),
+  });
+  const learningPathController = createLearningPathController({ learningPathService });
+  const learningPathRouter = createLearningPathRouter({
+    learningPathController,
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
   const learningService = createLearningService({
     learningRepository,
     createSessionRepository: createLearningSessionRepository,
     createStreakRepository,
+    createLearningPathRepository,
+    authorizeSetActivity,
+    authorizeGlobalReview,
     ...(learningNow ? { now: learningNow } : {}),
   });
   const learningController = createLearningController({ learningService });
@@ -137,6 +166,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     quizRepository,
     createSessionRepository: createLearningSessionRepository,
     createStreakRepository,
+    authorizeSetActivity,
     ...(learningNow ? { now: learningNow } : {}),
   });
   const quizController = createQuizController({ quizService });
@@ -154,6 +184,8 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     createSessionRepository: createLearningSessionRepository,
     createStreakRepository,
     createLearningRepository,
+    authorizeSetActivity,
+    authorizeGlobalReview,
     ...(learningNow ? { now: learningNow } : {}),
   });
   const streakService = createStreakService({
@@ -183,6 +215,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use("/api", userVocabularySetRouter);
   app.use("/api/my/vocabulary", userPrivateVocabularyRouter);
   app.use("/api/learning", learningRouter);
+  app.use("/api/learning-path", learningPathRouter);
   app.use("/api/quiz", quizRouter);
   app.use("/api/learning-sessions", learningSessionRouter);
   app.use("/api/users/me", userStreakRouter);
@@ -196,7 +229,14 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     });
   });
 
-  app.use((_error, _req, res, _next) => {
+  app.use((error, _req, res, _next) => {
+    if (error?.code === "CEFR_LEVEL_LOCKED") {
+      res.status(403).json({
+        success: false,
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     res.status(500).json({
       success: false,
       error: {

@@ -201,12 +201,13 @@ test("exact body and active type are validated before transaction", async () => 
   const harness = createHarness();
   const service = createQuizService({ quizRepository: harness.repository });
   const question = await loadQuestion(service);
+  const transactionBaseline = harness.transactionCount();
   for (const input of [
     { ...answer(question, question.choices[0].choice_id), extra: true },
     { ...answer(question, question.choices[0].choice_id), quiz_type: "UNSCRAMBLE_WORD" },
     { ...answer(question, question.choices[0].choice_id), selected_choice_id: "" },
   ]) await assert.rejects(service.recordAnswer(USER, input), { code: "QUIZ_VALIDATION_ERROR" });
-  assert.equal(harness.transactionCount(), 0);
+  assert.equal(harness.transactionCount(), transactionBaseline);
 });
 
 test("session-aware Quiz uses session id as run id and completes on the accepted final answer", async () => {

@@ -30,6 +30,8 @@ export function createLearningSessionService({
   createSessionRepository,
   createStreakRepository,
   createLearningRepository,
+  authorizeSetActivity = async () => {},
+  authorizeGlobalReview = async () => {},
   now = () => new Date(),
   uuid = randomUUID,
 }) {
@@ -41,6 +43,7 @@ export function createLearningSessionService({
         return await withTransaction(async (transaction) => {
           const operationTime = captureOperationTime(now);
           const sessions = createSessionRepository(transaction);
+          await authorizeSetActivity(transaction, userId, request.set_id);
           const replay = assertCreationRequestReplayMatches(
             await sessions.findCreationReplay(userId, request.operation_id),
             userId,
@@ -110,9 +113,11 @@ export function createLearningSessionService({
         const sessions = createSessionRepository(transaction);
         const session = await sessions.findOwnedSession(sessionId, userId);
         if (!session) throw notFound();
-        const accessible = await snapshotIsAccessible(
-          createLearningRepository(transaction), session, false,
-        );
+        const accessible = session.scope === "GLOBAL"
+          ? await authorizeGlobalReview(transaction, userId, session.items, { throwOnFailure: false })
+          : await authorizeSetSession(
+            transaction, userId, session, createLearningRepository, authorizeSetActivity,
+          );
         return {
           ...toSessionProjection(session, operationTime.instant),
           can_continue: accessible && projectSessionLifecycle(session, operationTime.instant) === "ACTIVE",
@@ -131,6 +136,7 @@ export function createLearningSessionService({
         const session = await sessions.lockOwnedSession(sessionId, userId);
         if (!session) throw notFound();
         if (session.mode !== "NORMAL") throw conflict("LEARNING_SESSION_EVENT_CONFLICT", "This operation is not valid for the session mode.");
+        await authorizeSetActivity(transaction, userId, session.set_id_snapshot);
         const item = await sessions.lockSessionItem(session.id, vocabularyId);
         if (!item) throw conflict("LEARNING_SESSION_EVENT_CONFLICT", "The vocabulary is not in this session.");
 
@@ -173,6 +179,7 @@ export function createLearningSessionService({
         const existing = await sessions.findOwnedSession(sessionId, userId);
         if (!existing) throw notFound();
         if (existing.mode !== "NORMAL") throw conflict("LEARNING_SESSION_EVENT_CONFLICT", "This operation is not valid for the session mode.");
+        await authorizeSetActivity(transaction, userId, existing.set_id_snapshot);
 
         const completion = await completeLearningSessionAtomically({
           sessionRepository: sessions,
@@ -246,6 +253,13 @@ function compareSrsItems(left, right) {
   const leftNew = left.evaluation.stored_status === null ? 1 : 0;
   const rightNew = right.evaluation.stored_status === null ? 1 : 0;
   return leftNew - rightNew || left.position - right.position || left.vocabulary_id.localeCompare(right.vocabulary_id);
+}
+
+async function authorizeSetSession(
+  transaction, userId, session, createLearningRepository, authorizeSetActivity,
+) {
+  await authorizeSetActivity(transaction, userId, session.set_id_snapshot);
+  return snapshotIsAccessible(createLearningRepository(transaction), session, false);
 }
 
 async function snapshotIsAccessible(learning, session, lock) {
@@ -358,6 +372,7 @@ export function toSessionProjection(session, evaluatedAt) {
   return {
     id: session.id,
     set_id: session.set_id_snapshot,
+    scope: session.scope ?? "SET",
     mode: session.mode,
     state: projectSessionLifecycle(session, evaluatedAt),
     created_at: session.created_at,

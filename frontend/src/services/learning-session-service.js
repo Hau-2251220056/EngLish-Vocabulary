@@ -96,7 +96,10 @@ export function createLearningSessionService(client = httpClient) {
 }
 
 export function requireSessionProjection(value, { allowAccessState = false } = {}) {
-  if (!isRecord(value) || !isUuid(value.id) || !isUuid(value.set_id)
+  const scope = value?.scope ?? "SET";
+  if (!isRecord(value) || !isUuid(value.id)
+    || !["SET", "GLOBAL"].includes(scope)
+    || (scope === "SET" ? !isUuid(value.set_id) : value.set_id !== null)
     || !MODES.has(value.mode) || !STATES.has(value.state)
     || !isInstant(value.created_at) || !isInstant(value.expires_at)
     || !(value.completed_at === null || isInstant(value.completed_at))
@@ -129,7 +132,7 @@ export function requireSessionProjection(value, { allowAccessState = false } = {
       throw invalidResponse();
     }
   }
-  return value;
+  return { ...value, scope };
 }
 
 export function requireStreakProjection(value) {

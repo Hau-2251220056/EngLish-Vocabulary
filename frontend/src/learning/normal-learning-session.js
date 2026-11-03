@@ -72,6 +72,11 @@ export async function reconcileNormalLearningSession({ storage, identity, state,
   return persistProjection(storage, identity, state, session);
 }
 
+export function acceptPassLinkedNormalSession({ storage, identity, session }) {
+  if (identity?.mode !== "NORMAL") throw new TypeError("NORMAL pass session identity is invalid.");
+  return persistProjection(storage, identity, loadLearningSessionState(storage, identity), session);
+}
+
 function persistProjection(storage, identity, stored, backendSession) {
   const accepted = reconcileLearningSessionState(stored, identity, backendSession);
   if (!saveLearningSessionState(storage, accepted)) {

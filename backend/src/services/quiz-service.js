@@ -26,6 +26,7 @@ export function createQuizService({
   quizRepository,
   createSessionRepository,
   createStreakRepository,
+  authorizeSetActivity = async () => {},
   now = () => new Date(),
 }) {
   return {
@@ -41,6 +42,7 @@ export function createQuizService({
           if (session.mode !== "QUIZ" || session.set_id_snapshot !== setId || query.run_id !== session.id) {
             throw sessionConflictError();
           }
+          await authorizeSetActivity(transaction, userId, setId);
           const items = await sessions.lockSessionItems(session.id);
           assertSnapshotIntegrity(session.snapshot_size, items);
           if (projectSessionLifecycle(session, captureOperationTime(now).instant) === "EXPIRED") {
@@ -53,20 +55,21 @@ export function createQuizService({
           return buildQuestionPayload(repository, userId, setId, session.id, ids);
         });
       }
-      const set = await quizRepository.findAccessibleSetForUser(setId, userId);
-      if (!set) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
-      const requestedIds = query.has_vocabulary_ids
-        ? parseBoundedVocabularyIds(query.vocabulary_ids)
-        : null;
-      if (!set.items.length && requestedIds === null) {
-        throw serviceError("QUIZ_SET_EMPTY", "Quiz set has no vocabulary to practice.");
-      }
-      const questionItems = requestedIds === null
-        ? set.items
-        : selectRequestedItems(set.items, requestedIds);
-      const external = await quizRepository.findCanonicalDistractorCandidates(set.items.map((item) => item.vocabulary.id));
-      const questions = buildQuestions(set, questionItems, external, query.run_id);
-      return { id: set.id, name: set.name, quiz_type: QUIZ_TYPE, run_id: query.run_id, questions };
+      return quizRepository.withTransaction(async (repository, transaction) => {
+        const set = await repository.findAccessibleSetForUser(setId, userId);
+        if (!set) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
+        await authorizeSetActivity(transaction, userId, setId);
+        const requestedIds = query.has_vocabulary_ids
+          ? parseBoundedVocabularyIds(query.vocabulary_ids)
+          : null;
+        if (!set.items.length && requestedIds === null) {
+          throw serviceError("QUIZ_SET_EMPTY", "Quiz set has no vocabulary to practice.");
+        }
+        const questionItems = requestedIds === null ? set.items : selectRequestedItems(set.items, requestedIds);
+        const external = await repository.findCanonicalDistractorCandidates(set.items.map((item) => item.vocabulary.id));
+        const questions = buildQuestions(set, questionItems, external, query.run_id);
+        return { id: set.id, name: set.name, quiz_type: QUIZ_TYPE, run_id: query.run_id, questions };
+      });
     },
 
     async recordAnswer(userId, input) {
@@ -75,8 +78,8 @@ export function createQuizService({
       const execute = () => quizRepository.withTransaction((repository, transaction) => (
         answer.session_id
           ? recordSessionAnswerInTransaction({ repository, transaction, userId, answer,
-            createSessionRepository, createStreakRepository, now })
-          : recordAnswerInTransaction(repository, userId, answer)
+            createSessionRepository, createStreakRepository, authorizeSetActivity, now })
+          : recordAnswerInTransaction(repository, transaction, authorizeSetActivity, userId, answer)
       ));
       try { return await execute(); } catch (error) {
         if (!isRetryablePersistenceConflict(error)) throw error;
@@ -99,7 +102,8 @@ async function buildQuestionPayload(repository, userId, setId, runId, requestedI
 }
 
 async function recordSessionAnswerInTransaction({
-  repository, transaction, userId, answer, createSessionRepository, createStreakRepository, now,
+  repository, transaction, userId, answer, createSessionRepository, createStreakRepository,
+  authorizeSetActivity, now,
 }) {
   if (typeof createSessionRepository !== "function" || typeof createStreakRepository !== "function") {
     throw sessionConflictError();
@@ -123,7 +127,9 @@ async function recordSessionAnswerInTransaction({
   if (projectSessionLifecycle(session, acceptedAt) === "EXPIRED") throw sessionExpiredError();
   if (item.evidence_event_id && item.evidence_event_id !== answer.event_id) throw sessionConflictError();
 
-  const result = await recordAnswerInTransaction(repository, userId, answer, acceptedAt);
+  const result = await recordAnswerInTransaction(
+    repository, transaction, authorizeSetActivity, userId, answer, acceptedAt,
+  );
   const evidence = result.is_correct ? "QUIZ_CORRECT" : "QUIZ_INCORRECT";
   let resolvedItems = items;
   if (item.evidence_event_id === answer.event_id) {
@@ -161,9 +167,12 @@ function buildQuestions(set, questionItems, external, runId) {
   });
 }
 
-async function recordAnswerInTransaction(repository, userId, answer, acceptedAt = new Date()) {
+async function recordAnswerInTransaction(
+  repository, transaction, authorizeSetActivity, userId, answer, acceptedAt = new Date(),
+) {
   const lockedSet = await repository.lockAccessibleSetForUser(answer.set_id, userId);
   if (!lockedSet) throw serviceError("QUIZ_SET_NOT_FOUND", "Quiz set was not found.");
+  await authorizeSetActivity(transaction, userId, answer.set_id);
   const lockedItem = await repository.lockQuestionItem(answer.set_id, answer.vocabulary_id);
   if (!lockedItem) throw questionUnavailableError();
   await repository.lockProgressIdentity(userId, answer.vocabulary_id);

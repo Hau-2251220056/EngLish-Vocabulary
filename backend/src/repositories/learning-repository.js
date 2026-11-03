@@ -137,6 +137,64 @@ export function createLearningRepository(prisma) {
       });
     },
 
+    listReachableReviewCandidates(userId, unlockedLevels) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: {
+          user_id: userId,
+          vocabulary: {
+            vocabulary_items: {
+              some: {
+                vocabulary_set: {
+                  OR: [
+                    { is_public: true, cefr_level: { in: unlockedLevels } },
+                    { is_public: false, owner_id: userId },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ vocabulary_id: "asc" }],
+        select: {
+          ...progressSelect(),
+          vocabulary: {
+            select: {
+              id: true, word: true, phonetic: true, pronunciation_url: true,
+              meanings: {
+                orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                select: {
+                  id: true, part_of_speech: true, meaning_vi: true, context: true, cefr_level: true,
+                  examples: {
+                    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                    select: { id: true, example_en: true, example_vi: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+
+    isReviewVocabularyReachable(userId, vocabularyId, unlockedLevels) {
+      return prisma.vOCABULARY.findFirst({
+        where: {
+          id: vocabularyId,
+          vocabulary_items: {
+            some: {
+              vocabulary_set: {
+                OR: [
+                  { is_public: true, cefr_level: { in: unlockedLevels } },
+                  { is_public: false, owner_id: userId },
+                ],
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+    },
+
     countProgress(userId, status, evaluatedAt) {
       return prisma.lEARNING_PROGRESS.count({
         where: effectiveProgressWhere(userId, status, evaluatedAt),

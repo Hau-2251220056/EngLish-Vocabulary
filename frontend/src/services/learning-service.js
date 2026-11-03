@@ -56,7 +56,64 @@ export function createLearningService(client = httpClient) {
         throw mapLearningError(error);
       }
     },
+
+    async getGlobalReviewSummary() {
+      try {
+        const response = await client.get(`${LEARNING_ENDPOINT}/review`);
+        return requireReviewSummary(response.data?.data);
+      } catch (error) {
+        throw mapLearningError(error);
+      }
+    },
+
+    async createGlobalReviewSession(operationId) {
+      if (!UUID_PATTERN.test(operationId)) throw invalidRatingError();
+      try {
+        const response = await client.post(`${LEARNING_ENDPOINT}/review/sessions`, {
+          operation_id: operationId,
+        });
+        return requireGlobalReviewSession(response.data?.data);
+      } catch (error) {
+        throw mapLearningError(error);
+      }
+    },
   };
+}
+
+function requireReviewSummary(value) {
+  if (!isRecord(value) || !isNonNegativeInteger(value.due_count)
+    || value.has_due_items !== (value.due_count > 0)
+    || !isDateString(value.evaluated_at)
+    || !(value.nearest_future_review_at === null || isDateString(value.nearest_future_review_at))) {
+    throw invalidResponseError();
+  }
+  return value;
+}
+
+function requireGlobalReviewSession(value) {
+  if (!isRecord(value) || typeof value.replayed !== "boolean"
+    || !isDateString(value.evaluated_at) || !Array.isArray(value.cards)) {
+    throw invalidResponseError();
+  }
+  if (value.session === null) {
+    if (!["REVIEW_UP_TO_DATE", "REVIEW_FUTURE_DUE"].includes(value.reason)
+      || value.cards.length !== 0
+      || !(value.nearest_future_review_at === null || isDateString(value.nearest_future_review_at))) {
+      throw invalidResponseError();
+    }
+    return value;
+  }
+  const session = requireSessionProjection(value.session);
+  if (session.scope !== "GLOBAL" || session.mode !== "SRS"
+    || value.cards.length !== session.snapshot_size
+    || !value.cards.every((card) => isLearningCard(card) && isRatingPreviews(card.rating_previews))) {
+    throw invalidResponseError();
+  }
+  const ids = value.cards.map(({ id }) => id);
+  if (session.items.some(({ vocabulary_id: id }, index) => id !== ids[index])) {
+    throw invalidResponseError();
+  }
+  return { ...value, session };
 }
 
 function requireLearningSet(value, requestedMode) {

@@ -83,6 +83,14 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
     userApiCalls += 1;
     await route.abort("failed");
   });
+  await page.route("**/api/learning-path", async (route) => {
+    userApiCalls += 1;
+    await route.abort("failed");
+  });
+  await page.route("**/api/learning/review**", async (route) => {
+    userApiCalls += 1;
+    await route.abort("failed");
+  });
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: `Xin chào, ${publicAdmin.display_name}.` })).toBeVisible();
@@ -91,6 +99,37 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
   await expect(page.getByRole("heading", { name: "Tóm tắt học tập" })).toHaveCount(0);
   await page.waitForTimeout(100);
   expect(userApiCalls).toBe(0);
+});
+
+test("USER renders one backend-ordered CEFR recommendation and truthful locked levels", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const setId = "10000000-0000-4000-8000-000000000001";
+  await page.route("**/api/learning-path", (route) => route.fulfill({
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        evaluated_at: "2026-11-03T00:00:00.000Z",
+        highest_unlocked_level: "A1",
+        path_completed_at: null,
+        levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+          level, unlocked: index === 0, required_count: index === 0 ? 1 : 0,
+          completed_count: 0, configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+          current_complete: false,
+          incomplete_sets: index === 0 ? [{ id: setId, name: "A1 starter", created_at: "2026-11-03T00:00:00.000Z" }] : [],
+        })),
+        recommendation: { action: "START", set_id: setId, pass_id: null },
+        all_current_sets_complete: false,
+      },
+    },
+  }));
+
+  await page.goto("/dashboard");
+  const path = page.getByRole("region", { name: "Lộ trình CEFR" });
+  await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(path.getByText("A1", { exact: true })).toBeVisible();
+  await expect(path.getByText("A2", { exact: true })).toContainText("A2");
+  await expect(path.getByText("đang khóa")).toHaveCount(4);
 });
 
 test("USER Streak card renders completed, pending, and broken states from backend projections", async ({ page }) => {

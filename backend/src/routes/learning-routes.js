@@ -10,6 +10,8 @@ export function createLearningRouter({
   router.use(authenticationMiddleware);
   router.use(userAuthorizationMiddleware);
   router.get("/progress", learningController.getProgress);
+  router.get("/review", learningController.getReviewSummary);
+  router.post("/review/sessions", learningController.createReviewSession);
   router.get("/sets/:setId", learningController.getSet);
   router.post("/events", learningController.recordEvent);
   return router;

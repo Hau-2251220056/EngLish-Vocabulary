@@ -484,24 +484,25 @@ Detail displays Topic metadata only. An empty Topic remains visible. Topic V1 do
 
 Dashboard V1 is the authenticated landing at `/dashboard`. It reuses the existing `AuthenticatedShell`; it does not redesign the Header, Sidebar, Main Content, Footer, scrolling or mobile drawer.
 
-For `USER`, the production Dashboard is a concise read-only overview composed from the existing Authentication identity, persisted Learning Progress summary and owned private Vocabulary Set list. Its functional hierarchy is:
+For `USER`, the production Dashboard is a concise read-only overview composed from Authentication identity, persisted Learning Progress, owned private Vocabulary Sets, Streak, CEFR Learning Path, and global-review summary. Its functional hierarchy is:
 
 1. one page heading and a personalized greeting from authenticated `display_name`;
 2. a compact learning snapshot containing exactly total started, `LEARNING` and `LEARNED`;
 3. the exact private Set count and at most three Set summaries in existing server order;
-4. quick navigation to Topics, My Sets and detailed Learning Progress.
+4. independently loaded CEFR recommendation and global-review action;
+5. quick navigation to Topics, My Sets and detailed Learning Progress.
 
 Each Set preview may show its real name, optional description and Item count. Set management/detail navigation remains available, while Learn is shown only when `item_count > 0`. Preview order must not be described as recent, recommended or in progress.
 
-Progress and My Sets load independently. Each section provides an accessible initial loading state, its own first-use empty state and a safe scoped error/retry state with duplicate-pending and stale-response protection. Failure of one section leaves successful content from the other usable.
+Progress, My Sets, Streak, CEFR path, and global review load independently. Each data-backed section provides an accessible initial loading state, its own valid empty/completed state and a safe scoped error/retry state with duplicate-pending and stale-response protection. Failure of one section leaves successful sibling content usable.
 
-Authenticated `ADMIN` keeps `/dashboard` as a neutral safe landing and must not trigger USER-only Progress or My Sets requests. V1 does not create an Admin Dashboard. Guest access continues to use the existing protected-route redirect behavior.
+Authenticated `ADMIN` keeps `/dashboard` as a neutral safe landing and must not trigger USER-only Progress, My Sets, Streak, CEFR path, or global-review requests. V1 does not create an Admin Dashboard. Guest access continues to use the existing protected-route redirect behavior.
 
 The page must use semantic headings, native controls, visible focus, textual meaning independent of color, appropriate live/status/alert semantics, predictable retry focus, existing touch-target conventions and reduced-motion support. Desktop, tablet and mobile layouts must have no horizontal overflow and must preserve the current App Layout behavior.
 
 A dedicated HUMAN UI/UX Design Checkpoint is mandatory after the role-safe functional foundation and before production Dashboard UI implementation. This active contract defines function and states, not final pixel-level composition.
 
-Dashboard V1 does not display conceptual `NEW`, `NEEDS_REVIEW` as a queue/action, global/Topic/Set percentages, Continue Learning/recency, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. XP & Level V1 adds one compact authenticated-USER summary inside the existing Progress section: current Level, total XP and a text-plus-progress indication toward the backend-provided next threshold. Zero XP is valid success data. At Level 15 it renders `Level 15 — MAX`, no next target, and a complete/MAX state without implying XP stops. Frontend computes only bounded presentation width from backend bounds; it does not contain the authoritative threshold table or decide Level.
+Dashboard does not display conceptual `NEW`, raw `NEEDS_REVIEW` as a queue, Topic percentages, recency recommendations, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. CEFR recommendation and global-review due state come only from their active Backend reads. XP & Level V1 adds one compact authenticated-USER summary inside the existing Progress section: current Level, total XP and a text-plus-progress indication toward the backend-provided next threshold. Zero XP is valid success data. At Level 15 it renders `Level 15 — MAX`, no next target, and a complete/MAX state without implying XP stops. Frontend computes only bounded presentation width from backend bounds; it does not contain authoritative Level, CEFR, recommendation, or SRS calculations.
 
 Streak V1 adds a separate compact USER region headed **Chuỗi học tập**, loaded from the authenticated Streak read without redesigning Progress/XP/Level or My Sets. Success shows an accessible **Chuỗi hiện tại N ngày** value plus textual state: completed today, positive-but-pending today, or zero/broken and ready to restart. Loading is an announced `status` with reduced-motion-safe skeleton. A first-load failure is an `alert` and never appears as successful zero data. A refresh failure may retain the last value but must label it as potentially stale. Refresh/retry controls have explicit accessible names; failed retry restores focus to retry, while successful retry moves focus to the section heading. ADMIN retains the neutral Dashboard and makes no USER Progress, XP or Streak request.
 
@@ -1533,4 +1534,34 @@ The primary goal of the UI/UX is to create a modern, clear, motivating, and easy
 The interface should help users focus on learning vocabulary rather than navigating a complicated application.
 
 The design should look professional enough for a graduation thesis project while remaining realistic to implement within the project's available development time.
+
+28. CEFR Learning Path V1 Active UX Contract
+
+### 28.1 Dashboard learning path
+
+The authenticated USER Dashboard independently loads one CEFR path section. It identifies the highest unlocked A1–C1 level, shows current completed/required Set counts and textual locked/unlocked meaning, and exposes at most one primary START or RESUME action. A resumable pass at that primary level has priority; otherwise Backend order determines the first incomplete required Set. Earlier unlocked-level incomplete Sets remain available in a separate expandable list and never pull the primary recommendation backward.
+
+The section distinguishes `NO_REQUIRED_SETS`, `EMPTY_REQUIRED_SET`, no eligible recommendation, current all-Sets-complete, and preserved terminal achievement with newly incomplete current curriculum. Terminal achievement text does not imply every current Set remains complete. Private My Sets previews and Discovery Featured content keep their existing meaning.
+
+Path loading, error, retry, and stale-response handling remain section-scoped. Existing Progress, XP/Level, Streak, and My Sets content remains usable when the path source fails. ADMIN retains the neutral Dashboard and makes no USER learning-path or global-review request.
+
+### 28.2 Full NORMAL Set pass
+
+For a required unlocked public Set, NORMAL learning starts or resumes the backend pass before requesting a bounded session. The UI reuses existing flashcards and reveal evidence for batches of at most 10, shows authoritative full-pass studied/remaining counts between batches, explicitly completes each bounded session, and requests the next unresolved batch.
+
+Reaching or revealing the final card does not complete the Set. When the Backend returns `PASS_READY_TO_COMPLETE`, the UI shows **Sẵn sàng hoàn thành bộ từ** and enables explicit **Hoàn thành bộ từ**. Accepted final completion shows the refreshed highest unlocked level and terminal-achievement state when applicable. Reload/login recovery reconciles pass and session APIs; client storage remains presentation-only.
+
+Expired/inaccessible batches offer safe recovery. A frozen snapshot whose item was removed or became inaccessible shows a restart-required state and an explicit new-snapshot action; it never silently credits the item. Locked direct routes show a textual Backend-derived lock state. Existing private/copied Set NORMAL behavior remains outside CEFR credit.
+
+### 28.3 Global review
+
+The authenticated USER route `/review` creates or restores one fixed backend `GLOBAL`/`SRS` snapshot of at most 10 cards. It displays resolved/total progress, card content, reveal interaction, and the four ratings **Lại**, **Khó**, **Tốt**, and **Dễ**. `AGAIN` requeues; other accepted ratings resolve the item. Pending submissions prevent duplicate actions, and inaccessible/expired/error states provide explicit recovery.
+
+Completing the fixed snapshot shows **Hoàn thành phiên ôn tập**. **Ôn tiếp** explicitly requests a fresh Backend eligibility evaluation; the current queue never expands silently. No eligible item shows the up-to-date state, while a future-due response may show the nearest review time. Review UI never claims Set completion, CEFR unlock, or mastery.
+
+Dashboard independently loads the global-review summary. Due items show the authoritative count and **Ôn ngay** action; no due items show the up-to-date state and optional nearest future time. Review failure does not discard sibling Dashboard sections, and ADMIN makes no review-summary request.
+
+### 28.4 Accessibility and review status
+
+Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state. A Focused UI/UX Review has not been executed or approved for this feature; visual and interaction acceptance remains part of the separately gated closure stage.
 ```

@@ -147,6 +147,22 @@ test("sessionless SRS never calls session or Streak factories", async () => {
   assert.equal(sessionCalls, 0);
 });
 
+test("GLOBAL SRS accepts null Set identity while preserving receipt, resolution, XP and Streak semantics", async () => {
+  const fixture = createFixture();
+  Object.assign(fixture.session, {
+    scope: "GLOBAL",
+    vocabulary_set_id: null,
+    set_id_snapshot: null,
+    cefr_learning_pass_id: null,
+  });
+  const result = await fixture.service.recordMeaningfulEvent(USER, event("GOOD", { set_id: null }));
+  assert.equal(result.session.scope, "GLOBAL");
+  assert.equal(result.session.set_id, null);
+  assert.equal(result.session.state, "COMPLETED");
+  assert.equal(fixture.receipts.length, 1);
+  assert.equal(fixture.streakDates.length, 1);
+});
+
 function event(rating, overrides = {}) {
   return {
     event_id: EVENT,

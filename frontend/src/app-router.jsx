@@ -9,6 +9,7 @@ import {
 } from "./auth/ui/route-guards.jsx";
 import { DashboardPage } from "./dashboard/dashboard-page.jsx";
 import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
+import { GlobalReviewPage } from "./learning/global-review-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
 import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
 import { LandingPage } from "./landing/landing-page.jsx";
@@ -54,6 +55,7 @@ export function AppRouter() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route element={<UserRoute />}>
               <Route path="/learn/vocabulary-sets/:setId" element={<LearningFoundationPage />} />
+              <Route path="/review" element={<GlobalReviewPage />} />
               <Route path="/quiz/vocabulary-sets/:setId" element={<QuizFoundationPage />} />
               <Route path="/pronunciation/vocabulary-sets/:setId" element={<SpeakingPracticePage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />

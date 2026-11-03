@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { randomUUID } from "node:crypto";
 import {
   SRS_RATINGS,
   calculateRatingTransition,
@@ -14,7 +15,7 @@ import {
   assertSnapshotIntegrity,
 } from "../repositories/learning-session-repository.js";
 import { completeLearningSessionAtomically } from "./learning-session-persistence.js";
-import { captureOperationTime, projectSessionLifecycle } from "./learning-session-domain.js";
+import { captureOperationTime, deriveSessionExpiry, projectSessionLifecycle } from "./learning-session-domain.js";
 import { readStreakProjection, toSessionProjection } from "./learning-session-service.js";
 
 const UUID_PATTERN =
@@ -32,6 +33,7 @@ const PROGRESS_QUERY_FIELDS = new Set(["page", "page_size", "status"]);
 const PROGRESS_STATUSES = new Set(["LEARNING", "LEARNED", "NEEDS_REVIEW"]);
 const DEFAULT_PROGRESS_PAGE_SIZE = 20;
 const MAX_PROGRESS_PAGE_SIZE = 100;
+const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1"];
 
 export class LearningServiceError extends Error {
   constructor(code, message) {
@@ -45,7 +47,11 @@ export function createLearningService({
   learningRepository,
   createSessionRepository,
   createStreakRepository,
+  createLearningPathRepository,
+  authorizeSetActivity = async () => {},
+  authorizeGlobalReview = async () => {},
   now = () => new Date(),
+  uuid = randomUUID,
 }) {
   return {
     async getLearningSet(userId, setId, input = {}) {
@@ -53,55 +59,12 @@ export function createLearningService({
       validateUuid(setId);
       const { mode } = validateSetQuery(input);
       const evaluatedAt = captureNow(now);
-      const set = await learningRepository.findAccessibleSetForUser(setId, userId);
-      if (!set) throw learningSetNotFoundError();
-      if (set.items.length === 0) {
-        throw new LearningServiceError(
-          "LEARNING_SET_EMPTY",
-          "Learning set has no vocabulary to learn.",
-        );
-      }
-
-      const evaluatedItems = set.items.map((item) => ({
-        item,
-        evaluation: evaluateProgress(item.vocabulary.learning_progress[0], evaluatedAt),
-      }));
-      if (mode === "NORMAL") {
-        return {
-          id: set.id,
-          name: set.name,
-          topic: set.topic,
-          mode,
-          total_items: set.items.length,
-          cards: evaluatedItems.map(({ item, evaluation }) => toCard(item, evaluation)),
-        };
-      }
-
-      const eligible = evaluatedItems
-        .filter(({ evaluation }) => evaluation.is_eligible)
-        .sort(compareSrsItems);
-      const futureDates = evaluatedItems
-        .filter(({ evaluation }) => !evaluation.is_eligible && evaluation.next_review_at)
-        .map(({ evaluation }) => evaluation.next_review_at);
-      const nearestFuture = futureDates.length === 0
-        ? null
-        : new Date(Math.min(...futureDates.map((date) => date.getTime())));
-
-      return {
-        id: set.id,
-        name: set.name,
-        topic: set.topic,
-        mode,
-        evaluated_at: evaluatedAt,
-        total_items: set.items.length,
-        eligible_count: eligible.length,
-        next_review_at: nearestFuture,
-        cards: eligible.map(({ item, evaluation }) => toCard(
-          item,
-          evaluation,
-          createRatingPreviews(item.vocabulary.learning_progress[0], evaluatedAt),
-        )),
-      };
+      return learningRepository.withTransaction(async (repository, transaction) => {
+        const set = await repository.findAccessibleSetForUser(setId, userId);
+        if (!set) throw learningSetNotFoundError();
+        await authorizeSetActivity(transaction, userId, setId);
+        return projectLearningSet(set, mode, evaluatedAt);
+      });
     },
 
     async getLearningProgress(userId, input) {
@@ -143,6 +106,90 @@ export function createLearningService({
       };
     },
 
+    async getGlobalReviewSummary(userId) {
+      validateUuid(userId);
+      const evaluatedAt = captureNow(now);
+      return learningRepository.withTransaction(async (repository, transaction) => {
+        const unlockedLevels = await readUnlockedLevels(
+          createLearningPathRepository(transaction), userId,
+        );
+        const candidates = await repository.listReachableReviewCandidates(userId, unlockedLevels);
+        return summarizeGlobalReview(candidates, evaluatedAt);
+      });
+    },
+
+    async createGlobalReviewSession(userId, input) {
+      validateUuid(userId);
+      const operationId = validateOperationInput(input);
+      try {
+        return await learningRepository.withTransaction(async (repository, transaction) => {
+        const evaluatedAt = captureNow(now);
+        const sessions = createSessionRepository(transaction);
+        const pathRepository = createLearningPathRepository(transaction);
+        const unlockedLevels = await readUnlockedLevels(pathRepository, userId);
+        const candidates = await repository.listReachableReviewCandidates(userId, unlockedLevels);
+        const replay = await sessions.findCreationReplay(userId, operationId);
+        if (replay) {
+          if (replay.scope !== "GLOBAL" || replay.mode !== "SRS") {
+            throw reviewOperationConflictError();
+          }
+          return {
+            session: toSessionProjection(replay, evaluatedAt),
+            cards: projectGlobalReviewCards(candidates, replay.items, evaluatedAt),
+            evaluated_at: evaluatedAt,
+            replayed: true,
+          };
+        }
+        const evaluated = evaluateGlobalReviewCandidates(candidates, evaluatedAt);
+        const due = evaluated.filter(({ evaluation }) => evaluation.is_eligible)
+          .sort(compareSrsItems).slice(0, 10);
+        if (due.length === 0) {
+          const summary = summarizeEvaluatedGlobalReview(evaluated, evaluatedAt);
+          return {
+            session: null,
+            cards: [],
+            reason: summary.nearest_future_review_at ? "REVIEW_FUTURE_DUE" : "REVIEW_UP_TO_DATE",
+            evaluated_at: evaluatedAt,
+            nearest_future_review_at: summary.nearest_future_review_at,
+            replayed: false,
+          };
+        }
+        const items = due.map(({ item }, position) => ({
+          vocabulary_id: item.vocabulary.id, position,
+        }));
+        await authorizeGlobalReview(transaction, userId, items);
+        const createdAt = evaluatedAt;
+        const session = await sessions.createSessionWithItems({
+          id: uuid(), user_id: userId, vocabulary_set_id: null, set_id_snapshot: null,
+          scope: "GLOBAL", cefr_learning_pass_id: null, mode: "SRS",
+          create_operation_id: operationId, snapshot_size: items.length,
+          created_at: createdAt, expires_at: deriveSessionExpiry(createdAt), items,
+        });
+        return {
+          session: toSessionProjection(session, evaluatedAt),
+          cards: due.map(({ item, evaluation }) => toCard(
+            item, evaluation, createRatingPreviews(item.vocabulary.learning_progress[0], evaluatedAt),
+          )),
+          evaluated_at: evaluatedAt,
+          replayed: false,
+        };
+        });
+      } catch (error) {
+        if (error?.code !== "P2002") throw error;
+        return learningRepository.withTransaction(async (repository, transaction) => {
+          const evaluatedAt = captureNow(now);
+          const sessions = createSessionRepository(transaction);
+          const replay = await sessions.findCreationReplay(userId, operationId);
+          if (!replay || replay.scope !== "GLOBAL" || replay.mode !== "SRS") {
+            throw reviewOperationConflictError();
+          }
+          const levels = await readUnlockedLevels(createLearningPathRepository(transaction), userId);
+          const candidates = await repository.listReachableReviewCandidates(userId, levels);
+          return { session: toSessionProjection(replay, evaluatedAt), cards: projectGlobalReviewCards(candidates, replay.items, evaluatedAt), evaluated_at: evaluatedAt, replayed: true };
+        });
+      }
+    },
+
     async recordMeaningfulEvent(userId, input) {
       validateUuid(userId);
       const event = validateEventInput(input);
@@ -154,13 +201,13 @@ export function createLearningService({
         try {
           return await recordSessionAwareSrsEvent({
             learningRepository, createSessionRepository, createStreakRepository,
-            userId, event, now,
+            authorizeSetActivity, authorizeGlobalReview, userId, event, now,
           });
         } catch (error) {
           if (isSrsReceiptCollision(error) || isEvidenceEventCollision(error)) {
             return recordSessionAwareSrsEvent({
               learningRepository, createSessionRepository, createStreakRepository,
-              userId, event, now,
+              authorizeSetActivity, authorizeGlobalReview, userId, event, now,
             });
           }
           if (isProgressIdentityCollision(error) || error?.code === "P2034"
@@ -172,12 +219,13 @@ export function createLearningService({
       }
       const acceptedAt = captureNow(now);
       try {
-        return await learningRepository.withTransaction(async (repository) => {
+        return await learningRepository.withTransaction(async (repository, transaction) => {
           const accessibleSet = await repository.lockAccessibleSetForUser(
             event.set_id,
             userId,
           );
           if (!accessibleSet) throw learningSetNotFoundError();
+          await authorizeSetActivity(transaction, userId, event.set_id);
           const setItem = await repository.lockSetItem(
             event.set_id,
             event.vocabulary_id,
@@ -291,17 +339,52 @@ export function createLearningService({
   };
 }
 
+function projectLearningSet(set, mode, evaluatedAt) {
+  if (set.items.length === 0) {
+    throw new LearningServiceError("LEARNING_SET_EMPTY", "Learning set has no vocabulary to learn.");
+  }
+  const evaluatedItems = set.items.map((item) => ({
+    item,
+    evaluation: evaluateProgress(item.vocabulary.learning_progress[0], evaluatedAt),
+  }));
+  if (mode === "NORMAL") {
+    return {
+      id: set.id, name: set.name, topic: set.topic, mode,
+      total_items: set.items.length,
+      cards: evaluatedItems.map(({ item, evaluation }) => toCard(item, evaluation)),
+    };
+  }
+  const eligible = evaluatedItems.filter(({ evaluation }) => evaluation.is_eligible).sort(compareSrsItems);
+  const futureDates = evaluatedItems
+    .filter(({ evaluation }) => !evaluation.is_eligible && evaluation.next_review_at)
+    .map(({ evaluation }) => evaluation.next_review_at);
+  const nearestFuture = futureDates.length === 0
+    ? null
+    : new Date(Math.min(...futureDates.map((date) => date.getTime())));
+  return {
+    id: set.id, name: set.name, topic: set.topic, mode, evaluated_at: evaluatedAt,
+    total_items: set.items.length, eligible_count: eligible.length, next_review_at: nearestFuture,
+    cards: eligible.map(({ item, evaluation }) => toCard(
+      item, evaluation, createRatingPreviews(item.vocabulary.learning_progress[0], evaluatedAt),
+    )),
+  };
+}
+
 async function recordSessionAwareSrsEvent({
-  learningRepository, createSessionRepository, createStreakRepository, userId, event, now,
+  learningRepository, createSessionRepository, createStreakRepository,
+  authorizeSetActivity, authorizeGlobalReview, userId, event, now,
 }) {
   return learningRepository.withTransaction(async (repository, transaction) => {
     const sessions = createSessionRepository(transaction);
     const streaks = createStreakRepository(transaction);
     const session = await sessions.lockOwnedSession(event.session_id, userId);
     if (!session) throw sessionNotFoundError();
-    if (session.mode !== "SRS" || session.set_id_snapshot !== event.set_id) {
+    const globalSession = session.scope === "GLOBAL";
+    if (session.mode !== "SRS"
+      || (globalSession ? event.set_id !== null : session.set_id_snapshot !== event.set_id)) {
       throw sessionEventConflictError();
     }
+    if (!globalSession) await authorizeSetActivity(transaction, userId, event.set_id);
     const lockedItems = await sessions.lockSessionItems(session.id);
     assertSnapshotIntegrity(session.snapshot_size, lockedItems);
     const item = lockedItems.find(({ vocabulary_id: vocabularyId }) => (
@@ -323,14 +406,20 @@ async function recordSessionAwareSrsEvent({
       throw sessionEventConflictError();
     }
 
-    if (!await repository.lockAccessibleSetForSessionSnapshot(event.set_id, userId)) {
-      throw sessionInaccessibleError();
-    }
-    for (const candidate of [...lockedItems].sort((left, right) => (
-      left.vocabulary_id.localeCompare(right.vocabulary_id)
-    ))) {
-      if (!await repository.lockSetItem(event.set_id, candidate.vocabulary_id)) {
+    if (globalSession) {
+      await authorizeGlobalReview(
+        transaction, userId, lockedItems.filter(({ evidence }) => evidence === null),
+      );
+    } else {
+      if (!await repository.lockAccessibleSetForSessionSnapshot(event.set_id, userId)) {
         throw sessionInaccessibleError();
+      }
+      for (const candidate of [...lockedItems].sort((left, right) => (
+        left.vocabulary_id.localeCompare(right.vocabulary_id)
+      ))) {
+        if (!await repository.lockSetItem(event.set_id, candidate.vocabulary_id)) {
+          throw sessionInaccessibleError();
+        }
       }
     }
     await repository.lockProgressIdentity(userId, event.vocabulary_id);
@@ -560,6 +649,77 @@ function compareSrsItems(left, right) {
     || left.item.vocabulary.id.localeCompare(right.item.vocabulary.id);
 }
 
+export function createGlobalReviewAuthorizer({
+  createLearningRepository,
+  createLearningPathRepository,
+}) {
+  return async (transaction, userId, items, { throwOnFailure = true } = {}) => {
+    const repository = createLearningRepository(transaction);
+    const pathRepository = createLearningPathRepository(transaction);
+    const unlockedLevels = await readUnlockedLevels(pathRepository, userId);
+    for (const item of [...items].sort((left, right) => (
+      left.vocabulary_id.localeCompare(right.vocabulary_id)
+    ))) {
+      if (!await repository.isReviewVocabularyReachable(
+        userId, item.vocabulary_id, unlockedLevels,
+      )) {
+        if (throwOnFailure) throw sessionInaccessibleError();
+        return false;
+      }
+    }
+    return true;
+  };
+}
+
+async function readUnlockedLevels(pathRepository, userId) {
+  const state = await pathRepository.findPathState(userId);
+  const highest = state?.highest_unlocked_level ?? "A1";
+  return CEFR_LEVELS.slice(0, CEFR_LEVELS.indexOf(highest) + 1);
+}
+
+function evaluateGlobalReviewCandidates(candidates, evaluatedAt) {
+  return candidates.map((candidate, position) => {
+    const item = {
+      position,
+      vocabulary: { ...candidate.vocabulary, learning_progress: [candidate] },
+    };
+    return { item, evaluation: evaluateProgress(candidate, evaluatedAt) };
+  });
+}
+
+function summarizeGlobalReview(candidates, evaluatedAt) {
+  return summarizeEvaluatedGlobalReview(
+    evaluateGlobalReviewCandidates(candidates, evaluatedAt), evaluatedAt,
+  );
+}
+
+function summarizeEvaluatedGlobalReview(evaluated, evaluatedAt) {
+  const dueCount = evaluated.filter(({ evaluation }) => evaluation.is_eligible).length;
+  const future = evaluated.map(({ evaluation }) => evaluation.next_review_at)
+    .filter((value) => value && new Date(value) > evaluatedAt)
+    .map((value) => new Date(value));
+  return {
+    due_count: dueCount,
+    has_due_items: dueCount > 0,
+    evaluated_at: evaluatedAt,
+    nearest_future_review_at: future.length === 0
+      ? null : new Date(Math.min(...future.map((value) => value.getTime()))),
+  };
+}
+
+function projectGlobalReviewCards(candidates, sessionItems, evaluatedAt) {
+  const byId = new Map(evaluateGlobalReviewCandidates(candidates, evaluatedAt)
+    .map((entry) => [entry.item.vocabulary.id, entry]));
+  return sessionItems.map(({ vocabulary_id: vocabularyId }) => {
+    const entry = byId.get(vocabularyId);
+    if (!entry) throw sessionInaccessibleError();
+    return toCard(
+      entry.item, entry.evaluation,
+      createRatingPreviews(entry.item.vocabulary.learning_progress[0], evaluatedAt),
+    );
+  });
+}
+
 function toCard(item, evaluation, ratingPreviews = undefined) {
   const { learning_progress: _progressRows, ...vocabulary } = item.vocabulary;
   return {
@@ -645,9 +805,10 @@ function validateEventInput(input) {
     throw validationError();
   }
   validateUuid(input.event_id);
-  validateUuid(input.set_id);
+  if (input.set_id !== null) validateUuid(input.set_id);
   validateUuid(input.vocabulary_id);
   if (Object.hasOwn(input, "session_id")) validateUuid(input.session_id);
+  if (input.set_id === null && !Object.hasOwn(input, "session_id")) throw validationError();
   if (
     !Number.isSafeInteger(input.expected_revision)
     || input.expected_revision < 0
@@ -656,6 +817,15 @@ function validateEventInput(input) {
     throw validationError();
   }
   return { ...input };
+}
+
+function validateOperationInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || Object.keys(input).length !== 1 || !Object.hasOwn(input, "operation_id")) {
+    throw validationError();
+  }
+  validateUuid(input.operation_id);
+  return input.operation_id;
 }
 
 function validateProgressQuery(input) {
@@ -749,6 +919,13 @@ function sessionEventConflictError() {
   return new LearningServiceError(
     "LEARNING_SESSION_EVENT_CONFLICT",
     "Learning session event conflicts with accepted evidence.",
+  );
+}
+
+function reviewOperationConflictError() {
+  return new LearningServiceError(
+    "GLOBAL_REVIEW_OPERATION_CONFLICT",
+    "Global review operation conflicts with an existing session.",
   );
 }
 

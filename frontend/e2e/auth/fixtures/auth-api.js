@@ -46,6 +46,37 @@ export const responses = Object.freeze({
 export async function installAuthApiMock(page, handlers = {}) {
   const calls = [];
 
+  await page.route("**/api/learning-path", (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        success: true,
+        data: {
+          evaluated_at: "2026-11-03T00:00:00.000Z",
+          highest_unlocked_level: "A1",
+          path_completed_at: null,
+          levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+            level,
+            unlocked: index === 0,
+            required_count: 0,
+            completed_count: 0,
+            configuration: "NO_REQUIRED_SETS",
+            current_complete: false,
+            incomplete_sets: [],
+          })),
+          recommendation: null,
+          all_current_sets_complete: false,
+        },
+      },
+    }),
+  );
+  await page.route("**/api/learning/review", (route) =>
+    route.fulfill({
+      status: 200,
+      json: { success: true, data: { due_count: 0, has_due_items: false, evaluated_at: "2026-11-03T00:00:00.000Z", nearest_future_review_at: null } },
+    }),
+  );
+
   await page.route("**/api/learning/progress**", (route) =>
     route.fulfill({
       status: 200,

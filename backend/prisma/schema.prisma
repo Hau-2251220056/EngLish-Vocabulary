@@ -37,6 +37,17 @@ enum LEARNING_SESSION_STATUS {
   COMPLETED
 }
 
+enum LEARNING_SESSION_SCOPE {
+  SET
+  GLOBAL
+}
+
+enum CEFR_LEARNING_PASS_STATUS {
+  ACTIVE
+  INVALIDATED
+  COMPLETED
+}
+
 enum SESSION_ITEM_EVIDENCE {
   NORMAL_REVEALED
   SRS_HARD
@@ -66,6 +77,8 @@ model USER {
   xp_rewards                           XP_REWARD[]
   learning_sessions                    LEARNING_SESSION[]
   streak_days                          STREAK_DAY[]
+  cefr_learning_passes                 CEFR_LEARNING_PASS[]
+  cefr_learning_path_state             CEFR_LEARNING_PATH_STATE?
 }
 
 model AUTH_SESSION {
@@ -141,6 +154,7 @@ model VOCABULARY_SET {
   items                                VOCABULARY_SET_ITEM[]
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationSet")
   learning_sessions                    LEARNING_SESSION[]
+  cefr_learning_passes                 CEFR_LEARNING_PASS[]
 }
 
 model VOCABULARY_SET_ITEM {
@@ -197,7 +211,8 @@ model LEARNING_SESSION {
   id                  String                  @id @default(uuid()) @db.Uuid
   user_id             String                  @db.Uuid
   vocabulary_set_id   String?                 @db.Uuid
-  set_id_snapshot     String                  @db.Uuid
+  set_id_snapshot     String?                 @db.Uuid
+  scope               LEARNING_SESSION_SCOPE  @default(SET)
   mode                LEARNING_SESSION_MODE
   status              LEARNING_SESSION_STATUS @default(ACTIVE)
   create_operation_id String                  @db.Uuid
@@ -206,8 +221,10 @@ model LEARNING_SESSION {
   expires_at          DateTime                @db.Timestamp(3)
   completed_at        DateTime?               @db.Timestamp(3)
   completion_event_id String?                 @db.Uuid
+  cefr_learning_pass_id String?               @db.Uuid
   user                USER                    @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   vocabulary_set      VOCABULARY_SET?         @relation(fields: [vocabulary_set_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cefr_learning_pass  CEFR_LEARNING_PASS?     @relation(fields: [cefr_learning_pass_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items               LEARNING_SESSION_ITEM[]
   streak_days         STREAK_DAY[]
 
@@ -215,6 +232,51 @@ model LEARNING_SESSION {
   @@unique([user_id, completion_event_id])
   @@index([user_id, status, expires_at])
   @@index([vocabulary_set_id])
+  @@index([cefr_learning_pass_id])
+}
+
+model CEFR_LEARNING_PASS {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  user_id              String                    @db.Uuid
+  vocabulary_set_id    String?                   @db.Uuid
+  set_id_snapshot      String                    @db.Uuid
+  status               CEFR_LEARNING_PASS_STATUS @default(ACTIVE)
+  create_operation_id  String                    @db.Uuid
+  snapshot_size        Int
+  created_at           DateTime                  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @db.Timestamp(3)
+  completed_at         DateTime?                 @db.Timestamp(3)
+  completion_event_id  String?                   @db.Uuid
+  invalidated_at       DateTime?                 @db.Timestamp(3)
+  user                 USER                      @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  vocabulary_set       VOCABULARY_SET?           @relation(fields: [vocabulary_set_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  items                CEFR_LEARNING_PASS_ITEM[]
+  learning_sessions    LEARNING_SESSION[]
+
+  @@unique([user_id, create_operation_id])
+  @@unique([user_id, completion_event_id])
+  @@index([user_id, status])
+  @@index([vocabulary_set_id])
+  @@index([set_id_snapshot])
+}
+
+model CEFR_LEARNING_PASS_ITEM {
+  id             String             @id @default(uuid()) @db.Uuid
+  pass_id        String             @db.Uuid
+  vocabulary_id  String             @db.Uuid
+  position       Int
+  pass           CEFR_LEARNING_PASS @relation(fields: [pass_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([pass_id, vocabulary_id])
+  @@unique([pass_id, position])
+}
+
+model CEFR_LEARNING_PATH_STATE {
+  user_id               String   @id @db.Uuid
+  highest_unlocked_level String  @default("A1") @db.Text
+  path_completed_at      DateTime? @db.Timestamp(3)
+  created_at             DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @db.Timestamp(3)
+  updated_at             DateTime @updatedAt @db.Timestamp(3)
+  user                   USER     @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
 }
 
 model LEARNING_SESSION_ITEM {

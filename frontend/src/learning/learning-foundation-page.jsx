@@ -4,16 +4,19 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { LearningSessionApiError, learningSessionService } from "../services/learning-session-service.js";
+import { LearningPathApiError, learningPathService } from "../services/learning-path-service.js";
 import { clearLearningSessionState } from "../session-storage/learning-session-state.js";
 import { showXpRewardToast } from "../components/xp-reward-notification.js";
 import {
   acknowledgeNormalReveal,
+  acceptPassLinkedNormalSession,
   canCompleteNormalLearningSession,
   completeNormalLearningSession,
   openNormalLearningSession,
   persistNormalLearningCursor,
   reconcileNormalLearningSession,
 } from "./normal-learning-session.js";
+import { runPathOperation } from "./learning-path-run.js";
 import {
   acceptSrsRatingProjection,
   openSrsLearningSession,
@@ -83,7 +86,8 @@ export function LearningFoundationPage() {
     () => loadLearningRunState(browserSessionStorage(), user.id, setId),
     [setId, user.id],
   );
-  const [mode, setMode] = useState(storedAtEntry?.version === 3 ? storedAtEntry.active_mode : "SRS");
+  const [mode, setMode] = useState(location.state?.learningPathAction
+    ? "NORMAL" : storedAtEntry?.version === 3 ? storedAtEntry.active_mode : "SRS");
   const [pendingMode, setPendingMode] = useState(null);
   const [payload, setPayload] = useState(null);
   const [runState, setRunState] = useState(null);
@@ -95,6 +99,9 @@ export function LearningFoundationPage() {
   const [normalSession, setNormalSession] = useState(null);
   const [normalSessionStatus, setNormalSessionStatus] = useState("idle");
   const [normalRetryVocabularyId, setNormalRetryVocabularyId] = useState(null);
+  const [pathPass, setPathPass] = useState(null);
+  const [pathPassStatus, setPathPassStatus] = useState("idle");
+  const [pathCompletion, setPathCompletion] = useState(null);
   const [srsSession, setSrsSession] = useState(null);
   const [srsSessionStatus, setSrsSessionStatus] = useState("idle");
   const [audioError, setAudioError] = useState(null);
@@ -132,6 +139,10 @@ export function LearningFoundationPage() {
         setRunState(nextState);
         setMode(requestedMode);
         if (requestedMode === "SRS") setSrsSessionStatus("loading");
+        else {
+          setPathPassStatus("loading");
+          setPathCompletion(null);
+        }
         setPendingMode(null);
         modeTransitionRef.current = false;
         setRevealed(false);
@@ -152,7 +163,8 @@ export function LearningFoundationPage() {
           setEventError("Không thể chuyển chế độ ôn tập. Vui lòng thử lại.");
           return;
         }
-        if (error instanceof LearningApiError && error.code === "LEARNING_SET_EMPTY") setStatus("empty");
+        if (error instanceof LearningApiError && error.code === "CEFR_LEVEL_LOCKED") setStatus("locked");
+        else if (error instanceof LearningApiError && error.code === "LEARNING_SET_EMPTY") setStatus("empty");
         else if (error instanceof LearningApiError && error.kind === "not-found") setStatus("not-found");
         else setStatus("error");
       },
@@ -165,6 +177,52 @@ export function LearningFoundationPage() {
       if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
     };
   }, [reloadToken, requestedMode, setId, supportsSpeechSynthesis, user.id]);
+
+  useEffect(() => {
+    if (status !== "ready" || mode !== "NORMAL" || !payload) return undefined;
+    let active = true;
+    void runPathOperation({
+      storage: browserSessionStorage(), userId: user.id, setId, kind: "START",
+      randomUuid: () => window.crypto.randomUUID(),
+      execute: (operationId) => learningPathService.startPass(setId, operationId),
+    }).then(({ pass }) => {
+      if (!active) return;
+      setPathPass(pass);
+      setPathPassStatus(pass.can_continue === false ? "restart-required" : "managed");
+    }).catch((error) => {
+      if (!active) return;
+      if (error instanceof LearningPathApiError
+        && ["CEFR_PASS_NOT_FOUND", "CEFR_SET_ALREADY_COMPLETED"].includes(error.code)) {
+        setPathPass(null);
+        setPathPassStatus("legacy");
+        return;
+      }
+      if (error instanceof LearningPathApiError && error.code === "CEFR_LEVEL_LOCKED") {
+        setPathPassStatus("locked");
+        setEventError("Bộ từ này thuộc cấp độ CEFR chưa được mở khóa. Bạn vẫn có thể xem chi tiết hoặc học một bản sao riêng.");
+        return;
+      }
+      if (error instanceof LearningPathApiError && error.code === "CEFR_PASS_RESTART_REQUIRED") {
+        const recommendationPassId = location.state?.passId;
+        if (typeof recommendationPassId === "string") {
+          void learningPathService.readPass(recommendationPassId).then((pass) => {
+            if (!active) return;
+            setPathPass(pass);
+            setPathPassStatus("restart-required");
+          }).catch(() => {
+            if (active) setPathPassStatus("error");
+          });
+        } else {
+          setPathPassStatus("error");
+        }
+        setEventError("Nội dung bộ từ đã thay đổi. Hãy mở lại lượt học từ Dashboard để bắt đầu lại an toàn.");
+        return;
+      }
+      setPathPassStatus("error");
+      setEventError("Chưa thể chuẩn bị lượt học CEFR. Vui lòng thử lại.");
+    });
+    return () => { active = false; };
+  }, [location.state?.passId, mode, payload, setId, status, user.id]);
 
   const allCards = useMemo(() => payload?.cards ?? [], [payload]);
   const proposedCards = useMemo(
@@ -194,18 +252,35 @@ export function LearningFoundationPage() {
   const pendingRating = pendingLearningRating(eventState, retryEvent);
 
   useEffect(() => {
-    if (status !== "ready" || mode !== "NORMAL" || !runState || cards.length === 0) {
+    if (status !== "ready" || mode !== "NORMAL" || !runState || cards.length === 0
+      || ["idle", "loading", "locked", "error", "restart-required"].includes(pathPassStatus)
+      || normalSession?.view_state === "COMPLETED") {
       return undefined;
     }
     let active = true;
     const identity = { userId: user.id, setId, mode: "NORMAL" };
-    void openNormalLearningSession({
+    const openSession = pathPassStatus === "managed" && pathPass
+      ? runPathOperation({
+        storage: browserSessionStorage(), userId: user.id, setId, passId: pathPass.id, kind: "NEXT_SESSION",
+        randomUuid: () => window.crypto.randomUUID(),
+        execute: (operationId) => learningPathService.createNextSession(pathPass.id, operationId),
+      }).then((result) => result.session === null ? null : acceptPassLinkedNormalSession({
+        storage: browserSessionStorage(), identity, session: result.session,
+      }))
+      : openNormalLearningSession({
       storage: browserSessionStorage(), identity,
       vocabularyIds: cards.map(({ id }) => id),
       service: learningSessionService,
       randomUuid: () => window.crypto.randomUUID(),
-    }).then((sessionState) => {
+    });
+    void openSession.then((sessionState) => {
       if (!active) return;
+      if (sessionState === null) {
+        setNormalSession(null);
+        setNormalSessionStatus("PASS_READY_TO_COMPLETE");
+        requestFocus("summary");
+        return;
+      }
       setNormalSession(sessionState);
       setNormalSessionStatus(sessionState?.view_state ?? "error");
       if (sessionState?.view_state === "COMPLETED") {
@@ -216,7 +291,13 @@ export function LearningFoundationPage() {
       } else if (sessionState?.view_state === "ACTIVE") {
         const byId = new Map(allCards.map((card) => [card.id, card]));
         const authoritativeCards = sessionState.item_ids.map((id) => byId.get(id)).filter(Boolean);
-        persist(selectNormalCard(runState, sessionState.cursor_vocabulary_id, authoritativeCards));
+        const currentBatchIds = new Set(proposedCards.map(({ id }) => id));
+        let resumedRun = runState;
+        if (!sessionState.item_ids.some((id) => currentBatchIds.has(id)) && proposedCards.length > 0) {
+          resumedRun = selectNormalCard(resumedRun, proposedCards.at(-1).id, proposedCards);
+          resumedRun = continueNormalRun(completeNormalBatch(resumedRun));
+        }
+        persist(selectNormalCard(resumedRun, sessionState.cursor_vocabulary_id, authoritativeCards));
       } else if (sessionState?.view_state === "EXPIRED") {
         setEventError("Phiên học đã hết hạn. Hãy bắt đầu lại nhóm từ để tiếp tục.");
       } else if (sessionState?.view_state === "INACCESSIBLE") {
@@ -230,7 +311,7 @@ export function LearningFoundationPage() {
     return () => { active = false; };
   // Batch identity owns the Backend session; cursor changes must not recreate it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, status, setId, user.id, cards.map(({ id }) => id).join(":")]);
+  }, [mode, normalSession?.view_state, pathPass?.id, pathPassStatus, status, setId, user.id, cards.map(({ id }) => id).join(":")]);
 
   useEffect(() => {
     if (status !== "ready" || mode !== "SRS" || !runState) return undefined;
@@ -416,6 +497,9 @@ export function LearningFoundationPage() {
       });
       setNormalSession(result.session_state);
       setNormalSessionStatus("COMPLETED");
+      if (pathPassStatus === "managed" && pathPass) {
+        setPathPass(await learningPathService.readPass(pathPass.id));
+      }
       let nextState = selectNormalCard(runState, cards.at(-1).id, cards);
       nextState = completeNormalBatch(nextState);
       persist(nextState);
@@ -478,6 +562,56 @@ export function LearningFoundationPage() {
     setAudioError(null);
     setAnnouncement("Đã chuyển sang nhóm từ tiếp theo.");
     requestFocus("card");
+  }
+
+  async function completeFullPass() {
+    if (!pathPass || pathPass.remaining_items !== 0 || eventState === "pending") return;
+    setEventState("pending");
+    setEventError(null);
+    try {
+      const result = await runPathOperation({
+        storage: browserSessionStorage(), userId: user.id, setId, passId: pathPass.id, kind: "COMPLETE_PASS",
+        randomUuid: () => window.crypto.randomUUID(),
+        execute: (operationId) => learningPathService.completePass(pathPass.id, operationId),
+      });
+      setPathPass(result.pass);
+      setPathCompletion(result.path);
+      setEventState("idle");
+      setAnnouncement("Đã hoàn thành bộ từ và cập nhật lộ trình CEFR.");
+      requestFocus("summary");
+    } catch (error) {
+      setEventState("error");
+      if (error instanceof LearningPathApiError && error.code === "CEFR_PASS_RESTART_REQUIRED") {
+        setPathPassStatus("restart-required");
+        setEventError("Nội dung bộ từ đã thay đổi. Hãy xác nhận bắt đầu lại với nội dung hiện tại.");
+      } else {
+        setEventError("Chưa thể hoàn thành bộ từ. Bằng chứng đã ghi nhận được giữ nguyên để bạn thử lại.");
+      }
+    }
+  }
+
+  async function restartFullPass() {
+    if (!pathPass || eventState === "pending") return;
+    setEventState("pending");
+    setEventError(null);
+    try {
+      const result = await runPathOperation({
+        storage: browserSessionStorage(), userId: user.id, setId, passId: pathPass.id, kind: "RESTART_PASS",
+        randomUuid: () => window.crypto.randomUUID(),
+        execute: (operationId) => learningPathService.restartPass(pathPass.id, operationId),
+      });
+      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+      setPathPass(result.pass);
+      setPathPassStatus("managed");
+      setNormalSession(null);
+      setNormalSessionStatus("idle");
+      persist(restartNormalRun(runState, allCards));
+      setEventState("idle");
+      setAnnouncement("Đã bắt đầu lại lượt học với nội dung hiện tại.");
+    } catch {
+      setEventState("error");
+      setEventError("Chưa thể bắt đầu lại lượt học. Vui lòng thử lại.");
+    }
   }
 
   async function submitRating(rating, attempt = null) {
@@ -588,6 +722,8 @@ export function LearningFoundationPage() {
       setSrsSessionStatus("idle");
       setStatus("loading");
       setReloadToken((value) => value + 1);
+    } else if (pathPassStatus === "managed" && pathPass?.state === "ACTIVE") {
+      setEventError("Lượt học CEFR đang được lưu tự động. Hãy tiếp tục lượt hiện tại; chỉ bắt đầu lại khi hệ thống báo nội dung đã thay đổi.");
     } else {
       clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
       setNormalSession(null);
@@ -677,19 +813,39 @@ export function LearningFoundationPage() {
     );
   }
 
-  if (mode === "NORMAL" && normalSummary?.batch_completed) {
-    const isFullRunCompleted = normalSummary.full_run_completed;
+  if (mode === "NORMAL" && pathPassStatus === "restart-required") {
+    return (
+      <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
+        <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-amber-200 bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="alert">
+          <h1 ref={summaryHeadingRef} tabIndex={-1}>Nội dung bộ từ đã thay đổi</h1>
+          <p>Lượt học cũ không thể tiếp tục an toàn. Bắt đầu lại sẽ tạo ảnh chụp nội dung mới; hệ thống không tự cấp hoàn thành.</p>
+          <div className="flex flex-wrap justify-center gap-3"><button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void restartFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang bắt đầu lại…" : "Bắt đầu lại"}</button><Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div>
+        </section>
+      </main>
+    );
+  }
+
+  const managedBatchComplete = mode === "NORMAL" && pathPassStatus === "managed"
+    && (normalSummary?.batch_completed || normalSessionStatus === "PASS_READY_TO_COMPLETE");
+  if (mode === "NORMAL" && (managedBatchComplete || normalSummary?.batch_completed)) {
+    const isManaged = pathPassStatus === "managed" && Boolean(pathPass);
+    const isFullRunCompleted = isManaged ? pathPass.state === "COMPLETED" : normalSummary.full_run_completed;
+    const isReadyForFinalCompletion = isManaged && pathPass.state === "ACTIVE" && pathPass.remaining_items === 0;
+    const remainingItems = isManaged ? pathPass.remaining_items : normalSummary.next_batch_size;
     return (
       <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
         <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status" aria-atomic="true">
           <BookOpenCheck className="mx-auto size-14 rounded-2xl bg-[var(--accent-primary-soft)] p-3 text-[var(--accent-primary-pressed)]" aria-hidden="true" />
-          <h1 ref={summaryHeadingRef} tabIndex={-1}>{isFullRunCompleted ? "Hoàn thành bộ từ" : "Hoàn thành phiên"}</h1>
-          <p>{isFullRunCompleted ? "Bạn đã hoàn thành toàn bộ lượt học này." : "Nhóm từ hiện tại đã được hoàn thành."}</p>
+          <h1 ref={summaryHeadingRef} tabIndex={-1}>{isFullRunCompleted ? "Hoàn thành bộ từ" : isReadyForFinalCompletion ? "Sẵn sàng hoàn thành bộ từ" : "Hoàn thành phiên"}</h1>
+          <p>{isFullRunCompleted ? "Lượt học đầy đủ đã được Backend chấp nhận." : isReadyForFinalCompletion ? `Đã học đủ ${pathPass.studied_items} / ${pathPass.snapshot_size} từ. Hãy xác nhận bước cuối.` : `Nhóm hiện tại đã hoàn thành. Còn ${remainingItems} từ trong lượt học.`}</p>
+          {pathCompletion ? <p className="rounded-lg bg-emerald-50 p-3 text-emerald-800" role="status">Cấp độ cao nhất đang mở: <strong>{pathCompletion.highest_unlocked_level}</strong>{pathCompletion.path_completed_at ? ". Bạn đã đạt thành tích hoàn thành lộ trình." : "."}</p> : null}
           {announcement ? <p className="sr-only">{announcement}</p> : null}
           <div className="flex flex-wrap justify-center gap-3">
             {isFullRunCompleted
-              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={restartRun}>Học lại từ đầu</button>
-              : <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={continueNormalBatch}>Học tiếp {normalSummary.next_batch_size} từ</button>}
+              ? null
+              : isReadyForFinalCompletion
+                ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void completeFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang hoàn thành…" : "Hoàn thành bộ từ"}</button>
+                : <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={continueNormalBatch}>Học tiếp {Math.min(10, remainingItems)} từ</button>}
             <Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link>
           </div>
         </section>
@@ -814,6 +970,7 @@ function LearningPageState({ onRetry, returnTo, status }) {
     loading: ["Đang chuẩn bị phiên ôn tập", "Nội dung bộ từ đang được tải."],
     empty: ["Bộ từ chưa có nội dung", "Hãy thêm từ vựng trước khi bắt đầu."],
     "not-found": ["Không tìm thấy bộ từ có thể học", "Bộ từ không tồn tại hoặc bạn không có quyền truy cập."],
+    locked: ["Cấp độ CEFR chưa được mở khóa", "Bạn có thể xem chi tiết hoặc tạo bản sao riêng, nhưng chưa thể học trực tiếp bộ từ công khai này."],
     error: ["Không thể tải phiên ôn tập", "Vui lòng kiểm tra kết nối và thử lại."],
   }[status] ?? ["Không thể mở phiên ôn tập", "Vui lòng quay lại và thử lại."];
   return <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}><section className="w-full max-w-[34rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-8 text-center" role={status === "loading" ? "status" : "alert"}><BookOpenCheck className="mx-auto size-14" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p><div className="flex justify-center gap-3">{status === "error" ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}<Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div></section></main>;

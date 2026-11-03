@@ -37,6 +37,25 @@ export function createLearningController({ learningService }) {
         handleKnownLearningError(error, res, next);
       }
     },
+
+    async getReviewSummary(req, res, next) {
+      try {
+        const summary = await learningService.getGlobalReviewSummary(req.user.id);
+        res.status(200).json({ success: true, data: summary });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async createReviewSession(req, res, next) {
+      try {
+        const result = await learningService.createGlobalReviewSession(req.user.id, req.body);
+        res.status(result.replayed ? 200 : result.session ? 201 : 200)
+          .json({ success: true, data: result });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
   };
 }
 
@@ -51,6 +70,7 @@ function handleKnownLearningError(error, res, next) {
     LEARNING_SESSION_INACCESSIBLE: 409,
     LEARNING_SESSION_EXPIRED: 409,
     LEARNING_SESSION_EVENT_CONFLICT: 409,
+    GLOBAL_REVIEW_OPERATION_CONFLICT: 409,
   };
   const status = statusByCode[error?.code];
   if (!status) {
