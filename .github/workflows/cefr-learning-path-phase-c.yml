@@ -276,7 +276,8 @@ jobs:
 
       - name: Report successful Phase C execution
         if: ${{ success() && steps.postgres_integration.outputs.status == 'pass' && steps.cleanup_inspection.outputs.status == 'pass' }}
-        run: echo "- Overall verdict: PASS" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "- Overall verdict: PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report incomplete Phase C execution
         if: failure()
