@@ -58,6 +58,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       authorized: ${{ steps.guard.outputs.authorized }}
+      operation: ${{ steps.guard.outputs.operation }}
     steps:
       - name: Enforce default-deny authorization
         id: guard
@@ -81,8 +82,10 @@ jobs:
           set -euo pipefail
 
           approved_repository="Hau-2251220056/EngLish-Vocabulary"
-          approved_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
-          approved_source_sha="01b16043359a05fce4b97f4d3303979ea66a0aea"
+          legacy_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
+          task15_operation="RUN_CEFR_TASK_015_GATE_2_VERIFICATION"
+          legacy_source_sha="01b16043359a05fce4b97f4d3303979ea66a0aea"
+          task15_source_sha="9dff189a399281c32fe51f921828d33919616a78"
           approved_source_ref="refs/heads/verification/cefr-learning-path-v1-phase-c"
           approved_workflow_path=".github/workflows/cefr-learning-path-phase-c.yml"
           approved_dispatch_ref="refs/heads/main"
@@ -94,7 +97,11 @@ jobs:
           [[ "$ACTUAL_WORKFLOW_REF" == "$approved_workflow_ref" ]]
           [[ "$ACTUAL_RUN_ATTEMPT" == "1" ]]
 
-          [[ "$INPUT_OPERATION" == "$approved_operation" ]]
+          case "$INPUT_OPERATION" in
+            "$legacy_operation") approved_source_sha="$legacy_source_sha" ;;
+            "$task15_operation") approved_source_sha="$task15_source_sha" ;;
+            *) echo "Unapproved operation." >&2; exit 1 ;;
+          esac
           [[ "$INPUT_AUTHORIZE_PHASE_C" == "true" ]]
           [[ "$INPUT_AUTHORIZE_POSTGRES" == "true" ]]
           [[ "$INPUT_REPOSITORY" == "$approved_repository" ]]
@@ -108,6 +115,7 @@ jobs:
           [[ "$ACTUAL_WORKFLOW_SHA" == "$INPUT_WORKFLOW_SHA" ]]
 
           echo "authorized=true" >> "$GITHUB_OUTPUT"
+          echo "operation=$INPUT_OPERATION" >> "$GITHUB_OUTPUT"
           {
             echo "## CEFR Phase C authorization: PASS"
             echo "- Repository: \`$ACTUAL_REPOSITORY\`"
@@ -119,7 +127,9 @@ jobs:
   verify-postgres:
     name: Verify CEFR migrations on disposable PostgreSQL 17
     needs: authorize
-    if: needs.authorize.outputs.authorized == 'true'
+    if: >-
+      needs.authorize.outputs.authorized == 'true' &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
@@ -300,3 +310,554 @@ jobs:
             echo "A required authorization, setup, test, or cleanup assertion failed."
             echo "Any unexecuted downstream check is NOT RUN, not PASS."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  task15-offline:
+    name: TASK-015 focused offline suites
+    needs: authorize
+    if: >-
+      needs.authorize.outputs.authorized == 'true' &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_TASK_015_GATE_2_VERIFICATION'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      backend_counts: ${{ steps.backend_offline.outputs.counts }}
+      frontend_counts: ${{ steps.frontend_offline.outputs.counts }}
+      backend_outcome: ${{ steps.backend_offline.outcome }}
+      frontend_outcome: ${{ steps.frontend_offline.outcome }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact TASK-015 source snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9dff189a399281c32fe51f921828d33919616a78
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable TASK-015 source identity
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          [[ "$GITHUB_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]]
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        env:
+          DATABASE_URL: postgresql://task15_invalid:task15_invalid@127.0.0.1:1/task15_offline_only
+        run: |
+          set -euo pipefail
+          npm --prefix backend ci
+          npm --prefix frontend ci
+
+      - name: Run focused backend offline suite
+        id: backend_offline
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          set +e
+          node --test --test-concurrency=1 \
+            test/learning/cefr-learning-path-guard-offline.test.js \
+            test/learning/cefr-learning-path-migration-safety.test.js \
+            test/learning/learning-path-service.test.js \
+            test/learning/learning-path-api.test.js \
+            test/learning/learning-path-authorization.test.js \
+            test/learning/learning-path-activity-boundaries.test.js \
+            test/learning/global-review-contract.test.js \
+            test/learning/global-review-service.test.js \
+            test/quiz/quiz-read.test.js \
+            test/quiz/quiz-answer.test.js \
+            test/streak/streak-srs-session.test.js \
+            | tee task15-backend-offline.tap
+          native=${PIPESTATUS[0]}
+          set -e
+          tests=$(awk '/^# tests / {v=$3} END {print v+0}' task15-backend-offline.tap)
+          pass=$(awk '/^# pass / {v=$3} END {print v+0}' task15-backend-offline.tap)
+          fail=$(awk '/^# fail / {v=$3} END {print v+0}' task15-backend-offline.tap)
+          skip=$(awk '/^# skipped / {v=$3} END {print v+0}' task15-backend-offline.tap)
+          echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
+          echo "- Backend offline: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
+
+      - name: Run focused frontend offline suite
+        id: frontend_offline
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          set +e
+          node --test \
+            test/learning-path-run.test.js \
+            test/learning-path-service.test.js \
+            test/learning-path-ui-contract.test.js \
+            test/global-review-service.test.js \
+            test/global-review-session.test.js \
+            test/global-review-ui-contract.test.js \
+            | tee task15-frontend-offline.tap
+          native=${PIPESTATUS[0]}
+          set -e
+          tests=$(awk '/^# tests / {v=$3} END {print v+0}' task15-frontend-offline.tap)
+          pass=$(awk '/^# pass / {v=$3} END {print v+0}' task15-frontend-offline.tap)
+          fail=$(awk '/^# fail / {v=$3} END {print v+0}' task15-frontend-offline.tap)
+          skip=$(awk '/^# skipped / {v=$3} END {print v+0}' task15-frontend-offline.tap)
+          echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
+          echo "- Frontend offline: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
+
+      - name: Enforce focused offline verdict
+        if: always()
+        env:
+          BACKEND_OUTCOME: ${{ steps.backend_offline.outcome }}
+          FRONTEND_OUTCOME: ${{ steps.frontend_offline.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$BACKEND_OUTCOME" == "success" ]]
+          [[ "$FRONTEND_OUTCOME" == "success" ]]
+
+  task15-mocked-chromium:
+    name: TASK-015 mocked Chromium
+    needs: [authorize, task15-offline]
+    if: >-
+      always() &&
+      needs.authorize.outputs.authorized == 'true' &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_TASK_015_GATE_2_VERIFICATION' &&
+      needs.task15-offline.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      counts: ${{ steps.mocked_browser.outputs.counts }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact TASK-015 source snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9dff189a399281c32fe51f921828d33919616a78
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable source identity
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install locked frontend dependencies and Chromium
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          node node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: Run mocked Chromium suite
+        id: mocked_browser
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          set +e
+          node node_modules/@playwright/test/cli.js test \
+            e2e/auth/learning-path-full-pass.spec.js \
+            e2e/auth/global-review.spec.js \
+            e2e/auth/dashboard-foundation.spec.js \
+            --config=playwright.config.js --workers=1 --retries=0 --reporter=json \
+            > task15-mocked.json
+          native=$?
+          set -e
+          counts=$(node -e 'const r=require("./task15-mocked.json");let a=[];const w=s=>{(s.specs||[]).forEach(x=>(x.tests||[]).forEach(t=>a.push(t.results.at(-1)?.status||"missing")));(s.suites||[]).forEach(w)};(r.suites||[]).forEach(w);let p=a.filter(x=>x==="passed").length,k=a.filter(x=>x==="skipped").length,f=a.length-p-k;console.log(`${a.length} ${p} ${f} ${k}`)')
+          read -r tests pass fail skip <<< "$counts"
+          echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
+          echo "- Mocked Chromium: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
+
+      - name: Enforce mocked Chromium verdict
+        if: always()
+        env:
+          OUTCOME: ${{ steps.mocked_browser.outcome }}
+        run: test "$OUTCOME" = success
+
+  task15-postgres-backend:
+    name: TASK-015 backend on disposable PostgreSQL 17
+    needs: [authorize, task15-offline]
+    if: >-
+      always() &&
+      needs.authorize.outputs.authorized == 'true' &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_TASK_015_GATE_2_VERIFICATION' &&
+      needs.task15-offline.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      counts: ${{ steps.backend_postgres.outputs.counts }}
+      cleanup: ${{ steps.backend_cleanup.outputs.status }}
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: task15_bootstrap
+          POSTGRES_PASSWORD: task15_bootstrap_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U task15_bootstrap -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact TASK-015 source snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9dff189a399281c32fe51f921828d33919616a78
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable source identity
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Initialize restricted owned backend schema
+        id: database_setup
+        env:
+          PGPASSWORD: task15_bootstrap_ci_only
+        run: |
+          set -euo pipefail
+          role=task15_backend_runner
+          database=elvocab_cefr_task15_backend_ci
+          schema="elvocab_task15_backend_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          marker="cefr-task15:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:backend"
+          [[ "$schema" =~ ^elvocab_task15_backend_[0-9]+_[0-9]+$ ]]
+          url="postgresql://${role}:task15_backend_ci_only@127.0.0.1:5432/${database}?schema=${schema}"
+          echo "TEST_DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "TASK15_DATABASE=$database" >> "$GITHUB_ENV"
+          echo "TASK15_ROLE=$role" >> "$GITHUB_ENV"
+          echo "TASK15_SCHEMA=$schema" >> "$GITHUB_ENV"
+          echo "TASK15_MARKER=$marker" >> "$GITHUB_ENV"
+          psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE $role LOGIN PASSWORD 'task15_backend_ci_only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;" \
+            -c "CREATE DATABASE $database OWNER $role;"
+          PGPASSWORD=task15_backend_ci_only psql -h 127.0.0.1 -U "$role" -d "$database" -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA \"$schema\" AUTHORIZATION $role;" \
+            -c "COMMENT ON SCHEMA \"$schema\" IS '$marker';"
+          actual=$(PGPASSWORD=task15_backend_ci_only psql -h 127.0.0.1 -U "$role" -d "$database" -At -v ON_ERROR_STOP=1 \
+            -c "SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname = '$schema';")
+          [[ "$actual" == "$marker" ]]
+
+      - name: Install backend dependencies and deploy migrations
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          npm ci
+          node node_modules/prisma/build/index.js migrate deploy
+
+      - name: Run backend PostgreSQL integration
+        id: backend_postgres
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          set +e
+          node --test --test-concurrency=1 \
+            test/learning/learning.test.js \
+            test/quiz/quiz.integration.test.js \
+            test/xp-level/xp-lifecycle.integration.test.js \
+            | tee task15-backend-postgres.tap
+          native=${PIPESTATUS[0]}
+          set -e
+          tests=$(awk '/^# tests / {v=$3} END {print v+0}' task15-backend-postgres.tap)
+          pass=$(awk '/^# pass / {v=$3} END {print v+0}' task15-backend-postgres.tap)
+          fail=$(awk '/^# fail / {v=$3} END {print v+0}' task15-backend-postgres.tap)
+          skip=$(awk '/^# skipped / {v=$3} END {print v+0}' task15-backend-postgres.tap)
+          echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
+          echo "- Backend PostgreSQL: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
+
+      - name: Inspect ownership and dispose backend database
+        id: backend_cleanup
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: task15_bootstrap_ci_only
+        run: |
+          set +e
+          database=${TASK15_DATABASE:-elvocab_cefr_task15_backend_ci}
+          role=${TASK15_ROLE:-task15_backend_runner}
+          schema=${TASK15_SCHEMA:-elvocab_task15_backend_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}}
+          expected=${TASK15_MARKER:-cefr-task15:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:backend}
+          exists=$(psql -h 127.0.0.1 -U task15_bootstrap -d postgres -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_database WHERE datname = '$database';")
+          exists_exit=$?
+          if [[ $exists_exit -ne 0 ]]; then
+            ownership=1
+            drop_database=1
+          elif [[ "$exists" == "1" ]]; then
+            marker=$(psql -h 127.0.0.1 -U task15_bootstrap -d "$database" -At -v ON_ERROR_STOP=1 \
+              -c "SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname = '$schema';")
+            [[ "$marker" == "$expected" ]]
+            ownership=$?
+            psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 \
+              -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$database' AND pid <> pg_backend_pid();" \
+              -c "DROP DATABASE \"$database\";"
+            drop_database=$?
+          else
+            ownership=0
+            drop_database=0
+          fi
+          psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 -c "DROP ROLE IF EXISTS \"$role\";"
+          drop_role=$?
+          [[ $drop_database -eq 0 && $drop_role -eq 0 ]]
+          dispose=$?
+          set -e
+          status=$([[ $ownership -eq 0 && $dispose -eq 0 ]] && echo pass || echo fail)
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "- Backend schema ownership: $([[ $ownership -eq 0 ]] && echo PASS || echo FAIL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend database disposal: $([[ $dispose -eq 0 ]] && echo PASS || echo FAIL)" >> "$GITHUB_STEP_SUMMARY"
+          [[ $ownership -eq 0 && $dispose -eq 0 ]]
+
+      - name: Enforce backend PostgreSQL verdict
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.backend_postgres.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.backend_cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$TEST_OUTCOME" == "success" ]]
+          [[ "$CLEANUP_OUTCOME" == "success" ]]
+
+  task15-real-stack:
+    name: TASK-015 real-stack Chromium on disposable PostgreSQL 17
+    needs: [authorize, task15-offline, task15-mocked-chromium, task15-postgres-backend]
+    if: >-
+      always() &&
+      needs.authorize.outputs.authorized == 'true' &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_TASK_015_GATE_2_VERIFICATION' &&
+      needs.task15-offline.result == 'success' &&
+      needs.task15-mocked-chromium.result == 'success' &&
+      needs.task15-postgres-backend.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      counts: ${{ steps.real_stack.outputs.counts }}
+      cleanup: ${{ steps.real_stack_cleanup.outputs.status }}
+      test_outcome: ${{ steps.real_stack.outcome }}
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: task15_bootstrap
+          POSTGRES_PASSWORD: task15_bootstrap_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U task15_bootstrap -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact TASK-015 source snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9dff189a399281c32fe51f921828d33919616a78
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable source identity and real-stack assets
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          test -f frontend/e2e/integration/cefr-learning-path-real-stack.spec.js
+          test -f frontend/e2e/integration/cefr-global-review-real-stack.spec.js
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Initialize restricted owned real-stack schema
+        id: database_setup
+        env:
+          PGPASSWORD: task15_bootstrap_ci_only
+        run: |
+          set -euo pipefail
+          role=task15_browser_runner
+          database=elvocab_cefr_task15_browser_ci
+          schema="elvocab_task15_browser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          marker="cefr-task15:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:browser"
+          [[ "$schema" =~ ^elvocab_task15_browser_[0-9]+_[0-9]+$ ]]
+          url="postgresql://${role}:task15_browser_ci_only@127.0.0.1:5432/${database}?schema=${schema}"
+          echo "TEST_DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "TASK15_DATABASE=$database" >> "$GITHUB_ENV"
+          echo "TASK15_ROLE=$role" >> "$GITHUB_ENV"
+          echo "TASK15_SCHEMA=$schema" >> "$GITHUB_ENV"
+          echo "TASK15_MARKER=$marker" >> "$GITHUB_ENV"
+          psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE $role LOGIN PASSWORD 'task15_browser_ci_only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;" \
+            -c "CREATE DATABASE $database OWNER $role;"
+          PGPASSWORD=task15_browser_ci_only psql -h 127.0.0.1 -U "$role" -d "$database" -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA \"$schema\" AUTHORIZATION $role;" \
+            -c "COMMENT ON SCHEMA \"$schema\" IS '$marker';"
+          actual=$(PGPASSWORD=task15_browser_ci_only psql -h 127.0.0.1 -U "$role" -d "$database" -At -v ON_ERROR_STOP=1 \
+            -c "SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname = '$schema';")
+          [[ "$actual" == "$marker" ]]
+
+      - name: Install locked dependencies and Chromium
+        run: |
+          set -euo pipefail
+          npm --prefix backend ci
+          npm --prefix frontend ci
+          node frontend/node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: Run focused real-stack Chromium suite
+        id: real_stack
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          set +e
+          node node_modules/@playwright/test/cli.js test \
+            e2e/integration/cefr-learning-path-real-stack.spec.js \
+            e2e/integration/cefr-global-review-real-stack.spec.js \
+            --config=playwright.integration.config.js --workers=1 --retries=0 --reporter=json \
+            > task15-real-stack.json
+          native=$?
+          set -e
+          counts=$(node -e 'const r=require("./task15-real-stack.json");let a=[];const w=s=>{(s.specs||[]).forEach(x=>(x.tests||[]).forEach(t=>a.push(t.results.at(-1)?.status||"missing")));(s.suites||[]).forEach(w)};(r.suites||[]).forEach(w);let p=a.filter(x=>x==="passed").length,k=a.filter(x=>x==="skipped").length,f=a.length-p-k;console.log(`${a.length} ${p} ${f} ${k}`)')
+          read -r tests pass fail skip <<< "$counts"
+          echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
+          echo "- Real-stack Chromium: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
+
+      - name: Verify cleanup and dispose real-stack database
+        id: real_stack_cleanup
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: task15_bootstrap_ci_only
+        run: |
+          set +e
+          database=${TASK15_DATABASE:-elvocab_cefr_task15_browser_ci}
+          role=${TASK15_ROLE:-task15_browser_runner}
+          schema=${TASK15_SCHEMA:-elvocab_task15_browser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}}
+          expected=${TASK15_MARKER:-cefr-task15:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:browser}
+          exists=$(psql -h 127.0.0.1 -U task15_bootstrap -d postgres -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_database WHERE datname = '$database';")
+          exists_exit=$?
+          if [[ $exists_exit -ne 0 ]]; then
+            inspect=1
+            drop_database=1
+          elif [[ "$exists" == "1" ]]; then
+            marker=$(psql -h 127.0.0.1 -U task15_bootstrap -d "$database" -At -v ON_ERROR_STOP=1 \
+              -c "SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname = '$schema';")
+            remaining=$(psql -h 127.0.0.1 -U task15_bootstrap -d "$database" -At -v ON_ERROR_STOP=1 \
+              -c "SELECT (SELECT count(*) FROM \"$schema\".\"USER\") + (SELECT count(*) FROM \"$schema\".\"VOCABULARY\") + (SELECT count(*) FROM \"$schema\".\"VOCABULARY_SET\") + (SELECT count(*) FROM \"$schema\".\"LEARNING_PROGRESS\") + (SELECT count(*) FROM \"$schema\".\"LEARNING_SESSION\") + (SELECT count(*) FROM \"$schema\".\"CEFR_LEARNING_PASS\") + (SELECT count(*) FROM \"$schema\".\"CEFR_LEARNING_PATH_STATE\") + (SELECT count(*) FROM \"$schema\".\"XP_REWARD\") + (SELECT count(*) FROM \"$schema\".\"STREAK_DAY\");")
+            [[ "$marker" == "$expected" && "$remaining" == "0" ]]
+            inspect=$?
+            psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 \
+              -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$database' AND pid <> pg_backend_pid();" \
+              -c "DROP DATABASE \"$database\";"
+            drop_database=$?
+          else
+            inspect=0
+            drop_database=0
+          fi
+          psql -h 127.0.0.1 -U task15_bootstrap -d postgres -v ON_ERROR_STOP=1 -c "DROP ROLE IF EXISTS \"$role\";"
+          drop_role=$?
+          [[ $drop_database -eq 0 && $drop_role -eq 0 ]]
+          dispose=$?
+          set -e
+          status=$([[ $inspect -eq 0 && $dispose -eq 0 ]] && echo pass || echo fail)
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "- Real-stack scoped row cleanup: $([[ $inspect -eq 0 ]] && echo PASS || echo FAIL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Real-stack database disposal: $([[ $dispose -eq 0 ]] && echo PASS || echo FAIL)" >> "$GITHUB_STEP_SUMMARY"
+          [[ $inspect -eq 0 && $dispose -eq 0 ]]
+
+      - name: Enforce real-stack verdict
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.real_stack.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.real_stack_cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$TEST_OUTCOME" == "success" ]]
+          [[ "$CLEANUP_OUTCOME" == "success" ]]
+
+  task15-summary:
+    name: TASK-015 Gate 2 summary
+    if: >-
+      always() &&
+      needs.authorize.outputs.operation == 'RUN_CEFR_TASK_015_GATE_2_VERIFICATION'
+    needs: [authorize, task15-offline, task15-mocked-chromium, task15-postgres-backend, task15-real-stack]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report exact job classifications
+        shell: bash
+        env:
+          AUTHORIZED: ${{ needs.authorize.outputs.authorized }}
+          OPERATION: ${{ needs.authorize.outputs.operation }}
+          OFFLINE: ${{ needs.task15-offline.result }}
+          MOCKED: ${{ needs.task15-mocked-chromium.result }}
+          POSTGRES: ${{ needs.task15-postgres-backend.result }}
+          REAL_STACK: ${{ needs.task15-real-stack.result }}
+          BACKEND_OFFLINE_COUNTS: ${{ needs.task15-offline.outputs.backend_counts }}
+          FRONTEND_OFFLINE_COUNTS: ${{ needs.task15-offline.outputs.frontend_counts }}
+          BACKEND_OFFLINE_OUTCOME: ${{ needs.task15-offline.outputs.backend_outcome }}
+          FRONTEND_OFFLINE_OUTCOME: ${{ needs.task15-offline.outputs.frontend_outcome }}
+          MOCKED_COUNTS: ${{ needs.task15-mocked-chromium.outputs.counts }}
+          POSTGRES_COUNTS: ${{ needs.task15-postgres-backend.outputs.counts }}
+          POSTGRES_CLEANUP: ${{ needs.task15-postgres-backend.outputs.cleanup }}
+          REAL_STACK_COUNTS: ${{ needs.task15-real-stack.outputs.counts }}
+          REAL_STACK_CLEANUP: ${{ needs.task15-real-stack.outputs.cleanup }}
+          REAL_STACK_TEST_OUTCOME: ${{ needs.task15-real-stack.outputs.test_outcome }}
+        run: |
+          set -euo pipefail
+          classify() {
+            case "$1" in
+              success) echo PASS ;;
+              failure) echo FAIL ;;
+              skipped) echo "NOT RUN" ;;
+              cancelled) echo "NOT RUN (cancelled)" ;;
+              *) echo "NOT RUN ($1)" ;;
+            esac
+          }
+          {
+            echo "## CEFR TASK-015 Gate 2"
+            echo "- Backend offline: $(classify "$BACKEND_OFFLINE_OUTCOME") ${BACKEND_OFFLINE_COUNTS:-counts=NOT RUN}"
+            echo "- Frontend offline: $(classify "$FRONTEND_OFFLINE_OUTCOME") ${FRONTEND_OFFLINE_COUNTS:-counts=NOT RUN}"
+            echo "- Mocked Chromium: $(classify "$MOCKED") ${MOCKED_COUNTS:-counts=NOT RUN}"
+            echo "- Backend PostgreSQL: $(classify "$POSTGRES") ${POSTGRES_COUNTS:-counts=NOT RUN} cleanup=${POSTGRES_CLEANUP:-NOT RUN}"
+            echo "- Real-stack Chromium: $(classify "$REAL_STACK_TEST_OUTCOME") ${REAL_STACK_COUNTS:-counts=NOT RUN} sentinel=$(classify "$REAL_STACK_TEST_OUTCOME") cleanup=${REAL_STACK_CLEANUP:-NOT RUN} overall=$(classify "$REAL_STACK")"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ "$AUTHORIZED" == "true" ]]
+          [[ "$OPERATION" == "RUN_CEFR_TASK_015_GATE_2_VERIFICATION" ]]
+          [[ "$OFFLINE" == "success" ]]
+          [[ "$MOCKED" == "success" ]]
+          [[ "$POSTGRES" == "success" ]]
+          [[ "$REAL_STACK" == "success" ]]
