@@ -82,7 +82,7 @@ jobs:
 
           approved_repository="Hau-2251220056/EngLish-Vocabulary"
           approved_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
-          approved_source_sha="20835c240aafae69d45b1de6378986608bc659e1"
+          approved_source_sha="61b1a3da99faa7febd7963a1c9a753d209f9b7b2"
           approved_source_ref="refs/heads/verification/cefr-learning-path-v1-phase-c"
           approved_workflow_path=".github/workflows/cefr-learning-path-phase-c.yml"
           approved_dispatch_ref="refs/heads/main"
@@ -154,7 +154,7 @@ jobs:
       - name: Check out exact reviewed CEFR source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 20835c240aafae69d45b1de6378986608bc659e1
+          ref: 61b1a3da99faa7febd7963a1c9a753d209f9b7b2
           fetch-depth: 1
           persist-credentials: false
 
@@ -162,7 +162,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          approved_source_sha="20835c240aafae69d45b1de6378986608bc659e1"
+          approved_source_sha="61b1a3da99faa7febd7963a1c9a753d209f9b7b2"
           [[ "$(git rev-parse HEAD)" == "$approved_source_sha" ]]
           [[ "$GITHUB_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]]
           test -f backend/test/learning/cefr-learning-path-guard-offline.test.js
