@@ -85,7 +85,7 @@ jobs:
           legacy_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
           task15_operation="RUN_CEFR_TASK_015_GATE_2_VERIFICATION"
           legacy_source_sha="01b16043359a05fce4b97f4d3303979ea66a0aea"
-          task15_source_sha="9dff189a399281c32fe51f921828d33919616a78"
+          task15_source_sha="a419f2d7c5493e0b769f18d1cd0fd678db704022"
           approved_source_ref="refs/heads/verification/cefr-learning-path-v1-phase-c"
           approved_workflow_path=".github/workflows/cefr-learning-path-phase-c.yml"
           approved_dispatch_ref="refs/heads/main"
@@ -331,14 +331,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 9dff189a399281c32fe51f921828d33919616a78
+          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable TASK-015 source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
           [[ "$GITHUB_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]]
 
       - name: Set up Node.js 22
@@ -437,14 +437,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 9dff189a399281c32fe51f921828d33919616a78
+          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
 
       - name: Set up Node.js 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -572,14 +572,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 9dff189a399281c32fe51f921828d33919616a78
+          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
 
       - name: Set up Node.js 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -734,14 +734,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 9dff189a399281c32fe51f921828d33919616a78
+          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity and real-stack assets
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "9dff189a399281c32fe51f921828d33919616a78" ]]
+          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
           test -f frontend/e2e/integration/cefr-learning-path-real-stack.spec.js
           test -f frontend/e2e/integration/cefr-global-review-real-stack.spec.js
 
