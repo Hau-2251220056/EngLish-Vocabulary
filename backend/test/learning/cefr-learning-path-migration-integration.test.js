@@ -108,8 +108,10 @@ async function seedLegacyRows(prisma) {
     revision: 1, last_event_id: randomUUID(), last_reviewed_at: new Date(),
   } });
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "LEARNING_SESSION" ("id","user_id","vocabulary_set_id","set_id_snapshot","mode","status","create_operation_id","snapshot_size","expires_at")
-     VALUES ('${randomUUID()}'::uuid,'${fixture.userId}'::uuid,'${fixture.setId}'::uuid,'${fixture.setId}'::uuid,'NORMAL','ACTIVE','${randomUUID()}'::uuid,1,CURRENT_TIMESTAMP + INTERVAL '1 hour')`,
+    `WITH session_clock AS (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' AS created_at)
+     INSERT INTO "LEARNING_SESSION" ("id","user_id","vocabulary_set_id","set_id_snapshot","mode","status","create_operation_id","snapshot_size","created_at","expires_at")
+     SELECT '${randomUUID()}'::uuid,'${fixture.userId}'::uuid,'${fixture.setId}'::uuid,'${fixture.setId}'::uuid,'NORMAL','ACTIVE','${randomUUID()}'::uuid,1,created_at,created_at + INTERVAL '7 days'
+     FROM session_clock`,
   );
   return fixture;
 }
@@ -127,10 +129,12 @@ async function seedCurriculum(prisma, suffix) {
 }
 
 function sessionData(fixture) {
+  const createdAt = new Date();
   return {
     id: randomUUID(), user_id: fixture.userId, vocabulary_set_id: fixture.setId,
     set_id_snapshot: fixture.setId, scope: "SET", mode: "NORMAL", status: "ACTIVE",
-    create_operation_id: randomUUID(), snapshot_size: 1, expires_at: new Date(Date.now() + 60_000),
+    create_operation_id: randomUUID(), snapshot_size: 1, created_at: createdAt,
+    expires_at: new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000),
     items: { create: [{ vocabulary_id: fixture.vocabularyId, position: 0 }] },
   };
 }
