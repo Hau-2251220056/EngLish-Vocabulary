@@ -83,12 +83,15 @@ async function assertScopeConstraints(prisma) {
 
 async function assertPassLifecycleAndDeletion(prisma) {
   const fixture = await seedCurriculum(prisma, "pass");
-  const createPass = (status = "ACTIVE") => prisma.cEFR_LEARNING_PASS.create({ data: {
-    user_id: fixture.userId, vocabulary_set_id: fixture.setId, set_id_snapshot: fixture.setId,
-    status, create_operation_id: randomUUID(), snapshot_size: 1,
-    ...(status === "COMPLETED" ? { completed_at: new Date(), completion_event_id: randomUUID() } : {}),
-    items: { create: [{ vocabulary_id: fixture.vocabularyId, position: 0 }] },
-  } });
+  const createPass = (status = "ACTIVE") => {
+    const completionTimestamp = status === "COMPLETED" ? new Date() : null;
+    return prisma.cEFR_LEARNING_PASS.create({ data: {
+      user_id: fixture.userId, vocabulary_set_id: fixture.setId, set_id_snapshot: fixture.setId,
+      status, create_operation_id: randomUUID(), snapshot_size: 1,
+      ...(status === "COMPLETED" ? { created_at: completionTimestamp, completed_at: completionTimestamp, completion_event_id: randomUUID() } : {}),
+      items: { create: [{ vocabulary_id: fixture.vocabularyId, position: 0 }] },
+    } });
+  };
   const [first, second] = await Promise.allSettled([createPass(), createPass()]);
   assert.equal([first, second].filter(({ status }) => status === "fulfilled").length, 1);
   const active = first.status === "fulfilled" ? first.value : second.value;
