@@ -15,8 +15,8 @@ test.beforeAll(async () => {
   await prisma.$connect(); const hash = await hashPassword(password);
   learner = await createUser("learner", "USER", hash); emptyUser = await createUser("empty", "USER", hash); reachabilityUser = await createUser("reachability", "USER", hash); ratingUser = await createUser("rating", "USER", hash); administrator = await createUser("admin", "ADMIN", hash);
   publicTopic = await prisma.tOPIC.create({ data: { name: `${run} Review public topic` } }); created.topics.push(publicTopic.id);
-  dueWords = await createDuePrivateSet(learner.id, 11);
-  ratingWords = await createDuePrivateSet(ratingUser.id, 10);
+  dueWords = await createDuePrivateSet(learner.id, 11, "summary");
+  ratingWords = await createDuePrivateSet(ratingUser.id, 10, "ratings");
   await createSentinel(hash);
 });
 test.afterAll(async () => { try { await cleanup(); await assertAndCleanupSentinel(); } finally { await prisma.$disconnect(); } });
@@ -115,10 +115,10 @@ async function api(page, method, url, data) { const response = await page.reques
 async function requestError(page, method, url, data, status, code) { const response = await page.request[method](url, data ? { data } : undefined); expect(response.status()).toBe(status); expect((await response.json()).error.code).toBe(code); }
 async function login(page, record) { await page.goto("/login"); await page.locator("#login-email").fill(record.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/\/dashboard$/); }
 async function createUser(name, role, password_hash) { const row = await prisma.uSER.create({ data: { email: `${name}-${run}@cefr-review.integration.test`, display_name: `Review ${name}`, role, password_hash } }); created.users.push(row.id); return row; }
-async function createDuePrivateSet(owner_id, count) {
+async function createDuePrivateSet(owner_id, count, namespace) {
   const words = [];
-  for (let index = 0; index < count; index += 1) { const row = await prisma.vOCABULARY.create({ data: { word: `${run}-review-${index}` } }); created.words.push(row.id); words.push(row); }
-  const set = await prisma.vOCABULARY_SET.create({ data: { owner_id, name: `${run} Review`, is_public: false, items: { create: words.map(({ id }, index) => ({ vocabulary_id: id, position: index + 1 })) } } }); created.sets.push(set.id);
+  for (let index = 0; index < count; index += 1) { const row = await prisma.vOCABULARY.create({ data: { word: `${run}-review-${namespace}-${index}` } }); created.words.push(row.id); words.push(row); }
+  const set = await prisma.vOCABULARY_SET.create({ data: { owner_id, name: `${run} Review ${namespace}`, is_public: false, items: { create: words.map(({ id }, index) => ({ vocabulary_id: id, position: index + 1 })) } } }); created.sets.push(set.id);
   await prisma.lEARNING_PROGRESS.createMany({ data: words.map(({ id }, index) => ({ user_id: owner_id, vocabulary_id: id, status: "LEARNED", review_count: 1, revision: 1, interval_days: 1, ease_factor: 2.5, last_event_id: randomUUID(), last_reviewed_at: new Date(Date.now() - (index + 1) * 60_000), next_review_at: new Date(Date.now() - 60_000) })) });
   return words;
 }

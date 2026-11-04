@@ -72,8 +72,29 @@ test("1/10/>10 Sets require completed bounded sessions, resume after reload, and
   const first = await nextBatch(page, elevenPass.pass.id);
   expect(first.session.items).toHaveLength(10);
   await revealBatch(page, first.session); await completeSession(page, first.session.id);
-  await page.goto(`/learn/vocabulary-sets/${eleven.id}`); await page.reload();
-  await expect(page.getByText(/1.*còn lại|còn.*1/i)).toBeVisible();
+  const resumable = await api(page, "get", `/api/learning-path/passes/${elevenPass.pass.id}`);
+  expect(resumable).toMatchObject({
+    state: "ACTIVE", snapshot_size: 11, studied_items: 10, remaining_items: 1,
+    can_continue: true,
+  });
+  const remainingBatch = await nextBatch(page, elevenPass.pass.id);
+  expect(remainingBatch.session.items).toHaveLength(1);
+  const remainingVocabulary = await prisma.vOCABULARY.findUniqueOrThrow({
+    where: { id: remainingBatch.session.items[0].vocabulary_id }, select: { word: true },
+  });
+
+  await page.goto("/dashboard");
+  const pathRegion = page.getByRole("region", { name: "Lộ trình CEFR" });
+  const resumeLink = pathRegion.getByRole("link", { name: /Tiếp tục học/i });
+  await expect(resumeLink).toHaveAttribute("href", `/learn/vocabulary-sets/${eleven.id}`);
+  await resumeLink.click(); await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${eleven.id}$`));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: `${eleven.name} — Ôn tập thường` })).toBeAttached();
+  await expect(page.getByRole("heading", { name: remainingVocabulary.word })).toBeVisible();
+  await expect(page.getByText("Thẻ 1 / 1")).toBeVisible();
+  expect(await api(page, "get", `/api/learning-path/passes/${elevenPass.pass.id}`)).toMatchObject({
+    state: "ACTIVE", studied_items: 10, remaining_items: 1, can_continue: true,
+  });
   await finishPass(page, elevenPass.pass.id);
   const projection = await api(page, "get", "/api/learning-path");
   expect(projection.highest_unlocked_level).toBe("A2");
