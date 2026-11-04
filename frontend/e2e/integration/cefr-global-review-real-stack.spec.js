@@ -8,14 +8,15 @@ configureTestEnvironment({ requireReset: true });
 const prisma = new PrismaClient();
 const run = randomUUID(), password = `Safe-${randomUUID()}`, created = { users: [], words: [], sets: [], topics: [] };
 const sentinel = {};
-let learner, emptyUser, reachabilityUser, administrator, publicTopic, dueWords;
+let learner, emptyUser, reachabilityUser, ratingUser, administrator, publicTopic, dueWords, ratingWords;
 
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   await prisma.$connect(); const hash = await hashPassword(password);
-  learner = await createUser("learner", "USER", hash); emptyUser = await createUser("empty", "USER", hash); reachabilityUser = await createUser("reachability", "USER", hash); administrator = await createUser("admin", "ADMIN", hash);
+  learner = await createUser("learner", "USER", hash); emptyUser = await createUser("empty", "USER", hash); reachabilityUser = await createUser("reachability", "USER", hash); ratingUser = await createUser("rating", "USER", hash); administrator = await createUser("admin", "ADMIN", hash);
   publicTopic = await prisma.tOPIC.create({ data: { name: `${run} Review public topic` } }); created.topics.push(publicTopic.id);
   dueWords = await createDuePrivateSet(learner.id, 11);
+  ratingWords = await createDuePrivateSet(ratingUser.id, 10);
   await createSentinel(hash);
 });
 test.afterAll(async () => { try { await cleanup(); await assertAndCleanupSentinel(); } finally { await prisma.$disconnect(); } });
@@ -69,15 +70,31 @@ test("global review filters reachability, deduplicates exact IDs, preserves equa
 });
 
 test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh snapshot", async ({ page }) => {
-  await login(page, learner); await page.goto("/review");
-  const heading = page.getByRole("heading", { name: dueWords[0].word }); await expect(heading).toBeVisible(); await heading.press("Space");
+  await login(page, ratingUser);
+  const createResponse = page.waitForResponse((response) => response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/learning/review/sessions" && response.ok());
+  await page.goto("/review");
+  const createdSession = (await (await createResponse).json()).data;
+  const cardsById = new Map(createdSession.cards.map((card) => [card.id, card]));
+  const orderedWords = [...createdSession.session.items]
+    .sort((left, right) => left.position - right.position)
+    .map(({ vocabulary_id }) => cardsById.get(vocabulary_id)?.word);
+  expect(createdSession.session.scope).toBe("GLOBAL");
+  expect(orderedWords).toHaveLength(ratingWords.length);
+  expect(orderedWords.every(Boolean)).toBe(true);
+  expect(await prisma.lEARNING_SESSION.count({ where: { user_id: ratingUser.id, scope: "GLOBAL" } })).toBe(1);
+
+  const heading = page.getByRole("heading", { name: orderedWords[0] }); await expect(heading).toBeVisible(); await heading.press("Space");
   await page.getByRole("button", { name: "Lại" }).click();
-  await expect(page.getByRole("heading", { name: dueWords[1].word })).toBeVisible();
-  for (const rating of ["Khó", "Tốt", "Dễ"]) {
-    const current = page.locator("main h1").first(); await current.press("Space"); await page.getByRole("button", { name: rating }).click();
+  const replayOrder = [...orderedWords.slice(1, 4), orderedWords[0], ...orderedWords.slice(4)];
+  await expect(page.getByRole("heading", { name: replayOrder[0] })).toBeVisible();
+  for (const [index, rating] of ["Khó", "Tốt", "Dễ"].entries()) {
+    const current = page.getByRole("heading", { name: replayOrder[index] });
+    await expect(current).toBeVisible(); await current.press("Space"); await page.getByRole("button", { name: rating }).click();
   }
   for (let index = 0; index < 7; index += 1) {
-    await page.locator("main h1").first().press("Space"); await page.getByRole("button", { name: "Tốt" }).click();
+    const current = page.getByRole("heading", { name: replayOrder[index + 3] });
+    await expect(current).toBeVisible(); await current.press("Space"); await page.getByRole("button", { name: "Tốt" }).click();
   }
   await expect(page.getByRole("heading", { name: "Hoàn thành phiên ôn tập" })).toBeVisible();
   const request = page.waitForRequest((item) => item.method() === "POST" && new URL(item.url()).pathname === "/api/learning/review/sessions");
@@ -88,9 +105,9 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
 test("ADMIN and Guest cannot enter global review and review does not duplicate XP/Streak", async ({ page }) => {
   await page.goto("/review"); await expect(page).toHaveURL(/\/login$/);
   await login(page, administrator); await page.goto("/review"); await expect(page).toHaveURL(/\/dashboard$/);
-  const rewards = await prisma.xP_REWARD.findMany({ where: { user_id: learner.id }, select: { source_event_id: true } });
+  const rewards = await prisma.xP_REWARD.findMany({ where: { user_id: ratingUser.id }, select: { source_event_id: true } });
   expect(new Set(rewards.map(({ source_event_id }) => source_event_id)).size).toBe(rewards.length);
-  const streaks = await prisma.sTREAK_DAY.findMany({ where: { user_id: learner.id } });
+  const streaks = await prisma.sTREAK_DAY.findMany({ where: { user_id: ratingUser.id } });
   expect(new Set(streaks.map(({ activity_date }) => activity_date.toISOString().slice(0, 10))).size).toBe(streaks.length);
 });
 

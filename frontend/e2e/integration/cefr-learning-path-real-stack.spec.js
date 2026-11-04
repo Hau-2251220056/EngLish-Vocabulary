@@ -55,10 +55,16 @@ test("1/10/>10 Sets require completed bounded sessions, resume after reload, and
   const batch = await nextBatch(page, started.pass.id);
   await revealBatch(page, batch.session);
   const revealedOnly = await api(page, "get", `/api/learning-path/passes/${started.pass.id}`);
-  expect(revealedOnly.ready_to_complete).toBe(false);
+  expect(revealedOnly).toMatchObject({
+    state: "ACTIVE", snapshot_size: 1, studied_items: 0, remaining_items: 1,
+    can_continue: true,
+  });
   await completeSession(page, batch.session.id);
   const ready = await api(page, "get", `/api/learning-path/passes/${started.pass.id}`);
-  expect(ready.ready_to_complete).toBe(true);
+  expect(ready).toMatchObject({
+    state: "ACTIVE", snapshot_size: 1, studied_items: 1, remaining_items: 0,
+    can_continue: true,
+  });
   await api(page, "post", `/api/learning-path/passes/${started.pass.id}/complete`, { operation_id: randomUUID() });
 
   await completeSet(page, ten.id);
@@ -202,7 +208,13 @@ async function completeSet(page, setId) { const pass = await startPass(page, set
 async function finishPass(page, passId) {
   while (true) {
     const pass = await api(page, "get", `/api/learning-path/passes/${passId}`);
-    if (pass.ready_to_complete) break;
+    expect(pass.state).toBe("ACTIVE");
+    expect(pass.studied_items + pass.remaining_items).toBe(pass.snapshot_size);
+    expect(pass.can_continue).toBe(true);
+    if (pass.remaining_items === 0) {
+      expect(pass.studied_items).toBe(pass.snapshot_size);
+      break;
+    }
     const batch = await nextBatch(page, passId); await revealBatch(page, batch.session); await completeSession(page, batch.session.id);
   }
   return api(page, "post", `/api/learning-path/passes/${passId}/complete`, { operation_id: randomUUID() });
