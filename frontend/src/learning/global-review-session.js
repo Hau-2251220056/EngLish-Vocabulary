@@ -35,7 +35,9 @@ export async function submitReviewRatingWithReplay({ storage, service, request, 
     requireUuid(pending.event_id);
     write(storage, EVENT_KEY, pending);
   }
-  const result = await service.recordMeaningfulEvent(pending);
+  const event = { ...pending };
+  delete event.version;
+  const result = await service.recordMeaningfulEvent(event);
   remove(storage, EVENT_KEY);
   return result;
 }

@@ -170,7 +170,7 @@ test("locked B1 blocks Learning, Quiz and Speaking while snapshot mutation requi
     `/pronunciation/vocabulary-sets/${b1.id}`,
   ]) {
     await page.goto(route);
-    await expect(page.getByRole("alert").or(page.getByText(/khóa|chưa mở/i))).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible();
   }
   const pass = await startPass(page, a2.id);
   const removed = await prisma.vOCABULARY_SET_ITEM.findFirstOrThrow({ where: { vocabulary_set_id: a2.id } });
