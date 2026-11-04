@@ -9,9 +9,9 @@ const prisma = new PrismaClient();
 const run = randomUUID();
 const password = `Safe-${randomUUID()}`;
 const domain = `${run}.cefr-path.integration.test`;
-const created = { users: [], vocabularies: [], sets: [] };
+const created = { users: [], vocabularies: [], sets: [], topics: [] };
 const sentinel = {};
-let learner, outsider, administrator, one, ten, eleven, a2, b1, reassigned;
+let learner, outsider, administrator, systemTopic, one, ten, eleven, a2, b1, reassigned;
 
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
@@ -20,6 +20,8 @@ test.beforeAll(async () => {
   learner = await user("learner", "USER", password_hash);
   outsider = await user("outsider", "USER", password_hash);
   administrator = await user("admin", "ADMIN", password_hash);
+  systemTopic = await prisma.tOPIC.create({ data: { name: `${run} CEFR system topic` } });
+  created.topics.push(systemTopic.id);
   one = await systemSet("01 one", "A1", 1);
   ten = await systemSet("02 ten", "A1", 10);
   eleven = await systemSet("03 eleven", "A1", 11);
@@ -223,7 +225,7 @@ async function systemSet(name, cefr_level, count) {
     const row = await prisma.vOCABULARY.create({ data: { word: `${run}-${name}-${index}`, meanings: { create: [{ part_of_speech: "noun", meaning_vi: `nghĩa ${index}`, cefr_level }] } } });
     created.vocabularies.push(row.id); words.push(row);
   }
-  const row = await prisma.vOCABULARY_SET.create({ data: { owner_id: administrator.id, name: `${run} ${name}`, is_public: true, cefr_level, items: { create: words.map(({ id }, index) => ({ vocabulary_id: id, position: index + 1 })) } } });
+  const row = await prisma.vOCABULARY_SET.create({ data: { topic_id: systemTopic.id, owner_id: administrator.id, name: `${run} ${name}`, is_public: true, cefr_level, items: { create: words.map(({ id }, index) => ({ vocabulary_id: id, position: index + 1 })) } } });
   created.sets.push(row.id); return row;
 }
 function level(path, value) { return path.levels.find(({ level: item }) => item === value); }
@@ -305,6 +307,7 @@ async function cleanup() {
   await prisma.cEFR_LEARNING_PATH_STATE.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.vOCABULARY_SET.deleteMany({ where: { id: { in: created.sets } } });
+  await prisma.tOPIC.deleteMany({ where: { id: { in: created.topics } } });
   await prisma.vOCABULARY.deleteMany({ where: { id: { in: created.vocabularies } } });
   await prisma.uSER.deleteMany({ where: { id: { in: created.users } } });
 }

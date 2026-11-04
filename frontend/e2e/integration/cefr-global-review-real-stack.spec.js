@@ -6,14 +6,15 @@ import { hashPassword } from "../../../backend/src/utils/password-security.js";
 
 configureTestEnvironment({ requireReset: true });
 const prisma = new PrismaClient();
-const run = randomUUID(), password = `Safe-${randomUUID()}`, created = { users: [], words: [], sets: [] };
+const run = randomUUID(), password = `Safe-${randomUUID()}`, created = { users: [], words: [], sets: [], topics: [] };
 const sentinel = {};
-let learner, emptyUser, reachabilityUser, administrator, dueWords;
+let learner, emptyUser, reachabilityUser, administrator, publicTopic, dueWords;
 
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   await prisma.$connect(); const hash = await hashPassword(password);
   learner = await createUser("learner", "USER", hash); emptyUser = await createUser("empty", "USER", hash); reachabilityUser = await createUser("reachability", "USER", hash); administrator = await createUser("admin", "ADMIN", hash);
+  publicTopic = await prisma.tOPIC.create({ data: { name: `${run} Review public topic` } }); created.topics.push(publicTopic.id);
   dueWords = await createDuePrivateSet(learner.id, 11);
   await createSentinel(hash);
 });
@@ -106,7 +107,7 @@ async function createDuePrivateSet(owner_id, count) {
 }
 async function word(label, spelling = `${run}-${label}`, owner_id = null) { const row = await prisma.vOCABULARY.create({ data: { word: spelling, owner_id } }); created.words.push(row.id); return row; }
 async function setWithItems(owner_id, label, is_public, cefr_level, words) {
-  const row = await prisma.vOCABULARY_SET.create({ data: { owner_id, name: `${run} ${label}`, is_public, cefr_level, items: { create: words.map((vocabulary_id, index) => ({ vocabulary_id, position: index + 1 })) } } });
+  const row = await prisma.vOCABULARY_SET.create({ data: { topic_id: is_public ? publicTopic.id : null, owner_id, name: `${run} ${label}`, is_public, cefr_level, items: { create: words.map((vocabulary_id, index) => ({ vocabulary_id, position: index + 1 })) } } });
   created.sets.push(row.id); return row;
 }
 async function dueProgress(user_id, words) {
@@ -162,5 +163,6 @@ async function cleanup() {
   await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.cEFR_LEARNING_PASS.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.cEFR_LEARNING_PATH_STATE.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.vOCABULARY_SET.deleteMany({ where: { id: { in: created.sets } } });
+  await prisma.tOPIC.deleteMany({ where: { id: { in: created.topics } } });
   await prisma.vOCABULARY.deleteMany({ where: { id: { in: created.words } } }); await prisma.uSER.deleteMany({ where: { id: { in: created.users } } });
 }
