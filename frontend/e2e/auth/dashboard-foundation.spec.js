@@ -128,7 +128,8 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   const path = page.getByRole("region", { name: "Lộ trình CEFR" });
   await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(path.getByText("A1", { exact: true })).toBeVisible();
-  await expect(path.getByText("A2", { exact: true })).toContainText("A2");
+  const lockedA2 = path.getByRole("listitem").filter({ hasText: "A2" });
+  await expect(lockedA2).toContainText("đang khóa");
   await expect(path.getByText("đang khóa")).toHaveCount(4);
 });
 

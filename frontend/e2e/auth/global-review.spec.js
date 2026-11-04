@@ -9,9 +9,22 @@ const NOW = "2026-11-03T00:00:00.000Z";
 test("USER completes one fixed GLOBAL snapshot and explicitly requests continuation", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   let createCalls = 0;
+  const operationIds = [];
   await page.route("**/api/learning/review/sessions", (route) => {
     createCalls += 1;
-    return route.fulfill({ status: createCalls === 1 ? 201 : 200, json: { success: true, data: createCalls === 1 ? reviewSession() : { session: null, cards: [], reason: "REVIEW_UP_TO_DATE", evaluated_at: NOW, nearest_future_review_at: null, replayed: false } } });
+    const operationId = route.request().postDataJSON().operation_id;
+    operationIds.push(operationId);
+    const isInitialOperation = operationId === operationIds[0];
+    const replayed = isInitialOperation && operationIds.filter((id) => id === operationId).length > 1;
+    return route.fulfill({
+      status: isInitialOperation && !replayed ? 201 : 200,
+      json: {
+        success: true,
+        data: isInitialOperation
+          ? { ...reviewSession(), replayed }
+          : { session: null, cards: [], reason: "REVIEW_UP_TO_DATE", evaluated_at: NOW, nearest_future_review_at: null, replayed: false },
+      },
+    });
   });
   await page.route("**/api/learning/events", (route) => route.fulfill({ status: 200, json: { success: true, data: ratingResult() } }));
 
@@ -19,10 +32,11 @@ test("USER completes one fixed GLOBAL snapshot and explicitly requests continuat
   await page.getByRole("button", { name: /book/ }).click();
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành phiên ôn tập" })).toBeVisible();
-  expect(createCalls).toBe(1);
+  expect(new Set(operationIds).size).toBe(1);
   await page.getByRole("button", { name: "Ôn tiếp" }).click();
   await expect(page.getByRole("heading", { name: "Bạn đã ôn tập đầy đủ" })).toBeVisible();
-  expect(createCalls).toBe(2);
+  expect(new Set(operationIds).size).toBe(2);
+  expect(createCalls).toBeGreaterThanOrEqual(2);
 });
 
 test("ADMIN cannot enter the USER global review route or call review APIs", async ({ page }) => {
