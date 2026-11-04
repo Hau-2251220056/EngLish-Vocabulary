@@ -84,8 +84,29 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   expect(orderedWords.every(Boolean)).toBe(true);
   expect(await prisma.lEARNING_SESSION.count({ where: { user_id: ratingUser.id, scope: "GLOBAL" } })).toBe(1);
 
+  const firstItem = createdSession.session.items.find(({ position }) => position === 0);
+  expect(firstItem).toBeTruthy();
   const heading = page.getByRole("heading", { name: orderedWords[0] }); await expect(heading).toBeVisible(); await heading.press("Space");
+  const ratingResponsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/learning/events") return false;
+    const body = response.request().postDataJSON();
+    return body?.session_id === createdSession.session.id
+      && body?.vocabulary_id === firstItem?.vocabulary_id && body?.rating === "AGAIN";
+  });
   await page.getByRole("button", { name: "Lại" }).click();
+  const ratingResponse = await ratingResponsePromise;
+  const ratingEnvelope = await ratingResponse.json();
+  const diagnosticCode = ratingEnvelope?.error?.code ?? "NO_ERROR_CODE";
+  expect(ratingResponse.status(), `AGAIN rating failed with HTTP ${ratingResponse.status()} (${diagnosticCode})`).toBe(200);
+  expect(ratingEnvelope).toMatchObject({
+    success: true,
+    data: {
+      vocabulary_id: firstItem?.vocabulary_id,
+      session: { id: createdSession.session.id, state: "ACTIVE" },
+    },
+  });
+  const ratedItem = ratingEnvelope.data.session.items.find(({ vocabulary_id: id }) => id === firstItem?.vocabulary_id);
+  expect(ratedItem).toMatchObject({ vocabulary_id: firstItem?.vocabulary_id, evidence: null });
   const replayOrder = [...orderedWords.slice(1, 4), orderedWords[0], ...orderedWords.slice(4)];
   await expect(page.getByRole("heading", { name: replayOrder[0] })).toBeVisible();
   for (const [index, rating] of ["Khó", "Tốt", "Dễ"].entries()) {

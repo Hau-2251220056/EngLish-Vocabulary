@@ -161,8 +161,8 @@ test("locked B1 blocks Learning, Quiz and Speaking while snapshot mutation requi
   await requestError(page, "get", `/api/quiz/sets/${b1.id}/questions?type=MULTIPLE_CHOICE&run_id=${quizRun}`, undefined, 403, "CEFR_LEVEL_LOCKED");
   await requestError(page, "post", "/api/quiz/answers", {
     event_id: randomUUID(), set_id: b1.id, vocabulary_id: lockedItem.vocabulary_id,
-    run_id: quizRun, question_revision: "locked-boundary", quiz_type: "MULTIPLE_CHOICE",
-    expected_revision: 0, selected_choice_id: randomUUID(),
+    run_id: quizRun, question_revision: "A".repeat(43), quiz_type: "MULTIPLE_CHOICE",
+    expected_revision: 0, selected_choice_id: "B".repeat(43),
   }, 403, "CEFR_LEVEL_LOCKED");
   expect(await mutationCounts(learner.id)).toEqual(before);
   for (const route of [
