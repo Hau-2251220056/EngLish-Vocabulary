@@ -85,7 +85,7 @@ jobs:
           legacy_operation="RUN_CEFR_PHASE_C_POSTGRES_VERIFICATION"
           task15_operation="RUN_CEFR_TASK_015_GATE_2_VERIFICATION"
           legacy_source_sha="01b16043359a05fce4b97f4d3303979ea66a0aea"
-          task15_source_sha="a419f2d7c5493e0b769f18d1cd0fd678db704022"
+          task15_source_sha="9f835a1ac534e635c06147c94b6314003dafa624"
           approved_source_ref="refs/heads/verification/cefr-learning-path-v1-phase-c"
           approved_workflow_path=".github/workflows/cefr-learning-path-phase-c.yml"
           approved_dispatch_ref="refs/heads/main"
@@ -331,14 +331,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
+          ref: 9f835a1ac534e635c06147c94b6314003dafa624
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable TASK-015 source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
+          [[ "$(git rev-parse HEAD)" == "9f835a1ac534e635c06147c94b6314003dafa624" ]]
           [[ "$GITHUB_REPOSITORY" == "Hau-2251220056/EngLish-Vocabulary" ]]
 
       - name: Set up Node.js 22
@@ -437,14 +437,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
+          ref: 9f835a1ac534e635c06147c94b6314003dafa624
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
+          [[ "$(git rev-parse HEAD)" == "9f835a1ac534e635c06147c94b6314003dafa624" ]]
 
       - name: Set up Node.js 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -572,14 +572,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
+          ref: 9f835a1ac534e635c06147c94b6314003dafa624
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
+          [[ "$(git rev-parse HEAD)" == "9f835a1ac534e635c06147c94b6314003dafa624" ]]
 
       - name: Set up Node.js 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -734,14 +734,14 @@ jobs:
       - name: Check out exact TASK-015 source snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a419f2d7c5493e0b769f18d1cd0fd678db704022
+          ref: 9f835a1ac534e635c06147c94b6314003dafa624
           fetch-depth: 1
           persist-credentials: false
 
       - name: Verify immutable source identity and real-stack assets
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "a419f2d7c5493e0b769f18d1cd0fd678db704022" ]]
+          [[ "$(git rev-parse HEAD)" == "9f835a1ac534e635c06147c94b6314003dafa624" ]]
           test -f frontend/e2e/integration/cefr-learning-path-real-stack.spec.js
           test -f frontend/e2e/integration/cefr-global-review-real-stack.spec.js
 
@@ -792,17 +792,65 @@ jobs:
         working-directory: frontend
         run: |
           set +e
-          node node_modules/@playwright/test/cli.js test \
+          PLAYWRIGHT_JSON_OUTPUT_FILE=task15-real-stack.json node node_modules/@playwright/test/cli.js test \
             e2e/integration/cefr-learning-path-real-stack.spec.js \
             e2e/integration/cefr-global-review-real-stack.spec.js \
-            --config=playwright.integration.config.js --workers=1 --retries=0 --reporter=json \
-            > task15-real-stack.json
+            --config=playwright.integration.config.js --workers=1 --retries=0 --reporter=json
           native=$?
           set -e
           counts=$(node -e 'const r=require("./task15-real-stack.json");let a=[];const w=s=>{(s.specs||[]).forEach(x=>(x.tests||[]).forEach(t=>a.push(t.results.at(-1)?.status||"missing")));(s.suites||[]).forEach(w)};(r.suites||[]).forEach(w);let p=a.filter(x=>x==="passed").length,k=a.filter(x=>x==="skipped").length,f=a.length-p-k;console.log(`${a.length} ${p} ${f} ${k}`)')
           read -r tests pass fail skip <<< "$counts"
           echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
           echo "- Real-stack Chromium: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          if [[ $native -ne 0 || $fail -gt 0 ]]; then
+            node <<'NODE' || echo "Real-stack Chromium failure details unavailable: JSON diagnostic parsing failed."
+          const report = require("./task15-real-stack.json");
+          const redact = (value) => String(value ?? "")
+            .replace(/\b(postgres(?:ql)?:\/\/)[^\s@]+@/gi, "$1[REDACTED]@")
+            .replace(/\b(authorization|cookie|password|secret|token)(\s*[:=]\s*)[^\s,;]+/gi, "$1$2[REDACTED]");
+          const failures = [];
+          const walk = (suite, parents = []) => {
+            const suiteTitles = suite.title ? [...parents, suite.title] : parents;
+            for (const spec of suite.specs || []) {
+              for (const test of spec.tests || []) {
+                const result = test.results?.at(-1);
+                if (!result || result.status === "passed" || result.status === "skipped") continue;
+                const errors = result.errors?.length
+                  ? result.errors
+                  : result.error
+                    ? [result.error]
+                    : [];
+                failures.push({
+                  title: [...suiteTitles, spec.title, test.title].filter(Boolean).join(" > "),
+                  file: spec.file || suite.file || "unknown",
+                  line: spec.line || test.location?.line,
+                  column: spec.column || test.location?.column,
+                  errors,
+                });
+              }
+            }
+            for (const child of suite.suites || []) walk(child, suiteTitles);
+          };
+          for (const suite of report.suites || []) walk(suite);
+          for (const failure of failures) {
+            const location = failure.line
+              ? `${failure.file}:${failure.line}${failure.column ? `:${failure.column}` : ""}`
+              : failure.file;
+            console.log(`::group::FAILED: ${redact(failure.title)} (${redact(location)})`);
+            if (!failure.errors.length) console.log("No Playwright error detail was recorded.");
+            for (const error of failure.errors) {
+              if (error.message) console.log(`Message:\n${redact(error.message)}`);
+              if (error.value) console.log(`Assertion detail:\n${redact(error.value)}`);
+              if (error.snippet) console.log(`Assertion snippet:\n${redact(error.snippet)}`);
+              if (error.stack) console.log(`Stack:\n${redact(error.stack)}`);
+            }
+            console.log("::endgroup::");
+          }
+          if (!failures.length) {
+            console.log("Real-stack Chromium failed, but the JSON report contained no failed test result.");
+          }
+          NODE
+          fi
           [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
 
       - name: Verify cleanup and dispose real-stack database
