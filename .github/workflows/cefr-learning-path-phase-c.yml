@@ -477,6 +477,55 @@ jobs:
           read -r tests pass fail skip <<< "$counts"
           echo "counts=tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_OUTPUT"
           echo "- Mocked Chromium: tests=$tests pass=$pass fail=$fail skip=$skip native=$native" >> "$GITHUB_STEP_SUMMARY"
+          if [[ $native -ne 0 || $fail -gt 0 ]]; then
+            node <<'NODE' || echo "Mocked Chromium failure details unavailable: JSON diagnostic parsing failed."
+          const report = require("./task15-mocked.json");
+          const redact = (value) => String(value ?? "")
+            .replace(/\b(postgres(?:ql)?:\/\/)[^\s@]+@/gi, "$1[REDACTED]@")
+            .replace(/\b(authorization|cookie|password|secret|token)(\s*[:=]\s*)[^\s,;]+/gi, "$1$2[REDACTED]");
+          const failures = [];
+          const walk = (suite, parents = []) => {
+            const suiteTitles = suite.title ? [...parents, suite.title] : parents;
+            for (const spec of suite.specs || []) {
+              for (const test of spec.tests || []) {
+                const result = test.results?.at(-1);
+                if (!result || result.status === "passed" || result.status === "skipped") continue;
+                const errors = result.errors?.length
+                  ? result.errors
+                  : result.error
+                    ? [result.error]
+                    : [];
+                failures.push({
+                  title: [...suiteTitles, spec.title, test.title].filter(Boolean).join(" > "),
+                  file: spec.file || suite.file || "unknown",
+                  line: spec.line || test.location?.line,
+                  column: spec.column || test.location?.column,
+                  errors,
+                });
+              }
+            }
+            for (const child of suite.suites || []) walk(child, suiteTitles);
+          };
+          for (const suite of report.suites || []) walk(suite);
+          for (const failure of failures) {
+            const location = failure.line
+              ? `${failure.file}:${failure.line}${failure.column ? `:${failure.column}` : ""}`
+              : failure.file;
+            console.log(`::group::FAILED: ${redact(failure.title)} (${redact(location)})`);
+            if (!failure.errors.length) console.log("No Playwright error detail was recorded.");
+            for (const error of failure.errors) {
+              if (error.message) console.log(`Message:\n${redact(error.message)}`);
+              if (error.value) console.log(`Assertion detail:\n${redact(error.value)}`);
+              if (error.snippet) console.log(`Assertion snippet:\n${redact(error.snippet)}`);
+              if (error.stack) console.log(`Stack:\n${redact(error.stack)}`);
+            }
+            console.log("::endgroup::");
+          }
+          if (!failures.length) {
+            console.log("Mocked Chromium failed, but the JSON report contained no failed test result.");
+          }
+          NODE
+          fi
           [[ $native -eq 0 && $tests -gt 0 && $pass -gt 0 && $fail -eq 0 && $skip -eq 0 ]]
 
       - name: Enforce mocked Chromium verdict
