@@ -10,21 +10,27 @@ const run = randomUUID();
 const password = `Safe-${randomUUID()}`;
 const domain = `${run}.cefr-path.integration.test`;
 const created = { users: [], vocabularies: [], sets: [] };
-let learner, administrator, one, ten, eleven, a2, b1;
+const sentinel = {};
+let learner, outsider, administrator, one, ten, eleven, a2, b1, reassigned;
 
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   await prisma.$connect();
   const password_hash = await hashPassword(password);
   learner = await user("learner", "USER", password_hash);
+  outsider = await user("outsider", "USER", password_hash);
   administrator = await user("admin", "ADMIN", password_hash);
   one = await systemSet("01 one", "A1", 1);
   ten = await systemSet("02 ten", "A1", 10);
   eleven = await systemSet("03 eleven", "A1", 11);
   a2 = await systemSet("04 a2", "A2", 1);
   b1 = await systemSet("05 b1", "B1", 1);
+  reassigned = await systemSet("06 reassigned", "A2", 1);
+  await createSentinel(password_hash);
 });
-test.afterAll(async () => { try { await cleanup(); } finally { await prisma.$disconnect(); } });
+test.afterAll(async () => {
+  try { await cleanup(); await assertAndCleanupSentinel(); } finally { await prisma.$disconnect(); }
+});
 
 test("first USER receives A1 recommendation and Guest/ADMIN remain role-correct", async ({ page }) => {
   await page.goto("/dashboard"); await expect(page).toHaveURL(/\/login$/);
@@ -65,8 +71,71 @@ test("1/10/>10 Sets require completed bounded sessions, resume after reload, and
   expect(projection.highest_unlocked_level).toBe("A2");
 });
 
+test("foreign USER cannot read or mutate another USER's pass or bounded session", async ({ page }) => {
+  await login(page, learner);
+  const pass = await startPass(page, a2.id);
+  const batch = await nextBatch(page, pass.pass.id);
+  const before = await mutationCounts(learner.id, pass.pass.id, batch.session.id);
+  const exactBefore = await learningState(learner.id, pass.pass.id, batch.session.id);
+
+  await page.request.post("/api/auth/logout");
+  await login(page, outsider);
+  for (const request of [
+    () => requestError(page, "get", `/api/learning-path/passes/${pass.pass.id}`, undefined, 404, "CEFR_PASS_NOT_FOUND"),
+    () => requestError(page, "post", `/api/learning-path/passes/${pass.pass.id}/sessions`, { operation_id: randomUUID() }, 404, "CEFR_PASS_NOT_FOUND"),
+    () => requestError(page, "post", `/api/learning-path/passes/${pass.pass.id}/restart`, { operation_id: randomUUID() }, 404, "CEFR_PASS_NOT_FOUND"),
+    () => requestError(page, "post", `/api/learning-path/passes/${pass.pass.id}/complete`, { operation_id: randomUUID() }, 404, "CEFR_PASS_NOT_FOUND"),
+    () => requestError(page, "get", `/api/learning-sessions/${batch.session.id}`, undefined, 404, "LEARNING_SESSION_NOT_FOUND"),
+    () => requestError(page, "put", `/api/learning-sessions/${batch.session.id}/items/${batch.session.items[0].vocabulary_id}/reveal`, { operation_id: randomUUID() }, 404, "LEARNING_SESSION_NOT_FOUND"),
+    () => requestError(page, "post", `/api/learning-sessions/${batch.session.id}/complete`, { operation_id: randomUUID() }, 404, "LEARNING_SESSION_NOT_FOUND"),
+  ]) await request();
+
+  expect(await mutationCounts(learner.id, pass.pass.id, batch.session.id)).toEqual(before);
+  expect(await learningState(learner.id, pass.pass.id, batch.session.id)).toEqual(exactBefore);
+});
+
+test("completed Set identity follows reassignment and survives removal from current counts", async ({ page }) => {
+  await login(page, learner);
+  const completion = await completeSet(page, reassigned.id);
+  const before = await api(page, "get", "/api/learning-path");
+  const beforeA2 = level(before, "A2"), beforeB1 = level(before, "B1");
+
+  await prisma.vOCABULARY_SET.update({ where: { id: reassigned.id }, data: { cefr_level: "B1" } });
+  const moved = await api(page, "get", "/api/learning-path");
+  expect(level(moved, "A2").completed_count).toBe(beforeA2.completed_count - 1);
+  expect(level(moved, "B1").required_count).toBe(beforeB1.required_count + 1);
+  expect(level(moved, "B1").completed_count).toBe(beforeB1.completed_count + 1);
+
+  await prisma.vOCABULARY_SET.delete({ where: { id: reassigned.id } });
+  const removed = await api(page, "get", "/api/learning-path");
+  expect(level(removed, "B1").required_count).toBe(beforeB1.required_count);
+  expect(level(removed, "B1").completed_count).toBe(beforeB1.completed_count);
+  expect(removed.highest_unlocked_level).toBe(moved.highest_unlocked_level);
+  const history = await prisma.cEFR_LEARNING_PASS.findUniqueOrThrow({ where: { id: completion.pass.id } });
+  expect(history.set_id_snapshot).toBe(reassigned.id);
+  expect(history.vocabulary_set_id).toBeNull();
+});
+
 test("locked B1 blocks Learning, Quiz and Speaking while snapshot mutation requires restart", async ({ page }) => {
   await login(page, learner);
+  const lockedItem = await prisma.vOCABULARY_SET_ITEM.findFirstOrThrow({ where: { vocabulary_set_id: b1.id } });
+  const before = await mutationCounts(learner.id);
+  await requestError(page, "get", `/api/learning/sets/${b1.id}?mode=NORMAL`, undefined, 403, "CEFR_LEVEL_LOCKED");
+  await requestError(page, "get", `/api/learning/sets/${b1.id}?mode=SRS`, undefined, 403, "CEFR_LEVEL_LOCKED");
+  for (const mode of ["NORMAL", "SRS", "QUIZ"]) {
+    await requestError(page, "post", "/api/learning-sessions", {
+      operation_id: randomUUID(), set_id: b1.id, mode,
+      ...(mode === "SRS" ? {} : { vocabulary_ids: [lockedItem.vocabulary_id] }),
+    }, 403, "CEFR_LEVEL_LOCKED");
+  }
+  const quizRun = randomUUID();
+  await requestError(page, "get", `/api/quiz/sets/${b1.id}/questions?type=MULTIPLE_CHOICE&run_id=${quizRun}`, undefined, 403, "CEFR_LEVEL_LOCKED");
+  await requestError(page, "post", "/api/quiz/answers", {
+    event_id: randomUUID(), set_id: b1.id, vocabulary_id: lockedItem.vocabulary_id,
+    run_id: quizRun, question_revision: "locked-boundary", quiz_type: "MULTIPLE_CHOICE",
+    expected_revision: 0, selected_choice_id: randomUUID(),
+  }, 403, "CEFR_LEVEL_LOCKED");
+  expect(await mutationCounts(learner.id)).toEqual(before);
   for (const route of [
     `/learn/vocabulary-sets/${b1.id}`, `/quiz/vocabulary-sets/${b1.id}`,
     `/pronunciation/vocabulary-sets/${b1.id}`,
@@ -86,6 +155,30 @@ test("locked B1 blocks Learning, Quiz and Speaking while snapshot mutation requi
   await expect(page.getByRole("button", { name: "Bắt đầu lại" })).toBeVisible();
 });
 
+test("owned private copy remains usable but earns no CEFR pass or path credit", async ({ page }) => {
+  await login(page, learner);
+  const pathBefore = await api(page, "get", "/api/learning-path");
+  const copy = await api(page, "post", `/api/vocabulary-sets/${one.id}/copy`);
+  created.sets.push(copy.id);
+  const stored = await prisma.vOCABULARY_SET.findUniqueOrThrow({ where: { id: copy.id }, include: { items: true } });
+  expect(stored.owner_id).toBe(learner.id); expect(stored.is_public).toBe(false);
+
+  await api(page, "get", `/api/learning/sets/${copy.id}?mode=NORMAL`);
+  await api(page, "get", `/api/learning/sets/${copy.id}?mode=SRS`);
+  await api(page, "get", `/api/quiz/sets/${copy.id}/questions?type=MULTIPLE_CHOICE&run_id=${randomUUID()}`);
+  const privateSession = await api(page, "post", "/api/learning-sessions", {
+    operation_id: randomUUID(), set_id: copy.id, mode: "NORMAL",
+    vocabulary_ids: stored.items.map(({ vocabulary_id }) => vocabulary_id),
+  });
+  await revealBatch(page, privateSession.session);
+  await completeSession(page, privateSession.session.id);
+  await requestError(page, "post", `/api/learning-path/sets/${copy.id}/passes`, { operation_id: randomUUID() }, 404, "CEFR_PASS_NOT_FOUND");
+
+  const pathAfter = await api(page, "get", "/api/learning-path");
+  expect(pathAfter.levels).toEqual(pathBefore.levels);
+  expect(await prisma.cEFR_LEARNING_PASS.count({ where: { user_id: learner.id, set_id_snapshot: copy.id } })).toBe(0);
+});
+
 test("terminal entitlement survives a new current requirement and Dashboard sources fail independently", async ({ page }) => {
   await prisma.cEFR_LEARNING_PATH_STATE.upsert({
     where: { user_id: learner.id },
@@ -103,7 +196,7 @@ test("terminal entitlement survives a new current requirement and Dashboard sour
   await expect(page.getByRole("region", { name: "Từ cần ôn" }).getByRole("alert")).toBeVisible();
 });
 
-async function completeSet(page, setId) { const pass = await startPass(page, setId); await finishPass(page, pass.pass.id); }
+async function completeSet(page, setId) { const pass = await startPass(page, setId); return finishPass(page, pass.pass.id); }
 async function finishPass(page, passId) {
   while (true) {
     const pass = await api(page, "get", `/api/learning-path/passes/${passId}`);
@@ -117,6 +210,11 @@ function nextBatch(page, passId) { return api(page, "post", `/api/learning-path/
 async function revealBatch(page, session) { for (const item of session.items) await api(page, "put", `/api/learning-sessions/${session.id}/items/${item.vocabulary_id}/reveal`, { operation_id: randomUUID() }); }
 function completeSession(page, id) { return api(page, "post", `/api/learning-sessions/${id}/complete`, { operation_id: randomUUID() }); }
 async function api(page, method, url, data) { const response = await page.request[method](url, data ? { data } : undefined); expect(response.ok(), `${method.toUpperCase()} ${url}`).toBe(true); return (await response.json()).data; }
+async function requestError(page, method, url, data, status, code) {
+  const response = await page.request[method](url, data ? { data } : undefined);
+  expect(response.status(), `${method.toUpperCase()} ${url}`).toBe(status);
+  expect((await response.json()).error.code).toBe(code);
+}
 async function login(page, record) { await page.goto("/login"); await page.locator("#login-email").fill(record.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/\/dashboard$/); }
 async function user(name, role, password_hash) { const row = await prisma.uSER.create({ data: { email: `${name}@${domain}`, display_name: `CEFR ${name}`, role, password_hash } }); created.users.push(row.id); return row; }
 async function systemSet(name, cefr_level, count) {
@@ -128,8 +226,81 @@ async function systemSet(name, cefr_level, count) {
   const row = await prisma.vOCABULARY_SET.create({ data: { owner_id: administrator.id, name: `${run} ${name}`, is_public: true, cefr_level, items: { create: words.map(({ id }, index) => ({ vocabulary_id: id, position: index + 1 })) } } });
   created.sets.push(row.id); return row;
 }
+function level(path, value) { return path.levels.find(({ level: item }) => item === value); }
+async function mutationCounts(userId, passId, sessionId) {
+  const [passes, sessions, progress, rewards, streaks, evidence] = await Promise.all([
+    prisma.cEFR_LEARNING_PASS.count({ where: { user_id: userId, ...(passId ? { id: passId } : {}) } }),
+    prisma.lEARNING_SESSION.count({ where: { user_id: userId, ...(sessionId ? { id: sessionId } : {}) } }),
+    prisma.lEARNING_PROGRESS.count({ where: { user_id: userId } }),
+    prisma.xP_REWARD.count({ where: { user_id: userId } }),
+    prisma.sTREAK_DAY.count({ where: { user_id: userId } }),
+    prisma.lEARNING_SESSION_ITEM.count({ where: { session: { user_id: userId }, evidence: { not: null } } }),
+  ]);
+  return { passes, sessions, progress, rewards, streaks, evidence };
+}
+async function learningState(userId, passId, sessionId) {
+  const [pass, session, path] = await Promise.all([
+    prisma.cEFR_LEARNING_PASS.findUniqueOrThrow({ where: { id: passId }, select: {
+      status: true, created_at: true, completed_at: true,
+      completion_event_id: true, invalidated_at: true,
+    } }),
+    prisma.lEARNING_SESSION.findUniqueOrThrow({ where: { id: sessionId }, select: {
+      status: true, created_at: true, expires_at: true, completed_at: true,
+      completion_event_id: true,
+      items: { orderBy: { position: "asc" }, select: {
+        vocabulary_id: true, position: true, evidence: true,
+        evidence_event_id: true, evidence_at: true,
+      } },
+    } }),
+    prisma.cEFR_LEARNING_PATH_STATE.findUnique({ where: { user_id: userId }, select: {
+      highest_unlocked_level: true, path_completed_at: true,
+      created_at: true, updated_at: true,
+    } }),
+  ]);
+  return { pass, session, path };
+}
+async function createSentinel(password_hash) {
+  sentinel.user = await prisma.uSER.create({ data: { email: `sentinel@${domain}`, display_name: "Unrelated sentinel", role: "USER", password_hash } });
+  sentinel.word = await prisma.vOCABULARY.create({ data: { word: `${run}-unrelated-sentinel` } });
+  sentinel.set = await prisma.vOCABULARY_SET.create({ data: { owner_id: sentinel.user.id, name: `${run} sentinel`, is_public: false, items: { create: [{ vocabulary_id: sentinel.word.id, position: 1 }] } } });
+  sentinel.progress = await prisma.lEARNING_PROGRESS.create({ data: { user_id: sentinel.user.id, vocabulary_id: sentinel.word.id, status: "LEARNING" } });
+  sentinel.snapshot = await sentinelState();
+}
+async function assertAndCleanupSentinel() {
+  expect(await sentinelState()).toEqual(sentinel.snapshot);
+  await prisma.lEARNING_PROGRESS.delete({ where: { id: sentinel.progress.id } });
+  await prisma.vOCABULARY_SET.delete({ where: { id: sentinel.set.id } });
+  await prisma.vOCABULARY.delete({ where: { id: sentinel.word.id } });
+  await prisma.uSER.delete({ where: { id: sentinel.user.id } });
+}
+async function sentinelState() {
+  const [user, word, set, progress] = await Promise.all([
+    prisma.uSER.findUnique({ where: { id: sentinel.user.id }, select: {
+      id: true, email: true, display_name: true, avatar_url: true, role: true,
+      is_active: true, total_xp: true, daily_xp_goal: true, created_at: true, updated_at: true,
+    } }),
+    prisma.vOCABULARY.findUnique({ where: { id: sentinel.word.id }, select: {
+      id: true, owner_id: true, word: true, phonetic: true,
+      pronunciation_url: true, created_at: true, updated_at: true,
+    } }),
+    prisma.vOCABULARY_SET.findUnique({ where: { id: sentinel.set.id }, select: {
+      id: true, owner_id: true, name: true, description: true, cefr_level: true,
+      is_public: true, created_at: true, updated_at: true,
+      items: { orderBy: { position: "asc" }, select: { vocabulary_id: true, position: true } },
+    } }),
+    prisma.lEARNING_PROGRESS.findUnique({ where: { id: sentinel.progress.id }, select: {
+      id: true, user_id: true, vocabulary_id: true, status: true, review_count: true,
+      revision: true, last_reviewed_at: true, last_event_id: true, next_review_at: true,
+      interval_days: true, ease_factor: true, created_at: true, updated_at: true,
+    } }),
+  ]);
+  return { user, word, set, progress };
+}
 async function cleanup() {
+  await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
+  await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: created.users } } });
+  await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.cEFR_LEARNING_PASS.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.cEFR_LEARNING_PATH_STATE.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
