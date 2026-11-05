@@ -597,6 +597,13 @@ async function expectEqualNavigationButtons(previous, next) {
 
 async function installLearningMock(page, options = {}) {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning-path/sets/*/passes", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({ status: 404, json: failure("CEFR_PASS_NOT_FOUND") });
+  });
   const calls = { reads: [], events: [], sessions: [] };
   let resolveSrsSession;
   const srsSessionReady = options.deferSrsSession

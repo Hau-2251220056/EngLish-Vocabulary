@@ -13,6 +13,7 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
   let revealed = false;
   let boundedComplete = false;
   let fullPassComplete = false;
+  let managedSessionCreated = false;
 
   await page.route("**/api/learning-path", (route) => route.fulfill({ status: 200, json: { success: true, data: fullPassComplete ? pathProjection() : startPathProjection() } }));
 
@@ -29,7 +30,10 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
     } },
   }));
   await page.route(`**/api/learning-path/sets/${SET_ID}/passes`, (route) => route.fulfill({ status: 201, json: { success: true, data: { pass: passProjection(), replayed: false, resumed: false } } }));
-  await page.route(`**/api/learning-path/passes/${PASS_ID}/sessions`, (route) => route.fulfill({ status: 201, json: { success: true, data: { session: sessionProjection({ revealed, boundedComplete }), replayed: false, resumed: false } } }));
+  await page.route(`**/api/learning-path/passes/${PASS_ID}/sessions`, (route) => {
+    managedSessionCreated = true;
+    return route.fulfill({ status: 201, json: { success: true, data: { session: sessionProjection({ revealed, boundedComplete }), replayed: false, resumed: false } } });
+  });
   await page.route(`**/api/learning-sessions/${SESSION_ID}/items/${VOCABULARY_ID}/reveal`, (route) => {
     revealed = true;
     return route.fulfill({ status: 200, json: { success: true, data: { item: { vocabulary_id: VOCABULARY_ID, evidence: "NORMAL_REVEALED", evidence_at: CREATED_AT }, session: sessionProjection({ revealed: true }), replayed: false, already_acknowledged: false } } });
@@ -46,6 +50,8 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
 
   await page.goto("/dashboard");
   await page.getByRole("region", { name: "Lộ trình CEFR" }).getByRole("link", { name: "Bắt đầu học" }).click();
+  await expect.poll(() => managedSessionCreated).toBe(true);
+  await expect(page.getByRole("status").filter({ hasText: "Đang chuẩn bị phiên học…" })).toHaveCount(0);
   await page.getByRole("heading", { name: "book" }).press("Space");
   await expect(page.getByRole("button", { name: "Hoàn thành phiên" })).toBeEnabled();
   await page.getByRole("button", { name: "Hoàn thành phiên" }).click();
