@@ -8,20 +8,22 @@
 
 **HUMAN TASK approval:** `GRANTED — TASK-001 THROUGH TASK-015`
 
-**Implementation authorized:** `NO`
+**Final closure status:** `DONE — HUMAN FINAL ACCEPTED 2026-11-05`
 
-**Formal TEST, migration execution, database access, CI, commit, push, merge, and deployment authorized:** `NO`
+**Implementation authorization at task-authoring time:** `NO — historical record; later bounded stages were separately authorized`
 
-This document defines executable implementation slices for later approval. It does not authorize executing any task.
+**Formal TEST, migration execution, database access, CI, commit, push, merge, and deployment authorization at task-authoring time:** `NO — historical record; this closure record grants no new operational authority`
+
+This document originally defined executable implementation slices for later approval. It did not itself authorize executing any task; the final closure record in Section 10 records the later explicit HUMAN decision without authorizing integration or deployment.
 
 ## 1. Overview and Feature Status
 
-CEFR Learning Path V1 is an approved change request that extends completed ELVocab capabilities rather than rebuilding them:
+At task-authoring time, CEFR Learning Path V1 was an approved change request extending completed ELVocab capabilities rather than rebuilding them:
 
 - Vocabulary Set ownership, visibility, copying, Set CEFR, Learning Session V1, Flashcard Learning, Learning Progress/SRS, USER Dashboard, Quiz, Speaking, XP, and Streak are existing `DONE` foundations to preserve.
-- `Continue Learning`, `Words to Review`, and their Dashboard summaries are currently `TODO` in `docs/FEATURE_STATUS.md` and are activated by the approved SPEC/PLAN.
-- No implementation for the new full-Set pass, CEFR unlock state, primary next-Set recommendation, or global review exists yet.
-- `docs/FEATURE_STATUS.md` must remain unchanged until implementation is separately authorized and begins.
+- `Continue Learning`, `Words to Review`, and their Dashboard summaries were `TODO` in `docs/FEATURE_STATUS.md` and were activated by the approved SPEC/PLAN.
+- No implementation for the new full-Set pass, CEFR unlock state, primary next-Set recommendation, or global review existed yet.
+- `docs/FEATURE_STATUS.md` had to remain unchanged until implementation was separately authorized and began.
 
 The tasks are grouped into three coherent workstreams. Cross-cutting documentation, formal TEST/UI review, formal REVIEW, and HUMAN closure remain separate gates after implementation.
 
@@ -801,7 +803,7 @@ Provide the final evidence and approval gates required before closure. This task
 - [x] Documentation, Legacy/Regression Impact Scan, UI/UX Review, formal TEST/REVIEW, HUMAN acceptance: TASK-014–015.
 - [x] No C2, `is_required`, Daily Goal dependency, or unapproved scope expansion: all tasks.
 
-## 9. HUMAN TASK Approval Gate
+## 9. Historical HUMAN TASK Approval Gate — 2026-11-03
 
 ```text
 SOURCE SPEC: HUMAN-APPROVED — 2026-11-03
@@ -813,3 +815,30 @@ TEST / DATABASE / MIGRATION EXECUTION AUTHORIZED: NO
 COMMIT / PUSH / MERGE / DEPLOYMENT AUTHORIZED: NO
 NEXT ALLOWED ACTION: Obtain separate explicit HUMAN authorization for a bounded IMPLEMENT scope
 ```
+
+## 10. HUMAN Final Acceptance and Closure — 2026-11-05
+
+The HUMAN explicitly decided:
+
+> HUMAN FINAL ACCEPTED — CEFR Learning Path V1, accepting the publicly disclosed verification limitations. Prepare the separate DONE status update. Do not merge or deploy.
+
+### Accepted evidence
+
+- Final Gate 2 run `41974809164`: `149/149 PASS`, `0 FAIL`, `0 SKIP` across backend offline, frontend offline, mocked Chromium, backend PostgreSQL 17, and real-stack Chromium.
+- Final tested source: `309d46179ec05d4af429c27107080a4cedb1304a`.
+- Final workflow: `c3ec2b02f82e8cb50539c7b6c23f11f24aa2dac7`.
+- Final TASK-014 documentation publication: `2f82e0d22ba79c084dff40dcbfc4a28dbc56b3be` on `refs/heads/verification/cefr-learning-path-v1-phase-c`.
+- Formal REVIEW documentation findings MEDIUM-01 and MEDIUM-02 are resolved; the final TASK-014 read-only re-review found its acceptance criteria satisfied and returned `READY_FOR_HUMAN_FINAL_ACCEPTANCE`.
+- The prior HUMAN UI/UX approval within the documented reviewed scope is accepted as part of final closure.
+
+### Accepted disclosed limitations
+
+- Actual Chrome browser-level 200% zoom remains unverified and is not represented as PASS.
+- The dedicated Quiz and Speaking locked-state UI E2E specs were not selected by final Gate 2 run `41974809164`.
+- Earlier focused verification evidence exists for those UI corrections: `62/62` focused offline PASS and `26/26` focused mocked Chromium PASS. This earlier evidence is not represented as newly executed final Gate 2 coverage.
+
+### Integration boundary
+
+- This HUMAN acceptance closes the approved CEFR Learning Path V1 feature workflow and authorizes the separate local DONE status record only.
+- No merge, deployment, Production verification, additional CI dispatch, or database operation is recorded or implied.
+- Publication and integration of this closure documentation require separate authorization.

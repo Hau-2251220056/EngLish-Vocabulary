@@ -543,9 +543,28 @@ Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
 Spaced Repetition	DONE	✓	✓	✓	✓	✓	✓
-Words to Review	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
+Words to Review	DONE	✓	✓	✓	✓	PASS	APPROVE
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Continue Learning	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
+Continue Learning	DONE	✓	✓	✓	✓	PASS	APPROVE
+
+## CEFR Learning Path V1 Closure
+
+Status: DONE — HUMAN FINAL ACCEPTED on 2026-11-05; documentation publication is verified, while merge and deployment were not performed.
+
+### Accepted Evidence
+
+- Final Gate 2 run `41974809164` passed `149/149` executed assertions with `0 FAIL` and `0 SKIP` against tested source `309d46179ec05d4af429c27107080a4cedb1304a` using workflow `c3ec2b02f82e8cb50539c7b6c23f11f24aa2dac7`.
+- TASK-014 documentation corrections were published at `2f82e0d22ba79c084dff40dcbfc4a28dbc56b3be`; MEDIUM-01 and MEDIUM-02 are resolved, TASK-014 acceptance criteria passed read-only re-review, and the prior HUMAN UI/UX approval is preserved.
+- HUMAN final acceptance explicitly accepts the disclosed verification limitations and authorizes this separate DONE status record without authorizing merge or deployment.
+
+### Accepted Limitations
+
+- Actual Chrome browser-level 200% zoom remains unverified and is not claimed as PASS.
+- Final Gate 2 did not select the dedicated Quiz/Speaking locked-state UI E2E specs. Earlier focused evidence covers those corrections with `62/62` offline PASS and `26/26` mocked Chromium PASS; it is not represented as final Gate 2 execution.
+
+### Integration Status
+
+- Verification publication is complete. Merge, deployment, Production verification and post-deployment smoke testing were not performed and remain separate from feature acceptance.
 
 Learning Progress represents the current learning state of a user for individual vocabulary.
 
@@ -664,8 +683,8 @@ Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Streak Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Words to Review Summary	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
-Continue Learning Summary	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
+Words to Review Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
+Continue Learning Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 
 Dashboard V1 composes actual current-session data from the completed Authentication context, read-only Learning Progress summary and owner-scoped My Vocabulary Sets list. It adds no Dashboard endpoint, schema or migration.
 
