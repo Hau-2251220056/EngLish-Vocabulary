@@ -12,6 +12,7 @@ const domain = `${run}.cefr-path.integration.test`;
 const created = { users: [], vocabularies: [], sets: [], topics: [] };
 const sentinel = {};
 let learner, outsider, administrator, systemTopic, one, ten, eleven, a2, b1, reassigned;
+let elevenPass, remainingBatch, remainingVocabulary;
 
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
@@ -45,7 +46,7 @@ test("first USER receives A1 recommendation and Guest/ADMIN remain role-correct"
   await expect(path.getByRole("link", { name: "Bắt đầu học" })).toBeVisible();
 });
 
-test("1/10/>10 Sets require completed bounded sessions, resume after reload, and unlock A2", async ({ page }) => {
+test("one-item A1 Set requires completed bounded evidence and explicit pass completion", async ({ page }) => {
   await login(page, learner);
   const concurrent = await Promise.all([
     startPass(page, one.id), startPass(page, one.id),
@@ -66,9 +67,16 @@ test("1/10/>10 Sets require completed bounded sessions, resume after reload, and
     can_continue: true,
   });
   await api(page, "post", `/api/learning-path/passes/${started.pass.id}/complete`, { operation_id: randomUUID() });
+});
 
+test("ten-item A1 Set completes through authoritative bounded-session evidence", async ({ page }) => {
+  await login(page, learner);
   await completeSet(page, ten.id);
-  const elevenPass = await startPass(page, eleven.id);
+});
+
+test("eleven-item A1 Set preserves the final item after its first bounded batch", async ({ page }) => {
+  await login(page, learner);
+  elevenPass = await startPass(page, eleven.id);
   const first = await nextBatch(page, elevenPass.pass.id);
   expect(first.session.items).toHaveLength(10);
   await revealBatch(page, first.session); await completeSession(page, first.session.id);
@@ -77,12 +85,15 @@ test("1/10/>10 Sets require completed bounded sessions, resume after reload, and
     state: "ACTIVE", snapshot_size: 11, studied_items: 10, remaining_items: 1,
     can_continue: true,
   });
-  const remainingBatch = await nextBatch(page, elevenPass.pass.id);
+  remainingBatch = await nextBatch(page, elevenPass.pass.id);
   expect(remainingBatch.session.items).toHaveLength(1);
-  const remainingVocabulary = await prisma.vOCABULARY.findUniqueOrThrow({
+  remainingVocabulary = await prisma.vOCABULARY.findUniqueOrThrow({
     where: { id: remainingBatch.session.items[0].vocabulary_id }, select: { word: true },
   });
+});
 
+test("eleven-item A1 Set resumes after reload, completes its final item, and unlocks A2", async ({ page }) => {
+  await login(page, learner);
   await page.goto("/dashboard");
   const pathRegion = page.getByRole("region", { name: "Lộ trình CEFR" });
   const resumeLink = pathRegion.getByRole("link", { name: /Tiếp tục học/i });
