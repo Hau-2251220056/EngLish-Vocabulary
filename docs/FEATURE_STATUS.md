@@ -543,9 +543,9 @@ Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress	DONE	✓	✓	✓	✓	✓	✓
 Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
 Spaced Repetition	DONE	✓	✓	✓	✓	✓	✓
-Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Words to Review	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Continue Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Continue Learning	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
 
 Learning Progress represents the current learning state of a user for individual vocabulary.
 
@@ -591,7 +591,7 @@ Status: DONE
 
 ### Deferred / Non-blocking
 
-- Spaced Repetition was delivered as the separately approved SRS V1 extension described below. Words to Review, Topic Learning Progress and Continue Learning remain `TODO`.
+- Spaced Repetition was delivered as the separately approved SRS V1 extension described below. At this historical Flashcard V1 closure, Words to Review, Topic Learning Progress and Continue Learning remained `TODO`; CEFR Learning Path V1 now implements Words to Review and Continue Learning, while Topic Learning Progress remains `TODO`.
 - Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community and AI remain outside this DONE boundary.
 - Guarded remote TEST DB latency was separately diagnosed as database/network round-trip dominated. It is a non-blocking performance observation and no optimization was included in this closure.
 
@@ -622,7 +622,7 @@ Status: DONE
 
 ### Deferred / Non-blocking
 
-- Words-to-Review/Dashboard review summaries, Topic progress, Continue Learning, persistent history/session analytics, FSRS/SM-2, gamification and pronunciation expansion remain outside SRS V1.
+- At this historical SRS V1 closure, Words-to-Review/Dashboard review summaries, Topic progress and Continue Learning remained outside SRS V1. CEFR Learning Path V1 now implements the bounded global review, Dashboard review summary and next-learning recommendation without changing the SRS scheduler; Topic progress, persistent history/session analytics, FSRS/SM-2, gamification and pronunciation expansion remain deferred.
 - `ease_factor` remains unused. The 30-day interval cap remains intentional.
 - Configured development database migration parity remains `NOT VERIFIED — Supabase/Prisma schema-engine error`; dedicated `.env.test` migration parity passed with 7 migrations and none pending. No main database mutation was performed.
 
@@ -638,7 +638,7 @@ Status: DONE
 - HUMAN final closure is approved; Learning Progress View V1 is `DONE` while the existing Learning Progress engine remains a separate completed capability.
 - Summary covers persisted `LEARNING`, `LEARNED` and compatibility-only `NEEDS_REVIEW`; conceptual `NEW` is excluded.
 - Status filtering and bounded pagination are included; search is deferred.
-- No schema migration, SRS/review queue, Topic/Set progress, Continue Learning, history, accuracy, Quiz/Pronunciation result, XP/gamification, Dashboard or Flashcard redesign is authorized.
+- This historical Learning Progress View V1 boundary authorized no schema migration, SRS/review queue, Topic/Set progress, Continue Learning, history, accuracy, Quiz/Pronunciation result, XP/gamification, Dashboard or Flashcard redesign. CEFR Learning Path V1 later authorizes and implements only its approved additive schema, bounded global review and next-learning recommendation; the other exclusions remain unchanged.
 
 ### Formal Evidence
 
@@ -650,7 +650,7 @@ Status: DONE
 ### Deferred / Non-blocking
 
 - Word search and client-selectable sorting remain deferred.
-- Conceptual `NEW` global counting, automatic `NEEDS_REVIEW` transitions, SRS scheduling, review queue/Words to Review, review actions, Topic/Set progress and Continue Learning remain deferred.
+- At this historical Learning Progress View V1 closure, conceptual `NEW` global counting, automatic `NEEDS_REVIEW` transitions, SRS scheduling, review queue/Words to Review, review actions, Topic/Set progress and Continue Learning remained deferred. CEFR Learning Path V1 now implements the bounded review queue/actions and next-learning recommendation; conceptual `NEW` global counting, automatic transitions and Topic/Set progress remain deferred.
 - History/activity timeline, accuracy, Quiz/Pronunciation results, XP/gamification, Dashboard implementation, Flashcard redesign and a standalone USER Vocabulary catalog remain outside this extension.
 
 4.6 Dashboard
@@ -664,8 +664,8 @@ Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
 Streak Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Continue Learning Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Words to Review Summary	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
+Continue Learning Summary	IN_PROGRESS	✓	✓	✓	✓	PASS	CHANGES_REQUIRED
 
 Dashboard V1 composes actual current-session data from the completed Authentication context, read-only Learning Progress summary and owner-scoped My Vocabulary Sets list. It adds no Dashboard endpoint, schema or migration.
 
@@ -679,7 +679,7 @@ The Dashboard must not become a separate source of truth for business data.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
 - Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
-- The original Dashboard V1 closure excluded XP/Level and Streak. The later XP & Level V1 and Streak V1 workstreams are `DONE`. Streak V1 adds the compact read-only USER Streak card. Daily Goal, Topic/Set percentages, Words to Review/SRS, Continue Learning/recency, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
+- The original Dashboard V1 closure excluded XP/Level, Streak, Words to Review and Continue Learning. The later XP & Level V1 and Streak V1 workstreams are `DONE`, and CEFR Learning Path V1 now implements the bounded Words to Review summary and authoritative next-learning recommendation. Daily Goal, Topic/Set percentages, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
 ### Dashboard V1 Formal Evidence

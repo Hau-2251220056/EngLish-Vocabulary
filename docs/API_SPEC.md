@@ -1902,8 +1902,8 @@ PATCH  /api/admin/vocabulary-sets/:setId
 DELETE /api/admin/vocabulary-sets/:setId
 Learning
 GET    /api/learning/sets/:setId?mode=<NORMAL|SRS>
-POST   /api/learning/review
 GET    /api/learning/review
+POST   /api/learning/review/sessions
 Quiz
 GET    /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>
 POST   /api/quiz/answers
