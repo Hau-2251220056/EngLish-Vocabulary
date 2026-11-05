@@ -42,6 +42,7 @@ test("authorized NORMAL loads preserve exact Set and duplicate-spelling Vocabula
 
 test("Learning failures map to stable inaccessible, empty, unauthenticated and recoverable states", async () => {
   const cases = [
+    ["CEFR_LEVEL_LOCKED", SPEAKING_PRACTICE_PHASES.INACCESSIBLE, "CEFR_LEVEL_LOCKED"],
     ["LEARNING_SET_NOT_FOUND", SPEAKING_PRACTICE_PHASES.INACCESSIBLE, "LEARNING_SET_NOT_FOUND"],
     ["FORBIDDEN", SPEAKING_PRACTICE_PHASES.INACCESSIBLE, "FORBIDDEN"],
     ["LEARNING_SET_EMPTY", SPEAKING_PRACTICE_PHASES.EMPTY, "LEARNING_SET_EMPTY"],

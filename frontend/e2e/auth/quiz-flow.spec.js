@@ -165,6 +165,21 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
     expect(calls.questions).toHaveLength(2);
   });
 
+  test("CEFR-locked Quiz explains the lock while ordinary failures remain retryable errors", async ({ page }) => {
+    await installQuizApiMock(page, { onQuestions: () => failure(403, "CEFR_LEVEL_LOCKED") });
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
+    await expect(page.getByRole("heading", { name: "Cấp độ CEFR chưa được mở khóa" })).toBeVisible();
+    await expect(page.getByText(/xem chi tiết hoặc tạo bản sao riêng/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thử lại" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Quay lại", exact: true })).toBeVisible();
+
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await installQuizApiMock(page, { onQuestions: () => failure(503, "QUIZ_REQUEST_FAILED") });
+    await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
+    await expect(page.getByRole("heading", { name: "Không thể tải Quiz" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  });
+
   test("restart confirms partial progress, starts a fresh run, and is direct after completion", async ({ page }) => {
     const calls = await installQuizApiMock(page, { questions: [question("word-wake", 1, "wake", "thức dậy")] });
     await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);

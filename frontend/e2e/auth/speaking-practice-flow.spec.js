@@ -198,6 +198,19 @@ test("Learning failure exposes retry and keeps the request read-only", async ({ 
   expect(calls.writes).toEqual([]);
 });
 
+test("CEFR-locked Speaking explains the lock and keeps ordinary failures distinct", async ({ page }) => {
+  const calls = await installSpeakingBrowserMocks(page, { learningError: { status: 403, code: "CEFR_LEVEL_LOCKED" } });
+  await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
+
+  await expect(page.getByRole("heading", { name: "Cấp độ CEFR chưa được mở khóa" })).toBeVisible();
+  await expect(page.getByText(/xem chi tiết hoặc tạo bản sao riêng/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thử lại" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Quay lại bộ từ" })).toBeVisible();
+  expect(calls.learning.length).toBeGreaterThanOrEqual(1);
+  expect(calls.learning.every((call) => call.method === "GET" && call.mode === "NORMAL")).toBe(true);
+  expect(calls.writes).toEqual([]);
+});
+
 test("startup and finalization watchdogs settle at their approved boundaries", async ({ page }) => {
   await installSpeakingBrowserMocks(page, { recognitionStartsSynchronously: false });
   await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
@@ -255,6 +268,7 @@ async function installSpeakingBrowserMocks(page, options = {}) {
   const calls = { learning: [], providerRequests: [], writes: [] };
   const user = Object.hasOwn(options, "user") ? options.user : publicUser;
   let learningFailures = options.learningFailures ?? 0;
+  const learningError = options.learningError ?? null;
 
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -308,6 +322,10 @@ async function installSpeakingBrowserMocks(page, options = {}) {
     const requestedSetId = decodeURIComponent(url.pathname.split("/").at(-1));
     calls.learning.push({ method: request.method(), mode: url.searchParams.get("mode"), setId: requestedSetId });
     if (request.method() !== "GET") calls.writes.push({ method: request.method(), pathname: url.pathname });
+    if (learningError) {
+      await route.fulfill({ status: learningError.status, json: { success: false, error: { code: learningError.code, message: "locked" } } });
+      return;
+    }
     if (learningFailures > 0) {
       learningFailures -= 1;
       await route.fulfill({ status: 503, json: { success: false, error: { code: "LEARNING_REQUEST_FAILED", message: "temporary" } } });

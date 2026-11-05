@@ -18,4 +18,9 @@ test("review UI exposes explicit continuation only after fixed-snapshot completi
   assert.match(source, /role="group" aria-label="Đánh giá SRS"/);
   assert.match(source, /motion-reduce:animate-none/);
   assert.match(source, /setRequestToken\(\(value\) => value \+ 1\)/);
+  assert.match(source, /ref=\{cardButtonRef\}/);
+  assert.match(source, /cardButtonRef\.current\?\.focus\(\)/);
+  assert.match(source, /setCardTransitionVersion\(\(value\) => value \+ 1\)/);
+  assert.match(source, /\[cardTransitionVersion, currentId, status\]/);
+  assert.doesNotMatch(source, /<h1[^>]+tabIndex=\{-1\}/);
 });

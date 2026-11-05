@@ -108,6 +108,17 @@ test("permission denial overrides the generic inconclusive outcome with explicit
   assert.equal(presentation.actions.retry.enabled, true);
 });
 
+test("CEFR lock uses explicit guidance without becoming a retryable request failure", () => {
+  const presentation = getSpeakingPracticePresentation(snapshot({
+    phase: SPEAKING_PRACTICE_PHASES.INACCESSIBLE,
+    issue: "CEFR_LEVEL_LOCKED",
+  }));
+  assert.equal(presentation.heading, "Cấp độ CEFR chưa được mở khóa");
+  assert.match(presentation.description, /xem chi tiết|bản sao riêng/i);
+  assert.match(presentation.issue.message, /CEFR chưa được mở khóa/i);
+  assert.match(presentation.issue.recovery, /chi tiết bộ từ|bản sao riêng/i);
+});
+
 test("service and audio-capture failures retain distinct actionable recovery", () => {
   for (const [code, message] of [
     ["SERVICE_NOT_ALLOWED", /dịch vụ nhận diện/i],

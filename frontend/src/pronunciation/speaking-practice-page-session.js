@@ -29,6 +29,7 @@ const ACTIVE_PLAYBACK_PHASES = new Set([
 ]);
 
 export const SPEAKING_PRACTICE_LOAD_ISSUES = Object.freeze({
+  CEFR_LOCKED: "CEFR_LEVEL_LOCKED",
   EMPTY: "LEARNING_SET_EMPTY",
   NOT_FOUND: "LEARNING_SET_NOT_FOUND",
   FORBIDDEN: "FORBIDDEN",
@@ -345,7 +346,8 @@ export function resolveSpeakingPracticeReturnTo(setId, state) {
 
 export function mapLearningIssue(error) {
   const code = error?.code;
-  if (code === SPEAKING_PRACTICE_LOAD_ISSUES.EMPTY
+  if (code === SPEAKING_PRACTICE_LOAD_ISSUES.CEFR_LOCKED
+    || code === SPEAKING_PRACTICE_LOAD_ISSUES.EMPTY
     || code === SPEAKING_PRACTICE_LOAD_ISSUES.NOT_FOUND
     || code === SPEAKING_PRACTICE_LOAD_ISSUES.FORBIDDEN
     || code === SPEAKING_PRACTICE_LOAD_ISSUES.INVALID_RESPONSE) return code;

@@ -485,6 +485,7 @@ function canStartFrom(phase) {
 
 function isInaccessibleIssue(issue) {
   return issue === SPEAKING_PRACTICE_ISSUES.INACCESSIBLE
+    || issue === "CEFR_LEVEL_LOCKED"
     || issue === "LEARNING_SET_NOT_FOUND"
     || issue === "UNAUTHENTICATED"
     || issue === "FORBIDDEN";

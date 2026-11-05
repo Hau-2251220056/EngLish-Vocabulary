@@ -55,6 +55,12 @@ const PERMISSION_DENIED_COPY = copy(
   "alert",
 );
 
+const CEFR_LOCKED_COPY = copy(
+  "Cấp độ CEFR chưa được mở khóa",
+  "Bạn có thể xem chi tiết hoặc tạo bản sao riêng, nhưng chưa thể luyện nói trực tiếp với bộ từ công khai này.",
+  "alert",
+);
+
 const OUTCOME_COPY = Object.freeze({
   [RECOGNITION_OUTCOMES.PRIMARY_MATCH]: Object.freeze({
     heading: "Đã nhận diện từ mục tiêu",
@@ -100,6 +106,7 @@ const ISSUE_COPY = Object.freeze({
   RECOGNITION_ERROR: issue("Trình duyệt gặp lỗi khi nhận diện.", "Hãy thử lại hoặc dùng một trình duyệt được hỗ trợ."),
   NO_PLAYBACK_AVAILABLE: issue("Thiết bị chưa có cách phát từ mẫu.", "Bạn vẫn có thể luyện nói hoặc chuyển sang từ khác."),
   PLAYBACK_FAILED: issue("Không thể phát từ mẫu.", "Hãy thử lại hoặc tiếp tục với thao tác khác đang khả dụng."),
+  CEFR_LEVEL_LOCKED: issue("Bộ từ thuộc cấp độ CEFR chưa được mở khóa.", "Quay lại chi tiết bộ từ để xem nội dung hoặc tạo bản sao riêng."),
   LEARNING_SET_NOT_FOUND: issue("Không thể tìm thấy bộ từ.", "Quay lại trang bộ từ và chọn một bộ từ khả dụng."),
   FORBIDDEN: issue("Bạn không có quyền truy cập bộ từ này.", "Quay lại trang bộ từ và chọn nội dung bạn được phép học."),
   UNAUTHENTICATED: issue("Phiên đăng nhập không còn hợp lệ.", "Đăng nhập lại rồi mở bộ từ."),
@@ -122,11 +129,15 @@ export function getSpeakingPracticePresentation(snapshot = {}) {
   const phase = typeof snapshot?.phase === "string" ? snapshot.phase : SPEAKING_PRACTICE_PHASES.LOADING;
   const permissionDenied = phase === SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR
     && snapshot?.issue === "PERMISSION_DENIED";
+  const cefrLocked = phase === SPEAKING_PRACTICE_PHASES.INACCESSIBLE
+    && snapshot?.issue === "CEFR_LEVEL_LOCKED";
   const state = completed
     ? COMPLETED_COPY
     : permissionDenied
       ? PERMISSION_DENIED_COPY
-      : STATE_COPY[phase] ?? STATE_COPY[SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR];
+      : cefrLocked
+        ? CEFR_LOCKED_COPY
+        : STATE_COPY[phase] ?? STATE_COPY[SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR];
   const outcome = completed || phase === SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR
     ? null
     : getRecognitionOutcomePresentation(snapshot?.result);

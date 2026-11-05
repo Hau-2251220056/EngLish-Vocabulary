@@ -27,7 +27,8 @@ export function GlobalReviewPage() {
   const [nearestFuture, setNearestFuture] = useState(null);
   const [requestToken, setRequestToken] = useState(0);
   const [pendingRating, setPendingRating] = useState(null);
-  const headingRef = useRef(null);
+  const [cardTransitionVersion, setCardTransitionVersion] = useState(0);
+  const cardButtonRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -64,7 +65,7 @@ export function GlobalReviewPage() {
       setSession(result.session); setCards(result.cards); setQueue(nextQueue);
       saveGlobalReviewState(storage, { session_id: result.session.id, cards: result.cards, queue: nextQueue });
       setStatus(result.session.state === "COMPLETED" ? "complete" : "ready");
-      queueMicrotask(() => headingRef.current?.focus());
+      queueMicrotask(() => cardButtonRef.current?.focus());
     }).catch((reason) => {
       if (!active) return;
       if (reason?.code === "LEARNING_SESSION_EXPIRED") setStatus("expired");
@@ -80,8 +81,8 @@ export function GlobalReviewPage() {
   const resolvedCount = session ? session.snapshot_size - new Set(queue).size : 0;
 
   useEffect(() => {
-    if (status === "ready" && currentId) queueMicrotask(() => headingRef.current?.focus());
-  }, [currentId, status]);
+    if (status === "ready" && currentId) queueMicrotask(() => cardButtonRef.current?.focus());
+  }, [cardTransitionVersion, currentId, status]);
 
   async function rate(rating) {
     if (!currentCard || !session || pendingRating) return;
@@ -95,6 +96,7 @@ export function GlobalReviewPage() {
         ? { ...card, progress: { ...card.progress, ...accepted } } : card);
       const nextQueue = applyGlobalReviewRating(queue, currentCard.id, rating);
       setSession(accepted.session); setCards(nextCards); setQueue(nextQueue); setRevealed(false);
+      setCardTransitionVersion((value) => value + 1);
       saveGlobalReviewState(browserStorage(), { session_id: accepted.session.id, cards: nextCards, queue: nextQueue });
       if (accepted.session.state === "COMPLETED") setStatus("complete");
     } catch (reason) {
@@ -118,8 +120,8 @@ export function GlobalReviewPage() {
       <section className="w-full rounded-3xl border border-slate-200 bg-white p-[clamp(1rem,4vw,2rem)] shadow-[var(--shadow-md)]">
         <div className="mb-5 flex items-center justify-between gap-3"><Link className={BUTTON} to="/dashboard"><ArrowLeft aria-hidden="true" /> Dashboard</Link><strong aria-live="polite">{resolvedCount} / {session.snapshot_size}</strong></div>
         <progress className="mb-6 h-2 w-full accent-[var(--accent-primary)]" max={session.snapshot_size} value={resolvedCount}>{resolvedCount}/{session.snapshot_size}</progress>
-        <button className="min-h-52 w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" type="button" onClick={() => setRevealed((value) => !value)} aria-pressed={revealed}>
-          <h1 className="m-0 text-[clamp(2rem,7vw,4rem)]" id="global-review-title" ref={headingRef} tabIndex={-1}>{revealed ? meaning?.meaning_vi ?? "Chưa có nghĩa" : currentCard.word}</h1>
+        <button className="min-h-52 w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" type="button" onClick={() => setRevealed((value) => !value)} aria-pressed={revealed} ref={cardButtonRef}>
+          <h1 className="m-0 text-[clamp(2rem,7vw,4rem)]" id="global-review-title">{revealed ? meaning?.meaning_vi ?? "Chưa có nghĩa" : currentCard.word}</h1>
           <p className="mb-0 mt-3 text-sm text-slate-500">{revealed ? "Chọn mức độ ghi nhớ" : "Nhấn để lật thẻ"}</p>
         </button>
         {error ? <p className="rounded-xl bg-red-50 p-3 text-red-800" role="alert">{error}</p> : null}

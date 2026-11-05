@@ -5,8 +5,10 @@ import { QuizApiError } from "../src/services/quiz-service.js";
 import { classifyQuizLoadError, classifyQuizSubmissionError, createSharedQuizQuestionLoader, readQuizSessionWithRecovery } from "../src/quiz/quiz-presentation.js";
 
 test("Quiz presentation classifies choice and conflict errors", () => {
+  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "CEFR_LEVEL_LOCKED", kind: "api", status: 403, message: "x" })), "locked");
   assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" })), "stale");
   assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_ITEM_CHANGED", kind: "conflict", status: 409, message: "x" })), "stale");
+  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_REQUEST_FAILED", kind: "api", status: 503, message: "x" })), "error");
   assert.equal(classifyQuizSubmissionError(new QuizApiError({ code: "QUIZ_CHOICE_CHANGED", kind: "conflict", status: 409, message: "x" })).kind, "question-changed");
 });
 test("stale question reads reconcile once without posting or looping", async () => {

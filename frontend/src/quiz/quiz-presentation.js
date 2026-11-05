@@ -14,6 +14,7 @@ export function createSharedQuizQuestionLoader(load) {
 }
 
 export function classifyQuizLoadError(error) {
+  if (error?.code === "CEFR_LEVEL_LOCKED") return "locked";
   if (["QUIZ_SET_EMPTY", "LEARNING_SET_EMPTY"].includes(error?.code)) return "empty";
   if (["QUIZ_ITEM_CHANGED", "QUIZ_CHOICES_UNAVAILABLE"].includes(error?.code)) return "stale";
   if (error?.kind === "not-found") return "not-found";
