@@ -580,17 +580,26 @@ test("delete removes only the Vocabulary aggregate and owned children", { concur
 
 test("unexpected Vocabulary failures use the final safe 500 contract", { concurrency: false }, async () => {
   const sensitiveValues = ["database-credential-value", "session-secret-value", "stack trace"];
-  const failingPrisma = {
-    vOCABULARY: {
-      findMany() {
-        throw new Error(sensitiveValues.join(" | "));
-      },
+  const cookie = await authenticatedCookie("ADMIN");
+  let failureIntercepted = false;
+  const failingPrisma = new Proxy(prisma, {
+    get(target, property) {
+      if (property === "vOCABULARY") {
+        return {
+          findMany() {
+            failureIntercepted = true;
+            throw new Error(sensitiveValues.join(" | "));
+          },
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
     },
-  };
+  });
   const failingHttp = await startHttpTestServer(createApp({ prisma: failingPrisma }));
   try {
-    const cookie = "session_id=not-used";
     const response = await failingHttp.request("/api/admin/vocabulary", { cookie });
+    assert.equal(failureIntercepted, true);
     assert.equal(response.status, 500);
     assert.deepEqual(response.json, {
       success: false,

@@ -385,17 +385,26 @@ test("unexpected failures return safe 500 without internal leakage", async () =>
     "session-secret-value",
     "database stack trace",
   ];
-  const failingPrisma = {
-    tOPIC: {
-      findMany() {
-        throw new Error(sensitiveValues.join(" | "));
-      },
+  let failureIntercepted = false;
+  const failingPrisma = new Proxy(prisma, {
+    get(target, property) {
+      if (property === "tOPIC") {
+        return {
+          findMany() {
+            failureIntercepted = true;
+            throw new Error(sensitiveValues.join(" | "));
+          },
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
     },
-  };
+  });
   const failingHttp = await startHttpTestServer(createApp({ prisma: failingPrisma }));
 
   try {
     const response = await failingHttp.request("/api/topics");
+    assert.equal(failureIntercepted, true);
     assert.equal(response.status, 500);
     assert.deepEqual(response.json, {
       success: false,
