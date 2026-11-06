@@ -1,34 +1,70 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AuthPage } from "./auth/ui/auth-page.jsx";
-import { AuthenticatedShell } from "./auth/ui/authenticated-shell.jsx";
 import {
   AdminRoute,
   GuestRoute,
   ProtectedRoute,
   UserRoute,
 } from "./auth/ui/route-guards.jsx";
-import { DashboardPage } from "./dashboard/dashboard-page.jsx";
-import { LearningFoundationPage } from "./learning/learning-foundation-page.jsx";
-import { GlobalReviewPage } from "./learning/global-review-page.jsx";
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
-import { LearningProgressPage } from "./learning-progress/learning-progress-page.jsx";
-import { LandingPage } from "./landing/landing-page.jsx";
-import { QuizFoundationPage } from "./quiz/quiz-foundation-page.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
-import { SpeakingPracticePage } from "./pronunciation/speaking-practice-page.jsx";
 import { SpeakingSessionStorageObserver } from "./pronunciation/speaking-session-storage-observer.jsx";
-import { AdminTopicPage } from "./topics/admin-topic-page.jsx";
-import { DiscoveryRouteLayout } from "./topics/discovery-route-layout.jsx";
-import { TopicDetailPage } from "./topics/topic-detail-page.jsx";
-import { TopicListPage } from "./topics/topic-list-page.jsx";
-import { AdminVocabularyRoute } from "./vocabulary/admin-vocabulary-route.jsx";
-import { AdminVocabularySetsPage } from "./vocabulary-sets/admin-vocabulary-sets-page.jsx";
-import { MyVocabularySetsPage } from "./vocabulary-sets/my-vocabulary-sets-page.jsx";
-import { MyVocabularySetDetailPage } from "./vocabulary-sets/my-vocabulary-set-detail-page.jsx";
-import {
-  PublicVocabularySetDetailPage,
-  PublicVocabularySetDiscoveryPage,
-} from "./vocabulary-sets/public-vocabulary-set-pages.jsx";
+
+const AuthPage = lazyRoute(() => import("./auth/ui/auth-page.jsx"), "AuthPage");
+const AuthenticatedShell = lazyRoute(
+  () => import("./auth/ui/authenticated-shell.jsx"),
+  "AuthenticatedShell",
+);
+const DashboardPage = lazyRoute(() => import("./dashboard/dashboard-page.jsx"), "DashboardPage");
+const LearningFoundationPage = lazyRoute(
+  () => import("./learning/learning-foundation-page.jsx"),
+  "LearningFoundationPage",
+);
+const GlobalReviewPage = lazyRoute(() => import("./learning/global-review-page.jsx"), "GlobalReviewPage");
+const LearningProgressPage = lazyRoute(
+  () => import("./learning-progress/learning-progress-page.jsx"),
+  "LearningProgressPage",
+);
+const LandingPage = lazyRoute(() => import("./landing/landing-page.jsx"), "LandingPage");
+const QuizFoundationPage = lazyRoute(
+  () => import("./quiz/quiz-foundation-page.jsx"),
+  "QuizFoundationPage",
+);
+const SpeakingPracticePage = lazyRoute(
+  () => import("./pronunciation/speaking-practice-page.jsx"),
+  "SpeakingPracticePage",
+);
+const AdminTopicPage = lazyRoute(() => import("./topics/admin-topic-page.jsx"), "AdminTopicPage");
+const DiscoveryRouteLayout = lazyRoute(
+  () => import("./topics/discovery-route-layout.jsx"),
+  "DiscoveryRouteLayout",
+);
+const TopicDetailPage = lazyRoute(() => import("./topics/topic-detail-page.jsx"), "TopicDetailPage");
+const TopicListPage = lazyRoute(() => import("./topics/topic-list-page.jsx"), "TopicListPage");
+const AdminVocabularyRoute = lazyRoute(
+  () => import("./vocabulary/admin-vocabulary-route.jsx"),
+  "AdminVocabularyRoute",
+);
+const AdminVocabularySetsPage = lazyRoute(
+  () => import("./vocabulary-sets/admin-vocabulary-sets-page.jsx"),
+  "AdminVocabularySetsPage",
+);
+const MyVocabularySetsPage = lazyRoute(
+  () => import("./vocabulary-sets/my-vocabulary-sets-page.jsx"),
+  "MyVocabularySetsPage",
+);
+const MyVocabularySetDetailPage = lazyRoute(
+  () => import("./vocabulary-sets/my-vocabulary-set-detail-page.jsx"),
+  "MyVocabularySetDetailPage",
+);
+const PublicVocabularySetDetailPage = lazyRoute(
+  () => import("./vocabulary-sets/public-vocabulary-set-pages.jsx"),
+  "PublicVocabularySetDetailPage",
+);
+const PublicVocabularySetDiscoveryPage = lazyRoute(
+  () => import("./vocabulary-sets/public-vocabulary-set-pages.jsx"),
+  "PublicVocabularySetDiscoveryPage",
+);
 
 export function AppRouter() {
   return (
@@ -72,5 +108,27 @@ export function AppRouter() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
+  );
+}
+
+function lazyRoute(loadModule, exportName) {
+  const LazyRoute = lazy(() => loadModule().then((module) => ({ default: module[exportName] })));
+
+  return function RouteWithLoadingBoundary() {
+    return (
+      <Suspense fallback={<RouteLoadingState />}>
+        <LazyRoute />
+      </Suspense>
+    );
+  };
+}
+
+function RouteLoadingState() {
+  return (
+    <main className="grid min-h-[40vh] place-items-center bg-[#f8faff] p-6" aria-busy="true">
+      <p className="m-0 text-sm font-semibold text-slate-600" role="status" aria-live="polite">
+        Đang tải trang…
+      </p>
+    </main>
   );
 }
