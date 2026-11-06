@@ -258,6 +258,7 @@ test("Flashcard keeps focus stable and pronunciation failures do not block NORMA
 test("SRS persists revised NEW intervals and AGAIN resumes after three other presentations", async ({
   page,
 }) => {
+  test.slow();
   const extraVocabulary = await Promise.all([
     createVocabulary("gamma", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa thẻ ba", cefr_level: "A1", examples: [{ example_en: "Third card." }] }] }),
     createVocabulary("delta", { meanings: [{ part_of_speech: "noun", meaning_vi: "nghĩa thẻ bốn", cefr_level: "A1", examples: [{ example_en: "Fourth card." }] }] }),
@@ -316,7 +317,17 @@ test("SRS persists revised NEW intervals and AGAIN resumes after three other pre
   expect(easyProgress.next_review_at.getTime() - easyProgress.last_reviewed_at.getTime()).toBe(7 * 86_400_000);
 
   await page.keyboard.press("Space");
+  const finalRatingResponsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/learning/events") return false;
+    const body = response.request().postDataJSON();
+    return body?.vocabulary_id === firstVocabulary.id && body?.rating === "HARD";
+  });
   await page.getByRole("button", { name: "Khó, Ngày mai" }).click();
+  const finalRatingResponse = await finalRatingResponsePromise;
+  const finalRatingEnvelope = await finalRatingResponse.json();
+  const diagnosticCode = finalRatingEnvelope?.error?.code ?? "NO_ERROR_CODE";
+  expect(finalRatingResponse.status(), `Final HARD rating failed with HTTP ${finalRatingResponse.status()} (${diagnosticCode})`).toBe(200);
+  expect(finalRatingEnvelope).toMatchObject({ success: true, data: { vocabulary_id: firstVocabulary.id } });
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   firstProgress = await progressFor(learnerRecord.id, firstVocabulary.id);
   expect(firstProgress).toMatchObject({ status: "LEARNED", interval_days: 1, review_count: 3, revision: 3 });

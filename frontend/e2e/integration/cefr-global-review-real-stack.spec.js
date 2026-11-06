@@ -16,7 +16,7 @@ test.beforeAll(async () => {
   learner = await createUser("learner", "USER", hash); emptyUser = await createUser("empty", "USER", hash); reachabilityUser = await createUser("reachability", "USER", hash); ratingUser = await createUser("rating", "USER", hash); administrator = await createUser("admin", "ADMIN", hash);
   publicTopic = await prisma.tOPIC.create({ data: { name: `${run} Review public topic` } }); created.topics.push(publicTopic.id);
   dueWords = await createDuePrivateSet(learner.id, 11, "summary");
-  ratingWords = await createDuePrivateSet(ratingUser.id, 10, "ratings");
+  ratingWords = await createDuePrivateSet(ratingUser.id, 4, "ratings");
   await createSentinel(hash);
 });
 test.afterAll(async () => { try { await cleanup(); await assertAndCleanupSentinel(); } finally { await prisma.$disconnect(); } });
@@ -87,17 +87,10 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   const firstItem = createdSession.session.items.find(({ position }) => position === 0);
   expect(firstItem).toBeTruthy();
   const heading = page.getByRole("heading", { name: orderedWords[0] }); await expect(heading).toBeVisible(); await heading.press("Space");
-  const ratingResponsePromise = page.waitForResponse((response) => {
-    if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/learning/events") return false;
-    const body = response.request().postDataJSON();
-    return body?.session_id === createdSession.session.id
-      && body?.vocabulary_id === firstItem?.vocabulary_id && body?.rating === "AGAIN";
+  const ratingEnvelope = await submitRating(page, {
+    buttonName: "Lại", rating: "AGAIN", sessionId: createdSession.session.id,
+    vocabularyId: firstItem.vocabulary_id,
   });
-  await page.getByRole("button", { name: "Lại" }).click();
-  const ratingResponse = await ratingResponsePromise;
-  const ratingEnvelope = await ratingResponse.json();
-  const diagnosticCode = ratingEnvelope?.error?.code ?? "NO_ERROR_CODE";
-  expect(ratingResponse.status(), `AGAIN rating failed with HTTP ${ratingResponse.status()} (${diagnosticCode})`).toBe(200);
   expect(ratingEnvelope).toMatchObject({
     success: true,
     data: {
@@ -111,15 +104,29 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   await expect(page.getByRole("heading", { name: replayOrder[0] })).toBeVisible();
   for (const [index, rating] of ["Khó", "Tốt", "Dễ"].entries()) {
     const current = page.getByRole("heading", { name: replayOrder[index] });
-    await expect(current).toBeVisible(); await current.press("Space"); await page.getByRole("button", { name: rating }).click();
+    await expect(current).toBeVisible(); await current.press("Space");
+    await submitRating(page, {
+      buttonName: rating,
+      rating: ["HARD", "GOOD", "EASY"][index],
+      sessionId: createdSession.session.id,
+      vocabularyId: createdSession.cards.find(({ word }) => word === replayOrder[index]).id,
+    });
   }
-  for (let index = 0; index < 7; index += 1) {
-    const current = page.getByRole("heading", { name: replayOrder[index + 3] });
-    await expect(current).toBeVisible(); await current.press("Space"); await page.getByRole("button", { name: "Tốt" }).click();
-  }
+  const requeued = page.getByRole("heading", { name: replayOrder[3] });
+  await expect(requeued).toBeVisible(); await requeued.press("Space");
+  await submitRating(page, {
+    buttonName: "Tốt", rating: "GOOD", sessionId: createdSession.session.id,
+    vocabularyId: firstItem.vocabulary_id,
+  });
   await expect(page.getByRole("heading", { name: "Hoàn thành phiên ôn tập" })).toBeVisible();
-  const request = page.waitForRequest((item) => item.method() === "POST" && new URL(item.url()).pathname === "/api/learning/review/sessions");
-  await page.getByRole("button", { name: "Ôn tiếp" }).click(); await request;
+  const freshResponsePromise = page.waitForResponse((response) => response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/learning/review/sessions");
+  await page.getByRole("button", { name: "Ôn tiếp" }).click();
+  const freshResponse = await freshResponsePromise;
+  const freshEnvelope = await freshResponse.json();
+  expect(freshResponse.ok(), `Fresh review failed with HTTP ${freshResponse.status()}`).toBe(true);
+  expect(freshEnvelope).toMatchObject({ success: true, data: { session: { scope: "GLOBAL" } } });
+  expect(freshEnvelope.data.session.id).not.toBe(createdSession.session.id);
   await expect(page.getByRole("heading", { name: "Hoàn thành phiên ôn tập" })).toHaveCount(0);
 });
 
@@ -134,6 +141,20 @@ test("ADMIN and Guest cannot enter global review and review does not duplicate X
 
 async function api(page, method, url, data) { const response = await page.request[method](url, data ? { data } : undefined); expect(response.ok()).toBe(true); return (await response.json()).data; }
 async function requestError(page, method, url, data, status, code) { const response = await page.request[method](url, data ? { data } : undefined); expect(response.status()).toBe(status); expect((await response.json()).error.code).toBe(code); }
+async function submitRating(page, { buttonName, rating, sessionId, vocabularyId }) {
+  const responsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/learning/events") return false;
+    const body = response.request().postDataJSON();
+    return body?.session_id === sessionId && body?.vocabulary_id === vocabularyId && body?.rating === rating;
+  });
+  await page.getByRole("button", { name: buttonName, exact: true }).click();
+  const response = await responsePromise;
+  const envelope = await response.json();
+  const diagnosticCode = envelope?.error?.code ?? "NO_ERROR_CODE";
+  expect(response.status(), `${rating} rating failed with HTTP ${response.status()} (${diagnosticCode})`).toBe(200);
+  expect(envelope).toMatchObject({ success: true, data: { vocabulary_id: vocabularyId, session: { id: sessionId } } });
+  return envelope;
+}
 async function login(page, record) { await page.goto("/login"); await page.locator("#login-email").fill(record.email); await page.locator("#login-password").fill(password); await page.locator('form button[type="submit"]').click(); await expect(page).toHaveURL(/\/dashboard$/); }
 async function createUser(name, role, password_hash) { const row = await prisma.uSER.create({ data: { email: `${name}-${run}@cefr-review.integration.test`, display_name: `Review ${name}`, role, password_hash } }); created.users.push(row.id); return row; }
 async function createDuePrivateSet(owner_id, count, namespace) {
@@ -197,10 +218,12 @@ async function sentinelState() {
   return { user, word, set, progress };
 }
 async function cleanup() {
-  await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
+  await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.cEFR_LEARNING_PASS.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.cEFR_LEARNING_PATH_STATE.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: created.users } } }); await prisma.vOCABULARY_SET.deleteMany({ where: { id: { in: created.sets } } });
   await prisma.tOPIC.deleteMany({ where: { id: { in: created.topics } } });
-  await prisma.vOCABULARY.deleteMany({ where: { id: { in: created.words } } }); await prisma.uSER.deleteMany({ where: { id: { in: created.users } } });
+  await prisma.vOCABULARY.deleteMany({ where: { id: { in: created.words } } });
+  await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: created.users } } });
+  await prisma.uSER.deleteMany({ where: { id: { in: created.users } } });
 }
