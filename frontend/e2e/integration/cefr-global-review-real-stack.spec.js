@@ -125,9 +125,14 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   const freshResponse = await freshResponsePromise;
   const freshEnvelope = await freshResponse.json();
   expect(freshResponse.ok(), `Fresh review failed with HTTP ${freshResponse.status()}`).toBe(true);
-  expect(freshEnvelope).toMatchObject({ success: true, data: { session: { scope: "GLOBAL" } } });
-  expect(freshEnvelope.data.session.id).not.toBe(createdSession.session.id);
+  expect(freshEnvelope).toMatchObject({
+    success: true,
+    data: { session: null, reason: "REVIEW_FUTURE_DUE" },
+  });
   await expect(page.getByRole("heading", { name: "Hoàn thành phiên ôn tập" })).toHaveCount(0);
+  const futureState = page.getByRole("status").filter({ hasText: "Chưa có từ đến hạn" });
+  await expect(futureState).toBeVisible();
+  await expect(futureState.getByRole("heading", { name: "Chưa có từ đến hạn" })).toBeVisible();
 });
 
 test("ADMIN and Guest cannot enter global review and review does not duplicate XP/Streak", async ({ page }) => {
