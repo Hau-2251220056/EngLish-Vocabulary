@@ -47,6 +47,15 @@ export function createLearningController({ learningService }) {
       }
     },
 
+    async getReviewCenterSummary(req, res, next) {
+      try {
+        const summary = await learningService.getReviewCenterSummary(req.user.id);
+        res.status(200).json({ success: true, data: summary });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
     async createReviewSession(req, res, next) {
       try {
         const result = await learningService.createGlobalReviewSession(req.user.id, req.body);

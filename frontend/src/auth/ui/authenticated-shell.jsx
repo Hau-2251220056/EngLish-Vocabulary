@@ -3,11 +3,13 @@ import {
   BookText,
   Compass,
   Home,
+  ChartNoAxesColumnIncreasing,
   LoaderCircle,
   LogOut,
   Menu,
   ShieldCheck,
   Tags,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -118,7 +120,10 @@ export function AuthenticatedShell() {
   const drawerIsVisible = !isMobileNavigation || isDrawerOpen;
   const isQuiz = location.pathname.startsWith("/quiz/vocabulary-sets/");
   const isSpeakingPractice = location.pathname.startsWith("/pronunciation/vocabulary-sets/");
-  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/") || isQuiz || isSpeakingPractice;
+  const isFocusLearning = location.pathname.startsWith("/learn/vocabulary-sets/")
+    || location.pathname.startsWith("/review/sets/")
+    || location.pathname === "/review/global"
+    || isQuiz || isSpeakingPractice;
   const isUser = user.role === "USER";
 
   if (isFocusLearning) {
@@ -267,6 +272,9 @@ export function AuthenticatedShell() {
               {navigationLink("/dashboard", "Trang chủ", Home, { end: true })}
               {navigationLink("/my/vocabulary-sets", "Bộ từ của tôi", BookText)}
               {navigationLink("/topics", "Khám phá bộ từ", Compass)}
+              <p className="authenticated-nav-heading !mb-2 !mt-4 !px-3 !text-[0.66rem] !font-semibold !uppercase !tracking-[0.11em] !text-[var(--text-secondary)]">Học tập</p>
+              {navigationLink("/review", "Ôn tập", RotateCcw)}
+              {navigationLink("/my/learning-progress", "Tiến độ học tập", ChartNoAxesColumnIncreasing)}
             </>
           ) : (
             <>

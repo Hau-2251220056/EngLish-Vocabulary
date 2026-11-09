@@ -547,6 +547,35 @@ Words to Review	DONE	✓	✓	✓	✓	PASS	APPROVE
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Continue Learning	DONE	✓	✓	✓	✓	PASS	APPROVE
 
+Review Experience V1	DONE	✓	✓	✓	✓	PASS	APPROVE
+
+## Review Experience V1 Closure
+
+Functional status: **HUMAN CLOSED WITH DOCUMENTED LIMITATIONS**
+
+Closure date: 2026-11-09.
+
+### Accepted Functional Scope
+
+- Authenticated USER Review Center at `/review` remains non-mutating and presents backend-authoritative unique global due counts plus positive-due PUBLIC/PERSONAL Set entries.
+- `/review/global` and `/review/sets/:setId` use focused review layouts while preserving separate GLOBAL and SET session controllers, storage identities, scheduler behavior and rating semantics.
+- Review-context SET learning is URL-derived, SRS-only and returns to Review Center; standard learning preserves its existing Normal/SRS behavior.
+- SET Review, GLOBAL Review and standard learning reuse the accepted shared Flashcard presentation without merging their authoritative controllers.
+- Dashboard **Xem ôn tập**, USER learning navigation, loading/error/empty/retry behavior, responsive/accessibility behavior and the final compact Review Center UI are included in the accepted scope.
+
+### Documented Limitations
+
+- Database-backed and real-stack E2E were **NOT RUN** for Review Experience V1 closure.
+- Preview TEST runtime verification gaps accepted for TASK-RE-A02 and TASK-RE-A07 remain; the historical global 12-to-zero transition and exact Set overlap/count assignment were not independently reconstructed.
+- Strict cross-statement snapshot isolation was not established.
+- The intermittent login HTTP 500 root cause remains unresolved.
+- SET SRS initialization latency above ten seconds is deferred to Performance V3.
+
+### Integration Status
+
+- Functional closure does not imply production readiness. At closure, the Review Experience implementation remains uncommitted/untracked and is not integrated into `dev` or `main`.
+- Commit, push, merge, deployment and post-deployment verification remain separate pending HUMAN gates.
+
 ## CEFR Learning Path V1 Closure
 
 Status: DONE — HUMAN FINAL ACCEPTED on 2026-11-05; documentation publication is verified, while merge and deployment were not performed.

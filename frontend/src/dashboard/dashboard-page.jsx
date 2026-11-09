@@ -115,7 +115,7 @@ function ReviewSummary({ summary }) {
         {summary.has_due_items ? <h3 className="mb-0 mt-1 text-[clamp(1.15rem,3vw,1.4rem)] text-[var(--color-heading)]">{summary.due_count} từ đang đến hạn</h3> : <h3 className="mb-0 mt-1 text-[clamp(1.15rem,3vw,1.4rem)] text-[var(--color-heading)]">Đã ôn tập đầy đủ</h3>}
         {!summary.has_due_items && summary.nearest_future_review_at ? <p className="mb-0 mt-2 text-sm text-[var(--color-muted)]">Lần ôn gần nhất: {new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.nearest_future_review_at))}</p> : null}
       </div>
-      {summary.has_due_items ? <Link className={PRIMARY_LINK_CLASSES} to="/review">Ôn ngay <ArrowRight aria-hidden="true" /></Link> : null}
+      <Link className={PRIMARY_LINK_CLASSES} to="/review">Xem ôn tập <ArrowRight aria-hidden="true" /></Link>
     </div>
   );
 }

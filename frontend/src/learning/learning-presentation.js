@@ -7,6 +7,21 @@ const CEFR_ORDER = new Map([
   ["C2", 5],
 ]);
 
+export const SRS_RATING_LABELS = Object.freeze({
+  AGAIN: "Lại",
+  HARD: "Khó",
+  GOOD: "Tốt",
+  EASY: "Dễ",
+});
+
+export const SRS_INTERVAL_LABELS = Object.freeze({
+  1: "Ngày mai",
+  3: "1–3 ngày",
+  7: "1 tuần+",
+  14: "2 tuần",
+  30: "30 ngày",
+});
+
 export function selectPrimaryMeaning(meanings = []) {
   let selected = null;
   let selectedRank = Number.POSITIVE_INFINITY;

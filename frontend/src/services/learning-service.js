@@ -66,6 +66,15 @@ export function createLearningService(client = httpClient) {
       }
     },
 
+    async getReviewCenterSummary() {
+      try {
+        const response = await client.get(`${LEARNING_ENDPOINT}/review/center`);
+        return requireReviewCenterSummary(response.data?.data);
+      } catch (error) {
+        throw mapLearningError(error);
+      }
+    },
+
     async createGlobalReviewSession(operationId) {
       if (!UUID_PATTERN.test(operationId)) throw invalidRatingError();
       try {
@@ -88,6 +97,30 @@ function requireReviewSummary(value) {
     throw invalidResponseError();
   }
   return value;
+}
+
+function requireReviewCenterSummary(value) {
+  if (!isRecord(value) || !isNonNegativeInteger(value.due_count)
+    || value.has_due_items !== (value.due_count > 0)
+    || !isDateString(value.evaluated_at)
+    || !(value.nearest_future_review_at === null || isDateString(value.nearest_future_review_at))
+    || !Array.isArray(value.sets) || !value.sets.every(isReviewCenterSet)) {
+    throw invalidResponseError();
+  }
+  const setIds = value.sets.map(({ set_id: setId }) => setId);
+  if (new Set(setIds).size !== setIds.length
+    || (value.has_due_items && value.sets.length === 0)
+    || (!value.has_due_items && value.sets.length !== 0)) {
+    throw invalidResponseError();
+  }
+  return value;
+}
+
+function isReviewCenterSet(value) {
+  return isRecord(value) && UUID_PATTERN.test(value.set_id)
+    && typeof value.name === "string" && value.name.trim().length > 0
+    && Number.isSafeInteger(value.due_count) && value.due_count > 0
+    && ["PUBLIC", "PERSONAL"].includes(value.set_scope);
 }
 
 function requireGlobalReviewSession(value) {

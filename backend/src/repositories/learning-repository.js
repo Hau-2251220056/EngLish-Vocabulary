@@ -144,12 +144,7 @@ export function createLearningRepository(prisma) {
           vocabulary: {
             vocabulary_items: {
               some: {
-                vocabulary_set: {
-                  OR: [
-                    { is_public: true, cefr_level: { in: unlockedLevels } },
-                    { is_public: false, owner_id: userId },
-                  ],
-                },
+                vocabulary_set: accessibleReviewSetWhere(userId, unlockedLevels),
               },
             },
           },
@@ -167,6 +162,38 @@ export function createLearningRepository(prisma) {
                   examples: {
                     orderBy: [{ created_at: "asc" }, { id: "asc" }],
                     select: { id: true, example_en: true, example_vi: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+
+    listReviewCenterCandidates(userId, unlockedLevels) {
+      const accessibleSetWhere = accessibleReviewSetWhere(userId, unlockedLevels);
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: {
+          user_id: userId,
+          vocabulary: {
+            vocabulary_items: {
+              some: { vocabulary_set: accessibleSetWhere },
+            },
+          },
+        },
+        orderBy: [{ vocabulary_id: "asc" }],
+        select: {
+          ...progressSelect(),
+          vocabulary: {
+            select: {
+              id: true,
+              vocabulary_items: {
+                where: { vocabulary_set: accessibleSetWhere },
+                orderBy: [{ vocabulary_set_id: "asc" }],
+                select: {
+                  vocabulary_set: {
+                    select: { id: true, name: true, is_public: true },
                   },
                 },
               },
@@ -274,6 +301,15 @@ function progressSelect() {
     last_event_id: true,
     interval_days: true,
     next_review_at: true,
+  };
+}
+
+function accessibleReviewSetWhere(userId, unlockedLevels) {
+  return {
+    OR: [
+      { is_public: true, cefr_level: { in: unlockedLevels } },
+      { is_public: false, owner_id: userId },
+    ],
   };
 }
 

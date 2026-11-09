@@ -73,7 +73,7 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   await login(page, ratingUser);
   const createResponse = page.waitForResponse((response) => response.request().method() === "POST"
     && new URL(response.url()).pathname === "/api/learning/review/sessions" && response.ok());
-  await page.goto("/review");
+  await page.goto("/review/global");
   const createdSession = (await (await createResponse).json()).data;
   const cardsById = new Map(createdSession.cards.map((card) => [card.id, card]));
   const orderedWords = [...createdSession.session.items]

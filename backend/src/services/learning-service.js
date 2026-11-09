@@ -118,6 +118,20 @@ export function createLearningService({
       });
     },
 
+    async getReviewCenterSummary(userId) {
+      validateUuid(userId);
+      const evaluatedAt = captureNow(now);
+      return learningRepository.withTransaction(async (repository, transaction) => {
+        const unlockedLevels = await readUnlockedLevels(
+          createLearningPathRepository(transaction), userId,
+        );
+        const candidates = await repository.listReviewCenterCandidates(
+          userId, unlockedLevels,
+        );
+        return summarizeReviewCenter(candidates, evaluatedAt);
+      });
+    },
+
     async createGlobalReviewSession(userId, input) {
       validateUuid(userId);
       const operationId = validateOperationInput(input);
@@ -704,6 +718,51 @@ function summarizeEvaluatedGlobalReview(evaluated, evaluatedAt) {
     evaluated_at: evaluatedAt,
     nearest_future_review_at: future.length === 0
       ? null : new Date(Math.min(...future.map((value) => value.getTime()))),
+  };
+}
+
+function summarizeReviewCenter(candidates, evaluatedAt) {
+  const evaluated = candidates.map((candidate) => ({
+    candidate,
+    evaluation: evaluateProgress(candidate, evaluatedAt),
+  }));
+  const due = evaluated.filter(({ evaluation }) => evaluation.is_eligible);
+  const globalVocabularyIds = new Set();
+  const setVocabularyIds = new Set();
+  const setsById = new Map();
+
+  for (const { candidate } of due) {
+    const vocabularyId = candidate.vocabulary_id;
+    globalVocabularyIds.add(vocabularyId);
+    for (const item of candidate.vocabulary.vocabulary_items) {
+      const set = item.vocabulary_set;
+      const identity = `${set.id}:${vocabularyId}`;
+      if (setVocabularyIds.has(identity)) continue;
+      setVocabularyIds.add(identity);
+      const group = setsById.get(set.id) ?? {
+        set_id: set.id,
+        name: set.name,
+        due_count: 0,
+        set_scope: set.is_public ? "PUBLIC" : "PERSONAL",
+      };
+      group.due_count += 1;
+      setsById.set(set.id, group);
+    }
+  }
+
+  const future = evaluated.map(({ evaluation }) => evaluation.next_review_at)
+    .filter((value) => value && new Date(value) > evaluatedAt)
+    .map((value) => new Date(value));
+  const dueCount = globalVocabularyIds.size;
+  return {
+    evaluated_at: evaluatedAt,
+    due_count: dueCount,
+    has_due_items: dueCount > 0,
+    nearest_future_review_at: future.length === 0
+      ? null : new Date(Math.min(...future.map((value) => value.getTime()))),
+    sets: [...setsById.values()].sort((left, right) => (
+      left.name.localeCompare(right.name) || left.set_id.localeCompare(right.set_id)
+    )),
   };
 }
 

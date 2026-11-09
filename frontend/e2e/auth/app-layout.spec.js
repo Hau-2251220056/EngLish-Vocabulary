@@ -12,6 +12,30 @@ const viewports = [
   { name: "desktop", width: 1366, height: 768 },
 ];
 
+test("Review Center keeps the application shell", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        evaluated_at: "2026-11-08T12:00:00.000Z",
+        due_count: 0,
+        has_due_items: false,
+        nearest_future_review_at: null,
+        sets: [],
+      },
+    },
+  }));
+
+  await page.goto("/review");
+  await expect(page.locator("header.authenticated-header")).toBeVisible();
+  await expect(page.locator("aside.authenticated-sidebar")).toBeVisible();
+  await expect(page.locator(".learning-focus-shell")).toHaveCount(0);
+});
+
 test("desktop USER renders the production shell with only approved destinations", async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 900 });
   await installAuthApiMock(page, {
@@ -49,7 +73,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(headerNavigation.getByRole("link", { name: "Trang chủ" })).toHaveCSS("color", "rgb(76, 162, 230)");
   await expect(headerNavigation.getByRole("link", { name: "Trang chủ" })).toHaveCSS("font-size", "15px");
   await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` })).toBeVisible();
-  await expect(page.locator(".authenticated-navigation").getByRole("link")).toHaveCount(3);
+  await expect(page.locator(".authenticated-navigation").getByRole("link")).toHaveCount(5);
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Bộ từ của tôi", exact: true })).toHaveAttribute("href", "/my/vocabulary-sets");
@@ -58,7 +82,8 @@ test("desktop USER renders the production shell with only approved destinations"
       .getByRole("navigation", { name: "Điều hướng ứng dụng" })
       .getByRole("link", { name: "Khám phá bộ từ" }),
   ).toHaveAttribute("href", "/topics");
-  await expect(page.locator('.authenticated-navigation a[href="/my/learning-progress"]')).toHaveCount(0);
+  await expect(page.locator('.authenticated-navigation a[href="/review"]')).toHaveCount(1);
+  await expect(page.locator('.authenticated-navigation a[href="/my/learning-progress"]')).toHaveCount(1);
   await expect(page.locator('.authenticated-navigation a[href^="/admin/"]')).toHaveCount(0);
   await expect(page.locator(".authenticated-drawer-toggle")).toBeHidden();
   const headerBox = await page.locator("header.authenticated-header").boundingBox();

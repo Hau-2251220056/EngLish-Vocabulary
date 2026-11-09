@@ -148,6 +148,8 @@ Admin
 ├── Achievement Management
 └── Community Management
 
+```
+
 Vocabulary Set Detail is a shared screen that may be accessed by Guest and authenticated users according to the system's access rules.
 
 5. Global Layout
@@ -1553,15 +1555,18 @@ Reaching or revealing the final card does not complete the Set. When the Backend
 
 Expired/inaccessible batches offer safe recovery. A frozen snapshot whose item was removed or became inaccessible shows a restart-required state and an explicit new-snapshot action; it never silently credits the item. Locked direct routes show a textual Backend-derived lock state. Existing private/copied Set NORMAL behavior remains outside CEFR credit.
 
-### 28.3 Global review
+### 28.3 Review Center and focused review routes
 
-The authenticated USER route `/review` creates or restores one fixed backend `GLOBAL`/`SRS` snapshot of at most 10 cards. It displays resolved/total progress, card content, reveal interaction, and the four ratings **Lại**, **Khó**, **Tốt**, and **Dễ**. `AGAIN` requeues; other accepted ratings resolve the item. Pending submissions prevent duplicate actions, and inaccessible/expired/error states provide explicit recovery.
+The authenticated USER route `/review` is the non-mutating Review Center inside the application shell. Its visible content uses a compact, non-interactive **Cần ôn hôm nay** statistic card and an **Ôn theo bộ từ** section; the page retains an accessible screen-reader heading without restoring the superseded large visible title/subtitle. The statistic card displays the Backend-provided unique global due count but has no **Ôn tất cả** action. Only positive-due Sets are listed. Each Set card preserves its exact Set UUID, displays the authoritative **Bộ từ công khai** or **Bộ từ cá nhân** label and due count, and links through **Ôn tập ngay** to `/review/sets/:setId`. The previously proposed explanatory count paragraphs are superseded and are not active UI requirements.
 
-Completing the fixed snapshot shows **Hoàn thành phiên ôn tập**. **Ôn tiếp** explicitly requests a fresh Backend eligibility evaluation; the current queue never expands silently. No eligible item shows the up-to-date state, while a future-due response may show the nearest review time. Review UI never claims Set completion, CEFR unlock, or mastery.
+Review Center loading, error/retry, positive-due and zero-due states never fabricate counts or create a session. Zero due shows the completed/up-to-date state and a safe **Tiếp tục học** path. The compact statistic is left-aligned and bounded on desktop, full-width on mobile; Set cards wrap long names, retain visible focus/hover states and reflow responsively without public/private grouping sections.
 
-Dashboard independently loads the global-review summary. Due items show the authoritative count and **Ôn ngay** action; no due items show the up-to-date state and optional nearest future time. Review failure does not discard sibling Dashboard sections, and ADMIN makes no review-summary request.
+The authenticated USER route `/review/global` creates or restores one fixed backend `GLOBAL`/`SRS` snapshot of at most 10 cards in the focused learning shell without the application sidebar/header. It displays resolved/total progress, shared Flashcard presentation, reveal interaction, and the four ratings **Lại**, **Khó**, **Tốt**, and **Dễ**. `AGAIN` requeues; other accepted ratings resolve the item. Pending submissions prevent duplicate actions, and inaccessible/expired/error states provide explicit recovery. Completing the snapshot shows **Hoàn thành phiên ôn tập**; **Ôn tiếp** explicitly requests a fresh Backend eligibility evaluation, and return navigation leads to Review Center.
+
+The dedicated `/review/sets/:setId` route also uses the focused learning shell and the existing SET SRS controller. URL-derived review context forces SRS, hides Normal-mode controls, shows the informational **Ôn tập** badge and returns to `/review`; the standard `/learn/vocabulary-sets/:setId` route preserves its existing focused layout and Normal/SRS behavior without that review-context badge.
+
+Dashboard independently loads the global-review summary. After a successful summary load, both positive and zero-due states show **Xem ôn tập** linking to `/review`; no navigation alone creates a session. Review failure does not discard sibling Dashboard sections, and ADMIN makes no review-summary request.
 
 ### 28.4 Accessibility and review status
 
-Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state. A Focused UI/UX Review has not been executed or approved for this feature; visual and interaction acceptance remains part of the separately gated closure stage.
-```
+Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state. Batch 1 was HUMAN accepted on 2026-11-08; Batch 2 and the final compact Review Center UI were HUMAN accepted on 2026-11-09 after recorded offline, isolated mocked-browser, focused review and HUMAN visual evidence. Database-backed/real-stack E2E remains `NOT RUN`, and acceptance does not imply Git integration, deployment, feature closure or resolution of the intermittent login and deferred SET SRS performance risks.

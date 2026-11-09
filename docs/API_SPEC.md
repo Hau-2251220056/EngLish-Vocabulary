@@ -2043,6 +2043,40 @@ Learning Path domain mappings are: `CEFR_PATH_VALIDATION_ERROR` -> `400`; `CEFR_
 
 Global cards reuse the existing SRS card/rating-preview projection. The session has `set_id: null`, `scope: "GLOBAL"`, and mode `SRS`. Existing `POST /api/learning/events` remains the rating boundary; a global event supplies the session UUID and `set_id: null`. The Backend revalidates all unresolved exact Vocabulary identities before accepting a rating. `GLOBAL_REVIEW_OPERATION_CONFLICT` maps to `409`; existing validation, session-not-found, inaccessible, expired, event-conflict, and progress-conflict codes remain active.
 
+#### 75.3.1 Review Center Set-scope response amendment
+
+> Contract status: **IMPLEMENTED / TASK-RE-A02 HUMAN ACCEPTED WITH EXPLICIT LIMITATIONS — 2026-11-09 / NOT INTEGRATED OR DEPLOYED**. The original amendment approval remains dated 2026-11-08. Acceptance is based on the recorded source audit and offline contract verification; database-backed/real-stack E2E was not run, the historical global 12-to-zero transition was not independently reconstructed, and strict transaction-wide repeatable-read snapshot isolation was not established.
+
+The implemented read-only `GET /api/learning/review/center` response includes `set_scope` in every entry in `sets`:
+
+```json
+{
+  "evaluated_at": "<timestamp>",
+  "due_count": 11,
+  "has_due_items": true,
+  "nearest_future_review_at": null,
+  "sets": [
+    {
+      "set_id": "<existing-uuid>",
+      "name": "Thói quen hằng ngày",
+      "due_count": 10,
+      "set_scope": "PERSONAL"
+    }
+  ]
+}
+```
+
+Allowed values are:
+
+- `PUBLIC`: the existing accessible Set has `is_public = true`;
+- `PERSONAL`: the existing Set has `is_public = false` and is owned by the authenticated USER.
+
+The Backend derives this value from authoritative Set data and existing access checks. It does not return `owner_id`, claim copied-from ancestry or introduce client-side entitlement rules. The endpoint uses the section 75 authenticated USER boundary and standard success/error envelopes. It returns only positive-due Set entries; zero due returns `due_count: 0`, `has_due_items: false`, `sets: []`, and the applicable nullable future-review timestamp.
+
+Due counts represent persisted studied vocabulary currently due at the response's single backend-owned `evaluated_at`. Unstarted `NEW` vocabulary is excluded from Review Center counts, although a subsequent SET SRS session may include eligible `NEW` cards. Global `due_count` deduplicates by `vocabulary_id`; each Set count deduplicates by `(set_id, vocabulary_id)`. A shared vocabulary identity may contribute to every accessible containing Set, so per-Set counts are not necessarily additive and clients must not sum them to reconstruct the global value.
+
+The endpoint is read-only and does not create a review session or mutate learning progress. Its accepted verification limitations remain explicit: Preview TEST historical rows were not reconciled for TASK-RE-A02, database-backed/real-stack E2E remains `NOT RUN`, historical count-to-UUID assignments and overlap were not verified, and cross-statement repeatable-read isolation is not claimed. These limitations do not change the active response contract and are not represented as resolved runtime evidence.
+
 ### 75.4 Locked activity and compatibility boundary
 
 Public discovery/detail/copy APIs remain unchanged. Backend service boundaries reject NORMAL, per-Set SRS, Quiz reads/answers, and the Speaking Learning dependency when a USER targets a locked public A1–C1 Set. Owned private/copied Sets retain existing activity authorization and never earn CEFR completion. Public null-CEFR Sets remain outside progression and retain existing access.

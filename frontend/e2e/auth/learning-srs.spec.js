@@ -44,12 +44,43 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   ]);
 });
 
+test("dedicated Set review route forces durable SRS context without erasing stored Normal state", async ({ page }) => {
+  const calls = await installLearningMock(page);
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await expect(page.locator(".learning-focus-shell")).toHaveCount(1);
+  await expect(page.locator("header.authenticated-header, aside.authenticated-sidebar")).toHaveCount(0);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".learning-review-context-badge")).toHaveCount(0);
+
+  await page.goto(`/review/sets/${SET_ID}`);
+  await expect(page.locator(".learning-focus-shell")).toHaveCount(1);
+  await expect(page.locator("header.authenticated-header, aside.authenticated-sidebar")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toHaveCount(0);
+  await expect(page.locator(".learning-review-context-badge")).toHaveText("Ôn tập");
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBeGreaterThan(0);
+  await expect(page.getByRole("link", { name: "Trung tâm ôn tập" })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toBeVisible();
+  await expect(page.locator(".learning-review-context-badge")).toHaveCount(0);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("focuses the initial SRS card only after the authoritative session becomes active", async ({ page }) => {
   const calls = await installLearningMock(page, { deferSrsSession: true });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
 
   await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
     && body.mode === "SRS").length).toBe(1);
+  await expect(page.getByRole("heading", { name: "Đang chuẩn bị phiên ôn tập" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Không thể mở phiên ôn tập" })).toHaveCount(0);
   const cardHeading = page.getByRole("heading", { name: "word-1" });
   await expect(cardHeading).toHaveCount(0);
 
@@ -136,6 +167,21 @@ test("SRS terminal mutation rejection reconciles authoritative expiry", async ({
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã hết hạn");
+  expect(terminal.events).toHaveLength(1);
+});
+
+test("SET review reconciles an access change into an inaccessible recovery state", async ({ page }) => {
+  const terminal = await installLearningMock(page, {
+    eventTerminalCode: "LEARNING_SESSION_INACCESSIBLE",
+  });
+  await page.goto(`/review/sets/${SET_ID}`);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Tốt" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("Bộ từ không còn khả dụng cho phiên SRS này");
+  await expect(alert.getByRole("button", { name: "Bắt đầu lại" })).toBeVisible();
+  await expect(page.locator(".learning-review-context-badge")).toHaveText("Ôn tập");
   expect(terminal.events).toHaveLength(1);
 });
 

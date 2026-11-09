@@ -1,9 +1,15 @@
-import { ArrowLeft, BookOpenCheck, LoaderCircle, RotateCcw } from "lucide-react";
+import { BookOpenCheck, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
-import { selectPrimaryMeaning } from "./learning-presentation.js";
+import {
+  FlashcardCard,
+  FlashcardProgress,
+  FlashcardToolbar,
+  SrsRatingControls,
+} from "./flashcard-presentation.jsx";
+import { selectPrimaryMeaning, SRS_INTERVAL_LABELS, SRS_RATING_LABELS } from "./learning-presentation.js";
 import {
   applyGlobalReviewRating,
   clearGlobalReviewState,
@@ -14,7 +20,6 @@ import {
   submitReviewRatingWithReplay,
 } from "./global-review-session.js";
 
-const RATINGS = [["AGAIN", "Lại"], ["HARD", "Khó"], ["GOOD", "Tốt"], ["EASY", "Dễ"]];
 const BUTTON = "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 font-extrabold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60";
 
 export function GlobalReviewPage() {
@@ -116,19 +121,36 @@ export function GlobalReviewPage() {
   if (!currentCard) return <ReviewState status="error" error="Phiên ôn tập không còn thẻ hợp lệ." onRetry={freshReview} />;
 
   return (
-    <main className="mx-auto grid min-h-[calc(100vh_-_7rem)] w-full max-w-3xl place-items-center p-[clamp(1rem,4vw,2rem)] text-slate-800" aria-labelledby="global-review-title">
-      <section className="w-full rounded-3xl border border-slate-200 bg-white p-[clamp(1rem,4vw,2rem)] shadow-[var(--shadow-md)]">
-        <div className="mb-5 flex items-center justify-between gap-3"><Link className={BUTTON} to="/dashboard"><ArrowLeft aria-hidden="true" /> Dashboard</Link><strong aria-live="polite">{resolvedCount} / {session.snapshot_size}</strong></div>
-        <progress className="mb-6 h-2 w-full accent-[var(--accent-primary)]" max={session.snapshot_size} value={resolvedCount}>{resolvedCount}/{session.snapshot_size}</progress>
-        <button className="min-h-52 w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" type="button" onClick={() => setRevealed((value) => !value)} aria-pressed={revealed} ref={cardButtonRef}>
-          <h1 className="m-0 text-[clamp(2rem,7vw,4rem)]" id="global-review-title">{revealed ? meaning?.meaning_vi ?? "Chưa có nghĩa" : currentCard.word}</h1>
-          <p className="mb-0 mt-3 text-sm text-slate-500">{revealed ? "Chọn mức độ ghi nhớ" : "Nhấn để lật thẻ"}</p>
-        </button>
+    <main className="learning-page h-full min-h-0 w-full text-[#172554]" aria-labelledby="global-review-title">
+      <div className="flex h-full min-h-0 flex-col">
+        <FlashcardToolbar backHref="/review" backLabel="Trung tâm ôn tập" badge="Toàn cục" />
+        <h1 className="sr-only" id="global-review-title">Ôn tập toàn cục</h1>
+        <div className="mx-auto flex min-h-0 w-full max-w-[40rem] flex-1 flex-col px-[clamp(0.8rem,3vw,2rem)] py-[clamp(0.55rem,1.5vw,0.85rem)] max-[700px]:px-[0.8rem] max-[700px]:py-[0.65rem]">
+        <FlashcardProgress label="Tiến độ SRS" max={session.snapshot_size} value={resolvedCount} valueLabel={`Đã hoàn thành ${resolvedCount} / ${session.snapshot_size}`} />
+        <FlashcardCard
+          card={currentCard}
+          interactionRef={cardButtonRef}
+          interactive
+          meaning={meaning}
+          onCardClick={() => setRevealed((value) => !value)}
+          revealed={revealed}
+        />
         {error ? <p className="rounded-xl bg-red-50 p-3 text-red-800" role="alert">{error}</p> : null}
-        <div className="mt-5 grid grid-cols-4 gap-2 max-[560px]:grid-cols-2" role="group" aria-label="Đánh giá SRS">
-          {RATINGS.map(([rating, label]) => <button className={BUTTON} type="button" key={rating} disabled={!revealed || Boolean(pendingRating)} onClick={() => void rate(rating)} aria-busy={pendingRating === rating}>{pendingRating === rating ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}{label}</button>)}
+        <div className="mt-3 grid min-h-[3.35rem] shrink-0 place-items-center">
+          <SrsRatingControls
+            disabled={Boolean(pendingRating)}
+            items={Object.entries(SRS_RATING_LABELS).map(([rating, label]) => ({
+              label,
+              rating,
+              subLabel: rating === "AGAIN" ? "Trong phiên này" : SRS_INTERVAL_LABELS[currentCard.rating_previews[rating].interval_days],
+            }))}
+            onRate={(rating) => void rate(rating)}
+            pendingRating={pendingRating}
+            revealed={revealed}
+          />
         </div>
-      </section>
+        </div>
+      </div>
     </main>
   );
 }
@@ -145,7 +167,7 @@ function ReviewState({ status, error, nearestFuture, onRetry }) {
   }[status];
   const canContinue = status === "complete";
   const canRestart = ["expired", "inaccessible"].includes(status);
-  return <main className="mx-auto grid min-h-[calc(100vh_-_7rem)] w-full max-w-2xl place-items-center p-4"><section className="w-full rounded-3xl border border-slate-200 bg-white p-8 text-center" role={status === "loading" ? "status" : status === "error" ? "alert" : "status"}><BookOpenCheck className="mx-auto size-14 text-[var(--accent-primary)]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p><div className="flex flex-wrap justify-center gap-3">{status === "error" ? <button className={BUTTON} type="button" onClick={onRetry}>Thử lại</button> : null}{canContinue ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}{canRestart ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Tạo phiên mới</button> : null}<Link className={BUTTON} to="/dashboard">Dashboard</Link></div></section></main>;
+  return <main className="mx-auto grid min-h-[calc(100vh_-_7rem)] w-full max-w-2xl place-items-center p-4"><section className="w-full rounded-3xl border border-slate-200 bg-white p-8 text-center" role={status === "loading" ? "status" : status === "error" ? "alert" : "status"}><BookOpenCheck className="mx-auto size-14 text-[var(--accent-primary)]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p><div className="flex flex-wrap justify-center gap-3">{status === "error" ? <button className={BUTTON} type="button" onClick={onRetry}>Thử lại</button> : null}{canContinue ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}{canRestart ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Tạo phiên mới</button> : null}<Link className={BUTTON} to="/review">Trung tâm ôn tập</Link></div></section></main>;
 }
 
 function randomUuid() { return window.crypto.randomUUID(); }

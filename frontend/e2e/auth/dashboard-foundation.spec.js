@@ -6,6 +6,34 @@ import {
   responses,
 } from "./fixtures/auth-api.js";
 
+test("review CTA opens the center for positive and zero due summaries", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let dueCount = 4;
+  await page.route("**/api/learning/review", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: { due_count: dueCount, has_due_items: dueCount > 0, evaluated_at: "2026-11-03T00:00:00.000Z", nearest_future_review_at: dueCount > 0 ? null : "2026-11-04T00:00:00.000Z" } },
+  }));
+  await page.goto("/dashboard");
+  const review = page.getByRole("region", { name: "Từ cần ôn" });
+  await expect(review).toContainText("4 từ đang đến hạn");
+  await expect(review.getByRole("link", { name: "Xem ôn tập" })).toHaveAttribute("href", "/review");
+
+  dueCount = 0;
+  await page.reload();
+  await expect(review).toContainText("Đã ôn tập đầy đủ");
+  await expect(review.getByRole("link", { name: "Xem ôn tập" })).toHaveAttribute("href", "/review");
+});
+
+test("review summary failure remains scoped and renders no successful CTA state", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning/review", (route) => route.fulfill({ status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } }));
+  await page.goto("/dashboard");
+  const review = page.getByRole("region", { name: "Từ cần ôn" });
+  await expect(review.getByRole("alert")).toContainText("Không thể tải số từ cần ôn");
+  await expect(review.getByRole("link", { name: "Xem ôn tập" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Lộ trình CEFR" })).toBeVisible();
+});
+
 test("USER composes independent Progress and bounded My Sets sources", async ({ page }) => {
   await page.addInitScript(() => {
     Date.prototype.getHours = () => 5;
