@@ -329,10 +329,20 @@ for (const viewport of viewports) {
       name: /^Chào buổi (sáng|trưa|chiều|tối), Learner with an intentionally very long display name for responsive coverage$/,
     })).toBeVisible();
     await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` })).toBeVisible();
-    await expect(page.locator(".authenticated-navigation a")).toHaveCount(3);
-    await expect(
-      page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
-    ).toHaveCount(1);
+    const navigationLinks = page.locator(".authenticated-navigation a");
+    const expectedHrefs = [
+      "/dashboard",
+      "/my/vocabulary-sets",
+      "/topics",
+      "/review",
+      "/my/learning-progress",
+    ];
+    await expect(navigationLinks).toHaveCount(expectedHrefs.length);
+    expect(
+      await navigationLinks.evaluateAll((links) =>
+        links.map((link) => link.getAttribute("href")),
+      ),
+    ).toEqual(expectedHrefs);
     await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     await expectWithinViewport(page, ".authenticated-app");

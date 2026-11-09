@@ -152,7 +152,10 @@ async function submitRating(page, { buttonName, rating, sessionId, vocabularyId 
     const body = response.request().postDataJSON();
     return body?.session_id === sessionId && body?.vocabulary_id === vocabularyId && body?.rating === rating;
   });
-  await page.getByRole("button", { name: buttonName, exact: true }).click();
+  const ratingControls = page.getByRole("region", { name: "Đánh giá SRS" });
+  const ratingButton = ratingControls.getByRole("button", { name: new RegExp(`^${buttonName}, `) });
+  await expect(ratingButton).toHaveCount(1);
+  await ratingButton.click();
   const response = await responsePromise;
   const envelope = await response.json();
   const diagnosticCode = envelope?.error?.code ?? "NO_ERROR_CODE";
