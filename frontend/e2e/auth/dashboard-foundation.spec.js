@@ -34,7 +34,7 @@ test("review summary failure remains scoped and renders no successful CTA state"
   await expect(page.getByRole("region", { name: "Lộ trình CEFR" })).toBeVisible();
 });
 
-test("USER composes independent Progress and bounded My Sets sources", async ({ page }) => {
+test("USER composes four authoritative statistics with independent source recovery", async ({ page }) => {
   await page.addInitScript(() => {
     Date.prototype.getHours = () => 5;
   });
@@ -56,24 +56,21 @@ test("USER composes independent Progress and bounded My Sets sources", async ({ 
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: `Chào buổi sáng, ${publicUser.display_name}` })).toBeVisible();
-  await expect(page.getByRole("status", { name: "" }).filter({ hasText: "Đang tải tóm tắt học tập" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("Không thể tải bộ từ riêng");
+  await expect(page.getByRole("heading", { name: `Chào buổi sáng ${publicUser.display_name}` })).toBeVisible();
+  const levelCard = page.getByRole("heading", { name: "Cấp độ" }).locator("..");
+  const xpCard = page.getByRole("heading", { name: "Tổng XP" }).locator("..");
+  const setCard = page.getByRole("heading", { name: "Bộ từ" }).locator("..");
+  await expect(levelCard.getByRole("status")).toContainText("Đang tải cấp độ");
+  await expect(setCard.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
 
   await progress.fulfill(progressResponse({ total_started: 8, learning: 3, learned: 4, needs_review: 1 }));
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 2");
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("75 XP");
+  await expect(levelCard).toContainText("Level hiện tại");
+  await expect(levelCard).toContainText("25 / 100 XP");
+  await expect(xpCard).toContainText("75 XP");
   await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuenow", "75");
   await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuemin", "50");
   await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuemax", "150");
-  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" }).locator("span")).toHaveAttribute("style", "width: 25%;");
-  const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
-  await expect(summary).toContainText("Tổng đã bắt đầu8");
-  await expect(summary).toContainText("Đang học3");
-  await expect(summary).toContainText("Đã thuộc4");
-  await expect(summary).not.toContainText("Cần ôn");
-
-  const retry = page.getByRole("button", { name: "Thử lại" });
+  const retry = setCard.getByRole("button", { name: "Thử lại" });
   const callsBeforeRetry = setCalls;
   retryingSets = true;
   await retry.dblclick();
@@ -81,16 +78,9 @@ test("USER composes independent Progress and bounded My Sets sources", async ({ 
   await expect.poll(() => setCalls).toBe(callsBeforeRetry + 1);
   await retrySets.fulfill(setsResponse());
 
-  const preview = page.getByRole("list", { name: "Bộ từ riêng xem trước" });
-  await expect(page.getByText("Bạn đang có 4 bộ từ riêng.")).toBeVisible();
-  await expect(preview.getByRole("listitem")).toHaveCount(3);
-  await expect(preview).toContainText("Set one");
-  await expect(preview).toContainText("Set three");
-  await expect(preview).not.toContainText("Set four");
-  await expect(preview.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(2);
-  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
-  await expect(preview.getByRole("link", { name: "Xem chi tiết" })).toHaveCount(3);
-  await expect(page.getByRole("heading", { name: "Bộ từ của bạn" })).toBeFocused();
+  await expect(setCard).toContainText("4 bộ cá nhân");
+  await expect(page.getByRole("heading", { name: "Bộ từ" })).toBeFocused();
+  await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Lối tắt Dashboard" })).toHaveCount(0);
 });
 
@@ -153,12 +143,49 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   }));
 
   await page.goto("/dashboard");
+  const nextLesson = page.getByRole("region", { name: "Bài học tiếp theo" });
   const path = page.getByRole("region", { name: "Lộ trình CEFR" });
-  await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(nextLesson.getByText("A1 starter", { exact: true })).toBeVisible();
+  await expect(nextLesson.getByText("CEFR A1", { exact: true })).toBeVisible();
+  await expect(nextLesson).toContainText("0 / 1 bộ đã hoàn thành");
+  await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(path).not.toContainText("A1 starter");
+  await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
   await expect(path.getByText("A1", { exact: true })).toBeVisible();
   const lockedA2 = path.getByRole("listitem").filter({ hasText: "A2" });
   await expect(lockedA2).toContainText("đang khóa");
   await expect(path.getByText("đang khóa")).toHaveCount(4);
+});
+
+test("USER keeps an authoritative RESUME action when recommendation metadata needs a safe fallback", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const setId = "10000000-0000-4000-8000-000000000001";
+  const passId = "20000000-0000-4000-8000-000000000002";
+  await page.route("**/api/learning-path", (route) => route.fulfill({
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        evaluated_at: "2026-11-03T00:00:00.000Z",
+        highest_unlocked_level: "A1",
+        path_completed_at: null,
+        levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+          level, unlocked: index === 0, required_count: index === 0 ? 1 : 0,
+          completed_count: 0, configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+          current_complete: false,
+          incomplete_sets: [],
+        })),
+        recommendation: { action: "RESUME", set_id: setId, pass_id: passId },
+        all_current_sets_complete: false,
+      },
+    },
+  }));
+
+  await page.goto("/dashboard");
+  const nextLesson = page.getByRole("region", { name: "Bài học tiếp theo" });
+  await expect(nextLesson.getByText("Bộ từ được đề xuất", { exact: true })).toBeVisible();
+  await expect(nextLesson.getByText("undefined", { exact: true })).toHaveCount(0);
+  await expect(nextLesson.getByRole("link", { name: "Tiếp tục học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
 });
 
 test("USER Streak card renders completed, pending, and broken states from backend projections", async ({ page }) => {
@@ -169,19 +196,19 @@ test("USER Streak card renders completed, pending, and broken states from backen
   await page.route("**/api/users/me/streak", (route) => route.fulfill(projection));
 
   await page.goto("/dashboard");
-  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
+  const streak = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
   await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
-  await expect(streak).toContainText("Bạn đã duy trì chuỗi hôm nay.");
+  await expect(streak).toContainText("Đã duy trì hôm nay");
 
   projection = streakResponse({ current_streak: 4, completed_today: false, last_qualified_date: "2026-10-18" });
   await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
   await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
-  await expect(streak).toContainText("hoàn thành một hoạt động đủ điều kiện hôm nay");
+  await expect(streak).toContainText("Chưa hoàn thành hôm nay");
 
   projection = streakResponse({ current_streak: 0, completed_today: false, last_qualified_date: "2026-10-16" });
   await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
   await expect(streak.getByLabel("Chuỗi hiện tại 0 ngày")).toBeVisible();
-  await expect(streak).toContainText("Bắt đầu lại chuỗi");
+  await expect(streak).toContainText("Chưa hoàn thành hôm nay");
   await expect(streak).not.toContainText("2026-10-16");
 });
 
@@ -195,10 +222,10 @@ test("initial Streak failure never renders successful zero data", async ({ page 
   }));
 
   await page.goto("/dashboard");
-  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
-  await expect(streak.getByRole("alert")).toContainText("Không thể tải chuỗi học tập");
+  const streak = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
+  await expect(streak.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
   await expect(streak.getByLabel(/Chuỗi hiện tại/)).toHaveCount(0);
-  await expect(streak.getByRole("button", { name: "Thử lại chuỗi học tập" })).toBeVisible();
+  await expect(streak.getByRole("button", { name: "Thử lại" })).toBeVisible();
 });
 
 test("Streak failure stays independent, preserves stale data, and supports keyboard retry", async ({ page }) => {
@@ -220,27 +247,26 @@ test("Streak failure stays independent, preserves stale data, and supports keybo
   });
 
   await page.goto("/dashboard");
-  const streak = page.getByRole("region", { name: "Chuỗi học tập" });
+  const streak = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
   await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tổng XP" })).toBeVisible();
 
   response = "error";
   await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
   await expect(streak.getByRole("alert")).toContainText("Dữ liệu gần nhất có thể đã cũ.");
   await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ riêng" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("0 bộ cá nhân");
 
   response = "pending";
-  const retryButton = streak.getByRole("button", { name: "Thử lại chuỗi học tập" });
+  const retryButton = streak.getByRole("button", { name: "Thử lại" });
   await retryButton.focus();
   const callsBeforeRetry = calls;
   await page.keyboard.press("Enter");
-  await expect(streak.getByRole("status")).toContainText("Đang tải chuỗi học tập");
+  await expect(streak.getByRole("status")).toContainText("Đang tải chuỗi học");
   await expect.poll(() => calls).toBe(callsBeforeRetry + 1);
   await retry.fulfill(streakResponse({ current_streak: 4, completed_today: true, last_qualified_date: "2026-10-19" }));
   await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Chuỗi học tập" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Chuỗi học" })).toBeFocused();
 });
 
 test("an unmounted Dashboard request cannot replace a newer visit", async ({ page }) => {
@@ -254,7 +280,10 @@ test("an unmounted Dashboard request cannot replace a newer visit", async ({ pag
       await staleProgress.handle(route);
       return;
     }
-    await route.fulfill(progressResponse({ total_started: 12, learning: 5, learned: 7, needs_review: 0 }));
+    await route.fulfill(progressResponse(
+      { total_started: 12, learning: 5, learned: 7, needs_review: 0 },
+      { total_xp: 75, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false },
+    ));
   });
   await page.route("**/api/my/vocabulary-sets", (route) =>
     route.fulfill({ status: 200, json: { success: true, data: [] } }),
@@ -264,14 +293,18 @@ test("an unmounted Dashboard request cannot replace a newer visit", async ({ pag
   );
 
   await page.goto("/dashboard");
-  await expect(page.getByText("Đang tải tóm tắt học tập…")).toBeVisible();
+  await expect(page.getByText("Đang tải cấp độ…")).toBeVisible();
   await page.goto("/topics");
   serveFreshProgress = true;
   await page.goto("/dashboard");
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toContainText("Tổng đã bắt đầu12");
-  await staleProgress.fulfill(progressResponse({ total_started: 99, learning: 99, learned: 0, needs_review: 0 }));
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toContainText("Tổng đã bắt đầu12");
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).not.toContainText("99");
+  const totalXp = page.getByRole("heading", { name: "Tổng XP" }).locator("..");
+  await expect(totalXp).toContainText("75 XP");
+  await staleProgress.fulfill(progressResponse(
+    { total_started: 99, learning: 99, learned: 0, needs_review: 0 },
+    { total_xp: 999, level: 4, level_min_xp: 450, next_level_xp: 750, is_max_level: false },
+  ));
+  await expect(totalXp).toContainText("75 XP");
+  await expect(totalXp).not.toContainText("999");
 });
 
 test("first-use USER sees independent persisted-progress and private-Set empty states", async ({ page }) => {
@@ -290,20 +323,11 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
 
   await page.goto("/dashboard");
 
-  const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
-  await expect(summary).toContainText("Tổng đã bắt đầu0");
-  await expect(summary).toContainText("Đang học0");
-  await expect(summary).toContainText("Đã thuộc0");
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 1");
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("0 XP");
-  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" }).locator("span")).toHaveAttribute("style", "width: 0%;");
-  await expect(page.getByRole("heading", { name: "Bạn chưa bắt đầu học từ vựng nào" })).toBeVisible();
-  await expect(page.getByText("Không gian học của riêng bạn đang chờ bộ từ đầu tiên.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ riêng" })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("link", { name: "Xem tất cả" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Tạo bộ từ" })).toHaveAttribute("href", "/my/vocabulary-sets");
-  await expect(page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" })).toHaveAttribute("href", "/topics");
+  await expect(page.getByRole("heading", { name: "Cấp độ" }).locator("..")).toContainText("Level hiện tại");
+  await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toContainText("0 XP");
+  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("0 bộ cá nhân");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toHaveCount(0);
 });
 
 test("Level 15 renders MAX without a next-level target", async ({ page }) => {
@@ -319,12 +343,11 @@ test("Level 15 renders MAX without a next-level target", async ({ page }) => {
   await page.route("**/api/my/vocabulary-sets", (route) => route.fulfill(setsResponse()));
 
   await page.goto("/dashboard");
-  const xpSummary = page.getByRole("region", { name: "XP và cấp độ" });
-  await expect(xpSummary).toContainText("Level 15 — MAX");
-  await expect(xpSummary).toContainText("6.000 XP");
-  await expect(xpSummary).toContainText("Đã đạt cấp độ tối đa");
-  await expect(xpSummary.getByRole("progressbar")).toHaveCount(0);
-  await expect(xpSummary).not.toContainText("cấp tiếp theo");
+  const levelCard = page.getByRole("heading", { name: "Cấp độ" }).locator("..");
+  await expect(levelCard).toContainText("15");
+  await expect(levelCard).toContainText("Đã đạt cấp tối đa");
+  await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toContainText("6.000 XP");
+  await expect(levelCard.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "6000");
 });
 
 test("Progress failure preserves successful Sets and supports one keyboard retry with predictable focus", async ({ page }) => {
@@ -346,21 +369,21 @@ test("Progress failure preserves successful Sets and supports one keyboard retry
 
   await page.goto("/dashboard");
 
-  await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toBeVisible();
-  const progressSection = page.locator(".dashboard-progress-section");
-  const retry = progressSection.getByRole("button", { name: "Thử lại" });
-  await expect(progressSection.getByRole("alert")).toContainText("Không thể tải tóm tắt học tập");
+  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("4 bộ cá nhân");
+  const levelCard = page.getByRole("heading", { name: "Cấp độ" }).locator("..");
+  const retry = levelCard.getByRole("button", { name: "Thử lại" });
+  await expect(levelCard.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
   await retry.focus();
   const callsBeforeRetry = progressCalls;
   retryingProgress = true;
   await page.keyboard.press("Enter");
-  await expect(progressSection.getByRole("status")).toContainText("Đang tải tóm tắt học tập");
+  await expect(levelCard.getByRole("status")).toContainText("Đang tải cấp độ");
   await expect(retry).toHaveCount(0);
   await expect.poll(() => progressCalls).toBe(callsBeforeRetry + 1);
 
   await retriedProgress.fulfill(progressResponse({ total_started: 3, learning: 2, learned: 1, needs_review: 0 }));
-  await expect(progressSection.getByRole("group", { name: "Tóm tắt tiến độ" })).toContainText("Tổng đã bắt đầu3");
-  await expect(page.getByRole("heading", { name: "Tiến độ học tập" })).toBeFocused();
+  await expect(levelCard).toContainText("Level hiện tại");
+  await expect(page.getByRole("heading", { name: "Cấp độ" })).toBeFocused();
 });
 
 for (const viewport of [
@@ -396,10 +419,9 @@ for (const viewport of [
 
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Learner With An Unusually Long");
-    await expect(page.getByRole("region", { name: "XP và cấp độ" })).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toBeVisible();
-    await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toBeVisible();
-    await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("1 bộ cá nhân");
     const overflow = await page.evaluate(() => ({
       body: document.body.scrollWidth - document.body.clientWidth,
       document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -426,7 +448,7 @@ test("Dashboard removes non-essential animation when reduced motion is requested
   await page.route("**/api/my/vocabulary-sets", (route) => sets.handle(route));
 
   await page.goto("/dashboard");
-  const loadingCard = page.locator(".dashboard-loading span").first();
+  const loadingCard = page.locator(".animate-pulse").first();
   await expect(loadingCard).toBeVisible();
   await expect(loadingCard).toHaveCSS("animation-name", "none");
 
@@ -434,8 +456,7 @@ test("Dashboard removes non-essential animation when reduced motion is requested
     progress.fulfill(progressResponse({ total_started: 1, learning: 1, learned: 0, needs_review: 0 })),
     sets.fulfill(setsResponse()),
   ]);
-  const setCard = page.locator(".dashboard-set-card").first();
-  await expect(setCard).toHaveCSS("transition-duration", "0s");
+  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("4 bộ cá nhân");
 });
 
 function progressResponse(summary, xpLevel = { total_xp: 75, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false }) {
