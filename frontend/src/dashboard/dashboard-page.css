@@ -1,4 +1,18 @@
 /* USER hero artwork: layered gradients and pseudo-elements stay clearer as scoped CSS. */
+.dashboard-scrollbar {
+  scrollbar-color: #2f86bd #edf3f6;
+  scrollbar-width: thin;
+}
+
+.dashboard-scrollbar::-webkit-scrollbar { width: 0.65rem; }
+.dashboard-scrollbar::-webkit-scrollbar-track { background: #edf3f6; }
+.dashboard-scrollbar::-webkit-scrollbar-thumb {
+  border: 0.14rem solid #edf3f6;
+  border-radius: 999px;
+  background: #2f86bd;
+}
+.dashboard-scrollbar::-webkit-scrollbar-thumb:hover { background: #176a9f; }
+
 .dashboard-hero {
   background:
     radial-gradient(circle at 74% 18%, rgb(208 235 246 / 55%) 0, rgb(208 235 246 / 18%) 20%, transparent 42%),

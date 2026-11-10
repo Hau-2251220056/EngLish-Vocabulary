@@ -146,7 +146,7 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   const nextLesson = page.getByRole("region", { name: "Bài học tiếp theo" });
   const path = page.getByRole("region", { name: "Lộ trình CEFR" });
   await expect(nextLesson.getByText("A1 starter", { exact: true })).toBeVisible();
-  await expect(nextLesson.getByText("CEFR A1", { exact: true })).toBeVisible();
+  await expect(nextLesson.getByText("A1", { exact: true })).toBeVisible();
   await expect(nextLesson).toContainText("0 / 1 bộ đã hoàn thành");
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(path).not.toContainText("A1 starter");
@@ -199,14 +199,15 @@ test("USER Streak card renders completed, pending, and broken states from backen
   const streak = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
   await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
   await expect(streak).toContainText("Đã duy trì hôm nay");
+  await expect(streak.getByRole("button", { name: "Làm mới chuỗi học tập" })).toHaveCount(0);
 
   projection = streakResponse({ current_streak: 4, completed_today: false, last_qualified_date: "2026-10-18" });
-  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
+  await page.reload();
   await expect(streak.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
   await expect(streak).toContainText("Chưa hoàn thành hôm nay");
 
   projection = streakResponse({ current_streak: 0, completed_today: false, last_qualified_date: "2026-10-16" });
-  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
+  await page.reload();
   await expect(streak.getByLabel("Chuỗi hiện tại 0 ngày")).toBeVisible();
   await expect(streak).toContainText("Chưa hoàn thành hôm nay");
   await expect(streak).not.toContainText("2026-10-16");
@@ -228,13 +229,13 @@ test("initial Streak failure never renders successful zero data", async ({ page 
   await expect(streak.getByRole("button", { name: "Thử lại" })).toBeVisible();
 });
 
-test("Streak failure stays independent, preserves stale data, and supports keyboard retry", async ({ page }) => {
+test("Streak failure stays independent and supports keyboard retry", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
   });
   const retry = deferredRoutes();
   let calls = 0;
-  let response = "success";
+  let response = "error";
   await page.route("**/api/users/me/streak", async (route) => {
     calls += 1;
     if (response === "success") {
@@ -248,13 +249,9 @@ test("Streak failure stays independent, preserves stale data, and supports keybo
 
   await page.goto("/dashboard");
   const streak = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
-  await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
+  await expect(streak.getByRole("alert")).toContainText("Chưa thể tải dữ liệu.");
+  await expect(streak.getByLabel(/Chuỗi hiện tại/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Tổng XP" })).toBeVisible();
-
-  response = "error";
-  await streak.getByRole("button", { name: "Làm mới chuỗi học tập" }).click();
-  await expect(streak.getByRole("alert")).toContainText("Dữ liệu gần nhất có thể đã cũ.");
-  await expect(streak.getByLabel("Chuỗi hiện tại 3 ngày")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("0 bộ cá nhân");
 
   response = "pending";

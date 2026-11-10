@@ -5,6 +5,7 @@ import test from "node:test";
 test("Dashboard separates recommendation, CEFR, statistics, and preserves ADMIN neutrality", async () => {
   const source = await readFile(new URL("../src/dashboard/dashboard-page.jsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../src/dashboard/dashboard-page.css", import.meta.url), "utf8");
+  const shell = await readFile(new URL("../src/auth/ui/authenticated-shell.jsx", import.meta.url), "utf8");
   assert.match(source, /useDashboardSource\(isUser, loadLearningPath, "learning-path"\)/);
   assert.match(source, /if \(!isUser\) return <DashboardAdminLanding/);
   assert.match(source, /path\.highest_unlocked_level/);
@@ -16,7 +17,13 @@ test("Dashboard separates recommendation, CEFR, statistics, and preserves ADMIN 
   assert.match(source, /title="Bài học tiếp theo" type="next-lesson"/);
   assert.match(source, /title="Lộ trình CEFR" type="learning-path"/);
   assert.match(source, /grid-cols-4[\s\S]*<LevelStat[\s\S]*<StreakStat[\s\S]*<TotalXpStat[\s\S]*<SetCountStat/);
-  assert.match(source, /data\.completed_today \? "bg-orange-50 text-\[#d94a1e\]" : "bg-slate-100 text-slate-400"/);
+  assert.match(source, /data\.completed_today \? "border-orange-200 bg-orange-100 text-\[#d94a1e\]" : "border-slate-200 bg-slate-100 text-slate-400"/);
+  assert.match(source, /max-w-4xl/);
+  assert.match(source, />\{recommendationLevel\}<\/span>/);
+  assert.doesNotMatch(source, /aria-label="Làm mới chuỗi học tập"/);
+  assert.match(shell, /isDashboard \? " dashboard-shell lg:!min-h-0"/);
+  assert.match(shell, /isDashboard \? " dashboard-scrollbar"/);
+  assert.match(styles, /\.dashboard-scrollbar[\s\S]*scrollbar-color: #2f86bd #edf3f6/);
   assert.match(source, /<span className="block text-\[0\.62em\][^>]*>\{greeting\}\{" "\}<\/span><span className="mt-1 block/);
   assert.doesNotMatch(source, /DashboardSection|ProgressSummary|MySetsSummary|Bộ từ riêng xem trước/);
   assert.doesNotMatch(source, /Bài học hiện tại|current lesson|currentLesson/i);

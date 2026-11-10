@@ -125,6 +125,7 @@ export function AuthenticatedShell() {
     || location.pathname === "/review/global"
     || isQuiz || isSpeakingPractice;
   const isUser = user.role === "USER";
+  const isDashboard = location.pathname === "/dashboard";
 
   if (isFocusLearning) {
     return (
@@ -246,7 +247,7 @@ export function AuthenticatedShell() {
   );
 
   return (
-    <div className={`authenticated-app${isUser ? " authenticated-user-app !block !h-auto !min-h-dvh !min-w-0 !overflow-x-clip !overflow-y-visible lg:!h-dvh lg:!overflow-hidden" : ""}`}>
+    <div className={`authenticated-app${isUser ? " authenticated-user-app !block !h-auto !min-h-dvh !min-w-0 !overflow-x-clip !overflow-y-visible lg:!h-dvh lg:!overflow-hidden" : ""}${isDashboard ? " dashboard-shell lg:!min-h-0" : ""}`}>
       <aside
         ref={sidebarRef}
         id="authenticated-sidebar"
@@ -323,7 +324,7 @@ export function AuthenticatedShell() {
           ) : headerContent}
         </header>
 
-        <main className={`authenticated-main${isUser ? " !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]" : ""}`}><Outlet /></main>
+        <main className={`authenticated-main${isUser ? " !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]" : ""}${isDashboard ? " dashboard-scrollbar" : ""}`}><Outlet /></main>
       </div>
     </div>
   );
