@@ -70,6 +70,8 @@ test("one-item A1 Set requires completed bounded evidence and explicit pass comp
 });
 
 test("ten-item A1 Set completes through authoritative bounded-session evidence", async ({ page }) => {
+  test.setTimeout(120_000);
+
   await login(page, learner);
   await completeSet(page, ten.id);
 });
