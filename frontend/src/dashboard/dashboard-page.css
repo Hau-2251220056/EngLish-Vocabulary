@@ -1,17 +1,44 @@
-/* USER hero artwork: layered gradients and pseudo-elements stay clearer as scoped CSS. */
-.dashboard-scrollbar {
+/* Dashboard document scrolling and browser pseudo-elements need route-scoped CSS. */
+html:has(.authenticated-user-app.dashboard-shell) {
   scrollbar-color: #2f86bd #edf3f6;
   scrollbar-width: thin;
 }
 
-.dashboard-scrollbar::-webkit-scrollbar { width: 0.65rem; }
-.dashboard-scrollbar::-webkit-scrollbar-track { background: #edf3f6; }
-.dashboard-scrollbar::-webkit-scrollbar-thumb {
+html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar { width: 0.65rem; }
+html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-track { background: #edf3f6; }
+html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb {
   border: 0.14rem solid #edf3f6;
   border-radius: 999px;
   background: #2f86bd;
 }
-.dashboard-scrollbar::-webkit-scrollbar-thumb:hover { background: #176a9f; }
+html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb:hover { background: #176a9f; }
+
+@media (min-width: 1024px) {
+  .authenticated-user-app.dashboard-shell {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow-x: clip !important;
+    overflow-y: visible !important;
+  }
+
+  .authenticated-user-app.dashboard-shell .authenticated-shell-main {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  .authenticated-user-app.dashboard-shell .authenticated-header {
+    position: sticky !important;
+    top: 0;
+  }
+
+  .authenticated-user-app.dashboard-shell .authenticated-main {
+    min-height: calc(100dvh - 4.5rem) !important;
+    overflow: visible !important;
+  }
+}
+
+/* USER hero artwork: layered gradients and pseudo-elements stay clearer as scoped CSS. */
 
 .dashboard-hero {
   background:

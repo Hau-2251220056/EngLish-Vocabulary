@@ -324,7 +324,7 @@ export function AuthenticatedShell() {
           ) : headerContent}
         </header>
 
-        <main className={`authenticated-main${isUser ? " !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]" : ""}${isDashboard ? " dashboard-scrollbar" : ""}`}><Outlet /></main>
+        <main className={`authenticated-main${isUser ? " !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]" : ""}`}><Outlet /></main>
       </div>
     </div>
   );

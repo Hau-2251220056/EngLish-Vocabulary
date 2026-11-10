@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, BookOpenCheck, Flame, LibraryBig, LockKeyhole, Map, RefreshCw, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, BookOpen, BookOpenCheck, Compass, Flame, LibraryBig, LockKeyhole, Map, RefreshCw, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import dashboardLearningIllustration from "../assets/images/banner.png";
@@ -7,14 +7,15 @@ import { learningService } from "../services/learning-service.js";
 import { learningPathService } from "../services/learning-path-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
+import { loadDiscoveryCatalog, selectDiscoveryFeaturedSets } from "../topics/discovery-catalog.js";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
 import "./dashboard-page.css";
 
 const FOCUS_CLASSES = "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#0877b9]/30";
-const PRIMARY_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#0877b9] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#075f95] motion-reduce:transition-none ${FOCUS_CLASSES}`;
+const REVIEW_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#047857] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#065f46] motion-reduce:transition-none ${FOCUS_CLASSES}`;
+const SUGGESTION_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#c2410c] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#9a3412] motion-reduce:transition-none ${FOCUS_CLASSES}`;
 const CARD_CLASSES = "min-w-0 rounded-2xl border shadow-[0_12px_30px_rgb(15_83_115/7%)]";
 const DATA_CARD_TONES = Object.freeze({
-  "next-lesson": "border-sky-200 bg-[#f4fbff]",
   "learning-path": "border-blue-200 bg-[#f8fbff]",
   review: "border-emerald-200 bg-[#f4fcf8]",
 });
@@ -23,6 +24,7 @@ const loadCurrentStreak = () => learningSessionService.getCurrentStreak();
 const loadMySets = () => vocabularySetService.listMySets();
 const loadLearningPath = () => learningPathService.getPath();
 const loadReviewSummary = () => learningService.getGlobalReviewSummary();
+const loadFeaturedCatalog = () => loadDiscoveryCatalog();
 
 export function DashboardPage() {
   const { user } = useAuthentication();
@@ -32,6 +34,7 @@ export function DashboardPage() {
   const mySets = useDashboardSource(isUser, loadMySets, "sets");
   const learningPath = useDashboardSource(isUser, loadLearningPath, "learning-path");
   const review = useDashboardSource(isUser, loadReviewSummary, "review");
+  const featured = useDashboardSource(isUser, loadFeaturedCatalog, "featured");
 
   if (!isUser) return <DashboardAdminLanding displayName={user.display_name} />;
 
@@ -40,9 +43,10 @@ export function DashboardPage() {
       <DashboardIntroduction displayName={user.display_name} />
       <DashboardStatistics mySets={mySets} progress={progress} streak={streak} />
 
-      <div className="mt-8 grid min-w-0 max-w-4xl grid-cols-1 gap-5">
-        <DashboardDataCard errorMessage="Không thể tải bài học tiếp theo. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải bài học tiếp theo…" source={learningPath} title="Bài học tiếp theo" type="next-lesson">
-          {(data) => <NextLessonSummary path={data} />}
+      <div className="mt-8 grid min-w-0 grid-cols-2 items-start gap-5 max-[800px]:grid-cols-1">
+        <NextSuggestionSection source={learningPath} />
+        <DashboardDataCard errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải từ cần ôn…" source={review} title="Từ cần ôn" type="review">
+          {(data) => <ReviewSummary summary={data} />}
         </DashboardDataCard>
       </div>
 
@@ -50,9 +54,7 @@ export function DashboardPage() {
         <DashboardDataCard errorMessage="Không thể tải lộ trình CEFR. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải lộ trình CEFR…" source={learningPath} title="Lộ trình CEFR" type="learning-path">
           {(data) => <CefrPathSummary path={data} />}
         </DashboardDataCard>
-        <DashboardDataCard errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải từ cần ôn…" source={review} title="Từ cần ôn" type="review">
-          {(data) => <ReviewSummary summary={data} />}
-        </DashboardDataCard>
+        <FeaturedSetsSection catalogSource={featured} pathSource={learningPath} />
       </div>
     </section>
   );
@@ -74,7 +76,7 @@ function DashboardStatistics({ mySets, progress, streak }) {
 
 function LevelStat({ source }) {
   return (
-    <StatisticSourceCard label="Cấp độ" source={source} tone="border-sky-200 bg-sky-50/70">
+    <StatisticSourceCard accent="text-[#1D4ED8]" label="Cấp độ" source={source} tone="border-blue-300 bg-[#DBEAFE]">
       {(data) => {
         const xp = data.xp_level;
         const progressPercent = xp.is_max_level ? 100 : clampPercentage(((xp.total_xp - xp.level_min_xp) / (xp.next_level_xp - xp.level_min_xp)) * 100);
@@ -84,7 +86,7 @@ function LevelStat({ source }) {
             <div aria-label={`Tiến độ XP Level ${xp.level}`} aria-valuemax={xp.is_max_level ? xp.total_xp : xp.next_level_xp} aria-valuemin={xp.level_min_xp} aria-valuenow={xp.total_xp} className="relative grid size-[4.25rem] shrink-0 place-items-center" role="progressbar">
               <svg aria-hidden="true" className="size-full -rotate-90" viewBox="0 0 52 52">
                 <circle className="fill-none stroke-slate-200" cx="26" cy="26" r="22" strokeWidth="5" />
-                <circle className="fill-none stroke-[#0877b9]" cx="26" cy="26" r="22" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progressPercent / 100)} strokeLinecap="round" strokeWidth="5" />
+                <circle className="fill-none stroke-[#1D4ED8]" cx="26" cy="26" r="22" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progressPercent / 100)} strokeLinecap="round" strokeWidth="5" />
               </svg>
               <strong className="absolute text-xl text-slate-900 tabular-nums">{xp.level}</strong>
             </div>
@@ -101,7 +103,7 @@ function LevelStat({ source }) {
 
 function StreakStat({ source }) {
   return (
-    <StatisticSourceCard label="Chuỗi học" source={source} tone="border-orange-200 bg-orange-50/65">
+    <StatisticSourceCard accent="text-[#C2410C]" label="Chuỗi học" source={source} tone="border-orange-300 bg-[#FFEDD5]">
       {(data) => (
         <div className="flex min-w-0 items-center gap-3.5">
           <span className={`grid size-12 shrink-0 place-items-center rounded-xl border [&_svg]:size-6 ${data.completed_today ? "border-orange-200 bg-orange-100 text-[#d94a1e]" : "border-slate-200 bg-slate-100 text-slate-400"}`} aria-hidden="true"><Flame /></span>
@@ -117,21 +119,21 @@ function StreakStat({ source }) {
 
 function TotalXpStat({ source }) {
   return (
-    <StatisticSourceCard label="Tổng XP" source={source} tone="border-cyan-200 bg-cyan-50/70">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-cyan-200 bg-cyan-100 text-[#0877b9] [&_svg]:size-6" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-500">XP</span></p></div>}
+    <StatisticSourceCard accent="text-[#0E7490]" label="Tổng XP" source={source} tone="border-cyan-300 bg-[#CFFAFE]">
+      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-cyan-300 bg-white/65 text-[#0E7490] shadow-sm [&_svg]:size-6" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-600">XP</span></p></div>}
     </StatisticSourceCard>
   );
 }
 
 function SetCountStat({ source }) {
   return (
-    <StatisticSourceCard label="Bộ từ" source={source} tone="border-emerald-200 bg-emerald-50/70">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-emerald-200 bg-emerald-100 text-emerald-700 [&_svg]:size-6" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{data.length} <span className="text-sm font-bold text-slate-500">bộ cá nhân</span></p></div>}
+    <StatisticSourceCard accent="text-[#047857]" label="Bộ từ cá nhân" source={source} tone="border-emerald-300 bg-[#D1FAE5]">
+      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-emerald-300 bg-white/65 text-[#047857] shadow-sm [&_svg]:size-6" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{data.length} <span className="text-sm font-bold text-slate-600">bộ cá nhân</span></p></div>}
     </StatisticSourceCard>
   );
 }
 
-function StatisticSourceCard({ children, label, source, tone }) {
+function StatisticSourceCard({ accent, children, label, source, tone }) {
   const headingRef = useRef(null);
   const retryButtonRef = useRef(null);
   const retryRequestedRef = useRef(false);
@@ -147,8 +149,8 @@ function StatisticSourceCard({ children, label, source, tone }) {
   }
   const hasValue = source.data !== null;
   return (
-    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4`} aria-busy={source.status === "loading"}>
-      <h3 className="m-0 rounded-sm text-sm font-extrabold text-slate-700 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" ref={headingRef} tabIndex={-1}>{label}</h3>
+    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4 shadow-[0_12px_26px_rgb(15_23_42/9%)]`} aria-busy={source.status === "loading"}>
+      <h3 className={`m-0 rounded-sm text-sm font-extrabold ${accent} focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30`} ref={headingRef} tabIndex={-1}>{label}</h3>
       {source.status === "loading" ? <div className="mt-4" role="status"><span className="sr-only">Đang tải {label.toLocaleLowerCase("vi-VN")}…</span><span className="block h-12 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" aria-hidden="true" /></div> : null}
       {source.status === "error" ? <div className="mt-3" role="alert">{hasValue ? <div className="mb-3">{children(source.data)}</div> : null}<p className="m-0 text-xs font-semibold leading-relaxed text-red-700">{hasValue ? "Dữ liệu gần nhất có thể đã cũ." : "Chưa thể tải dữ liệu."}</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 text-xs font-extrabold text-[#075f95] hover:bg-sky-50 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div> : null}
       {source.status === "success" ? <div className="mt-4">{children(source.data)}</div> : null}
@@ -156,21 +158,43 @@ function StatisticSourceCard({ children, label, source, tone }) {
   );
 }
 
-function NextLessonSummary({ path }) {
-  const primaryLevel = getPrimaryLevel(path);
-  const recommendation = path.recommendation;
-  const recommendedSet = recommendation ? findRecommendedSet(path, recommendation.set_id) : null;
-  const recommendationName = recommendedSet?.name ?? "Bộ từ được đề xuất";
-  const recommendationLevel = recommendedSet?.level ?? path.highest_unlocked_level;
-  const configurationMessage = getConfigurationMessage(primaryLevel);
-  if (!recommendation) {
-    const message = path.all_current_sets_complete ? "Bạn đã hoàn thành các bộ từ hiện có trong lộ trình." : configurationMessage ?? "Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.";
-    return <div className="flex min-w-0 items-start gap-4 rounded-xl border border-slate-200 bg-slate-50 p-5" role="status"><span className="grid size-12 shrink-0 place-items-center rounded-xl bg-white text-slate-500 shadow-sm [&_svg]:size-6" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có bài học được đề xuất</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
+function NextSuggestionSection({ source }) {
+  const headingRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!retryRequestedRef.current || source.status === "loading") return;
+    if (source.status === "error") retryButtonRef.current?.focus();
+    if (source.status === "success") headingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [source.status]);
+  function retry() {
+    retryRequestedRef.current = true;
+    source.retry();
   }
   return (
-    <div className="flex min-w-0 items-center justify-between gap-6 rounded-xl border border-sky-200 bg-white/80 p-[clamp(1rem,3vw,1.35rem)] max-[640px]:items-stretch max-[640px]:flex-col">
-      <div className="flex min-w-0 items-start gap-4"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-sky-200 bg-sky-100 text-[#0877b9] shadow-sm [&_svg]:size-6" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 text-[clamp(1.15rem,2.5vw,1.4rem)] font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{recommendationName}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-sky-200 bg-sky-100 px-3 text-[#075f95]">{recommendationLevel}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
-      <Link className={`${PRIMARY_LINK_CLASSES} shrink-0 max-[640px]:w-full`} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: recommendation.action, passId: recommendation.pass_id }}>{recommendation.action === "RESUME" ? "Tiếp tục học" : "Bắt đầu học"} <ArrowRight aria-hidden="true" className="size-4" /></Link>
+    <section aria-labelledby="dashboard-next-suggestion-title" aria-busy={source.status === "loading"} className="min-w-0">
+      <h2 className="mb-3 mt-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-next-suggestion-title" ref={headingRef} tabIndex={-1}>Gợi ý tiếp theo</h2>
+      {source.status === "loading" ? <div className="min-h-32 animate-pulse rounded-2xl border border-amber-200 bg-amber-50 motion-reduce:animate-none" role="status"><span className="sr-only">Đang tải gợi ý tiếp theo…</span></div> : null}
+      {source.status === "error" ? <div className="flex min-h-32 min-w-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">Không thể tải gợi ý tiếp theo. Các khu vực khác vẫn dùng được.</p><button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div></div> : null}
+      {source.status === "success" ? <NextSuggestionSummary path={source.data} /> : null}
+    </section>
+  );
+}
+
+function NextSuggestionSummary({ path }) {
+  const primaryLevel = getPrimaryLevel(path);
+  const suggestion = path.next_suggestion;
+  const suggestedSet = suggestion ? findRecommendedSet(path, suggestion.set_id) : null;
+  const configurationMessage = getConfigurationMessage(primaryLevel);
+  if (!suggestion || !suggestedSet) {
+    const message = path.all_current_sets_complete ? "Bạn đã hoàn thành các bộ từ hiện có trong lộ trình." : configurationMessage ?? "Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.";
+    return <div className="flex min-w-0 items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-amber-700 shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
+  }
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-5 rounded-2xl border border-amber-300 bg-[#fff4dc] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_12px_28px_rgb(194_65_12/10%)] max-[560px]:items-stretch max-[560px]:flex-col">
+      <div className="flex min-w-0 items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-amber-300 bg-white/75 text-[#c2410c] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-amber-300 bg-amber-100 px-3 text-[#9a3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
+      <Link className={`${SUGGESTION_LINK_CLASSES} shrink-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${suggestion.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: suggestion.action, passId: suggestion.pass_id }}>Bắt đầu học <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
 }
@@ -194,8 +218,43 @@ function ReviewSummary({ summary }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-5 max-[520px]:items-stretch max-[520px]:flex-col">
       <div className="flex min-w-0 items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-200 bg-emerald-100 text-emerald-700 [&_svg]:size-5" aria-hidden="true"><RefreshCw /></span><div className="min-w-0">{summary.has_due_items ? <p className="m-0 text-xl font-extrabold text-slate-900">{summary.due_count} từ đang đến hạn</p> : <p className="m-0 text-xl font-extrabold text-slate-900">Đã ôn tập đầy đủ</p>}{!summary.has_due_items && summary.nearest_future_review_at ? <p className="mb-0 mt-1 text-sm text-slate-600">Lần ôn gần nhất: {new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.nearest_future_review_at))}</p> : null}</div></div>
-      <Link className={`${PRIMARY_LINK_CLASSES} shrink-0 max-[520px]:w-full`} to="/review">Xem ôn tập <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <Link className={`${REVIEW_LINK_CLASSES} shrink-0 max-[520px]:w-full`} to="/review">Xem ôn tập <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
+  );
+}
+
+function FeaturedSetsSection({ catalogSource, pathSource }) {
+  const headingRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!retryRequestedRef.current || catalogSource.status === "loading") return;
+    if (catalogSource.status === "error") retryButtonRef.current?.focus();
+    if (catalogSource.status === "success") headingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [catalogSource.status]);
+  function retry() {
+    retryRequestedRef.current = true;
+    catalogSource.retry();
+  }
+  const sets = catalogSource.status === "success"
+    ? selectDiscoveryFeaturedSets(catalogSource.data.sets.filter((set) => set.item_count > 0))
+    : [];
+  return (
+    <section aria-labelledby="dashboard-featured-title" aria-busy={catalogSource.status === "loading"} className={`${CARD_CLASSES} min-w-0 border-cyan-200 bg-white p-[clamp(1rem,2.5vw,1.5rem)]`}>
+      <div className="flex min-w-0 items-center justify-between gap-4">
+        <h2 className="m-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-featured-title" ref={headingRef} tabIndex={-1}>Bộ từ nổi bật</h2>
+        <Link className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm font-extrabold text-[#075f95] no-underline hover:bg-sky-50 ${FOCUS_CLASSES}`} to="/topics">Khám phá <Compass className="size-4" aria-hidden="true" /></Link>
+      </div>
+      {catalogSource.status === "loading" ? <div className="mt-4 min-h-32 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" role="status"><span className="sr-only">Đang tải bộ từ nổi bật…</span></div> : null}
+      {catalogSource.status === "error" ? <div className="mt-4 flex min-w-0 items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">Không thể tải bộ từ nổi bật.</p><button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div></div> : null}
+      {catalogSource.status === "success" && sets.length === 0 ? <p className="mb-0 mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600" role="status">Chưa có bộ từ công khai phù hợp để giới thiệu.</p> : null}
+      {catalogSource.status === "success" && sets.length > 0 ? <ul className="mb-0 mt-3 grid list-none gap-1.5 p-0" aria-label="Bộ từ nổi bật">{sets.map((set) => {
+        const level = pathSource.data?.levels.find(({ level: value }) => value === set.cefr_level);
+        const locked = Boolean(level && !level.unlocked);
+        return <li className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5" key={set.id}><span className="grid size-10 shrink-0 place-items-center rounded-lg border border-cyan-200 bg-cyan-50 text-[#0E7490]" aria-hidden="true"><BookOpen className="size-5" /></span><div className="min-w-0 flex-1"><p className="m-0 truncate text-sm font-extrabold text-slate-900" title={set.name}>{set.name}</p><p className="mb-0 mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500"><span>{set.topic.name}</span><span aria-hidden="true">·</span><span>{set.item_count} từ</span>{set.cefr_level ? <><span aria-hidden="true">·</span><span>{set.cefr_level}</span></> : null}{locked ? <span className="inline-flex items-center gap-1 text-slate-600"><LockKeyhole className="size-3" aria-hidden="true" />Đang khóa</span> : null}</p></div><Link className={`inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-extrabold text-[#075f95] no-underline hover:bg-sky-50 ${FOCUS_CLASSES}`} to={`/vocabulary-sets/${set.id}`}>Xem<span className="sr-only"> {set.name}</span></Link></li>;
+      })}</ul> : null}
+    </section>
   );
 }
 

@@ -126,6 +126,29 @@ export function createLearningPathRepository(prisma) {
       });
     },
 
+    listActiveSetContexts(userId, evaluatedAt) {
+      return prisma.lEARNING_SESSION.findMany({
+        where: {
+          user_id: userId,
+          status: "ACTIVE",
+          expires_at: { gt: cloneDate(evaluatedAt) },
+          scope: "SET",
+          mode: { in: ["NORMAL", "SRS"] },
+          set_id_snapshot: { not: null },
+        },
+        orderBy: [{ created_at: "desc" }, { id: "asc" }],
+        select: {
+          id: true,
+          set_id_snapshot: true,
+          scope: true,
+          mode: true,
+          status: true,
+          created_at: true,
+          expires_at: true,
+        },
+      });
+    },
+
     findCreationReplay(userId, operationId) {
       return prisma.cEFR_LEARNING_PASS.findUnique({
         where: { user_id_create_operation_id: { user_id: userId, create_operation_id: operationId } },
@@ -187,7 +210,7 @@ export function createLearningPathRepository(prisma) {
 export { LEVELS as CEFR_LEVELS };
 
 function requireClient(prisma) {
-  if (!prisma?.cEFR_LEARNING_PASS || !prisma?.cEFR_LEARNING_PATH_STATE || !prisma?.vOCABULARY_SET || typeof prisma.$queryRaw !== "function") {
+  if (!prisma?.cEFR_LEARNING_PASS || !prisma?.cEFR_LEARNING_PATH_STATE || !prisma?.lEARNING_SESSION || !prisma?.vOCABULARY_SET || typeof prisma.$queryRaw !== "function") {
     throw new TypeError("A Prisma client or transaction is required.");
   }
 }

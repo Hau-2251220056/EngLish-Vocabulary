@@ -34,6 +34,21 @@ test("controller derives identity from req.user and preserves approved success s
   )));
 });
 
+test("read path preserves recommendation and exposes additive next suggestion fields", async () => {
+  const projection = {
+    recommendation: { action: "RESUME", set_id: SET_ID, pass_id: PASS_ID },
+    next_suggestion: { action: "START", set_id: OPERATION_ID, pass_id: null },
+    next_suggestion_reason: null,
+  };
+  const controller = createLearningPathController({
+    learningPathService: { getPath: async () => projection },
+  });
+  const res = response();
+  await controller.readPath(request(), res, failOnNext);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body.data, projection);
+});
+
 test("controller maps stable validation, concealment, lock and conflict errors", async () => {
   const expected = [
     ["CEFR_PATH_VALIDATION_ERROR", 400],
@@ -89,6 +104,18 @@ test("application wiring mounts Learning Path and injects shared authorization i
   assert.match(source, /app\.use\("\/api\/learning-path", learningPathRouter\)/);
   assert.match(source, /createLearningPathActivityAuthorizer\(\{\s*createLearningPathRepository,?\s*\}\)/);
   assert.equal((source.match(/authorizeSetActivity,/g) ?? []).length, 3);
+});
+
+test("repository scopes active contexts to unexpired SET NORMAL and SRS sessions", async () => {
+  const source = await readFile(new URL("../../src/repositories/learning-path-repository.js", import.meta.url), "utf8");
+  assert.match(source, /listCurrentCurriculum\(userId\)[\s\S]*where: \{ is_public: true, cefr_level: \{ in: LEVELS \} \}/);
+  assert.match(source, /listActiveSetContexts\(userId, evaluatedAt\)/);
+  assert.match(source, /status: "ACTIVE"/);
+  assert.match(source, /expires_at: \{ gt: cloneDate\(evaluatedAt\) \}/);
+  assert.match(source, /scope: "SET"/);
+  assert.match(source, /mode: \{ in: \["NORMAL", "SRS"\] \}/);
+  assert.match(source, /set_id_snapshot: \{ not: null \}/);
+  assert.doesNotMatch(source, /mode: \{ in: \["NORMAL", "SRS", "QUIZ"\] \}/);
 });
 
 function serviceDouble(calls) {

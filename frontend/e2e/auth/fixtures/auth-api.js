@@ -65,6 +65,8 @@ export async function installAuthApiMock(page, handlers = {}) {
             incomplete_sets: [],
           })),
           recommendation: null,
+          next_suggestion: null,
+          next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET",
           all_current_sets_complete: false,
         },
       },
@@ -110,6 +112,9 @@ export async function installAuthApiMock(page, handlers = {}) {
         },
       },
     }),
+  );
+  await page.route("**/api/topics", (route) =>
+    route.fulfill({ status: 200, json: { success: true, data: [] } }),
   );
 
   await page.route("**/api/auth/**", async (route) => {

@@ -15,8 +15,48 @@ test("projectPath keeps the primary recommendation at the highest unlocked level
   ];
   const result = projectPath(curriculum, { highest_unlocked_level: "A2", path_completed_at: null }, [], NOW);
   assert.equal(result.recommendation.set_id, curriculum[1].id);
+  assert.equal(result.next_suggestion.set_id, curriculum[1].id);
   assert.equal(result.levels[0].incomplete_sets.length, 1);
   assert.equal(result.levels[0].unlocked, true);
+});
+
+test("next suggestion skips the RESUME-first active pass and keeps curriculum order", () => {
+  const first = setRecord("A1", "00000000-0000-4000-8000-000000000031", false);
+  const second = setRecord("A1", "00000000-0000-4000-8000-000000000032", false);
+  const activePass = { id: PASS_ID, set_id_snapshot: first.id };
+  const result = projectPath([first, second], null, [activePass], NOW);
+  assert.deepEqual(result.recommendation, { action: "RESUME", set_id: first.id, pass_id: PASS_ID });
+  assert.deepEqual(result.next_suggestion, { action: "START", set_id: second.id, pass_id: null });
+  assert.equal(result.next_suggestion_reason, null);
+});
+
+test("next suggestion excludes every authoritative SET learning and review context", () => {
+  const sets = [31, 32, 33].map((suffix) => (
+    setRecord("A1", `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`, false)
+  ));
+  const contexts = [
+    { set_id_snapshot: sets[0].id, scope: "SET", mode: "NORMAL" },
+    { set_id_snapshot: sets[1].id, scope: "SET", mode: "SRS" },
+  ];
+  const result = projectPath(sets, null, [], NOW, contexts);
+  assert.equal(result.recommendation.set_id, sets[0].id);
+  assert.equal(result.next_suggestion.set_id, sets[2].id);
+});
+
+test("next suggestion reports a stable empty reason without selecting locked completed or empty Sets", () => {
+  const active = setRecord("A1", "00000000-0000-4000-8000-000000000041", false);
+  const completed = setRecord("A1", "00000000-0000-4000-8000-000000000042", true);
+  const empty = { ...setRecord("A1", "00000000-0000-4000-8000-000000000043", false), items: [] };
+  const locked = setRecord("A2", "00000000-0000-4000-8000-000000000044", false);
+  const result = projectPath(
+    [active, completed, empty, locked],
+    { highest_unlocked_level: "A1", path_completed_at: null },
+    [{ id: PASS_ID, set_id_snapshot: active.id }],
+    NOW,
+  );
+  assert.equal(result.next_suggestion, null);
+  assert.equal(result.next_suggestion_reason, "NO_ELIGIBLE_NEXT_SET");
+  assert.equal(result.levels.find(({ level }) => level === "A2").unlocked, false);
 });
 
 test("projectPath preserves terminal entitlement without claiming current completion", () => {
@@ -133,6 +173,7 @@ function createFixture(size) {
     lockPathState: async () => pathState,
     upsertPathState: async (_userId, data) => { pathState = { ...pathState, user_id: USER_ID, ...data }; return pathState; },
     listActivePasses: async () => passes.filter((pass) => pass.status === "ACTIVE"),
+    listActiveSetContexts: async () => [],
     findActivePass: async (_userId, id) => passes.find((pass) => pass.set_id_snapshot === id && pass.status === "ACTIVE") ?? null,
     findCompletedPass: async (_userId, id) => passes.find((pass) => pass.set_id_snapshot === id && pass.status === "COMPLETED") ?? null,
     lockPassIdentity: async () => {},

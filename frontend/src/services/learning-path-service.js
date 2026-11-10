@@ -72,7 +72,16 @@ export function requirePathProjection(value) {
     || typeof value.all_current_sets_complete !== "boolean"
     || !Array.isArray(value.levels) || value.levels.length !== LEVELS.length
     || !value.levels.every((entry, index) => isLevel(entry, LEVELS[index]))
-    || !(value.recommendation === null || isRecommendation(value.recommendation))) {
+    || !(value.recommendation === null || isRecommendation(value.recommendation))
+    || !(value.next_suggestion === null || isNextSuggestion(value.next_suggestion))
+    || !(value.next_suggestion_reason === null || value.next_suggestion_reason === "NO_ELIGIBLE_NEXT_SET")
+    || (value.next_suggestion === null) !== (value.next_suggestion_reason === "NO_ELIGIBLE_NEXT_SET")) {
+    throw invalidResponse();
+  }
+  const incompleteSetIds = new Set(value.levels.flatMap((level) => (
+    level.incomplete_sets.map((set) => set.id)
+  )));
+  if (value.next_suggestion && !incompleteSetIds.has(value.next_suggestion.set_id)) {
     throw invalidResponse();
   }
   return value;
@@ -130,6 +139,11 @@ function isRecommendation(value) {
   return isRecord(value) && ["START", "RESUME"].includes(value.action)
     && isUuid(value.set_id)
     && (value.action === "START" ? value.pass_id === null : isUuid(value.pass_id));
+}
+
+function isNextSuggestion(value) {
+  return isRecord(value) && value.action === "START"
+    && isUuid(value.set_id) && value.pass_id === null;
 }
 
 function mapError(error) {

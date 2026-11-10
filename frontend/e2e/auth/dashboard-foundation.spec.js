@@ -59,7 +59,7 @@ test("USER composes four authoritative statistics with independent source recove
   await expect(page.getByRole("heading", { name: `Chào buổi sáng ${publicUser.display_name}` })).toBeVisible();
   const levelCard = page.getByRole("heading", { name: "Cấp độ" }).locator("..");
   const xpCard = page.getByRole("heading", { name: "Tổng XP" }).locator("..");
-  const setCard = page.getByRole("heading", { name: "Bộ từ" }).locator("..");
+  const setCard = page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..");
   await expect(levelCard.getByRole("status")).toContainText("Đang tải cấp độ");
   await expect(setCard.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
 
@@ -79,7 +79,7 @@ test("USER composes four authoritative statistics with independent source recove
   await retrySets.fulfill(setsResponse());
 
   await expect(setCard).toContainText("4 bộ cá nhân");
-  await expect(page.getByRole("heading", { name: "Bộ từ" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" })).toBeFocused();
   await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Lối tắt Dashboard" })).toHaveCount(0);
 });
@@ -137,13 +137,15 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
           incomplete_sets: index === 0 ? [{ id: setId, name: "A1 starter", created_at: "2026-11-03T00:00:00.000Z" }] : [],
         })),
         recommendation: { action: "START", set_id: setId, pass_id: null },
+        next_suggestion: { action: "START", set_id: setId, pass_id: null },
+        next_suggestion_reason: null,
         all_current_sets_complete: false,
       },
     },
   }));
 
   await page.goto("/dashboard");
-  const nextLesson = page.getByRole("region", { name: "Bài học tiếp theo" });
+  const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
   const path = page.getByRole("region", { name: "Lộ trình CEFR" });
   await expect(nextLesson.getByText("A1 starter", { exact: true })).toBeVisible();
   await expect(nextLesson.getByText("A1", { exact: true })).toBeVisible();
@@ -157,10 +159,11 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   await expect(path.getByText("đang khóa")).toHaveCount(4);
 });
 
-test("USER keeps an authoritative RESUME action when recommendation metadata needs a safe fallback", async ({ page }) => {
+test("USER keeps RESUME separate and renders the different authoritative next suggestion", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const setId = "10000000-0000-4000-8000-000000000001";
   const passId = "20000000-0000-4000-8000-000000000002";
+  const nextSetId = "10000000-0000-4000-8000-000000000003";
   await page.route("**/api/learning-path", (route) => route.fulfill({
     status: 200,
     json: {
@@ -173,19 +176,52 @@ test("USER keeps an authoritative RESUME action when recommendation metadata nee
           level, unlocked: index === 0, required_count: index === 0 ? 1 : 0,
           completed_count: 0, configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
           current_complete: false,
-          incomplete_sets: [],
+          incomplete_sets: index === 0 ? [
+            { id: setId, name: "A1 active", created_at: "2026-11-02T00:00:00.000Z" },
+            { id: nextSetId, name: "A1 next", created_at: "2026-11-03T00:00:00.000Z" },
+          ] : [],
         })),
         recommendation: { action: "RESUME", set_id: setId, pass_id: passId },
+        next_suggestion: { action: "START", set_id: nextSetId, pass_id: null },
+        next_suggestion_reason: null,
         all_current_sets_complete: false,
       },
     },
   }));
 
   await page.goto("/dashboard");
-  const nextLesson = page.getByRole("region", { name: "Bài học tiếp theo" });
-  await expect(nextLesson.getByText("Bộ từ được đề xuất", { exact: true })).toBeVisible();
-  await expect(nextLesson.getByText("undefined", { exact: true })).toHaveCount(0);
-  await expect(nextLesson.getByRole("link", { name: "Tiếp tục học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(nextLesson.getByText("A1 next", { exact: true })).toBeVisible();
+  await expect(nextLesson).not.toContainText("A1 active");
+  await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${nextSetId}`);
+});
+
+test("featured Sets use real catalog order and label locked CEFR content as view-only", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const topicId = "60000000-0000-4000-8000-000000000001";
+  await page.route("**/api/topics", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [{ id: topicId, name: "Daily English", description: null }] },
+  }));
+  await page.route(`**/api/topics/${topicId}/vocabulary-sets`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [
+      publicSet("70000000-0000-4000-8000-000000000001", "First A1", "A1", 12),
+      publicSet("70000000-0000-4000-8000-000000000002", "Locked A2", "A2", 9),
+      publicSet("70000000-0000-4000-8000-000000000003", "Empty Set", "A1", 0),
+      publicSet("70000000-0000-4000-8000-000000000004", "Third B1", "B1", 7),
+    ] },
+  }));
+
+  await page.goto("/dashboard");
+  const featured = page.getByRole("region", { name: "Bộ từ nổi bật" });
+  await expect(featured.getByRole("listitem")).toHaveCount(3);
+  await expect(featured).toContainText("First A1");
+  await expect(featured).toContainText("Locked A2");
+  await expect(featured).toContainText("Third B1");
+  await expect(featured).not.toContainText("Empty Set");
+  await expect(featured.getByText("Đang khóa")).toHaveCount(2);
+  await expect(featured.getByRole("link", { name: "Khám phá" })).toHaveAttribute("href", "/topics");
 });
 
 test("USER Streak card renders completed, pending, and broken states from backend projections", async ({ page }) => {
@@ -252,7 +288,7 @@ test("Streak failure stays independent and supports keyboard retry", async ({ pa
   await expect(streak.getByRole("alert")).toContainText("Chưa thể tải dữ liệu.");
   await expect(streak.getByLabel(/Chuỗi hiện tại/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Tổng XP" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("0 bộ cá nhân");
+  await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("0 bộ cá nhân");
 
   response = "pending";
   const retryButton = streak.getByRole("button", { name: "Thử lại" });
@@ -322,7 +358,7 @@ test("first-use USER sees independent persisted-progress and private-Set empty s
 
   await expect(page.getByRole("heading", { name: "Cấp độ" }).locator("..")).toContainText("Level hiện tại");
   await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toContainText("0 XP");
-  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("0 bộ cá nhân");
+  await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("0 bộ cá nhân");
   await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" })).toHaveAttribute("aria-valuenow", "0");
   await expect(page.getByRole("list", { name: "Bộ từ riêng xem trước" })).toHaveCount(0);
 });
@@ -366,7 +402,7 @@ test("Progress failure preserves successful Sets and supports one keyboard retry
 
   await page.goto("/dashboard");
 
-  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("4 bộ cá nhân");
+  await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("4 bộ cá nhân");
   const levelCard = page.getByRole("heading", { name: "Cấp độ" }).locator("..");
   const retry = levelCard.getByRole("button", { name: "Thử lại" });
   await expect(levelCard.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
@@ -418,7 +454,7 @@ for (const viewport of [
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Learner With An Unusually Long");
     await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("1 bộ cá nhân");
+    await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("1 bộ cá nhân");
     const overflow = await page.evaluate(() => ({
       body: document.body.scrollWidth - document.body.clientWidth,
       document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -453,7 +489,7 @@ test("Dashboard removes non-essential animation when reduced motion is requested
     progress.fulfill(progressResponse({ total_started: 1, learning: 1, learned: 0, needs_review: 0 })),
     sets.fulfill(setsResponse()),
   ]);
-  await expect(page.getByRole("heading", { name: "Bộ từ" }).locator("..")).toContainText("4 bộ cá nhân");
+  await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("4 bộ cá nhân");
 });
 
 function progressResponse(summary, xpLevel = { total_xp: 75, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false }) {
@@ -521,5 +557,13 @@ function deferredRoutes() {
       response = nextResponse;
       await Promise.allSettled(routes.map((route) => route.fulfill(response)));
     },
+  };
+}
+
+function publicSet(id, name, cefrLevel, itemCount) {
+  return {
+    id, topic_id: "60000000-0000-4000-8000-000000000001", name,
+    description: `${name} description`, cefr_level: cefrLevel,
+    cover_image_url: null, item_count: itemCount,
   };
 }

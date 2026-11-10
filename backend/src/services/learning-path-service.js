@@ -30,12 +30,13 @@ export function createLearningPathService({
   );
 
   async function readProjection(paths, userId, evaluatedAt) {
-    const [curriculum, state, activePasses] = await Promise.all([
+    const [curriculum, state, activePasses, activeSetContexts] = await Promise.all([
       paths.listCurrentCurriculum(userId),
       paths.findPathState(userId),
       paths.listActivePasses(userId),
+      paths.listActiveSetContexts(userId, evaluatedAt),
     ]);
-    return projectPath(curriculum, state, activePasses, evaluatedAt);
+    return projectPath(curriculum, state, activePasses, evaluatedAt, activeSetContexts);
   }
 
   async function createPass(paths, userId, set, operationId, instant) {
@@ -187,7 +188,7 @@ export function createLearningPathActivityAuthorizer({ createLearningPathReposit
   };
 }
 
-export function projectPath(curriculum, state, activePasses, evaluatedAt) {
+export function projectPath(curriculum, state, activePasses, evaluatedAt, activeSetContexts = []) {
   const highest = state?.highest_unlocked_level ?? "A1";
   const highestIndex = LEVEL_INDEX.get(highest) ?? 0;
   const levels = CEFR_LEVELS.map((level, index) => {
@@ -207,6 +208,11 @@ export function projectPath(curriculum, state, activePasses, evaluatedAt) {
   const primarySetIds = new Set(primary.incomplete_sets.map((set) => set.id));
   const active = activePasses.find((pass) => primarySetIds.has(pass.set_id_snapshot));
   const next = primary.incomplete_sets[0];
+  const activeSetIds = new Set([
+    ...activePasses.map((pass) => pass.set_id_snapshot),
+    ...activeSetContexts.map((context) => context.set_id_snapshot),
+  ]);
+  const nextSuggestion = primary.incomplete_sets.find((set) => !activeSetIds.has(set.id));
   return {
     evaluated_at: evaluatedAt,
     highest_unlocked_level: highest,
@@ -215,6 +221,10 @@ export function projectPath(curriculum, state, activePasses, evaluatedAt) {
     recommendation: active
       ? { action: "RESUME", set_id: active.set_id_snapshot, pass_id: active.id }
       : next ? { action: "START", set_id: next.id, pass_id: null } : null,
+    next_suggestion: nextSuggestion
+      ? { action: "START", set_id: nextSuggestion.id, pass_id: null }
+      : null,
+    next_suggestion_reason: nextSuggestion ? null : "NO_ELIGIBLE_NEXT_SET",
     all_current_sets_complete: levels.every((level) => level.current_complete),
   };
 }

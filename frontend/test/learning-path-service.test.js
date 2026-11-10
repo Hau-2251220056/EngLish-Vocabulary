@@ -16,6 +16,8 @@ test("learning path service validates the authoritative A1-C1 projection", async
   const value = await createLearningPathService(client).getPath();
   assert.equal(value.highest_unlocked_level, "A1");
   assert.equal(value.recommendation.set_id, ids.set);
+  assert.equal(value.next_suggestion.set_id, ids.set);
+  assert.equal(value.next_suggestion_reason, null);
   assert.equal(client.post, undefined);
 });
 
@@ -54,6 +56,8 @@ function pathProjection() {
       incomplete_sets: index === 0 ? [{ id: ids.set, name: "A1 starter", created_at: instant }] : [],
     })),
     recommendation: { action: "START", set_id: ids.set, pass_id: null },
+    next_suggestion: { action: "START", set_id: ids.set, pass_id: null },
+    next_suggestion_reason: null,
     all_current_sets_complete: false,
   };
 }
