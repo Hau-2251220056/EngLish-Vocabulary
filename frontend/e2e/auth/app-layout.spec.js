@@ -46,7 +46,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(page.locator("header.authenticated-header")).toBeVisible();
   await expect(page.locator("aside.authenticated-sidebar")).toBeVisible();
   await expect(page.getByRole("heading", {
-    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối), ${publicUser.display_name}$`),
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
   })).toBeVisible();
   await expect(page.locator("footer.authenticated-footer")).toHaveCount(0);
   await expect(page.locator("header .authenticated-brand")).toBeVisible();
@@ -148,7 +148,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expectNoHorizontalOverflow(page);
 });
 
-test("desktop keeps the sidebar stable while main content scrolls", async ({ page }) => {
+test("desktop Dashboard keeps the sidebar stable while the document scrolls", async ({ page }) => {
   await page.setViewportSize(viewports[2]);
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
@@ -162,9 +162,10 @@ test("desktop keeps the sidebar stable while main content scrolls", async ({ pag
   });
 
   const before = await page.locator("aside.authenticated-sidebar").boundingBox();
-  await page.locator("main.authenticated-main").evaluate((main) => {
-    main.scrollTop = 500;
+  await page.evaluate(() => {
+    document.scrollingElement.scrollTop = 500;
   });
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollTop)).toBe(500);
   const after = await page.locator("aside.authenticated-sidebar").boundingBox();
   const scrollState = await page.evaluate(() => ({
     body: document.body.scrollTop,
@@ -172,7 +173,8 @@ test("desktop keeps the sidebar stable while main content scrolls", async ({ pag
     main: document.querySelector("main.authenticated-main").scrollTop,
   }));
 
-  expect(scrollState).toEqual({ body: 0, document: 0, main: 500 });
+  expect(scrollState.main).toBe(0);
+  expect(Math.max(scrollState.body, scrollState.document)).toBe(500);
   expect(after.y).toBe(before.y);
   await expectNoHorizontalOverflow(page);
 });

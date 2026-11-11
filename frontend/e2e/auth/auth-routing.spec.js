@@ -18,7 +18,7 @@ test("initialization shows a neutral status without protected-content flash", as
 
   pending.resolve(responses.currentUser(publicUser));
   await expect(page.getByRole("heading", {
-    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối), ${publicUser.display_name}$`),
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
   })).toBeVisible();
 });
 

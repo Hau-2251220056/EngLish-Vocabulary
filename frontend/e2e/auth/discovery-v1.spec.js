@@ -40,7 +40,7 @@ const sets = {
 
 test("Guest gets a complete Set-first catalog with search, Topic filter and public actions", async ({ page }) => {
   const api = await installDiscoveryApi(page);
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/topics");
 
   await expect(page.locator("#topic-list-title")).toBeAttached();
@@ -116,7 +116,7 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   const travelSets = Array.from({ length: 10 }, (_, index) => ({ id: `travel-${index + 1}`, name: `Travel Set ${index + 1}`, description: `Travel description ${index + 1}`, cefr_level: index === 9 ? "B1" : "A1", cover_image_url: null, item_count: index + 1, topic_id: "topic-travel" }));
   const workSets = [{ id: "work-1", name: "Work Set 1", description: "Work description 1", item_count: 1, topic_id: "topic-work" }];
   const api = await installDiscoveryApi(page, { setHandler: (route, topicId) => route.fulfill(ok(topicId === "topic-travel" ? [...featuredSets, ...travelSets] : topicId === "topic-work" ? workSets : [])) });
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/topics");
 
   const list = page.getByRole("list", { name: "Danh sách bộ từ hệ thống" });
@@ -193,7 +193,7 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
 test("many Topics stay inside a keyboard-usable viewport-bounded scroll region", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   const api = await installDiscoveryApi(page, { topicList: manyTopics });
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/topics");
 
   const options = page.locator(".discovery-topic-options");
@@ -218,7 +218,7 @@ test("many Topics stay inside a keyboard-usable viewport-bounded scroll region",
 
 test("CEFR composes with Topic and search locally while persisted covers fall back once", async ({ page }) => {
   const api = await installDiscoveryApi(page);
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/topics");
 
   const airportCard = page.getByRole("article").filter({ hasText: "Sân bay cơ bản" });
@@ -259,7 +259,7 @@ test("CEFR composes with Topic and search locally while persisted covers fall ba
 
 test("catalog withholds partial data, retries atomically, and distinguishes global empty", async ({ page }) => {
   let failWork = true;
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await installDiscoveryApi(page, {
     setHandler: async (route, topicId) => {
       if (topicId === "topic-work" && failWork) {
@@ -295,7 +295,7 @@ test("authenticated USER stays in App Shell and copy is single-pending, retryabl
       await route.fulfill(ok({ id: "copied-set", name: "Bản sao", description: null, items: [] }));
     },
   });
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.goto("/topics");
 
   await expect(page.locator(".authenticated-app")).toBeVisible();
@@ -354,7 +354,7 @@ test("Public Detail copy shares the session saved state, locks rapid activation,
       await route.fulfill(ok({ id: "copied-set", name: "Bản sao", description: null, items: [] }));
     },
   });
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.goto("/vocabulary-sets/set-airport");
 
   await page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" }).click();
@@ -378,7 +378,7 @@ test("Public Detail copy shares the session saved state, locks rapid activation,
 
 test("Public Detail same-topic links return to durable filtered Discovery without entering legacy routes", async ({ page }) => {
   const api = await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.goto("/vocabulary-sets/set-airport");
 
   const topicLinks = page.getByRole("link", { name: /cùng chủ đề/i });
@@ -406,7 +406,7 @@ test("Public Detail same-topic links return to durable filtered Discovery withou
 
 test("authenticated USER can learn or quiz a public Set without copying and retains an independent Save action", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.goto("/topics");
   await page.getByRole("article").filter({ hasText: "Sân bay cơ bản" }).getByRole("link", { name: "Xem" }).click();
 
@@ -424,7 +424,7 @@ test("authenticated USER can learn or quiz a public Set without copying and reta
 
 test("Public Set learning cards match the compact Personal Set responsive grid", async ({ page }, testInfo) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const viewports = [
     { width: 375, height: 812 }, { width: 390, height: 844 },
     { width: 768, height: 1024 }, { width: 820, height: 1180 },
@@ -480,7 +480,7 @@ test("Public Set learning cards match the compact Personal Set responsive grid",
 
 test("USER selects a personal destination, confirms once, and receives success feedback", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const calls = [];
   await installPublicItemAddApi(page, { calls });
   await page.goto("/vocabulary-sets/set-airport");
@@ -503,7 +503,7 @@ test("USER selects a personal destination, confirms once, and receives success f
 
 test("destination dialog contains focus while personal Sets load and after loading fails", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   let rejectSets;
   const setsResponse = new Promise((resolve) => { rejectSets = resolve; });
   await installPublicItemAddApi(page, { personalSetsHandler: async (route) => {
@@ -542,7 +542,7 @@ test("destination dialog contains focus while personal Sets load and after loadi
 
 test("destination dialog stays compact and viewport-positioned across responsive widths", async ({ page }, testInfo) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const personalSets = Array.from({ length: 40 }, (_, index) => ({
     id: `personal-${index + 1}`,
     name: `Bộ từ cá nhân ${index + 1}`,
@@ -613,7 +613,7 @@ test("destination dialog stays compact and viewport-positioned across responsive
 
 test("duplicate add preserves selection for retry and pending prevents double submission", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   let attempts = 0;
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -648,7 +648,7 @@ test("duplicate add preserves selection for retry and pending prevents double su
 test("destination picker handles empty state, Escape focus return, and mobile bounds", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await installPublicItemAddApi(page, { personalSets: [] });
   await page.goto("/vocabulary-sets/set-airport");
   const trigger = page.getByRole("button", { name: "Thêm passport vào bộ từ cá nhân" });
@@ -669,7 +669,7 @@ test("destination picker handles empty state, Escape focus return, and mobile bo
 test("Guest public detail stays read-only and prompts login for authenticated actions", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await installDiscoveryApi(page);
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/vocabulary-sets/set-airport");
   await expect(page.getByRole("heading", { name: "Sân bay cơ bản" })).toBeVisible();
   const vocabularyTable = page.getByRole("table");
@@ -694,7 +694,7 @@ test("Public Detail paginates ten ordered words, keeps controls outside mobile s
   await installDiscoveryApi(page, { detailHandler: async (route, setId, summary) => {
     await route.fulfill(ok({ ...summary, items: setId === "set-airport" ? detailItems(11, "airport") : detailItems(1, "hotel") }));
   } });
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   await page.goto("/vocabulary-sets/set-airport");
 
   const table = page.getByRole("table");
@@ -722,7 +722,7 @@ test("Public Detail paginates ten ordered words, keeps controls outside mobile s
 
 test("ADMIN browses in App Shell without learner or management actions", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
   await page.goto("/topics");
   await expect(page.locator(".authenticated-app")).toBeVisible();
   await expect(page.locator("#topic-list-title")).toBeAttached();
@@ -750,7 +750,7 @@ test("Public Detail table responds to content width across supported viewports",
     },
   };
   await installDiscoveryApi(page, { detailHandler: (route, _setId, summary) => route.fulfill(ok({ ...summary, items: [longItem] })) });
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
 
   const viewports = [
     [320, 568], [375, 812], [390, 844], [430, 932], [600, 900], [667, 375],
@@ -784,7 +784,7 @@ test("Public Detail table responds to content width across supported viewports",
 
 test("Guest responsive table never renders an empty action column", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page);
+  await installDiscoveryAuthApiMock(page);
   for (const width of [320, 820, 1440]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto("/vocabulary-sets/set-airport");
@@ -796,7 +796,7 @@ test("Guest responsive table never renders an empty action column", async ({ pag
 
 test("ADMIN responsive table never renders an empty action column", async ({ page }) => {
   await installDiscoveryApi(page);
-  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
   for (const width of [320, 820, 1440]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto("/vocabulary-sets/set-airport");
@@ -811,7 +811,7 @@ for (const width of [375, 390, 768, 820, 1366, 1536]) {
     await page.setViewportSize({ width, height: width < 600 ? 812 : 900 });
     const usesOverflowFixture = [390, 768, 1366].includes(width);
     await installDiscoveryApi(page, { topicList: usesOverflowFixture ? manyTopics : topics });
-    await installAuthApiMock(page);
+    await installDiscoveryAuthApiMock(page);
     await page.goto("/topics");
     await expect(page.locator("#topic-list-title")).toBeAttached();
     await expect(page.getByRole("button", { name: "Xóa bộ lọc" })).toBeVisible();
@@ -823,6 +823,10 @@ for (const width of [375, 390, 768, 820, 1366, 1536]) {
       document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     }))).toEqual({ body: 0, document: 0 });
   });
+}
+
+async function installDiscoveryAuthApiMock(page, handlers) {
+  return installAuthApiMock(page, handlers, { mockTopics: false });
 }
 
 async function installDiscoveryApi(page, { copyHandler, detailHandler, setHandler, topicList = topics } = {}) {

@@ -43,7 +43,7 @@ export const responses = Object.freeze({
   abort: () => ({ abort: "failed" }),
 });
 
-export async function installAuthApiMock(page, handlers = {}) {
+export async function installAuthApiMock(page, handlers = {}, { mockTopics = true } = {}) {
   const calls = [];
 
   await page.route("**/api/learning-path", (route) =>
@@ -120,10 +120,11 @@ export async function installAuthApiMock(page, handlers = {}) {
       },
     }),
   );
-  await page.route("**/api/topics", (route) =>
-    route.fulfill({ status: 200, json: { success: true, data: [] } }),
-  );
-
+  if (mockTopics) {
+    await page.route("**/api/topics", (route) =>
+      route.fulfill({ status: 200, json: { success: true, data: [] } }),
+    );
+  }
   await page.route("**/api/auth/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;

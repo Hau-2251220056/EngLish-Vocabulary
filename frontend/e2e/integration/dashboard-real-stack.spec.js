@@ -84,7 +84,7 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await login(page, accounts.learner);
 
   await expect(page.getByRole("heading", {
-    name: /^Chào buổi (sáng|trưa|chiều|tối), Dashboard Real Learner$/,
+    name: /^Chào buổi (sáng|trưa|chiều|tối) Dashboard Real Learner$/,
   })).toBeVisible();
   const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
   await expect(summary).toContainText("Tổng đã bắt đầu3");

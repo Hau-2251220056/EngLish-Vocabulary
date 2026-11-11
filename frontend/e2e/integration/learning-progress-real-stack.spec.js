@@ -262,7 +262,9 @@ async function login(page, account) {
 }
 
 function summaryCard(page, label) {
-  return page.locator(".learning-progress-summary-card").filter({ hasText: label });
+  return page.locator(".learning-progress-summary-card").filter({
+    has: page.getByText(label, { exact: true }),
+  });
 }
 
 function progressSnapshot(userId) {

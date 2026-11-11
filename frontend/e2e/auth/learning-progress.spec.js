@@ -23,11 +23,11 @@ test("renders authoritative Progress V2 metrics, activity and overview without w
 
   const summary = page.getByRole("region", { name: "Tóm tắt tiến độ" });
   await expect(summary.locator(".learning-progress-summary-card")).toHaveCount(4);
-  await expect(summary.getByText("Từ đã học").locator("../..")).toContainText("25");
-  await expect(summary.getByText("Từ đã học").locator("../..")).toContainText("chưa nhất thiết đã thuộc");
-  await expect(summary.getByText("Đã thuộc").locator("../..")).toContainText("14");
-  await expect(summary.getByText("Đang học").locator("../..")).toContainText("9");
-  await expect(summary.getByText("Cần ôn").locator("../..")).toContainText("2");
+  await expect(summary.getByText("Từ đã học", { exact: true }).locator("../..")).toContainText("25");
+  await expect(summary.getByText("Từ đã học", { exact: true }).locator("../..")).toContainText("chưa nhất thiết đã thuộc");
+  await expect(summary.getByText("Đã thuộc", { exact: true }).locator("../..")).toContainText("14");
+  await expect(summary.getByText("Đang học", { exact: true }).locator("../..")).toContainText("9");
+  await expect(summary.getByText("Cần ôn", { exact: true }).locator("../..")).toContainText("2");
 
   const activity = page.getByRole("list", { name: "Hoạt động học trong 7 ngày" });
   await expect(activity.getByRole("listitem")).toHaveCount(7);
@@ -57,23 +57,21 @@ test("shows unknown activity honestly and keeps Streak failure independent", asy
 });
 
 test("restores focus after keyboard retries for Progress", async ({ page }) => {
-  const repeatedFailure = deferred();
-  let attempts = 0;
-  await installProgressMock(page, () => {
-    attempts += 1;
-    if (attempts === 2) return repeatedFailure.promise;
-    return attempts === 1 ? failedRequest() : success(populatedProgress());
-  });
+  let progressResponse = failedRequest();
+  await installProgressMock(page, () => progressResponse);
   await page.goto("/my/learning-progress");
 
   const retry = page.getByRole("button", { name: "Thử lại" });
   const heading = page.getByRole("heading", { name: "Tiến độ học tập", level: 1 });
   await expect(page.getByRole("alert")).toContainText("Không thể tải tiến độ học tập");
+  const repeatedFailure = deferred();
+  progressResponse = repeatedFailure.promise;
   await retry.focus();
   await page.keyboard.press("Enter");
   await expect(heading).toBeFocused();
   repeatedFailure.resolve(failedRequest());
   await expect(retry).toBeFocused();
+  progressResponse = success(populatedProgress());
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Tóm tắt tiến độ" })).toBeVisible();
   await expect(heading).toBeFocused();
@@ -82,18 +80,9 @@ test("restores focus after keyboard retries for Progress", async ({ page }) => {
 test("restores focus after keyboard retries for Streak", async ({ page }) => {
   await installProgressMock(page, () => success(populatedProgress()));
   await page.unroute("**/api/users/me/streak");
-  const repeatedFailure = deferred();
-  let attempts = 0;
+  let streakResponse = failedRequest();
   await page.route("**/api/users/me/streak", async (route) => {
-    attempts += 1;
-    if (attempts === 2) await repeatedFailure.promise;
-    const succeeded = attempts >= 3;
-    return route.fulfill({
-      status: succeeded ? 200 : 500,
-      json: succeeded
-        ? { success: true, data: currentStreak() }
-        : { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
-    });
+    return route.fulfill(await streakResponse);
   });
   await page.goto("/my/learning-progress");
 
@@ -101,11 +90,14 @@ test("restores focus after keyboard retries for Streak", async ({ page }) => {
   const streakCard = page.getByRole("article").filter({ has: heading });
   const retry = streakCard.getByRole("button", { name: "Thử lại" });
   await expect(streakCard.getByRole("alert")).toContainText("Chưa thể tải chuỗi học");
+  const repeatedFailure = deferred();
+  streakResponse = repeatedFailure.promise;
   await retry.focus();
   await page.keyboard.press("Enter");
   await expect(heading).toBeFocused();
-  repeatedFailure.resolve();
+  repeatedFailure.resolve(failedRequest());
   await expect(retry).toBeFocused();
+  streakResponse = success(currentStreak());
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
   await expect(heading).toBeFocused();
@@ -136,6 +128,7 @@ test("styles the desktop USER inner-main and mobile USER document scroll owners"
   await installProgressMock(page, () => success(populatedProgress()));
   await page.setViewportSize({ width: 1366, height: 600 });
   await page.goto("/my/learning-progress");
+  await expect(page.getByRole("heading", { name: "Tiến độ học tập" })).toBeVisible();
   const desktop = await page.evaluate(() => ({
     documentColor: getComputedStyle(document.documentElement).scrollbarColor,
     mainColor: getComputedStyle(document.querySelector(".authenticated-main")).scrollbarColor,

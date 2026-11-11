@@ -46,16 +46,16 @@ test.afterAll(async () => {
 });
 
 test("USER creates and metadata-edits a topicless Set without changing ordered membership", async ({ page }) => {
-  const topicRequests = [];
-  page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/topics") topicRequests.push(request.url());
-  });
   await login(page);
   await page
     .getByRole("navigation", { name: "Điều hướng ứng dụng" })
     .getByRole("link", { name: "Bộ từ của tôi", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ nào" })).toBeVisible();
+  const topicRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/topics") topicRequests.push(request.url());
+  });
   await page.getByRole("button", { name: "Tạo bộ từ", exact: true }).first().click();
   const createDialog = page.getByRole("dialog", { name: "Tạo bộ từ" });
   await createDialog.getByLabel("Tên bộ từ").fill(`${prefix} Private`);

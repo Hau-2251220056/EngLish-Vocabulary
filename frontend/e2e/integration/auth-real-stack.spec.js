@@ -81,7 +81,7 @@ test("real USER flow traverses Vite, Express, Prisma and the test database", asy
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", {
     level: 1,
-    name: /^Chào buổi (sáng|trưa|chiều|tối), Real Stack Learner$/,
+    name: /^Chào buổi (sáng|trưa|chiều|tối) Real Stack Learner$/,
   })).toBeVisible();
 
   const setCookie = (await loginResponse.headersArray()).find(
@@ -131,7 +131,7 @@ test("real USER flow traverses Vite, Express, Prisma and the test database", asy
   expect(meResponse.status()).toBe(200);
   await expect(page.getByRole("heading", {
     level: 1,
-    name: /^Chào buổi (sáng|trưa|chiều|tối), Real Stack Learner$/,
+    name: /^Chào buổi (sáng|trưa|chiều|tối) Real Stack Learner$/,
   })).toBeVisible();
 
   await verifyCrossSitePostDoesNotRevoke(page, registeredUser.id);
