@@ -126,6 +126,18 @@ export function AuthenticatedShell() {
     || isQuiz || isSpeakingPractice;
   const isUser = user.role === "USER";
   const isDashboard = location.pathname === "/dashboard";
+  const userAppLayoutClasses = !isUser ? "" : ` authenticated-user-app !block !h-auto !min-h-dvh !min-w-0 !overflow-x-clip !overflow-y-visible${isDashboard
+    ? " lg:!h-auto lg:!min-h-dvh lg:!overflow-x-clip lg:!overflow-y-visible"
+    : " lg:!h-dvh lg:!overflow-hidden"}`;
+  const userShellLayoutClasses = !isUser ? "" : ` !flex !min-h-dvh !min-w-0 !flex-col !overflow-visible${isDashboard
+    ? " lg:!h-auto lg:!min-h-dvh lg:!overflow-visible"
+    : " lg:!h-dvh lg:!overflow-hidden"}`;
+  const userHeaderLayoutClasses = !isUser ? "" : ` !sticky !top-0 !z-10 !flex !min-h-[3.75rem] !basis-[3.75rem] !w-full !shrink-0 !items-center !justify-normal !gap-0 !border-b !border-[var(--border-soft)] !bg-white/[0.97] !p-0 sm:!min-h-[4.25rem] sm:!basis-[4.25rem] lg:!min-h-18 lg:!basis-18${isDashboard
+    ? " lg:!sticky lg:!top-0"
+    : " lg:!relative"}`;
+  const userMainLayoutClasses = !isUser ? "" : ` !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]${isDashboard
+    ? " lg:!min-h-[calc(100dvh-4.5rem)] lg:!overflow-visible"
+    : " lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto"}`;
 
   if (isFocusLearning) {
     return (
@@ -247,7 +259,7 @@ export function AuthenticatedShell() {
   );
 
   return (
-    <div className={`authenticated-app${isUser ? " authenticated-user-app !block !h-auto !min-h-dvh !min-w-0 !overflow-x-clip !overflow-y-visible lg:!h-dvh lg:!overflow-hidden" : ""}${isDashboard ? " dashboard-shell lg:!min-h-0" : ""}`}>
+    <div className={`authenticated-app${userAppLayoutClasses}${isDashboard ? " dashboard-shell" : ""}`}>
       <aside
         ref={sidebarRef}
         id="authenticated-sidebar"
@@ -315,8 +327,8 @@ export function AuthenticatedShell() {
         />
       ) : null}
 
-      <div className={`authenticated-shell-main${isUser ? " !flex !min-h-dvh !min-w-0 !flex-col !overflow-visible lg:!h-dvh lg:!overflow-hidden" : ""}`} inert={(isMobileNavigation && isDrawerOpen) || undefined}>
-        <header className={`authenticated-header${isUser ? " !sticky !top-0 !z-10 !flex !min-h-[3.75rem] !basis-[3.75rem] !w-full !shrink-0 !items-center !justify-normal !gap-0 !border-b !border-[var(--border-soft)] !bg-white/[0.97] !p-0 sm:!min-h-[4.25rem] sm:!basis-[4.25rem] lg:!relative lg:!min-h-18 lg:!basis-18" : ""}`}>
+      <div className={`authenticated-shell-main${userShellLayoutClasses}`} inert={(isMobileNavigation && isDrawerOpen) || undefined}>
+        <header className={`authenticated-header${userHeaderLayoutClasses}`}>
           {user.role === "USER" ? (
             <div className="authenticated-header-inner mx-auto flex h-full w-full max-w-[1440px] items-center justify-between px-4 sm:px-8 lg:grid lg:w-[calc(100%-18rem)] lg:max-w-[1280px] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-0 lg:px-8">
               {headerContent}
@@ -324,7 +336,7 @@ export function AuthenticatedShell() {
           ) : headerContent}
         </header>
 
-        <main className={`authenticated-main${isUser ? " !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]" : ""}`}><Outlet /></main>
+        <main className={`authenticated-main${userMainLayoutClasses}`}><Outlet /></main>
       </div>
     </div>
   );

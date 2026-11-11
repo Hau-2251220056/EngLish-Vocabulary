@@ -13,31 +13,6 @@ html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb {
 }
 html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb:hover { background: #176a9f; }
 
-@media (min-width: 1024px) {
-  .authenticated-user-app.dashboard-shell {
-    height: auto !important;
-    min-height: 100dvh !important;
-    overflow-x: clip !important;
-    overflow-y: visible !important;
-  }
-
-  .authenticated-user-app.dashboard-shell .authenticated-shell-main {
-    height: auto !important;
-    min-height: 100dvh !important;
-    overflow: visible !important;
-  }
-
-  .authenticated-user-app.dashboard-shell .authenticated-header {
-    position: sticky !important;
-    top: 0;
-  }
-
-  .authenticated-user-app.dashboard-shell .authenticated-main {
-    min-height: calc(100dvh - 4.5rem) !important;
-    overflow: visible !important;
-  }
-}
-
 /* USER hero artwork: layered gradients and pseudo-elements stay clearer as scoped CSS. */
 
 .dashboard-hero {

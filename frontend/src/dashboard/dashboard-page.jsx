@@ -12,12 +12,12 @@ import { getDashboardGreeting } from "./dashboard-greeting.js";
 import "./dashboard-page.css";
 
 const FOCUS_CLASSES = "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#0877b9]/30";
-const REVIEW_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#047857] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#065f46] motion-reduce:transition-none ${FOCUS_CLASSES}`;
-const SUGGESTION_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#c2410c] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#9a3412] motion-reduce:transition-none ${FOCUS_CLASSES}`;
+const REVIEW_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#47750D] bg-[#518314] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#47750D] active:bg-[#3F6212] motion-reduce:transition-none ${FOCUS_CLASSES}`;
+const SUGGESTION_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#B83B0B] bg-[#C94F00] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#B83B0B] active:bg-[#9A3412] motion-reduce:transition-none ${FOCUS_CLASSES}`;
 const CARD_CLASSES = "min-w-0 rounded-2xl border shadow-[0_12px_30px_rgb(15_83_115/7%)]";
 const DATA_CARD_TONES = Object.freeze({
   "learning-path": "border-blue-200 bg-[#f8fbff]",
-  review: "border-emerald-200 bg-[#f4fcf8]",
+  review: "border-[#7ED321] bg-[#F4FCE8]",
 });
 const loadProgress = () => learningService.getLearningProgress({ page: 1, page_size: 1 });
 const loadCurrentStreak = () => learningSessionService.getCurrentStreak();
@@ -43,9 +43,10 @@ export function DashboardPage() {
       <DashboardIntroduction displayName={user.display_name} />
       <DashboardStatistics mySets={mySets} progress={progress} streak={streak} />
 
-      <div className="mt-8 grid min-w-0 grid-cols-2 items-start gap-5 max-[800px]:grid-cols-1">
+      <div className="mt-8 grid min-w-0 grid-cols-2 grid-rows-[auto_1fr] items-stretch gap-x-5 gap-y-3 max-[800px]:grid-cols-1 max-[800px]:grid-rows-none">
+        <h2 className="col-start-1 row-start-1 m-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30 max-[800px]:col-start-auto max-[800px]:row-start-auto" id="dashboard-next-suggestion-title" tabIndex={-1}>Gợi ý tiếp theo</h2>
         <NextSuggestionSection source={learningPath} />
-        <DashboardDataCard errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải từ cần ôn…" source={review} title="Từ cần ôn" type="review">
+        <DashboardDataCard className="col-start-2 row-start-2 h-full max-[800px]:col-start-auto max-[800px]:row-start-auto" errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải từ cần ôn…" source={review} title="Từ cần ôn" type="review">
           {(data) => <ReviewSummary summary={data} />}
         </DashboardDataCard>
       </div>
@@ -76,7 +77,7 @@ function DashboardStatistics({ mySets, progress, streak }) {
 
 function LevelStat({ source }) {
   return (
-    <StatisticSourceCard accent="text-[#1D4ED8]" label="Cấp độ" source={source} tone="border-blue-300 bg-[#DBEAFE]">
+    <StatisticSourceCard accent="text-[#075f95]" label="Cấp độ" source={source} tone="border-[#c7e3f3] bg-[#f1f9fd]">
       {(data) => {
         const xp = data.xp_level;
         const progressPercent = xp.is_max_level ? 100 : clampPercentage(((xp.total_xp - xp.level_min_xp) / (xp.next_level_xp - xp.level_min_xp)) * 100);
@@ -86,7 +87,7 @@ function LevelStat({ source }) {
             <div aria-label={`Tiến độ XP Level ${xp.level}`} aria-valuemax={xp.is_max_level ? xp.total_xp : xp.next_level_xp} aria-valuemin={xp.level_min_xp} aria-valuenow={xp.total_xp} className="relative grid size-[4.25rem] shrink-0 place-items-center" role="progressbar">
               <svg aria-hidden="true" className="size-full -rotate-90" viewBox="0 0 52 52">
                 <circle className="fill-none stroke-slate-200" cx="26" cy="26" r="22" strokeWidth="5" />
-                <circle className="fill-none stroke-[#1D4ED8]" cx="26" cy="26" r="22" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progressPercent / 100)} strokeLinecap="round" strokeWidth="5" />
+                <circle className="fill-none stroke-[#0877b9]" cx="26" cy="26" r="22" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progressPercent / 100)} strokeLinecap="round" strokeWidth="5" />
               </svg>
               <strong className="absolute text-xl text-slate-900 tabular-nums">{xp.level}</strong>
             </div>
@@ -103,7 +104,7 @@ function LevelStat({ source }) {
 
 function StreakStat({ source }) {
   return (
-    <StatisticSourceCard accent="text-[#C2410C]" label="Chuỗi học" source={source} tone="border-orange-300 bg-[#FFEDD5]">
+    <StatisticSourceCard accent="text-[#b45309]" label="Chuỗi học" source={source} tone="border-[#fed7aa] bg-[#fff7ed]">
       {(data) => (
         <div className="flex min-w-0 items-center gap-3.5">
           <span className={`grid size-12 shrink-0 place-items-center rounded-xl border [&_svg]:size-6 ${data.completed_today ? "border-orange-200 bg-orange-100 text-[#d94a1e]" : "border-slate-200 bg-slate-100 text-slate-400"}`} aria-hidden="true"><Flame /></span>
@@ -119,16 +120,16 @@ function StreakStat({ source }) {
 
 function TotalXpStat({ source }) {
   return (
-    <StatisticSourceCard accent="text-[#0E7490]" label="Tổng XP" source={source} tone="border-cyan-300 bg-[#CFFAFE]">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-cyan-300 bg-white/65 text-[#0E7490] shadow-sm [&_svg]:size-6" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-600">XP</span></p></div>}
+    <StatisticSourceCard accent="text-[#0e7490]" label="Tổng XP" source={source} tone="border-[#c7eef4] bg-[#f0fdff]">
+      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#b9e7ef] bg-white/70 text-[#0e7490] shadow-sm [&_svg]:size-6" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-600">XP</span></p></div>}
     </StatisticSourceCard>
   );
 }
 
 function SetCountStat({ source }) {
   return (
-    <StatisticSourceCard accent="text-[#047857]" label="Bộ từ cá nhân" source={source} tone="border-emerald-300 bg-[#D1FAE5]">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-emerald-300 bg-white/65 text-[#047857] shadow-sm [&_svg]:size-6" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{data.length} <span className="text-sm font-bold text-slate-600">bộ cá nhân</span></p></div>}
+    <StatisticSourceCard accent="text-[#047857]" label="Bộ từ cá nhân" source={source} tone="border-[#bbe8d0] bg-[#f0fdf7]">
+      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#a8ddc0] bg-white/70 text-[#047857] shadow-sm [&_svg]:size-6" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{data.length} <span className="text-sm font-bold text-slate-600">bộ cá nhân</span></p></div>}
     </StatisticSourceCard>
   );
 }
@@ -149,7 +150,7 @@ function StatisticSourceCard({ accent, children, label, source, tone }) {
   }
   const hasValue = source.data !== null;
   return (
-    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4 shadow-[0_12px_26px_rgb(15_23_42/9%)]`} aria-busy={source.status === "loading"}>
+    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4 shadow-[0_10px_24px_rgb(15_23_42/6%)]`} aria-busy={source.status === "loading"}>
       <h3 className={`m-0 rounded-sm text-sm font-extrabold ${accent} focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30`} ref={headingRef} tabIndex={-1}>{label}</h3>
       {source.status === "loading" ? <div className="mt-4" role="status"><span className="sr-only">Đang tải {label.toLocaleLowerCase("vi-VN")}…</span><span className="block h-12 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" aria-hidden="true" /></div> : null}
       {source.status === "error" ? <div className="mt-3" role="alert">{hasValue ? <div className="mb-3">{children(source.data)}</div> : null}<p className="m-0 text-xs font-semibold leading-relaxed text-red-700">{hasValue ? "Dữ liệu gần nhất có thể đã cũ." : "Chưa thể tải dữ liệu."}</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 text-xs font-extrabold text-[#075f95] hover:bg-sky-50 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div> : null}
@@ -159,13 +160,12 @@ function StatisticSourceCard({ accent, children, label, source, tone }) {
 }
 
 function NextSuggestionSection({ source }) {
-  const headingRef = useRef(null);
   const retryButtonRef = useRef(null);
   const retryRequestedRef = useRef(false);
   useEffect(() => {
     if (!retryRequestedRef.current || source.status === "loading") return;
     if (source.status === "error") retryButtonRef.current?.focus();
-    if (source.status === "success") headingRef.current?.focus();
+    if (source.status === "success") document.getElementById("dashboard-next-suggestion-title")?.focus();
     retryRequestedRef.current = false;
   }, [source.status]);
   function retry() {
@@ -173,10 +173,9 @@ function NextSuggestionSection({ source }) {
     source.retry();
   }
   return (
-    <section aria-labelledby="dashboard-next-suggestion-title" aria-busy={source.status === "loading"} className="min-w-0">
-      <h2 className="mb-3 mt-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-next-suggestion-title" ref={headingRef} tabIndex={-1}>Gợi ý tiếp theo</h2>
-      {source.status === "loading" ? <div className="min-h-32 animate-pulse rounded-2xl border border-amber-200 bg-amber-50 motion-reduce:animate-none" role="status"><span className="sr-only">Đang tải gợi ý tiếp theo…</span></div> : null}
-      {source.status === "error" ? <div className="flex min-h-32 min-w-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">Không thể tải gợi ý tiếp theo. Các khu vực khác vẫn dùng được.</p><button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div></div> : null}
+    <section aria-labelledby="dashboard-next-suggestion-title" aria-busy={source.status === "loading"} className="col-start-1 row-start-2 min-w-0 h-full max-[800px]:col-start-auto max-[800px]:row-start-auto">
+      {source.status === "loading" ? <div className="h-full min-h-32 animate-pulse rounded-2xl border border-[#F97316] bg-[#FFF3E9] motion-reduce:animate-none" role="status"><span className="sr-only">Đang tải gợi ý tiếp theo…</span></div> : null}
+      {source.status === "error" ? <div className="flex h-full min-h-32 min-w-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">Không thể tải gợi ý tiếp theo. Các khu vực khác vẫn dùng được.</p><button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div></div> : null}
       {source.status === "success" ? <NextSuggestionSummary path={source.data} /> : null}
     </section>
   );
@@ -189,11 +188,11 @@ function NextSuggestionSummary({ path }) {
   const configurationMessage = getConfigurationMessage(primaryLevel);
   if (!suggestion || !suggestedSet) {
     const message = path.all_current_sets_complete ? "Bạn đã hoàn thành các bộ từ hiện có trong lộ trình." : configurationMessage ?? "Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.";
-    return <div className="flex min-w-0 items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-amber-700 shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
+    return <div className="flex h-full min-w-0 items-start gap-4 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
   }
   return (
-    <div className="flex min-w-0 items-center justify-between gap-5 rounded-2xl border border-amber-300 bg-[#fff4dc] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_12px_28px_rgb(194_65_12/10%)] max-[560px]:items-stretch max-[560px]:flex-col">
-      <div className="flex min-w-0 items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-amber-300 bg-white/75 text-[#c2410c] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-amber-300 bg-amber-100 px-3 text-[#9a3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
+    <div className="flex h-full min-w-0 items-center justify-between gap-5 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_10px_24px_rgb(180_83_9/7%)] max-[560px]:items-stretch max-[560px]:flex-col">
+      <div className="flex min-w-0 items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-[#F97316] bg-white/70 px-3 text-[#9A3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
       <Link className={`${SUGGESTION_LINK_CLASSES} shrink-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${suggestion.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: suggestion.action, passId: suggestion.pass_id }}>Bắt đầu học <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
@@ -217,7 +216,7 @@ function CefrPathSummary({ path }) {
 function ReviewSummary({ summary }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-5 max-[520px]:items-stretch max-[520px]:flex-col">
-      <div className="flex min-w-0 items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-200 bg-emerald-100 text-emerald-700 [&_svg]:size-5" aria-hidden="true"><RefreshCw /></span><div className="min-w-0">{summary.has_due_items ? <p className="m-0 text-xl font-extrabold text-slate-900">{summary.due_count} từ đang đến hạn</p> : <p className="m-0 text-xl font-extrabold text-slate-900">Đã ôn tập đầy đủ</p>}{!summary.has_due_items && summary.nearest_future_review_at ? <p className="mb-0 mt-1 text-sm text-slate-600">Lần ôn gần nhất: {new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.nearest_future_review_at))}</p> : null}</div></div>
+      <div className="flex min-w-0 items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#7ED321] bg-white/75 text-[#7ED321] [&_svg]:size-5" aria-hidden="true"><RefreshCw /></span><div className="min-w-0">{summary.has_due_items ? <p className="m-0 text-xl font-extrabold text-slate-900">{summary.due_count} từ đang đến hạn</p> : <p className="m-0 text-xl font-extrabold text-slate-900">Đã ôn tập đầy đủ</p>}{!summary.has_due_items && summary.nearest_future_review_at ? <p className="mb-0 mt-1 text-sm text-slate-600">Lần ôn gần nhất: {new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.nearest_future_review_at))}</p> : null}</div></div>
       <Link className={`${REVIEW_LINK_CLASSES} shrink-0 max-[520px]:w-full`} to="/review">Xem ôn tập <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
@@ -258,7 +257,7 @@ function FeaturedSetsSection({ catalogSource, pathSource }) {
   );
 }
 
-function DashboardDataCard({ children, errorMessage, loadingMessage, source, title, type }) {
+function DashboardDataCard({ children, className = "", errorMessage, loadingMessage, source, title, type }) {
   const titleId = `dashboard-${source.key}-${type}-title`;
   const headingRef = useRef(null);
   const retryButtonRef = useRef(null);
@@ -271,7 +270,7 @@ function DashboardDataCard({ children, errorMessage, loadingMessage, source, tit
   }, [source.status]);
   function retry() { retryRequestedRef.current = true; source.retry(); }
   return (
-    <section aria-labelledby={titleId} aria-busy={source.status === "loading"} className={`${CARD_CLASSES} ${DATA_CARD_TONES[type]} min-w-0 p-[clamp(1rem,2.5vw,1.5rem)]`}>
+    <section aria-labelledby={titleId} aria-busy={source.status === "loading"} className={`${CARD_CLASSES} ${DATA_CARD_TONES[type]} min-w-0 p-[clamp(1rem,2.5vw,1.5rem)] ${className}`}>
       <h2 className="m-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id={titleId} ref={headingRef} tabIndex={-1}>{title}</h2>
       {source.status === "loading" ? <div className="mt-4" role="status"><span className="sr-only">{loadingMessage}</span><span className="block min-h-28 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" aria-hidden="true" /></div> : null}
       {source.status === "error" ? <div className="mt-4 flex min-w-0 items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">{errorMessage}</p><button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div></div> : null}

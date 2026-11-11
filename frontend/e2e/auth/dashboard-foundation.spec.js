@@ -153,7 +153,8 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(path).not.toContainText("A1 starter");
   await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
-  await expect(path.getByText("A1", { exact: true })).toBeVisible();
+  const unlockedA1 = path.getByRole("listitem").filter({ hasText: /^A1\s*đã mở$/ });
+  await expect(unlockedA1).toContainText("đã mở");
   const lockedA2 = path.getByRole("listitem").filter({ hasText: "A2" });
   await expect(lockedA2).toContainText("đang khóa");
   await expect(path.getByText("đang khóa")).toHaveCount(4);
@@ -455,12 +456,26 @@ for (const viewport of [
     await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("1 bộ cá nhân");
-    const overflow = await page.evaluate(() => ({
-      body: document.body.scrollWidth - document.body.clientWidth,
-      document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }));
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector(".authenticated-main");
+      return {
+        body: document.body.scrollWidth - document.body.clientWidth,
+        document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        mainOverflowY: getComputedStyle(main).overflowY,
+        mainScrollableDistance: main.scrollHeight - main.clientHeight,
+        documentOwnsScroll: document.scrollingElement === document.documentElement,
+      };
+    });
     expect(overflow.body).toBeLessThanOrEqual(1);
     expect(overflow.document).toBeLessThanOrEqual(1);
+    expect(overflow.mainOverflowY).toBe("visible");
+    expect(overflow.mainScrollableDistance).toBeLessThanOrEqual(1);
+    expect(overflow.documentOwnsScroll).toBe(true);
+    if (viewport.width > 800) {
+      const recommendationBox = await page.getByRole("region", { name: "Gợi ý tiếp theo" }).boundingBox();
+      const reviewBox = await page.getByRole("region", { name: "Từ cần ôn" }).boundingBox();
+      expect(Math.abs(recommendationBox.height - reviewBox.height)).toBeLessThanOrEqual(1);
+    }
     if (["mobile", "desktop"].includes(viewport.name)) {
       await page.screenshot({
         fullPage: true,
