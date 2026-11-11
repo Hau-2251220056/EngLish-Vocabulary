@@ -86,27 +86,28 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   await expect(page.getByRole("heading", {
     name: /^Chào buổi (sáng|trưa|chiều|tối) Dashboard Real Learner$/,
   })).toBeVisible();
-  const summary = page.getByRole("group", { name: "Tóm tắt tiến độ" });
-  await expect(summary).toContainText("Tổng đã bắt đầu3");
-  await expect(summary).toContainText("Đang học1");
-  await expect(summary).toContainText("Đã thuộc1");
-  await expect(summary).not.toContainText("Cần ôn");
-
-  await expect(page.getByText("Bạn đang có 4 bộ từ riêng.")).toBeVisible();
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("Level 1");
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("0 XP");
+  const overview = page.getByRole("region", { name: "Tổng quan học tập" });
+  const levelCard = dashboardStatisticCard(overview, "Cấp độ");
+  const xpCard = dashboardStatisticCard(overview, "Tổng XP");
+  const personalSetCard = dashboardStatisticCard(overview, "Bộ từ cá nhân");
+  await expect(levelCard).toContainText("Level hiện tại");
+  await expect(levelCard).toContainText("0 / 50 XP");
+  await expect(xpCard).toContainText("0 XP");
+  await expect(personalSetCard).toContainText("4 bộ cá nhân");
   await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" })).toHaveAttribute("aria-valuenow", "0");
-  const preview = page.getByRole("list", { name: "Bộ từ riêng xem trước" });
-  await expect(preview.getByRole("listitem")).toHaveCount(3);
-  await expect(preview).toContainText(`${prefix} 01 Empty`);
-  await expect(preview).toContainText(`${prefix} 02 Learn`);
-  await expect(preview).toContainText(`${prefix} 03 Learn`);
-  await expect(preview).not.toContainText(`${prefix} 04 Beyond preview`);
-  await expect(preview).not.toContainText("Outsider private");
-  await expect(preview.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(2);
-  await expect(preview.getByRole("listitem").first().getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
 
-  await preview.getByRole("listitem").nth(1).getByRole("link", { name: "Bắt đầu học" }).click();
+  await page.getByRole("navigation", { name: "Điều hướng ứng dụng" })
+    .getByRole("link", { name: "Bộ từ của tôi", exact: true }).click();
+  const personalSets = page.getByRole("list", { name: "Các bộ từ của tôi" });
+  await expect(personalSets.getByRole("listitem")).toHaveCount(4);
+  await expect(personalSets).not.toContainText("Outsider private");
+  const targetSet = personalSets.getByRole("listitem").filter({
+    has: page.getByRole("heading", { name: `${prefix} 02 Learn`, exact: true }),
+  });
+  await targetSet.getByRole("link", { name: "Xem" }).click();
+  await expect(page).toHaveURL(new RegExp(`/my/vocabulary-sets/${ownedSets[1].id}$`));
+  await expect(page.getByRole("heading", { level: 1, name: `${prefix} 02 Learn` })).toBeVisible();
+  await page.getByRole("link", { name: /Thẻ ghi nhớ/ }).click();
   await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${ownedSets[1].id}$`));
   await expect(page.getByRole("heading", { name: vocabularies[0].word })).toBeVisible();
   expect(await persistedSnapshot()).toEqual(before);
@@ -124,7 +125,7 @@ test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard request
   await login(page, accounts.administrator);
   await expect(page.getByRole("heading", { name: "Xin chào, Dashboard Real Admin." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Không gian quản trị" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Tóm tắt tiến độ" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Tổng quan học tập" })).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(requestedUserEndpoints).toEqual([]);
 });
@@ -132,9 +133,10 @@ test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard request
 test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL and Speaking remain read-only", async ({ page }) => {
   await prisma.uSER.update({ where: { id: records.learner.id }, data: { total_xp: 47 } });
   await login(page, accounts.learner);
-  const xpSummary = page.getByRole("region", { name: "XP và cấp độ" });
-  await expect(xpSummary).toContainText("47 XP");
-  await expect(xpSummary).toContainText("Level 1");
+  const overview = page.getByRole("region", { name: "Tổng quan học tập" });
+  await expect(dashboardStatisticCard(overview, "Tổng XP")).toContainText("47 XP");
+  await expect(dashboardStatisticCard(overview, "Cấp độ")).toContainText("Level hiện tại");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 1" })).toHaveAttribute("aria-valuenow", "47");
 
   const beforeExcluded = await xpSnapshot(records.learner.id);
   await page.goto(`/learn/vocabulary-sets/${ownedSets[1].id}`);
@@ -176,12 +178,16 @@ test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL an
   await expect(page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" })).toHaveCount(1);
 
   await page.goto("/dashboard");
-  await expect(xpSummary).toContainText("53 XP");
-  await expect(xpSummary).toContainText("Level 2");
+  await expect(dashboardStatisticCard(page.getByRole("region", { name: "Tổng quan học tập" }), "Tổng XP")).toContainText("53 XP");
+  await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toHaveAttribute("aria-valuenow", "53");
   await page.reload();
-  await expect(page.getByRole("region", { name: "XP và cấp độ" })).toContainText("53 XP");
+  await expect(dashboardStatisticCard(page.getByRole("region", { name: "Tổng quan học tập" }), "Tổng XP")).toContainText("53 XP");
   assertLifecycleRows(await xpSnapshot(records.learner.id));
 });
+
+function dashboardStatisticCard(overview, label) {
+  return overview.getByRole("heading", { name: label, exact: true }).locator("..");
+}
 
 function account(displayName, role) {
   return {

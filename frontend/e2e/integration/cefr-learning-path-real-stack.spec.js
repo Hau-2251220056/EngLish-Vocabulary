@@ -42,8 +42,14 @@ test("first USER receives A1 recommendation and Guest/ADMIN remain role-correct"
   await page.request.post("/api/auth/logout");
   await login(page, learner);
   const path = page.getByRole("region", { name: "Lộ trình CEFR" });
-  await expect(path).toContainText("A1");
-  await expect(path.getByRole("link", { name: "Bắt đầu học" })).toBeVisible();
+  const a1Level = path.getByRole("list", { name: "Các cấp độ CEFR" })
+    .getByRole("listitem").filter({ hasText: /^A1/ });
+  await expect(a1Level).toContainText("đã mở");
+  const suggestion = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(suggestion).toContainText(one.name);
+  await expect(suggestion.getByText("A1", { exact: true })).toBeVisible();
+  await expect(suggestion.getByRole("link", { name: "Bắt đầu học" }))
+    .toHaveAttribute("href", `/learn/vocabulary-sets/${one.id}`);
 });
 
 test("one-item A1 Set requires completed bounded evidence and explicit pass completion", async ({ page }) => {
@@ -97,10 +103,17 @@ test("eleven-item A1 Set preserves the final item after its first bounded batch"
 test("eleven-item A1 Set resumes after reload, completes its final item, and unlocks A2", async ({ page }) => {
   await login(page, learner);
   await page.goto("/dashboard");
-  const pathRegion = page.getByRole("region", { name: "Lộ trình CEFR" });
-  const resumeLink = pathRegion.getByRole("link", { name: /Tiếp tục học/i });
-  await expect(resumeLink).toHaveAttribute("href", `/learn/vocabulary-sets/${eleven.id}`);
-  await resumeLink.click(); await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${eleven.id}$`));
+  const featured = page.getByRole("list", { name: "Bộ từ nổi bật" });
+  const currentSet = featured.getByRole("listitem").filter({ hasText: eleven.name });
+  await expect(currentSet).toContainText("A1");
+  await currentSet.getByRole("link", { name: `Xem ${eleven.name}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${eleven.id}$`));
+  await expect(page.getByRole("heading", { level: 1, name: eleven.name })).toBeVisible();
+  await page.getByRole("link", { name: /Thẻ ghi nhớ/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${eleven.id}$`));
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: remainingVocabulary.word })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: `${eleven.name} — Ôn tập thường` })).toBeAttached();
   await expect(page.getByRole("heading", { name: remainingVocabulary.word })).toBeVisible();

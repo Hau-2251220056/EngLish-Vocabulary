@@ -49,7 +49,16 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
   await page.route(`**/api/learning-path/passes/${PASS_ID}`, (route) => route.fulfill({ status: 200, json: { success: true, data: passProjection({ ready: boundedComplete }) } }));
 
   await page.goto("/dashboard");
-  await page.getByRole("region", { name: "Lộ trình CEFR" }).getByRole("link", { name: "Bắt đầu học" }).click();
+  const path = page.getByRole("region", { name: "Lộ trình CEFR" });
+  const a1Level = path.getByRole("list", { name: "Các cấp độ CEFR" })
+    .getByRole("listitem").filter({ hasText: /^A1/ });
+  await expect(a1Level).toContainText("đã mở");
+  const suggestion = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(suggestion).toContainText("A1 starter");
+  await expect(suggestion.getByText("A1", { exact: true })).toBeVisible();
+  const startLink = suggestion.getByRole("link", { name: "Bắt đầu học" });
+  await expect(startLink).toHaveAttribute("href", `/learn/vocabulary-sets/${SET_ID}`);
+  await startLink.click();
   await expect.poll(() => managedSessionCreated).toBe(true);
   await expect(page.getByRole("status").filter({ hasText: "Đang chuẩn bị phiên học…" })).toHaveCount(0);
   await page.getByRole("heading", { name: "book" }).press("Space");
