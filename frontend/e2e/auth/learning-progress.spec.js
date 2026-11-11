@@ -56,19 +56,59 @@ test("shows unknown activity honestly and keeps Streak failure independent", asy
   await expect(page.getByText("Có hoạt động", { exact: true })).toHaveCount(0);
 });
 
-test("retries a failed Progress request from the keyboard", async ({ page }) => {
-  let fail = true;
-  await installProgressMock(page, () => fail
-    ? { status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } }
-    : success(populatedProgress()));
+test("restores focus after keyboard retries for Progress", async ({ page }) => {
+  const repeatedFailure = deferred();
+  let attempts = 0;
+  await installProgressMock(page, () => {
+    attempts += 1;
+    if (attempts === 2) return repeatedFailure.promise;
+    return attempts === 1 ? failedRequest() : success(populatedProgress());
+  });
   await page.goto("/my/learning-progress");
 
   const retry = page.getByRole("button", { name: "Thử lại" });
+  const heading = page.getByRole("heading", { name: "Tiến độ học tập", level: 1 });
   await expect(page.getByRole("alert")).toContainText("Không thể tải tiến độ học tập");
   await retry.focus();
-  fail = false;
+  await page.keyboard.press("Enter");
+  await expect(heading).toBeFocused();
+  repeatedFailure.resolve(failedRequest());
+  await expect(retry).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Tóm tắt tiến độ" })).toBeVisible();
+  await expect(heading).toBeFocused();
+});
+
+test("restores focus after keyboard retries for Streak", async ({ page }) => {
+  await installProgressMock(page, () => success(populatedProgress()));
+  await page.unroute("**/api/users/me/streak");
+  const repeatedFailure = deferred();
+  let attempts = 0;
+  await page.route("**/api/users/me/streak", async (route) => {
+    attempts += 1;
+    if (attempts === 2) await repeatedFailure.promise;
+    const succeeded = attempts >= 3;
+    return route.fulfill({
+      status: succeeded ? 200 : 500,
+      json: succeeded
+        ? { success: true, data: currentStreak() }
+        : { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
+    });
+  });
+  await page.goto("/my/learning-progress");
+
+  const heading = page.getByRole("heading", { name: "Chuỗi học", level: 3 });
+  const streakCard = page.getByRole("article").filter({ has: heading });
+  const retry = streakCard.getByRole("button", { name: "Thử lại" });
+  await expect(streakCard.getByRole("alert")).toContainText("Chưa thể tải chuỗi học");
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(heading).toBeFocused();
+  repeatedFailure.resolve();
+  await expect(retry).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Chuỗi hiện tại 4 ngày")).toBeVisible();
+  await expect(heading).toBeFocused();
 });
 
 for (const viewport of [
@@ -144,6 +184,8 @@ async function installStreakMock(page, data, status = 200) {
 }
 
 function success(data) { return { status: 200, json: { success: true, data } }; }
+
+function failedRequest() { return { status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } }; }
 
 function populatedProgress({ allUnavailable = false } = {}) {
   const statuses = allUnavailable

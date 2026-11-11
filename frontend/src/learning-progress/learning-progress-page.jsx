@@ -28,6 +28,23 @@ const ACTIVITY_META = {
 export function LearningProgressPage() {
   const progress = useProgressSource();
   const streak = useStreakSource();
+  const progressTitleRef = useRef(null);
+  const progressRetryButtonRef = useRef(null);
+  const progressRetryRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!progressRetryRequestedRef.current || progress.status === "loading") return;
+    if (progress.status === "error") progressRetryButtonRef.current?.focus();
+    if (progress.status === "success") progressTitleRef.current?.focus();
+    progressRetryRequestedRef.current = false;
+  }, [progress.status]);
+
+  function retryProgress(event) {
+    const isKeyboardRetry = event.detail === 0;
+    progressRetryRequestedRef.current = isKeyboardRetry;
+    if (isKeyboardRetry) progressTitleRef.current?.focus();
+    progress.retry();
+  }
 
   return (
     <section
@@ -36,7 +53,7 @@ export function LearningProgressPage() {
       className="learning-progress-page mx-auto min-w-0 w-full max-w-[1180px] px-[clamp(0.75rem,3vw,2.75rem)] pb-12 pt-[clamp(1.25rem,3vw,2.5rem)] text-slate-800"
     >
       <header className="learning-progress-heading mb-7 max-w-[720px] max-sm:mb-5">
-        <h1 className="m-0 text-balance text-[clamp(1.8rem,3vw,2.4rem)] font-extrabold leading-tight tracking-[-0.035em] text-slate-950" id="learning-progress-title">
+        <h1 className={`m-0 rounded-sm text-balance text-[clamp(1.8rem,3vw,2.4rem)] font-extrabold leading-tight tracking-[-0.035em] text-slate-950 ${FOCUS_CLASSES}`} id="learning-progress-title" ref={progressTitleRef} tabIndex={-1}>
           Tiến độ học tập
         </h1>
         <p className="mb-0 mt-2 text-pretty leading-relaxed text-slate-600 max-sm:text-sm">
@@ -45,7 +62,7 @@ export function LearningProgressPage() {
       </header>
 
       {progress.status === "loading" ? <ProgressLoadingState /> : null}
-      {progress.status === "error" ? <ProgressErrorState onRetry={progress.retry} /> : null}
+      {progress.status === "error" ? <ProgressErrorState onRetry={retryProgress} retryButtonRef={progressRetryButtonRef} /> : null}
       {progress.status === "success" ? <ProgressContent data={progress.data} streak={streak} /> : null}
     </section>
   );
@@ -160,11 +177,29 @@ function LearningOverview({ streak, xp }) {
 }
 
 function StreakOverview({ source }) {
+  const headingRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!retryRequestedRef.current || source.status === "loading") return;
+    if (source.status === "error") retryButtonRef.current?.focus();
+    if (source.status === "success") headingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [source.status]);
+
+  function retry(event) {
+    const isKeyboardRetry = event.detail === 0;
+    retryRequestedRef.current = isKeyboardRetry;
+    if (isKeyboardRetry) headingRef.current?.focus();
+    source.retry();
+  }
+
   return (
     <article aria-busy={source.status === "loading"} className="min-w-0 rounded-2xl border border-[#f8d89a] bg-[#fff9eb] p-4 shadow-[0_10px_24px_rgb(15_83_115/5%)]">
-      <p className="m-0 text-sm font-extrabold text-[#8a4b00]">Chuỗi học</p>
+      <h3 className={`m-0 rounded-sm text-sm font-extrabold text-[#8a4b00] ${FOCUS_CLASSES}`} ref={headingRef} tabIndex={-1}>Chuỗi học</h3>
       {source.status === "loading" ? <div className="mt-3 h-12 animate-pulse rounded-xl bg-white/80 motion-reduce:animate-none" role="status"><span className="sr-only">Đang tải chuỗi học…</span></div> : null}
-      {source.status === "error" ? <div className="mt-2" role="alert"><p className="m-0 text-xs font-semibold leading-relaxed text-red-700">Chưa thể tải chuỗi học.</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-[#f1c77c] bg-white px-3 text-xs font-extrabold text-[#8a4b00] hover:bg-[#fff4d9] ${FOCUS_CLASSES}`} type="button" onClick={source.retry}>Thử lại</button></div> : null}
+      {source.status === "error" ? <div className="mt-2" role="alert"><p className="m-0 text-xs font-semibold leading-relaxed text-red-700">Chưa thể tải chuỗi học.</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-[#f1c77c] bg-white px-3 text-xs font-extrabold text-[#8a4b00] hover:bg-[#fff4d9] ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div> : null}
       {source.status === "success" ? <div className="mt-3 flex items-center gap-3"><span aria-hidden="true" className={`grid size-12 shrink-0 place-items-center rounded-xl bg-white shadow-sm ${source.data.completed_today ? "text-[#d94a1e]" : "text-slate-400"}`}><Flame className="size-6" /></span><div><p aria-label={`Chuỗi hiện tại ${source.data.current_streak} ngày`} className="m-0 text-2xl font-extrabold text-slate-950 tabular-nums">{source.data.current_streak} <span className="text-sm text-slate-600">ngày</span></p><p className="mb-0 mt-1 text-xs font-semibold text-slate-600">{source.data.completed_today ? "Đã duy trì hôm nay" : "Chưa hoàn thành hôm nay"}</p></div></div> : null}
     </article>
   );
@@ -182,13 +217,13 @@ function ProgressLoadingState() {
   );
 }
 
-function ProgressErrorState({ onRetry }) {
+function ProgressErrorState({ onRetry, retryButtonRef }) {
   return (
     <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-red-200 bg-white px-4 py-8 text-center" role="alert">
       <span className="mb-4 grid size-14 place-items-center rounded-2xl bg-red-50 text-red-700"><AlertTriangle aria-hidden="true" className="size-7" /></span>
       <h2 className="m-0 text-lg font-extrabold text-slate-900">Không thể tải tiến độ học tập</h2>
       <p className="mb-4 mt-2 max-w-md text-sm leading-relaxed text-slate-600">Vui lòng thử lại để xem dữ liệu mới nhất.</p>
-      <button className={ACTION_BUTTON_CLASSES} type="button" onClick={onRetry}><RefreshCw aria-hidden="true" className="size-4" /> Thử lại</button>
+      <button className={ACTION_BUTTON_CLASSES} ref={retryButtonRef} type="button" onClick={onRetry}><RefreshCw aria-hidden="true" className="size-4" /> Thử lại</button>
     </div>
   );
 }

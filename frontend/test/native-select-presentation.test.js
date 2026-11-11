@@ -28,17 +28,19 @@ test("NativeSelect keeps one native control and a pointer-transparent decorative
   assert.doesNotMatch(primitive, /role="(?:combobox|listbox|option)"/);
 });
 
-test("exactly the five approved USER surfaces opt into NativeSelect", async () => {
-  const approvedSources = await Promise.all([
+test("approved USER select surfaces use NativeSelect while Progress V2 stays filter-free", async () => {
+  const [discovery, progress, mySets, metadata, privateVocabulary] = await Promise.all([
     source("discovery"),
     source("progress"),
     source("mySets"),
     source("metadata"),
     source("privateVocabulary"),
   ]);
-  assert.ok(approvedSources.every((content) => content.includes("NativeSelect")));
-  assert.match(approvedSources[2], /<VocabularySetCefrControl[^>]*userPresentation/);
-  assert.match(approvedSources[3], /userPresentation\s*\?\s*<NativeSelect/);
+  assert.ok([discovery, mySets, metadata, privateVocabulary].every((content) => content.includes("NativeSelect")));
+  assert.match(mySets, /<VocabularySetCefrControl[^>]*userPresentation/);
+  assert.match(metadata, /userPresentation\s*\?\s*<NativeSelect/);
+  assert.doesNotMatch(progress, /NativeSelect|STATUS_OPTIONS|learning-progress-filter/);
+  assert.match(progress, /aria-label="Tóm tắt tiến độ"/);
 });
 
 test("ADMIN Set and Vocabulary surfaces do not import or render NativeSelect", async () => {
