@@ -135,7 +135,7 @@ export function AuthenticatedShell() {
   const userHeaderLayoutClasses = !isUser ? "" : ` !sticky !top-0 !z-10 !flex !min-h-[3.75rem] !basis-[3.75rem] !w-full !shrink-0 !items-center !justify-normal !gap-0 !border-b !border-[var(--border-soft)] !bg-white/[0.97] !p-0 sm:!min-h-[4.25rem] sm:!basis-[4.25rem] lg:!min-h-18 lg:!basis-18${isDashboard
     ? " lg:!sticky lg:!top-0"
     : " lg:!relative"}`;
-  const userMainLayoutClasses = !isUser ? "" : ` !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)] lg:!pl-[calc(max(1.75rem,calc((100vw-1440px)/2+2rem))+17rem)]${isDashboard
+  const userMainLayoutClasses = !isUser ? "" : ` !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)]${isDashboard
     ? " lg:!min-h-[calc(100dvh-4.5rem)] lg:!overflow-visible"
     : " lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto"}`;
 

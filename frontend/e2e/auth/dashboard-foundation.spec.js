@@ -421,12 +421,14 @@ test("Progress failure preserves successful Sets and supports one keyboard retry
 });
 
 for (const viewport of [
-  { name: "narrow-mobile", width: 320, height: 720 },
-  { name: "mobile", width: 375, height: 812 },
+  { name: "narrow-mobile", width: 320, height: 700 },
+  { name: "mobile", width: 390, height: 844 },
   { name: "mobile-landscape", width: 667, height: 375 },
   { name: "tablet", width: 768, height: 1024 },
+  { name: "wide-tablet", width: 820, height: 1180 },
   { name: "compact-desktop", width: 1024, height: 768 },
-  { name: "desktop", width: 1440, height: 900 },
+  { name: "desktop", width: 1366, height: 768 },
+  { name: "wide-desktop", width: 1440, height: 900 },
 ]) {
   test(`${viewport.name} Dashboard reflows long real content without horizontal overflow`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -450,12 +452,64 @@ for (const viewport of [
         },
       }),
     );
+    await page.route("**/api/learning-path", (route) => route.fulfill(responsiveLearningPathResponse()));
 
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Learner With An Unusually Long");
     await expect(page.getByRole("progressbar", { name: "Tiến độ XP Level 2" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tổng XP" }).locator("..")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bộ từ cá nhân" }).locator("..")).toContainText("1 bộ cá nhân");
+    const statisticCards = await Promise.all(["Cấp độ", "Chuỗi học", "Tổng XP", "Bộ từ cá nhân"].map(async (name) => {
+      const card = page.getByRole("heading", { name }).locator("..");
+      await expect(card).toBeVisible();
+      return card.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { bottom: bounds.bottom, left: bounds.left, right: bounds.right, top: bounds.top, width: bounds.width, overflow: element.scrollWidth - element.clientWidth };
+      });
+    }));
+    const sameRow = (first, second) => Math.abs(first.top - second.top) <= 1;
+    if (viewport.width < 1024) {
+      expect(sameRow(statisticCards[0], statisticCards[1])).toBe(true);
+      expect(sameRow(statisticCards[2], statisticCards[3])).toBe(true);
+      expect(statisticCards[0].left).toBeLessThan(statisticCards[1].left);
+      expect(statisticCards[2].left).toBeLessThan(statisticCards[3].left);
+      expect(statisticCards[2].top).toBeGreaterThan(statisticCards[0].bottom);
+      if (viewport.width <= 390) {
+        expect(Math.abs((statisticCards[0].bottom - statisticCards[0].top) - (statisticCards[1].bottom - statisticCards[1].top))).toBeLessThanOrEqual(1);
+        expect(Math.abs((statisticCards[2].bottom - statisticCards[2].top) - (statisticCards[3].bottom - statisticCards[3].top))).toBeLessThanOrEqual(1);
+      }
+    } else {
+      expect(statisticCards.every((card) => sameRow(statisticCards[0], card))).toBe(true);
+      expect(statisticCards.map(({ left }) => left)).toEqual([...statisticCards].map(({ left }) => left).sort((a, b) => a - b));
+    }
+    for (const card of statisticCards) {
+      expect(card.width).toBeGreaterThan(0);
+      expect(card.overflow).toBeLessThanOrEqual(1);
+    }
+    const suggestion = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+    const suggestionTitle = suggestion.getByText("A1 Everyday English with an intentionally long responsive title", { exact: true });
+    const suggestionCta = suggestion.getByRole("link", { name: "Bắt đầu học" });
+    const suggestionMetadata = suggestion.getByText("0 / 1 bộ đã hoàn thành", { exact: true });
+    await expect(suggestionTitle).toBeVisible();
+    await expect(suggestionCta).toBeVisible();
+    await expect(suggestionMetadata).toBeVisible();
+    const [suggestionTitleBox, suggestionCtaBox, suggestionMetadataBox] = await Promise.all([
+      suggestionTitle.boundingBox(),
+      suggestionCta.boundingBox(),
+      suggestionMetadata.boundingBox(),
+    ]);
+    if (viewport.width > 800 && viewport.width < 1200) {
+      expect(suggestionTitleBox.width).toBeGreaterThanOrEqual(180);
+      expect(suggestionCtaBox.y).toBeGreaterThanOrEqual(suggestionMetadataBox.y + suggestionMetadataBox.height + 12);
+    }
+    if (viewport.width >= 1366) {
+      expect(suggestionCtaBox.x).toBeGreaterThanOrEqual(suggestionTitleBox.x + suggestionTitleBox.width + 12);
+      expect(suggestionCtaBox.y).toBeLessThan(suggestionMetadataBox.y + suggestionMetadataBox.height);
+    }
+    const streakCard = page.getByRole("heading", { name: "Chuỗi học" }).locator("..");
+    await expect(streakCard.getByLabel("Chuỗi hiện tại 0 ngày")).toBeVisible();
+    await expect(streakCard.getByText("Chưa hoàn thành hôm nay", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Từ cần ôn" }).getByRole("link", { name: "Xem ôn tập" })).toBeVisible();
     const overflow = await page.evaluate(() => {
       const main = document.querySelector(".authenticated-main");
       return {
@@ -476,13 +530,43 @@ for (const viewport of [
       const reviewBox = await page.getByRole("region", { name: "Từ cần ôn" }).boundingBox();
       expect(Math.abs(recommendationBox.height - reviewBox.height)).toBeLessThanOrEqual(1);
     }
-    if (["mobile", "desktop"].includes(viewport.name)) {
+    const regionOverflow = await page.getByRole("region").evaluateAll((elements) => elements.map((element) => element.scrollWidth - element.clientWidth));
+    expect(regionOverflow.every((distance) => distance <= 1)).toBe(true);
+    if (["narrow-mobile", "wide-tablet", "wide-desktop"].includes(viewport.name)) {
       await page.screenshot({
         fullPage: true,
-        path: `test-results/task-230-evidence/dashboard-${viewport.name}.png`,
+        path: `test-results/dashboard-responsive/dashboard-${viewport.name}.png`,
       });
     }
   });
+}
+
+function responsiveLearningPathResponse() {
+  const setId = "10000000-0000-4000-8000-000000000099";
+  return {
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        evaluated_at: "2026-11-03T00:00:00.000Z",
+        highest_unlocked_level: "A1",
+        path_completed_at: null,
+        levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+          level,
+          unlocked: index === 0,
+          required_count: index === 0 ? 1 : 0,
+          completed_count: 0,
+          configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+          current_complete: false,
+          incomplete_sets: index === 0 ? [{ id: setId, name: "A1 Everyday English with an intentionally long responsive title", created_at: "2026-11-03T00:00:00.000Z" }] : [],
+        })),
+        recommendation: { action: "START", set_id: setId, pass_id: null },
+        next_suggestion: { action: "START", set_id: setId, pass_id: null },
+        next_suggestion_reason: null,
+        all_current_sets_complete: false,
+      },
+    },
+  };
 }
 
 test("Dashboard removes non-essential animation when reduced motion is requested", async ({ page }) => {

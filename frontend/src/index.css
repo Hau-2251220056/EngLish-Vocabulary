@@ -2062,6 +2062,12 @@ input {
   overflow-y: auto;
 }
 
+@media (min-width: 1024px) {
+  .authenticated-user-app .authenticated-main {
+    padding-left: calc(max(1.75rem, calc((100vw - 1440px) / 2 + 2rem)) + 17rem) !important;
+  }
+}
+
 @media (max-width: 1023px) {
   .authenticated-app {
     display: block;

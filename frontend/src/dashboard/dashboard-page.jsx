@@ -65,7 +65,7 @@ function DashboardStatistics({ mySets, progress, streak }) {
   return (
     <section aria-labelledby="dashboard-statistics-title" className="mt-6 min-w-0">
       <h2 className="sr-only" id="dashboard-statistics-title">Tổng quan học tập</h2>
-      <div className="grid min-w-0 grid-cols-4 gap-4 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
+      <div className="grid min-w-0 grid-cols-4 gap-4 max-[900px]:grid-cols-2 max-[520px]:gap-3">
         <LevelStat source={progress} />
         <StreakStat source={streak} />
         <TotalXpStat source={progress} />
@@ -83,13 +83,13 @@ function LevelStat({ source }) {
         const progressPercent = xp.is_max_level ? 100 : clampPercentage(((xp.total_xp - xp.level_min_xp) / (xp.next_level_xp - xp.level_min_xp)) * 100);
         const circumference = 2 * Math.PI * 22;
         return (
-          <div className="flex min-w-0 items-center gap-3.5">
-            <div aria-label={`Tiến độ XP Level ${xp.level}`} aria-valuemax={xp.is_max_level ? xp.total_xp : xp.next_level_xp} aria-valuemin={xp.level_min_xp} aria-valuenow={xp.total_xp} className="relative grid size-[4.25rem] shrink-0 place-items-center" role="progressbar">
+          <div className="flex min-w-0 items-center gap-3.5 max-[520px]:gap-2">
+            <div aria-label={`Tiến độ XP Level ${xp.level}`} aria-valuemax={xp.is_max_level ? xp.total_xp : xp.next_level_xp} aria-valuemin={xp.level_min_xp} aria-valuenow={xp.total_xp} className="relative grid size-[4.25rem] shrink-0 place-items-center max-[520px]:size-[3.25rem]" role="progressbar">
               <svg aria-hidden="true" className="size-full -rotate-90" viewBox="0 0 52 52">
                 <circle className="fill-none stroke-slate-200" cx="26" cy="26" r="22" strokeWidth="5" />
                 <circle className="fill-none stroke-[#0877b9]" cx="26" cy="26" r="22" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progressPercent / 100)} strokeLinecap="round" strokeWidth="5" />
               </svg>
-              <strong className="absolute text-xl text-slate-900 tabular-nums">{xp.level}</strong>
+              <strong className="absolute text-xl text-slate-900 tabular-nums max-[520px]:text-lg">{xp.level}</strong>
             </div>
             <div className="min-w-0">
               <p className="m-0 text-xs font-bold text-slate-500">Level hiện tại</p>
@@ -106,12 +106,10 @@ function StreakStat({ source }) {
   return (
     <StatisticSourceCard accent="text-[#b45309]" label="Chuỗi học" source={source} tone="border-[#fed7aa] bg-[#fff7ed]">
       {(data) => (
-        <div className="flex min-w-0 items-center gap-3.5">
-          <span className={`grid size-12 shrink-0 place-items-center rounded-xl border [&_svg]:size-6 ${data.completed_today ? "border-orange-200 bg-orange-100 text-[#d94a1e]" : "border-slate-200 bg-slate-100 text-slate-400"}`} aria-hidden="true"><Flame /></span>
-          <div className="min-w-0">
-            <p className="m-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums" aria-label={`Chuỗi hiện tại ${data.current_streak} ngày`}>{data.current_streak} <span className="text-sm font-bold text-slate-500">ngày</span></p>
-            <p className="mb-0 mt-1.5 text-xs font-bold text-slate-500">{data.completed_today ? "Đã duy trì hôm nay" : "Chưa hoàn thành hôm nay"}</p>
-          </div>
+        <div className="grid min-w-0 grid-cols-[auto_1fr] items-center gap-x-3.5 max-[520px]:gap-x-2">
+          <span className={`row-span-2 grid size-12 shrink-0 place-items-center rounded-xl border max-[520px]:row-span-1 max-[520px]:size-10 [&_svg]:size-6 max-[520px]:[&_svg]:size-5 ${data.completed_today ? "border-orange-200 bg-orange-100 text-[#d94a1e]" : "border-slate-200 bg-slate-100 text-slate-400"}`} aria-hidden="true"><Flame /></span>
+          <p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums max-[520px]:text-xl" aria-label={`Chuỗi hiện tại ${data.current_streak} ngày`}>{data.current_streak} <span className="text-sm font-bold text-slate-500 max-[520px]:text-xs">ngày</span></p>
+          <p className="col-start-2 mb-0 mt-1.5 text-xs font-bold leading-snug text-slate-500 max-[520px]:col-span-2 max-[520px]:col-start-1 max-[520px]:mt-2">{data.completed_today ? "Đã duy trì hôm nay" : "Chưa hoàn thành hôm nay"}</p>
         </div>
       )}
     </StatisticSourceCard>
@@ -121,7 +119,7 @@ function StreakStat({ source }) {
 function TotalXpStat({ source }) {
   return (
     <StatisticSourceCard accent="text-[#0e7490]" label="Tổng XP" source={source} tone="border-[#c7eef4] bg-[#f0fdff]">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#b9e7ef] bg-white/70 text-[#0e7490] shadow-sm [&_svg]:size-6" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-600">XP</span></p></div>}
+      {(data) => <div className="flex min-w-0 items-center gap-3.5 max-[520px]:gap-2"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#b9e7ef] bg-white/70 text-[#0e7490] shadow-sm max-[520px]:size-10 [&_svg]:size-6 max-[520px]:[&_svg]:size-5" aria-hidden="true"><Zap /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums max-[520px]:text-xl">{formatXp(data.xp_level.total_xp)} <span className="text-sm font-bold text-slate-600 max-[520px]:text-xs">XP</span></p></div>}
     </StatisticSourceCard>
   );
 }
@@ -129,7 +127,7 @@ function TotalXpStat({ source }) {
 function SetCountStat({ source }) {
   return (
     <StatisticSourceCard accent="text-[#047857]" label="Bộ từ cá nhân" source={source} tone="border-[#bbe8d0] bg-[#f0fdf7]">
-      {(data) => <div className="flex min-w-0 items-center gap-3.5"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#a8ddc0] bg-white/70 text-[#047857] shadow-sm [&_svg]:size-6" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums">{data.length} <span className="text-sm font-bold text-slate-600">bộ cá nhân</span></p></div>}
+      {(data) => <div className="flex min-w-0 items-center gap-3.5 max-[520px]:gap-2"><span className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#a8ddc0] bg-white/70 text-[#047857] shadow-sm max-[520px]:size-10 [&_svg]:size-6 max-[520px]:[&_svg]:size-5" aria-hidden="true"><LibraryBig /></span><p className="m-0 min-w-0 text-[1.65rem] font-extrabold leading-none text-slate-900 tabular-nums max-[520px]:text-xl">{data.length} <span className="text-sm font-bold leading-tight text-slate-600 max-[520px]:hidden">bộ cá nhân</span><span className="hidden whitespace-nowrap text-xs font-bold text-slate-600 max-[520px]:inline">bộ</span></p></div>}
     </StatisticSourceCard>
   );
 }
@@ -150,8 +148,8 @@ function StatisticSourceCard({ accent, children, label, source, tone }) {
   }
   const hasValue = source.data !== null;
   return (
-    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4 shadow-[0_10px_24px_rgb(15_23_42/6%)]`} aria-busy={source.status === "loading"}>
-      <h3 className={`m-0 rounded-sm text-sm font-extrabold ${accent} focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30`} ref={headingRef} tabIndex={-1}>{label}</h3>
+    <article className={`${CARD_CLASSES} ${tone} min-h-[9rem] p-4 shadow-[0_10px_24px_rgb(15_23_42/6%)] max-[520px]:min-h-[8.25rem] max-[520px]:p-3`} aria-busy={source.status === "loading"}>
+      <h3 className={`m-0 rounded-sm text-sm font-extrabold max-[520px]:text-[0.8125rem] ${accent} focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30`} ref={headingRef} tabIndex={-1}>{label}</h3>
       {source.status === "loading" ? <div className="mt-4" role="status"><span className="sr-only">Đang tải {label.toLocaleLowerCase("vi-VN")}…</span><span className="block h-12 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" aria-hidden="true" /></div> : null}
       {source.status === "error" ? <div className="mt-3" role="alert">{hasValue ? <div className="mb-3">{children(source.data)}</div> : null}<p className="m-0 text-xs font-semibold leading-relaxed text-red-700">{hasValue ? "Dữ liệu gần nhất có thể đã cũ." : "Chưa thể tải dữ liệu."}</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 text-xs font-extrabold text-[#075f95] hover:bg-sky-50 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button></div> : null}
       {source.status === "success" ? <div className="mt-4">{children(source.data)}</div> : null}
@@ -191,9 +189,9 @@ function NextSuggestionSummary({ path }) {
     return <div className="flex h-full min-w-0 items-start gap-4 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
   }
   return (
-    <div className="flex h-full min-w-0 items-center justify-between gap-5 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_10px_24px_rgb(180_83_9/7%)] max-[560px]:items-stretch max-[560px]:flex-col">
-      <div className="flex min-w-0 items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-[#F97316] bg-white/70 px-3 text-[#9A3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
-      <Link className={`${SUGGESTION_LINK_CLASSES} shrink-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${suggestion.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: suggestion.action, passId: suggestion.pass_id }}>Bắt đầu học <ArrowRight aria-hidden="true" className="size-4" /></Link>
+    <div className="flex h-full min-w-0 flex-wrap items-center justify-between gap-5 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_10px_24px_rgb(180_83_9/7%)] max-[560px]:items-stretch max-[560px]:flex-col max-[560px]:flex-nowrap">
+      <div className="flex min-w-0 flex-1 basis-64 items-start gap-3 max-[560px]:basis-auto"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0 flex-1"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-[#F97316] bg-white/70 px-3 text-[#9A3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
+      <Link className={`${SUGGESTION_LINK_CLASSES} ml-auto shrink-0 max-[560px]:ml-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${suggestion.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: suggestion.action, passId: suggestion.pass_id }}>Bắt đầu học <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
 }

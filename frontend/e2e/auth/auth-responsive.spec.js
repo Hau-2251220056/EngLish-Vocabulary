@@ -35,6 +35,86 @@ const longNameUser = Object.freeze({
   display_name: "Learner with an intentionally very long display name for responsive coverage",
 });
 
+const sharedUserRoutes = [
+  { path: "/dashboard", navigationName: "Trang chủ", probe: ".dashboard-hero" },
+  { path: "/review", navigationName: "Ôn tập", probe: '[aria-labelledby="due-review-title"]' },
+  { path: "/my/vocabulary-sets", navigationName: "Bộ từ của tôi", probe: ".my-vocabulary-sets-header" },
+  { path: "/topics", navigationName: "Khám phá bộ từ", probe: ".public-topic-state" },
+  { path: "/my/learning-progress", navigationName: "Tiến độ học tập", probe: ".learning-progress-heading" },
+];
+
+for (const viewport of [
+  { name: "desktop-1366", width: 1366, height: 768 },
+  { name: "desktop-1440", width: 1440, height: 768 },
+]) {
+  test(`shared USER shell keeps real route content clear of the sidebar on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installSharedUserLayoutMocks(page);
+    for (const route of sharedUserRoutes) {
+      await page.goto(route.path);
+      const probe = page.locator(route.probe);
+      await expect(probe).toBeVisible();
+      await expect(page.locator(".authenticated-navigation").getByRole("link", { name: route.navigationName, exact: true })).toBeVisible();
+
+      const geometry = await measureSharedUserLayout(page, route.probe);
+      expect(geometry.mainPaddingLeft).toBeGreaterThanOrEqual(300);
+      expect(geometry.probe.left).toBeGreaterThanOrEqual(geometry.sidebar.right + 23);
+      expect(geometry.probe.top).toBeGreaterThanOrEqual(geometry.header.bottom - 0.5);
+      expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
+
+      if (route.path === "/dashboard") {
+        expect(geometry.mainOverflowY).toBe("visible");
+        expect(geometry.documentOwnsScroll).toBe(true);
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+        expect(await page.locator(".authenticated-main").evaluate((main) => main.scrollTop)).toBe(0);
+      } else {
+        expect(geometry.mainOverflowY).toBe("auto");
+      }
+
+      if (route.path === "/my/learning-progress") {
+        await page.locator(".authenticated-main").evaluate((main) => main.scrollTo(0, main.scrollHeight));
+        expect(await page.locator(".authenticated-main").evaluate((main) => main.scrollTop)).toBeGreaterThan(0);
+      }
+    }
+  });
+}
+
+for (const viewport of [
+  { name: "tablet", width: 820, height: 1180 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`shared USER shell keeps route content and drawer usable on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installSharedUserLayoutMocks(page);
+
+    for (const route of sharedUserRoutes) {
+      await page.goto(route.path);
+      const probe = page.locator(route.probe);
+      await expect(probe).toBeVisible();
+      const geometry = await measureSharedUserLayout(page, route.probe);
+      expect(geometry.sidebar.right).toBeLessThanOrEqual(0.5);
+      expect(geometry.probe.left).toBeGreaterThanOrEqual(0);
+      expect(geometry.probe.right).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(geometry.probe.top).toBeGreaterThanOrEqual(geometry.header.bottom - 0.5);
+      expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.mainOverflowY).toBe("visible");
+      expect(geometry.documentOwnsScroll).toBe(true);
+    }
+
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: "Mở điều hướng" }).click();
+    const sidebar = page.locator(".authenticated-sidebar");
+    await expect(sidebar).toBeVisible();
+    const sidebarBox = await sidebar.boundingBox();
+    expect(sidebarBox.x).toBeGreaterThanOrEqual(0);
+    expect(sidebarBox.x + sidebarBox.width).toBeLessThanOrEqual(viewport.width + 0.5);
+    await expect(sidebar.getByRole("link", { name: "Tiến độ học tập", exact: true })).toBeVisible();
+    await page.locator(".authenticated-drawer-backdrop").click({ position: { x: viewport.width - 2, y: viewport.height - 2 } });
+    await expect(page.getByRole("button", { name: "Mở điều hướng" })).toBeVisible();
+  });
+}
+
 test("Focused auth refinement review captures the blended grid and external home link", async ({ page }, testInfo) => {
   await installAuthApiMock(page);
   await page.setViewportSize({ width: 1366, height: 768 });
@@ -326,7 +406,7 @@ for (const viewport of viewports) {
 
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", {
-      name: /^Chào buổi (sáng|trưa|chiều|tối), Learner with an intentionally very long display name for responsive coverage$/,
+      name: /^Chào buổi (sáng|trưa|chiều|tối) Learner with an intentionally very long display name for responsive coverage$/,
     })).toBeVisible();
     await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` })).toBeVisible();
     const navigationLinks = page.locator(".authenticated-navigation a");
@@ -358,6 +438,52 @@ for (const viewport of viewports) {
     await logout.click();
     await expect(page).toHaveURL(/\/login$/);
   });
+}
+
+async function installSharedUserLayoutMocks(page) {
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        due_count: 0,
+        evaluated_at: "2026-11-11T00:00:00.000Z",
+        has_due_items: false,
+        nearest_future_review_at: null,
+        sets: [],
+      },
+    },
+  }));
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+}
+
+async function measureSharedUserLayout(page, probeSelector) {
+  return page.evaluate((selector) => {
+    const rect = (element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        bottom: bounds.bottom,
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+      };
+    };
+    const header = document.querySelector(".authenticated-header");
+    const main = document.querySelector(".authenticated-main");
+    const probe = document.querySelector(selector);
+    const sidebar = document.querySelector(".authenticated-sidebar");
+    return {
+      documentOwnsScroll: document.scrollingElement === document.documentElement,
+      header: rect(header),
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      mainOverflowY: getComputedStyle(main).overflowY,
+      mainPaddingLeft: Number.parseFloat(getComputedStyle(main).paddingLeft),
+      probe: rect(probe),
+      sidebar: rect(sidebar),
+    };
+  }, probeSelector);
 }
 
 async function expectAuthFormToFit(page, mode) {

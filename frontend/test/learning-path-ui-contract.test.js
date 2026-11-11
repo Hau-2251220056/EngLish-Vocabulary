@@ -5,6 +5,7 @@ import test from "node:test";
 test("Dashboard separates next suggestion, CEFR, review, featured Sets, and preserves ADMIN neutrality", async () => {
   const source = await readFile(new URL("../src/dashboard/dashboard-page.jsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../src/dashboard/dashboard-page.css", import.meta.url), "utf8");
+  const globalStyles = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
   const shell = await readFile(new URL("../src/auth/ui/authenticated-shell.jsx", import.meta.url), "utf8");
   assert.match(source, /useDashboardSource\(isUser, loadLearningPath, "learning-path"\)/);
   assert.match(source, /if \(!isUser\) return <DashboardAdminLanding/);
@@ -29,6 +30,7 @@ test("Dashboard separates next suggestion, CEFR, review, featured Sets, and pres
   assert.doesNotMatch(source, /aria-label="Làm mới chuỗi học tập"/);
   assert.match(shell, /isDashboard[\s\S]*\? " lg:!h-auto lg:!min-h-dvh lg:!overflow-x-clip lg:!overflow-y-visible"[\s\S]*: " lg:!h-dvh lg:!overflow-hidden"/);
   assert.match(shell, /isDashboard[\s\S]*\? " lg:!min-h-\[calc\(100dvh-4\.5rem\)\] lg:!overflow-visible"[\s\S]*: " lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto"/);
+  assert.match(globalStyles, /@media \(min-width: 1024px\)[\s\S]*\.authenticated-user-app \.authenticated-main[\s\S]*padding-left: calc\(max\(1\.75rem, calc\(\(100vw - 1440px\) \/ 2 \+ 2rem\)\) \+ 17rem\) !important/);
   assert.doesNotMatch(shell, /dashboard-scrollbar/);
   assert.match(styles, /html:has\(\.authenticated-user-app\.dashboard-shell\)[\s\S]*scrollbar-color: #2f86bd #edf3f6/);
   assert.doesNotMatch(styles, /dashboard-shell \.authenticated-main/);
