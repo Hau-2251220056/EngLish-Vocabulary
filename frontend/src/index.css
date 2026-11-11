@@ -2062,10 +2062,39 @@ input {
   overflow-y: auto;
 }
 
+/* Only the active authenticated USER content scroller receives the shared treatment. */
+html:has(.authenticated-user-app) {
+  scrollbar-color: #2f86bd #edf3f6;
+  scrollbar-width: thin;
+}
+
+html:has(.authenticated-user-app)::-webkit-scrollbar { width: 0.65rem; }
+html:has(.authenticated-user-app)::-webkit-scrollbar-track { background: #edf3f6; }
+html:has(.authenticated-user-app)::-webkit-scrollbar-thumb {
+  border: 0.14rem solid #edf3f6;
+  border-radius: 999px;
+  background: #2f86bd;
+}
+html:has(.authenticated-user-app)::-webkit-scrollbar-thumb:hover { background: #176a9f; }
+
 @media (min-width: 1024px) {
   .authenticated-user-app .authenticated-main {
     padding-left: calc(max(1.75rem, calc((100vw - 1440px) / 2 + 2rem)) + 17rem) !important;
   }
+
+  .authenticated-user-app:not(.dashboard-shell) .authenticated-main {
+    scrollbar-color: #2f86bd #edf3f6;
+    scrollbar-width: thin;
+  }
+
+  .authenticated-user-app:not(.dashboard-shell) .authenticated-main::-webkit-scrollbar { width: 0.65rem; }
+  .authenticated-user-app:not(.dashboard-shell) .authenticated-main::-webkit-scrollbar-track { background: #edf3f6; }
+  .authenticated-user-app:not(.dashboard-shell) .authenticated-main::-webkit-scrollbar-thumb {
+    border: 0.14rem solid #edf3f6;
+    border-radius: 999px;
+    background: #2f86bd;
+  }
+  .authenticated-user-app:not(.dashboard-shell) .authenticated-main::-webkit-scrollbar-thumb:hover { background: #176a9f; }
 }
 
 @media (max-width: 1023px) {

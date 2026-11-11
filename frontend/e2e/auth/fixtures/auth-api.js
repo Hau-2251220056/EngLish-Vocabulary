@@ -88,6 +88,13 @@ export async function installAuthApiMock(page, handlers = {}) {
           evaluated_at: "2026-09-24T12:00:00.000Z",
           xp_level: { total_xp: 0, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false },
           summary: { total_started: 0, learning: 0, learned: 0, needs_review: 0 },
+          streak_activity_7d: {
+            timezone: "Asia/Ho_Chi_Minh",
+            days: [
+              "2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21",
+              "2026-09-22", "2026-09-23", "2026-09-24",
+            ].map((date) => ({ date, status: "UNAVAILABLE" })),
+          },
           items: [],
           pagination: { page: 1, page_size: 1, total_items: 0, total_pages: 0 },
           filter: { status: null },

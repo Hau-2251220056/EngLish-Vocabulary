@@ -115,7 +115,7 @@ test.afterAll(async () => {
   }
 });
 
-test("USER sees isolated persisted summary, filters and paginates without writes", async ({
+test("USER sees isolated persisted overview without writes", async ({
   page,
 }) => {
   const before = await progressSnapshot(records.learner.id);
@@ -124,27 +124,16 @@ test("USER sees isolated persisted summary, filters and paginates without writes
 
   await expect(page.getByRole("heading", { name: "Tiến độ học tập" })).toBeVisible();
   await expect(page.locator(".learning-progress-summary-card")).toHaveCount(4);
-  await expect(summaryCard(page, "Tổng đã bắt đầu")).toContainText("23");
-  await expect(summaryCard(page, "Đang học")).toContainText("8");
+  await expect(summaryCard(page, "Từ đã học")).toContainText("23");
   await expect(summaryCard(page, "Đã thuộc")).toContainText("13");
+  await expect(summaryCard(page, "Đang học")).toContainText("8");
   await expect(summaryCard(page, "Cần ôn")).toContainText("2");
-  await expect(page.locator(".learning-progress-row")).toHaveCount(20);
+  await expect(page.getByRole("list", { name: "Hoạt động học trong 7 ngày" }).getByRole("listitem")).toHaveCount(7);
+  await expect(page.getByText("Chưa đủ dữ liệu để xác định hoạt động trong 7 ngày này.")).toBeVisible();
+  await expect(page.getByText("Level hiện tại")).toBeVisible();
   await expect(page.getByText(vocabularies[23].word)).toHaveCount(0);
-
-  const next = page.getByRole("button", { name: "Trang sau" });
-  await next.click();
-  await expect(page.getByText("Trang 2 / 2")).toBeVisible();
-  await expect(page.locator(".learning-progress-row")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "Trang trước" })).toBeFocused();
-
-  await page.getByLabel("Trạng thái").selectOption("NEEDS_REVIEW");
-  await expect(page.locator(".learning-progress-row")).toHaveCount(2);
-  await expect(
-    page.locator(".learning-progress-row .learning-progress-badge", {
-      hasText: "Cần ôn",
-    }),
-  ).toHaveCount(2);
-  await expect(page.getByText(/Đã ôn \d+ lần/).first()).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Trạng thái" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Phân trang tiến độ" })).toHaveCount(0);
 
   expect(await progressSnapshot(records.learner.id)).toEqual(before);
   expect(await prisma.lEARNING_PROGRESS.count({
@@ -183,27 +172,15 @@ test("real loading, safe error and retry resolve through the guarded API", async
   await expect(page.getByRole("alert")).toContainText("Không thể tải tiến độ học tập");
   allowSuccessfulRetry = true;
   await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.locator(".learning-progress-row")).toHaveCount(20);
+  await expect(page.locator(".learning-progress-summary-card")).toHaveCount(4);
   expect(progressRequests).toBeGreaterThanOrEqual(2);
 });
 
-test("first-use and filtered-empty states remain distinct and accessible", async ({ page }) => {
+test("first-use Progress remains truthful without fabricated history", async ({ page }) => {
   await login(page, accounts.firstUse);
   await page.goto("/my/learning-progress");
-  await expect(page.getByRole("heading", {
-    name: "Bạn chưa có tiến độ học tập",
-  })).toBeVisible();
-  await expect(page.getByLabel("Trạng thái")).toHaveCount(0);
-
-  await logout(page);
-  await login(page, accounts.filteredEmpty);
-  await page.goto("/my/learning-progress");
-  await page.getByLabel("Trạng thái").selectOption("LEARNED");
-  await expect(page.getByRole("heading", {
-    name: "Không có từ vựng phù hợp",
-  })).toBeVisible();
-  await page.getByRole("button", { name: "Xóa bộ lọc" }).click();
-  await expect(page.locator(".learning-progress-row")).toHaveCount(1);
+  await expect(summaryCard(page, "Từ đã học")).toContainText("0");
+  await expect(page.getByText("Chưa đủ dữ liệu để xác định hoạt động trong 7 ngày này.")).toBeVisible();
 });
 
 test("Guest and ADMIN cannot access the USER progress route", async ({ page }) => {
@@ -221,7 +198,7 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
   await page.setViewportSize({ width: 1366, height: 768 });
   await login(page, accounts.learner);
   await page.goto("/my/learning-progress");
-  await expect(page.locator(".learning-progress-row")).toHaveCount(20);
+  await expect(page.locator(".learning-progress-summary-card")).toHaveCount(4);
   await expect(page.locator(".authenticated-main")).toHaveCount(1);
 
   const desktop = await page.evaluate(() => {
@@ -260,13 +237,11 @@ test("desktop shell scroll and mobile keyboard layout stay accessible", async ({
     summaryColumns: getComputedStyle(
       document.querySelector(".learning-progress-summary"),
     ).gridTemplateColumns.split(" ").length,
-    rowClickable: document.querySelectorAll(
-      ".learning-progress-row a, .learning-progress-row button",
-    ).length,
+    activityDays: document.querySelectorAll(".learning-progress-activity-grid li").length,
   }));
   expect(mobile.overflow).toBeLessThanOrEqual(1);
-  expect(mobile.summaryColumns).toBe(1);
-  expect(mobile.rowClickable).toBe(0);
+  expect(mobile.summaryColumns).toBe(2);
+  expect(mobile.activityDays).toBe(7);
 });
 
 function user(displayName, role = "USER") {
@@ -284,11 +259,6 @@ async function login(page, account) {
   await page.locator("#login-password").fill(password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard$/);
-}
-
-async function logout(page) {
-  await page.request.post("/api/auth/logout");
-  await page.goto("/login");
 }
 
 function summaryCard(page, label) {

@@ -774,6 +774,23 @@ Supported query parameters are optional scalar `page` (default `1`), `page_size`
 
 The success envelope contains an unfiltered current-USER summary (`total_started`, `learning`, `learned`, `needs_review`), an authoritative `xp_level` projection, the optionally status-filtered page, truthful filtered pagination (`page`, `page_size`, `total_items`, `total_pages`) and the applied nullable status filter. `xp_level` contains `total_xp`, `level`, `level_min_xp`, nullable `next_level_xp`, and `is_max_level`. Each item returns only Vocabulary `id`, `word`, nullable `phonetic`, plus progress `status`, `review_count` and nullable `last_reviewed_at`.
 
+The success data also contains additive `streak_activity_7d`, with `timezone: "Asia/Ho_Chi_Minh"` and exactly seven chronological `days` ending on the application date of `evaluated_at`. Each day has an application-local `date` (`YYYY-MM-DD`) and `status`: `ACTIVE` when `STREAK_DAY` confirms at least one qualifying completed NORMAL/SRS/Quiz session, `INACTIVE` when the date is on or after the USER's earliest persisted `STREAK_DAY` but has no row, or `UNAVAILABLE` when an absent date predates that confirmed per-USER coverage. With no persisted Streak day, all seven dates are `UNAVAILABLE`; missing rows are never treated as inactive without confirmed coverage. This read neither inserts nor updates Streak state.
+
+```json
+"streak_activity_7d": {
+  "timezone": "Asia/Ho_Chi_Minh",
+  "days": [
+    { "date": "2026-10-11", "status": "UNAVAILABLE" },
+    { "date": "2026-10-12", "status": "UNAVAILABLE" },
+    { "date": "2026-10-13", "status": "ACTIVE" },
+    { "date": "2026-10-14", "status": "INACTIVE" },
+    { "date": "2026-10-15", "status": "INACTIVE" },
+    { "date": "2026-10-16", "status": "ACTIVE" },
+    { "date": "2026-10-17", "status": "INACTIVE" }
+  ]
+}
+```
+
 Records are ordered by `last_reviewed_at` descending with nulls last, then progress `created_at` descending and progress `id` ascending. A positive out-of-range page succeeds with an empty item collection and truthful metadata.
 
 Conceptual `NEW` is excluded because it has no persisted row and V1 defines no global eligible Vocabulary universe. Summary, filters and items derive effective due state at one backend `evaluated_at`: learned schedules with `next_review_at <= evaluated_at` appear as `NEEDS_REVIEW`, future schedules remain `LEARNED`, and immediately-due stage-0 rows remain `LEARNING`. Reads never create or mutate progress and expose no Meaning/Example, Set/Topic membership, revision/event ID or other USER's data.

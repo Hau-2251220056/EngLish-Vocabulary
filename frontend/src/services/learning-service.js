@@ -7,6 +7,7 @@ const MODES = new Set(["SRS", "NORMAL"]);
 const RATINGS = new Set(["AGAIN", "HARD", "GOOD", "EASY"]);
 const SRS_INTERVALS = new Set([1, 3, 7, 14, 30]);
 const PROGRESS_STATUSES = new Set(["LEARNING", "LEARNED", "NEEDS_REVIEW"]);
+const STREAK_ACTIVITY_STATUSES = new Set(["ACTIVE", "INACTIVE", "UNAVAILABLE"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class LearningApiError extends Error {
@@ -261,11 +262,41 @@ function requireLearningProgress(value) {
     !isRecord(value) || !isDateString(value.evaluated_at)
     || !isXpLevelProjection(value.xp_level)
     || !isSummary(value.summary)
+    || !isStreakActivity7d(value.streak_activity_7d, value.evaluated_at)
     || !Array.isArray(value.items) || !value.items.every(isProgressItem)
     || !isPagination(value.pagination) || !isRecord(value.filter)
     || !(value.filter.status === null || PROGRESS_STATUSES.has(value.filter.status))
   ) throw invalidResponseError();
   return value;
+}
+
+function isStreakActivity7d(value, evaluatedAt) {
+  if (!isRecord(value) || value.timezone !== "Asia/Ho_Chi_Minh"
+    || !Array.isArray(value.days) || value.days.length !== 7) return false;
+  const dates = value.days.map((day) => day?.date);
+  if (!value.days.every((day) => isRecord(day) && isIsoDate(day.date)
+    && STREAK_ACTIVITY_STATUSES.has(day.status))) return false;
+  if (dates.some((date, index) => index > 0
+    && Date.parse(`${date}T00:00:00.000Z`) - Date.parse(`${dates[index - 1]}T00:00:00.000Z`)
+      !== 24 * 60 * 60 * 1000)) return false;
+  return dates.at(-1) === toApplicationDate(evaluatedAt);
+}
+
+function toApplicationDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US-u-ca-gregory-nu-latn", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value)).filter(({ type }) => ["year", "month", "day"].includes(type))
+    .map(({ type, value: part }) => [type, part]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function isIsoDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function isSummary(value) {

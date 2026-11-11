@@ -1,18 +1,3 @@
-/* Dashboard document scrolling and browser pseudo-elements need route-scoped CSS. */
-html:has(.authenticated-user-app.dashboard-shell) {
-  scrollbar-color: #2f86bd #edf3f6;
-  scrollbar-width: thin;
-}
-
-html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar { width: 0.65rem; }
-html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-track { background: #edf3f6; }
-html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb {
-  border: 0.14rem solid #edf3f6;
-  border-radius: 999px;
-  background: #2f86bd;
-}
-html:has(.authenticated-user-app.dashboard-shell)::-webkit-scrollbar-thumb:hover { background: #176a9f; }
-
 /* USER hero artwork: layered gradients and pseudo-elements stay clearer as scoped CSS. */
 
 .dashboard-hero {

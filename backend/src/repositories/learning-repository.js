@@ -278,7 +278,7 @@ export function createLearningRepository(prisma) {
 
     withConsistentRead(callback) {
       return prisma.$transaction(
-        async (transaction) => callback(createLearningRepository(transaction)),
+        async (transaction) => callback(createLearningRepository(transaction), transaction),
         {
           isolationLevel: "RepeatableRead",
           maxWait: 10_000,

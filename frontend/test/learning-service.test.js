@@ -91,6 +91,23 @@ test("mode-specific and authoritative response guards reject malformed data", as
       { code: "INVALID_LEARNING_RESPONSE" },
     );
   }
+
+  for (const malformedActivity of [
+    undefined,
+    { ...learningProgress.streak_activity_7d, timezone: "UTC" },
+    { ...learningProgress.streak_activity_7d, days: learningProgress.streak_activity_7d.days.slice(1) },
+    { ...learningProgress.streak_activity_7d, days: learningProgress.streak_activity_7d.days.map((day, index) => index === 3 ? { ...day, status: "UNKNOWN" } : day) },
+    { ...learningProgress.streak_activity_7d, days: learningProgress.streak_activity_7d.days.map((day, index) => index === 6 ? { ...day, date: "2026-10-03" } : day) },
+  ]) {
+    await assert.rejects(
+      createLearningService({
+        async get() {
+          return { data: { data: { ...learningProgress, streak_activity_7d: malformedActivity } } };
+        },
+      }).getLearningProgress(),
+      { code: "INVALID_LEARNING_RESPONSE" },
+    );
+  }
 });
 
 test("Learning mutation accepts authoritative original, replay, zero and MAX rewards", async () => {
@@ -253,7 +270,7 @@ delete normalCard.rating_previews;
 Object.freeze(normalCard);
 const normalSet = Object.freeze({ id: "s", name: "Set", mode: "NORMAL", total_items: 1, cards: [normalCard] });
 const ratingProgress = Object.freeze({ vocabulary_id: "v", status: "LEARNED", effective_status: "LEARNED", stage: 1, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: 1, reward });
-const learningProgress = Object.freeze({ evaluated_at: NOW, xp_level: xpLevel, summary: { total_started: 1, learning: 0, learned: 1, needs_review: 0 }, items: [{ vocabulary: { id: "v", word: "book", phonetic: null }, status: "LEARNED", review_count: 1, last_reviewed_at: NOW, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z" }], pagination: { page: 1, page_size: 20, total_items: 1, total_pages: 1 }, filter: { status: null } });
+const learningProgress = Object.freeze({ evaluated_at: NOW, xp_level: xpLevel, summary: { total_started: 1, learning: 0, learned: 1, needs_review: 0 }, streak_activity_7d: { timezone: "Asia/Ho_Chi_Minh", days: ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"].map((date, index) => ({ date, status: index < 2 ? "UNAVAILABLE" : index === 6 ? "ACTIVE" : "INACTIVE" })) }, items: [{ vocabulary: { id: "v", word: "book", phonetic: null }, status: "LEARNED", review_count: 1, last_reviewed_at: NOW, interval_days: 1, next_review_at: "2026-10-05T03:15:00.000Z" }], pagination: { page: 1, page_size: 20, total_items: 1, total_pages: 1 }, filter: { status: null } });
 const streak = Object.freeze({ current_streak: 1, completed_today: true, last_qualified_date: "2026-10-04", timezone: "Asia/Ho_Chi_Minh", evaluated_at: NOW });
 function srsSession({ state = "ACTIVE", completed_at = null, completed_items = 0, evidence = null } = {}) {
   return {

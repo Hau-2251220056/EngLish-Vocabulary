@@ -17,6 +17,11 @@ import {
 import { completeLearningSessionAtomically } from "./learning-session-persistence.js";
 import { captureOperationTime, deriveSessionExpiry, projectSessionLifecycle } from "./learning-session-domain.js";
 import { readStreakProjection, toSessionProjection } from "./learning-session-service.js";
+import {
+  STREAK_TIME_ZONE,
+  previousApplicationDate,
+  toApplicationDate,
+} from "./streak-domain.js";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -72,9 +77,11 @@ export function createLearningService({
       const query = validateProgressQuery(input);
       const evaluatedAt = captureNow(now);
       const skip = (query.page - 1) * query.page_size;
-      const { summaryProgress, filteredTotal, items, totalXp } =
-        await learningRepository.withConsistentRead(async (repository) => {
-          const [summaryProgress, filteredTotal, items, totalXp] = await Promise.all([
+      const applicationToday = toApplicationDate(evaluatedAt);
+      const { summaryProgress, filteredTotal, items, totalXp, streakActivityDates } =
+        await learningRepository.withConsistentRead(async (repository, transaction) => {
+          const streakRepository = createStreakRepository(transaction);
+          const [summaryProgress, filteredTotal, items, totalXp, streakActivityDates] = await Promise.all([
             repository.listProgressForSummary(userId),
             query.status
               ? repository.countProgress(userId, query.status, evaluatedAt)
@@ -86,8 +93,9 @@ export function createLearningService({
               take: query.page_size,
             }),
             repository.readUserTotalXp(userId),
+            streakRepository.listActivityDatesThrough(userId, applicationToday),
           ]);
-          return { summaryProgress, filteredTotal, items, totalXp };
+          return { summaryProgress, filteredTotal, items, totalXp, streakActivityDates };
         });
       const summary = toProgressSummary(summaryProgress, evaluatedAt);
       const totalItems = filteredTotal ?? summary.total_started;
@@ -95,6 +103,7 @@ export function createLearningService({
         evaluated_at: evaluatedAt,
         xp_level: projectXpLevel(totalXp),
         summary,
+        streak_activity_7d: projectStreakActivity(streakActivityDates, applicationToday),
         items: items.map((item) => toProgressListItem(item, evaluatedAt)),
         pagination: {
           page: query.page,
@@ -920,6 +929,33 @@ function toProgressSummary(rows, evaluatedAt) {
     learning: counts.LEARNING,
     learned: counts.LEARNED,
     needs_review: counts.NEEDS_REVIEW,
+  };
+}
+
+function projectStreakActivity(activityDates, today) {
+  if (!Array.isArray(activityDates)) {
+    throw new TypeError("activityDates must be an array.");
+  }
+  const activeDates = new Set(activityDates);
+  const coverageStartedAt = activeDates.size === 0
+    ? null
+    : [...activeDates].sort().at(0);
+  const dates = [today];
+
+  while (dates.length < 7) {
+    dates.unshift(previousApplicationDate(dates[0]));
+  }
+
+  return {
+    timezone: STREAK_TIME_ZONE,
+    days: dates.map((date) => ({
+      date,
+      status: activeDates.has(date)
+        ? "ACTIVE"
+        : coverageStartedAt !== null && date >= coverageStartedAt
+          ? "INACTIVE"
+          : "UNAVAILABLE",
+    })),
   };
 }
 
