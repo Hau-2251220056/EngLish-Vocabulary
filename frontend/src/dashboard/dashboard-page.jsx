@@ -3,17 +3,20 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import dashboardLearningIllustration from "../assets/images/banner.png";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { learningService } from "../services/learning-service.js";
 import { learningPathService } from "../services/learning-path-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { loadDiscoveryCatalog, selectDiscoveryFeaturedSets } from "../topics/discovery-catalog.js";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
+import { calculateLearningPassProgress } from "./dashboard-current-learning.js";
 import "./dashboard-page.css";
 
 const FOCUS_CLASSES = "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#0877b9]/30";
 const REVIEW_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#47750D] bg-[#518314] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#47750D] active:bg-[#3F6212] motion-reduce:transition-none ${FOCUS_CLASSES}`;
 const SUGGESTION_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#B83B0B] bg-[#C94F00] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#B83B0B] active:bg-[#9A3412] motion-reduce:transition-none ${FOCUS_CLASSES}`;
+const CONTINUE_LINK_CLASSES = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#075f95] bg-[#0877b9] px-4 py-2.5 text-sm font-extrabold text-white no-underline transition-colors duration-150 hover:bg-[#075f95] active:bg-[#064d78] motion-reduce:transition-none ${FOCUS_CLASSES}`;
 const CARD_CLASSES = "min-w-0 rounded-2xl border shadow-[0_12px_30px_rgb(15_83_115/7%)]";
 const DATA_CARD_TONES = Object.freeze({
   "learning-path": "border-blue-200 bg-[#f8fbff]",
@@ -33,6 +36,7 @@ export function DashboardPage() {
   const streak = useDashboardSource(isUser, loadCurrentStreak, "streak");
   const mySets = useDashboardSource(isUser, loadMySets, "sets");
   const learningPath = useDashboardSource(isUser, loadLearningPath, "learning-path");
+  const currentLearning = useCurrentLearningPass(isUser, learningPath);
   const review = useDashboardSource(isUser, loadReviewSummary, "review");
   const featured = useDashboardSource(isUser, loadFeaturedCatalog, "featured");
 
@@ -43,19 +47,17 @@ export function DashboardPage() {
       <DashboardIntroduction displayName={user.display_name} />
       <DashboardStatistics mySets={mySets} progress={progress} streak={streak} />
 
-      <div className="mt-8 grid min-w-0 grid-cols-2 grid-rows-[auto_1fr] items-stretch gap-x-5 gap-y-3 max-[800px]:grid-cols-1 max-[800px]:grid-rows-none">
+      <div className="mt-8 grid min-w-0 grid-cols-2 items-start gap-x-5 gap-y-3 max-[800px]:grid-cols-1">
         <h2 className="col-start-1 row-start-1 m-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30 max-[800px]:col-start-auto max-[800px]:row-start-auto" id="dashboard-next-suggestion-title" tabIndex={-1}>Gợi ý tiếp theo</h2>
         <NextSuggestionSection source={learningPath} />
+        <CurrentLearningSection pathSource={learningPath} source={currentLearning} />
+        <DashboardDataCard className={`col-start-1 ${currentLearning.recommendation ? "row-start-4" : "row-start-3"} max-[800px]:col-start-auto max-[800px]:row-start-auto`} errorMessage="Không thể tải lộ trình CEFR. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải lộ trình CEFR…" source={learningPath} title="Lộ trình CEFR" type="learning-path">
+          {(data) => <CefrPathSummary path={data} />}
+        </DashboardDataCard>
         <DashboardDataCard className="col-start-2 row-start-2 h-full max-[800px]:col-start-auto max-[800px]:row-start-auto" errorMessage="Không thể tải số từ cần ôn. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải từ cần ôn…" source={review} title="Từ cần ôn" type="review">
           {(data) => <ReviewSummary summary={data} />}
         </DashboardDataCard>
-      </div>
-
-      <div className="mt-5 grid min-w-0 grid-cols-2 items-start gap-5 max-[800px]:grid-cols-1">
-        <DashboardDataCard errorMessage="Không thể tải lộ trình CEFR. Các khu vực khác vẫn dùng được." loadingMessage="Đang tải lộ trình CEFR…" source={learningPath} title="Lộ trình CEFR" type="learning-path">
-          {(data) => <CefrPathSummary path={data} />}
-        </DashboardDataCard>
-        <FeaturedSetsSection catalogSource={featured} pathSource={learningPath} />
+        <FeaturedSetsSection catalogSource={featured} className={`col-start-2 row-start-3 ${currentLearning.recommendation ? "row-span-2" : ""} max-[800px]:col-start-auto max-[800px]:row-start-auto max-[800px]:row-span-1`} pathSource={learningPath} />
       </div>
     </section>
   );
@@ -196,6 +198,53 @@ function NextSuggestionSummary({ path }) {
   );
 }
 
+function CurrentLearningSection({ pathSource, source }) {
+  const headingRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!retryRequestedRef.current || source.status === "loading") return;
+    if (source.status === "error") retryButtonRef.current?.focus();
+    if (source.status === "success") headingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [source.status]);
+  if (!source.recommendation) return null;
+  const set = pathSource.data ? findRecommendedSet(pathSource.data, source.recommendation.set_id) : null;
+  const invalidSet = pathSource.status === "success" && !set;
+  function retry() {
+    retryRequestedRef.current = true;
+    source.retry();
+  }
+  return (
+    <section aria-labelledby="dashboard-current-learning-title" aria-busy={source.status === "loading"} className={`${CARD_CLASSES} col-start-1 row-start-3 min-w-0 border-sky-200 bg-white p-[clamp(1rem,2.5vw,1.25rem)] max-[800px]:col-start-auto max-[800px]:row-start-auto`}>
+      {source.status !== "success" || !set ? <h2 className="m-0 rounded-sm text-xs font-extrabold uppercase tracking-[0.12em] text-[#075f95]" id="dashboard-current-learning-title">Tiếp tục học</h2> : null}
+      {source.status === "loading" ? <div className="grid min-h-28 place-items-center"><LoadingIndicator label="Đang tải lượt học hiện tại…" variant="centered" /></div> : null}
+      {source.status === "error" || invalidSet ? <div className="mt-3 flex min-h-28 min-w-0 items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">{invalidSet ? "Chưa thể xác định bộ từ đang học. Hãy tải lại Dashboard." : "Không thể tải tiến độ lượt học hiện tại. Các khu vực khác vẫn dùng được."}</p>{!invalidSet ? <button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button> : null}</div></div> : null}
+      {source.status === "success" && set ? <CurrentLearningSummary headingRef={headingRef} pass={source.data} recommendation={source.recommendation} set={set} /> : null}
+    </section>
+  );
+}
+
+function CurrentLearningSummary({ headingRef, pass, recommendation, set }) {
+  const progress = calculateLearningPassProgress(pass);
+  if (!progress.isValid) return <p className="m-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800" role="alert">Tiến độ lượt học không hợp lệ. Hãy tải lại Dashboard.</p>;
+  const restartRequired = pass.can_continue === false;
+  return (
+    <div className="flex min-w-0 items-center gap-[clamp(1rem,3vw,1.5rem)] max-[560px]:items-stretch max-[560px]:flex-col">
+      <span className="grid size-24 shrink-0 place-items-center rounded-2xl border border-sky-200 bg-sky-50 text-[#0877b9] shadow-[inset_0_1px_0_rgb(255_255_255/80%)] max-[560px]:size-16 [&_svg]:size-10 max-[560px]:[&_svg]:size-7" aria-hidden="true"><BookOpen /></span>
+      <div className="min-w-0 flex-1">
+        <h2 className="m-0 rounded-sm text-xs font-extrabold uppercase tracking-[0.12em] text-[#075f95] focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-current-learning-title" ref={headingRef} tabIndex={-1}>Tiếp tục học</h2>
+        <p className="mb-0 mt-1 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{set.name}</p>
+        <div className="mt-3 flex items-center justify-between gap-3 text-sm font-bold text-slate-600"><span>{progress.studiedItems} / {progress.snapshotSize} từ đã học</span><span className="tabular-nums">{progress.percentage}%</span></div>
+        <div aria-label={`Tiến độ lượt học ${set.name}`} aria-valuemax={progress.snapshotSize} aria-valuemin={0} aria-valuenow={progress.studiedItems} className="mt-2 h-2 overflow-hidden rounded-full bg-sky-100" role="progressbar"><span className="block h-full rounded-full bg-[#0877b9]" style={{ width: `${progress.percentage}%` }} /></div>
+        <p className="mb-0 mt-2 text-xs leading-relaxed text-slate-500">Tiến độ từ các phiên học thường đã hoàn thành.</p>
+        {restartRequired ? <p className="mb-0 mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="status">Nội dung bộ từ đã thay đổi. Mở lượt học để xác nhận bắt đầu lại an toàn.</p> : null}
+      </div>
+      <Link className={`${CONTINUE_LINK_CLASSES} shrink-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: "RESUME", passId: recommendation.pass_id }}>{restartRequired ? "Mở để bắt đầu lại" : "Tiếp tục"} <ArrowRight aria-hidden="true" className="size-4" /></Link>
+    </div>
+  );
+}
+
 function CefrPathSummary({ path }) {
   const primaryLevel = getPrimaryLevel(path);
   const preservedCompletion = Boolean(path.path_completed_at) && !path.all_current_sets_complete;
@@ -220,7 +269,7 @@ function ReviewSummary({ summary }) {
   );
 }
 
-function FeaturedSetsSection({ catalogSource, pathSource }) {
+function FeaturedSetsSection({ catalogSource, className = "", pathSource }) {
   const headingRef = useRef(null);
   const retryButtonRef = useRef(null);
   const retryRequestedRef = useRef(false);
@@ -238,7 +287,7 @@ function FeaturedSetsSection({ catalogSource, pathSource }) {
     ? selectDiscoveryFeaturedSets(catalogSource.data.sets.filter((set) => set.item_count > 0))
     : [];
   return (
-    <section aria-labelledby="dashboard-featured-title" aria-busy={catalogSource.status === "loading"} className={`${CARD_CLASSES} min-w-0 border-cyan-200 bg-white p-[clamp(1rem,2.5vw,1.5rem)]`}>
+    <section aria-labelledby="dashboard-featured-title" aria-busy={catalogSource.status === "loading"} className={`${CARD_CLASSES} min-w-0 border-cyan-200 bg-white p-[clamp(1rem,2.5vw,1.5rem)] ${className}`}>
       <div className="flex min-w-0 items-center justify-between gap-4">
         <h2 className="m-0 rounded-sm text-[clamp(1.1rem,2vw,1.3rem)] font-extrabold tracking-[-0.02em] text-slate-900 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-featured-title" ref={headingRef} tabIndex={-1}>Bộ từ nổi bật</h2>
         <Link className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm font-extrabold text-[#075f95] no-underline hover:bg-sky-50 ${FOCUS_CLASSES}`} to="/topics">Khám phá <Compass className="size-4" aria-hidden="true" /></Link>
@@ -318,4 +367,38 @@ function useDashboardSource(enabled, loader, key) {
     setRetryToken((value) => value + 1);
   }
   return { ...state, key, retry };
+}
+
+function useCurrentLearningPass(enabled, pathSource) {
+  const [retryToken, setRetryToken] = useState(0);
+  const [state, setState] = useState({ data: null, key: null, status: "idle" });
+  const requestIdRef = useRef(0);
+  const recommendation = enabled && pathSource.status === "success"
+    && pathSource.data?.recommendation?.action === "RESUME"
+    ? pathSource.data.recommendation
+    : null;
+  const passId = recommendation?.pass_id ?? null;
+  const setId = recommendation?.set_id ?? null;
+  const key = passId && setId ? `${passId}:${setId}` : null;
+  useEffect(() => {
+    if (!key) return undefined;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    learningPathService.readPass(passId).then((pass) => {
+      if (requestIdRef.current !== requestId) return;
+      const progress = calculateLearningPassProgress(pass);
+      if (pass.id !== passId || pass.set_id !== setId || pass.state !== "ACTIVE" || !progress.isValid) throw new TypeError("Current Learning pass does not match the recommendation.");
+      setState({ data: pass, key, status: "success" });
+    }).catch(() => {
+      if (requestIdRef.current === requestId) setState({ data: null, key, status: "error" });
+    });
+    return () => { if (requestIdRef.current === requestId) requestIdRef.current += 1; };
+  }, [key, passId, retryToken, setId]);
+  const status = recommendation && state.key !== key ? "loading" : state.status;
+  function retry() {
+    if (!recommendation || status === "loading") return;
+    setState((current) => ({ ...current, status: "loading" }));
+    setRetryToken((value) => value + 1);
+  }
+  return { data: state.data, recommendation, retry, status };
 }

@@ -281,10 +281,13 @@ function PageFrame({ children }) {
 }
 
 function PageState({ loading = false, presentation, onExit = null, onRetry = null }) {
+  const cardClasses = loading
+    ? "w-full max-w-[30rem] rounded-2xl border border-sky-100 bg-white px-6 py-7 text-center shadow-[0_12px_28px_rgb(30_41_59/6%)]"
+    : "w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.25rem,5vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]";
   return (
     <PageFrame>
-      <section className="w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.25rem,5vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={loading ? undefined : presentation.liveRegion ?? "alert"} aria-atomic={loading ? undefined : "true"}>
-        <h1 className="text-2xl font-black text-slate-900">{presentation.heading}</h1>
+      <section className={cardClasses} role={loading ? undefined : presentation.liveRegion ?? "alert"} aria-atomic={loading ? undefined : "true"}>
+        <h1 className={`${loading ? "m-0 text-xl" : "text-2xl"} font-black text-slate-900`}>{presentation.heading}</h1>
         {loading ? <div className="mt-5"><LoadingIndicator label={presentation.description} variant="centered" /></div> : <p className="leading-relaxed text-slate-600">{presentation.description}</p>}
         {presentation.issue ? <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#b9d8f4] bg-[#f2f8fd] p-3 text-left text-sm leading-relaxed text-[#285f96]"><CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" /><div><p className="m-0 font-bold">{presentation.issue.message}</p><p className="mb-0 mt-1">{presentation.issue.recovery}</p></div></div> : null}
         <div className="mt-5 flex flex-wrap justify-center gap-3">

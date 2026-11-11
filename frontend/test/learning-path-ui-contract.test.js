@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Dashboard separates next suggestion, CEFR, review, featured Sets, and preserves ADMIN neutrality", async () => {
+test("Dashboard separates next suggestion, current learning, CEFR, review, featured Sets, and preserves ADMIN neutrality", async () => {
   const source = await readFile(new URL("../src/dashboard/dashboard-page.jsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../src/dashboard/dashboard-page.css", import.meta.url), "utf8");
   const globalStyles = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
@@ -14,7 +14,10 @@ test("Dashboard separates next suggestion, CEFR, review, featured Sets, and pres
   assert.match(source, /const suggestion = path\.next_suggestion/);
   assert.match(source, /findRecommendedSet\(path, suggestion\.set_id\)/);
   assert.match(source, /learningPathAction: suggestion\.action/);
-  assert.doesNotMatch(source, /path\.recommendation/);
+  assert.match(source, /pathSource\.data\?\.recommendation\?\.action === "RESUME"/);
+  assert.match(source, /learningPathService\.readPass\(passId\)/);
+  assert.match(source, /pass\.id !== passId \|\| pass\.set_id !== setId \|\| pass\.state !== "ACTIVE"/);
+  assert.match(source, /learningPathAction: "RESUME", passId: recommendation\.pass_id/);
   assert.match(source, /title="Lộ trình CEFR" type="learning-path"/);
   assert.match(source, /title="Từ cần ôn" type="review"/);
   assert.match(source, /loadDiscoveryCatalog/);
@@ -34,7 +37,7 @@ test("Dashboard separates next suggestion, CEFR, review, featured Sets, and pres
   assert.doesNotMatch(shell, /dashboard-scrollbar/);
   assert.match(globalStyles, /html:has\(\.authenticated-user-app\)[\s\S]*scrollbar-color: #2f86bd #edf3f6/);
   assert.doesNotMatch(styles, /dashboard-shell \.authenticated-main/);
-  assert.match(source, /grid-rows-\[auto_1fr\][\s\S]*<NextSuggestionSection[\s\S]*className="col-start-2 row-start-2 h-full/);
+  assert.match(source, /<NextSuggestionSection[\s\S]*<CurrentLearningSection[\s\S]*title="Lộ trình CEFR"[\s\S]*className="col-start-2 row-start-2 h-full[\s\S]*<FeaturedSetsSection/);
   assert.match(source, /className="col-start-1 row-start-2 min-w-0 h-full/);
   assert.match(source, /border-\[#F97316\] bg-\[#FFF3E9\]/);
   assert.match(source, /border-\[#7ED321\] bg-\[#F4FCE8\]/);
@@ -43,7 +46,11 @@ test("Dashboard separates next suggestion, CEFR, review, featured Sets, and pres
   assert.doesNotMatch(source, /#DBEAFE|#FFEDD5|#CFFAFE|#D1FAE5/);
   assert.match(source, /<span className="block text-\[0\.62em\][^>]*>\{greeting\}\{" "\}<\/span><span className="mt-1 block/);
   assert.doesNotMatch(source, /DashboardSection|ProgressSummary|MySetsSummary|Bộ từ riêng xem trước/);
-  assert.doesNotMatch(source, /Bài học hiện tại|current lesson|currentLesson/i);
+  assert.match(source, /<NextSuggestionSection[\s\S]*<CurrentLearningSection[\s\S]*title="Lộ trình CEFR"[\s\S]*title="Từ cần ôn"/);
+  assert.match(source, /Tiếp tục học/);
+  assert.match(source, /studiedItems\} \/ \{progress\.snapshotSize\} từ đã học/);
+  assert.match(source, /Tiến độ từ các phiên học thường đã hoàn thành/);
+  assert.match(source, /Mở để bắt đầu lại/);
   assert.doesNotMatch(source, /sort\(.*recommendation/s);
   assert.doesNotMatch(`${source}\n${styles}`, /purple|violet|indigo|lavender|#3b5bdb|#2946b4|#3451bd/i);
 });

@@ -158,6 +158,7 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   const lockedA2 = path.getByRole("listitem").filter({ hasText: "A2" });
   await expect(lockedA2).toContainText("đang khóa");
   await expect(path.getByText("đang khóa")).toHaveCount(4);
+  await expect(page.getByRole("region", { name: "Tiếp tục học" })).toHaveCount(0);
 });
 
 test("USER keeps RESUME separate and renders the different authoritative next suggestion", async ({ page }) => {
@@ -189,12 +190,65 @@ test("USER keeps RESUME separate and renders the different authoritative next su
       },
     },
   }));
+  await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 10,
+      studied_items: 3, remaining_items: 7, can_continue: true,
+      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
+    } },
+  }));
 
   await page.goto("/dashboard");
   const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
   await expect(nextLesson.getByText("A1 next", { exact: true })).toBeVisible();
   await expect(nextLesson).not.toContainText("A1 active");
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${nextSetId}`);
+  const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
+  await expect(currentLearning.getByText("A1 active", { exact: true })).toBeVisible();
+  await expect(currentLearning).toContainText("3 / 10 từ đã học");
+  await expect(currentLearning).toContainText("30%");
+  await expect(currentLearning.getByRole("progressbar", { name: "Tiến độ lượt học A1 active" })).toHaveAttribute("aria-valuenow", "3");
+  const continueLink = currentLearning.getByRole("link", { name: "Tiếp tục" });
+  await expect(continueLink).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  const [nextLessonBox, currentLearningBox, pathBox] = await Promise.all([
+    nextLesson.boundingBox(),
+    currentLearning.boundingBox(),
+    page.getByRole("region", { name: "Lộ trình CEFR" }).boundingBox(),
+  ]);
+  expect(currentLearningBox.y).toBeGreaterThanOrEqual(nextLessonBox.y + nextLessonBox.height + 12);
+  expect(pathBox.y).toBeGreaterThanOrEqual(currentLearningBox.y + currentLearningBox.height + 12);
+  expect(Math.abs(currentLearningBox.x - nextLessonBox.x)).toBeLessThanOrEqual(1);
+  await continueLink.click();
+  await expect(page).toHaveURL(`/learn/vocabulary-sets/${setId}`);
+  await expect.poll(() => page.evaluate(() => window.history.state?.usr?.passId)).toBe(passId);
+});
+
+test("current learning failure recovers into the safe restart path", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const setId = "10000000-0000-4000-8000-000000000011";
+  const passId = "20000000-0000-4000-8000-000000000012";
+  let passFails = true;
+  await page.route("**/api/learning-path", (route) => route.fulfill(resumePathResponse({ passId, setId, setName: "A1 restart" })));
+  await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill(passFails ? {
+    status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
+  } : {
+    status: 200,
+    json: { success: true, data: {
+      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 8,
+      studied_items: 2, remaining_items: 6, can_continue: false, restart_reason: "SNAPSHOT_CHANGED",
+      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
+    } },
+  }));
+
+  await page.goto("/dashboard");
+  const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
+  await expect(currentLearning.getByRole("alert")).toContainText("Không thể tải tiến độ lượt học hiện tại");
+  passFails = false;
+  await currentLearning.getByRole("button", { name: "Thử lại" }).click();
+  await expect(currentLearning).toContainText("Nội dung bộ từ đã thay đổi");
+  await expect(currentLearning.getByRole("link", { name: "Mở để bắt đầu lại" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(page.getByRole("heading", { name: "Tiếp tục học" })).toBeFocused();
 });
 
 test("featured Sets use real catalog order and label locked CEFR content as view-only", async ({ page }) => {
@@ -563,6 +617,30 @@ function responsiveLearningPathResponse() {
         recommendation: { action: "START", set_id: setId, pass_id: null },
         next_suggestion: { action: "START", set_id: setId, pass_id: null },
         next_suggestion_reason: null,
+        all_current_sets_complete: false,
+      },
+    },
+  };
+}
+
+function resumePathResponse({ passId, setId, setName }) {
+  return {
+    status: 200,
+    json: {
+      success: true,
+      data: {
+        evaluated_at: "2026-11-03T00:00:00.000Z",
+        highest_unlocked_level: "A1",
+        path_completed_at: null,
+        levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+          level, unlocked: index === 0, required_count: index === 0 ? 1 : 0,
+          completed_count: 0, configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+          current_complete: false,
+          incomplete_sets: index === 0 ? [{ id: setId, name: setName, created_at: "2026-11-02T00:00:00.000Z" }] : [],
+        })),
+        recommendation: { action: "RESUME", set_id: setId, pass_id: passId },
+        next_suggestion: null,
+        next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET",
         all_current_sets_complete: false,
       },
     },

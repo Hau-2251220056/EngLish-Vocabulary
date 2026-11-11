@@ -1,7 +1,8 @@
-import { Bookmark, BookOpen, ChevronRight, LoaderCircle, RotateCcw, Search, Star } from "lucide-react";
+import { Bookmark, BookOpen, ChevronRight, RotateCcw, Search, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { NativeSelect } from "../components/native-select.jsx";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
@@ -191,5 +192,6 @@ function getTopicTone(topicIdentity) {
 }
 
 function DiscoveryState({ action, message, role, status, title }) {
-  return <div className="public-topic-state" role={status ? "status" : role} aria-live={status ? "polite" : undefined}>{status ? <LoaderCircle className="size-6 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}{title ? <h2>{title}</h2> : null}<p>{message}</p>{action}</div>;
+  if (status) return <div className="public-topic-state"><LoadingIndicator label={message} variant="centered" /></div>;
+  return <div className="public-topic-state" role={role}>{title ? <h2>{title}</h2> : null}<p>{message}</p>{action}</div>;
 }

@@ -948,5 +948,11 @@ function LearningPageState({ mode, onRetry, returnTo, status }) {
     locked: ["Cấp độ CEFR chưa được mở khóa", "Bạn có thể xem chi tiết hoặc tạo bản sao riêng, nhưng chưa thể học trực tiếp bộ từ công khai này."],
     error: ["Không thể tải phiên ôn tập", "Vui lòng kiểm tra kết nối và thử lại."],
   }[status] ?? ["Không thể mở phiên ôn tập", "Vui lòng quay lại và thử lại."];
-  return <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}><section className="w-full max-w-[34rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-8 text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={loading ? undefined : "alert"}>{loading ? <><h1 className="text-2xl font-black text-slate-900">{content[0]}</h1><div className="mt-5"><LoadingIndicator label={content[1]} variant="centered" /></div></> : <><BookOpenCheck className="mx-auto size-14 rounded-2xl bg-sky-50 p-3 text-[#0877b9]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p></>}<div className="mt-6 flex justify-center gap-3">{status === "error" ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}<Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div></section></main>;
+  const frameClasses = loading
+    ? `${PAGE_CLASSES} grid min-h-[min(28rem,calc(100vh_-_9rem))] place-items-center`
+    : `${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`;
+  const cardClasses = loading
+    ? "w-full max-w-[30rem] rounded-2xl border border-sky-100 bg-white px-6 py-7 text-center shadow-[0_12px_28px_rgb(30_41_59/6%)]"
+    : "w-full max-w-[34rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-8 text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]";
+  return <main className={frameClasses}><section className={cardClasses} role={loading ? undefined : "alert"}>{loading ? <><h1 className="m-0 text-xl font-black text-slate-900">{content[0]}</h1><div className="mt-5"><LoadingIndicator label={content[1]} variant="centered" /></div></> : <><BookOpenCheck className="mx-auto size-14 rounded-2xl bg-sky-50 p-3 text-[#0877b9]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p></>}<div className="mt-6 flex justify-center gap-3">{status === "error" ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}<Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div></section></main>;
 }

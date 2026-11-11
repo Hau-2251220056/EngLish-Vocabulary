@@ -45,6 +45,7 @@ test("startup and cancellation use the shared reduced-motion loading treatment",
   assert.match(presentation, /Đang tải nội dung luyện nói\./);
   assert.match(presentation, /Đang dừng micro và âm thanh\./);
   assert.match(indicator, /motion-reduce:animate-none/);
+  assert.match(page, /max-w-\[30rem\][^"\n]*border-sky-100[^"\n]*px-6 py-7/);
 });
 
 test("focused browser coverage asserts actual active elements", () => {

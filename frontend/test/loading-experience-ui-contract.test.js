@@ -14,6 +14,8 @@ test("Learning startup and mode transitions use the shared loading language", ()
   assert.match(learning, /<LoadingIndicator label=\{pendingMode \? "Đang chuyển chế độ…" : "Đang chuẩn bị phiên học…"\} \/>/);
   assert.match(learning, /<SrsRatingControls/);
   assert.match(learning, /pendingRating=\{pendingRating\}/);
+  assert.match(learning, /max-w-\[30rem\][^"\n]*border-sky-100[^"\n]*px-6 py-7/);
+  assert.match(learning, /min-h-\[min\(28rem,calc\(100vh_-_9rem\)\)\]/);
 });
 
 test("Global Review restores focus only for keyboard retry and card transitions", () => {
@@ -30,4 +32,6 @@ test("Speaking startup and cancellation use distinct shared loading messages", (
   assert.match(speaking, /loading \? <div className="mt-5"><LoadingIndicator label=\{presentation\.description\} variant="centered" \/><\/div>/);
   assert.match(speakingPresentation, /LOADING\]: copy\("Đang chuẩn bị luyện nói", "Đang tải nội dung luyện nói\."/);
   assert.match(speakingPresentation, /CANCELLING\]: copy\("Đang dừng hoạt động", "Đang dừng micro và âm thanh\."/);
+  assert.match(speaking, /max-w-\[30rem\][^"\n]*border-sky-100[^"\n]*px-6 py-7/);
+  assert.match(speaking, /loading \? "m-0 text-xl" : "text-2xl"/);
 });

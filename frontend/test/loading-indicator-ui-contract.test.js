@@ -6,6 +6,7 @@ const indicator = await readFile(new URL("../src/components/loading-indicator.js
 const authLoading = await readFile(new URL("../src/auth/ui/authentication-loading-state.jsx", import.meta.url), "utf8");
 const routeGuards = await readFile(new URL("../src/auth/ui/route-guards.jsx", import.meta.url), "utf8");
 const discoveryLayout = await readFile(new URL("../src/topics/discovery-route-layout.jsx", import.meta.url), "utf8");
+const discoveryPage = await readFile(new URL("../src/topics/topic-list-page.jsx", import.meta.url), "utf8");
 
 test("LoadingIndicator provides compact and centered accessible pending states", () => {
   assert.match(indicator, /variant = "inline"/);
@@ -25,4 +26,12 @@ test("authentication bootstrap uses one shared Bright and Clean loading state", 
   assert.match(discoveryLayout, /import \{ AuthenticationLoadingState \} from "\.\.\/auth\/ui\/authentication-loading-state\.jsx"/);
   assert.doesNotMatch(routeGuards, /function AuthenticationLoadingState/);
   assert.doesNotMatch(discoveryLayout, /Đang kiểm tra phiên đăng nhập/);
+});
+
+test("Discovery catalog and Review Center share the sky loading indicator", async () => {
+  const reviewCenter = await readFile(new URL("../src/learning/review-center-page.jsx", import.meta.url), "utf8");
+  assert.match(discoveryPage, /import \{ LoadingIndicator \} from "\.\.\/components\/loading-indicator\.jsx"/);
+  assert.match(discoveryPage, /<LoadingIndicator label=\{message\} variant="centered" \/>/);
+  assert.doesNotMatch(discoveryPage, /LoaderCircle/);
+  assert.match(reviewCenter, /<LoadingIndicator focusRef=\{focusRef\} label="Đang tải dữ liệu ôn tập…" variant="centered" \/>/);
 });
