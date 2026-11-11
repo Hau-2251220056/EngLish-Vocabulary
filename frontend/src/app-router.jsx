@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { LoadingIndicator } from "./components/loading-indicator.jsx";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
   AdminRoute,
@@ -132,10 +133,8 @@ function lazyRoute(loadModule, exportName) {
 
 function RouteLoadingState() {
   return (
-    <main className="grid min-h-[40vh] place-items-center bg-[#f8faff] p-6" aria-busy="true">
-      <p className="m-0 text-sm font-semibold text-slate-600" role="status" aria-live="polite">
-        Đang tải trang…
-      </p>
-    </main>
+    <div className="grid min-h-40 place-items-center px-4 py-8" aria-busy="true">
+      <LoadingIndicator label="Đang tải trang…" variant="centered" />
+    </div>
   );
 }

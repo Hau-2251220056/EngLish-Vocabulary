@@ -7,6 +7,7 @@ import { NativeSelect } from "../components/native-select.jsx";
 import { notifications } from "../components/notification-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { SetDetailPagination, SetLearningActions, SetVocabularyPreviewTable } from "./set-detail-primitives.jsx";
+import { SetDetailLoadingSkeleton } from "./set-detail-loading-skeleton.jsx";
 import { paginateSetDetailItems } from "./set-detail-pagination.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "./set-metadata-presentation.jsx";
 import { useSavedVocabularySetSession } from "./saved-vocabulary-set-session.js";
@@ -107,6 +108,10 @@ function PublicVocabularySetDetailContent({ setId }) {
   const [copyError, setCopyError] = useState(null);
   const [itemsPage, setItemsPage] = useState(1);
   const [addItem, setAddItem] = useState(null);
+  const detailHeadingRef = useRef(null);
+  const loadingFocusRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
   const { beginCopy, completeCopy, failCopy, savedSetIds } = useSavedVocabularySetSession();
   const isSaved = savedSetIds.has(setId);
 
@@ -125,10 +130,24 @@ function PublicVocabularySetDetailContent({ setId }) {
     return () => { current = false; };
   }, [reloadToken, setId]);
 
+  useEffect(() => {
+    if (!retryRequestedRef.current) return;
+    if (status === "loading") loadingFocusRef.current?.focus();
+    if (status === "error") {
+      retryRequestedRef.current = false;
+      retryButtonRef.current?.focus();
+    }
+    if (status === "success") {
+      retryRequestedRef.current = false;
+      detailHeadingRef.current?.focus();
+    }
+  }, [status]);
+
   const items = useMemo(() => (set?.items ? [...set.items].sort((left, right) => left.position - right.position) : []), [set]);
   const itemPagination = useMemo(() => paginateSetDetailItems(items, itemsPage), [items, itemsPage]);
 
-  function retry() {
+  function retry(event) {
+    retryRequestedRef.current = event.detail === 0;
     setStatus("loading");
     setReloadToken((value) => value + 1);
   }
@@ -164,16 +183,16 @@ function PublicVocabularySetDetailContent({ setId }) {
         <ArrowLeft className="size-4" aria-hidden="true" />
         {set ? "Các bộ từ cùng chủ đề" : "Khám phá bộ từ"}
       </Link>
-      {status === "loading" ? <PublicState status message="Đang tải bộ từ…" /> : null}
+      {status === "loading" ? <SetDetailLoadingSkeleton focusRef={loadingFocusRef} /> : null}
       {status === "not-found" ? <PublicState role="alert" title="Không tìm thấy bộ từ" message="Bộ từ này không tồn tại hoặc không còn công khai." action={<Link to="/topics">Quay lại danh sách chủ đề</Link>} /> : null}
-      {status === "error" ? <PublicState role="alert" title="Không thể tải bộ từ" message="Vui lòng kiểm tra kết nối và thử lại." action={<button type="button" onClick={retry}>Thử lại</button>} /> : null}
+      {status === "error" ? <PublicState role="alert" title="Không thể tải bộ từ" message="Vui lòng kiểm tra kết nối và thử lại." action={<button ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button>} /> : null}
       {status === "success" && set ? (
         <article className="public-vocabulary-set-detail">
           <p className="public-topic-eyebrow !text-slate-500">Bộ từ hệ thống</p>
           <header className="set-detail-header mt-[0.15rem] flex items-start justify-between gap-6 max-[800px]:flex-col max-[800px]:items-stretch">
             <div className="min-w-0 flex-1">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><h1 className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] max-[700px]:text-[1.7rem]" id="vocabulary-set-detail-title">{set.name}</h1><SetCefrBadge cefrLevel={set.cefr_level} /></div>
+                <div className="flex flex-wrap items-center gap-2"><h1 ref={detailHeadingRef} tabIndex="-1" className="m-0 [overflow-wrap:anywhere] text-[clamp(1.75rem,2.8vw,2.05rem)] font-semibold tracking-[-0.035em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] max-[700px]:text-[1.7rem]" id="vocabulary-set-detail-title">{set.name}</h1><SetCefrBadge cefrLevel={set.cefr_level} /></div>
                 <p className="mb-0 mt-2 max-w-[42rem] text-sm leading-6 text-slate-500">{set.description || "Chưa có mô tả cho bộ từ này."}</p>
                 <Link className="mt-2 inline-flex text-sm font-semibold text-[var(--accent-primary)] no-underline focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" to={`/topics?topic=${encodeURIComponent(set.topic_id)}`}>Xem các bộ từ cùng chủ đề</Link>
               </div>
@@ -270,7 +289,7 @@ function AddPublicVocabularyDialog({ item, onClose, onSuccess, sourceSetId }) {
 }
 
 function PublicState({ action, message, role, status, title }) {
-  return <div className="public-topic-state" role={status ? "status" : role} aria-live={status ? "polite" : undefined}>{status ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : null}{title ? <h1>{title}</h1> : null}<p>{message}</p>{action}</div>;
+  return <div className="public-topic-state" role={status ? "status" : role} aria-live={status ? "polite" : undefined}>{status ? <LoaderCircle className="size-6 animate-spin text-[#0877b9] motion-reduce:animate-none" aria-hidden="true" /> : null}{title ? <h1>{title}</h1> : null}<p>{message}</p>{action}</div>;
 }
 
 function filterSets(sets, query) {

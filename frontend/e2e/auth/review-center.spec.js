@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from "@playwright/test";
-import { installAuthApiMock, publicAdmin, publicUser, responses } from "./fixtures/auth-api.js";
+import { deferredResponse, installAuthApiMock, publicAdmin, publicUser, responses } from "./fixtures/auth-api.js";
 
 const SET_ALPHA = "10000000-0000-4000-8000-000000000001";
 const SET_BETA = "10000000-0000-4000-8000-000000000002";
@@ -69,13 +69,16 @@ test("same-name Sets keep distinct identities, scope labels and destinations", a
   await expect(page.getByRole("link", { name: "Ôn tập ngay Thói quen hằng ngày — Bộ từ cá nhân" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
 });
 
-test("Review Center retries a failed summary and renders the zero-due state", async ({ page }) => {
+test("keyboard retry keeps stable loading focus and focuses restored zero-due content", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
-  let recoveryAuthorized = false;
-  await page.route("**/api/learning/review/center", (route) => {
-    if (!recoveryAuthorized) {
+  const recovery = deferredResponse();
+  let requests = 0;
+  await page.route("**/api/learning/review/center", async (route) => {
+    requests += 1;
+    if (requests === 1) {
       return route.fulfill({ status: 503, json: { success: false, error: { code: "REVIEW_CENTER_UNAVAILABLE" } } });
     }
+    await recovery.response;
     return route.fulfill({
       status: 200,
       json: { success: true, data: centerSummary({ due_count: 0, has_due_items: false, sets: [] }) },
@@ -84,11 +87,44 @@ test("Review Center retries a failed summary and renders the zero-due state", as
 
   await page.goto("/review");
   await expect(page.getByRole("alert")).toContainText("Không thể tải dữ liệu ôn tập");
-  recoveryAuthorized = true;
-  await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.getByRole("heading", { name: "Bạn đã ôn xong các từ đến hạn!" })).toBeVisible();
+  await page.getByRole("button", { name: "Thử lại" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status", { name: "Đang tải dữ liệu ôn tập…" })).toBeFocused();
+  recovery.resolve();
+  const emptyHeading = page.getByRole("heading", { name: "Bạn đã ôn xong các từ đến hạn!" });
+  await expect(emptyHeading).toBeVisible();
+  await expect(emptyHeading).toBeFocused();
   await expect(page.getByRole("link", { name: "Tiếp tục học" })).toHaveAttribute("href", "/topics");
   await expect(page.getByRole("link", { name: "Ôn tất cả" })).toHaveCount(0);
+});
+
+test("keyboard retry returns focus to the new retry button after another failure", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 503,
+    json: { success: false, error: { code: "REVIEW_CENTER_UNAVAILABLE" } },
+  }));
+
+  await page.goto("/review");
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(retry).toBeFocused();
+});
+
+test("pointer retry renders restored content without moving focus to its heading", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let recoveryAuthorized = false;
+  await page.route("**/api/learning/review/center", (route) => route.fulfill(recoveryAuthorized
+    ? { status: 200, json: { success: true, data: centerSummary() } }
+    : { status: 503, json: { success: false, error: { code: "REVIEW_CENTER_UNAVAILABLE" } } }));
+
+  await page.goto("/review");
+  recoveryAuthorized = true;
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  const restoredHeading = page.getByRole("heading", { name: "Ôn theo bộ từ" });
+  await expect(restoredHeading).toBeVisible();
+  await expect(restoredHeading).not.toBeFocused();
 });
 
 test("ADMIN cannot open the USER Review Center", async ({ page }) => {

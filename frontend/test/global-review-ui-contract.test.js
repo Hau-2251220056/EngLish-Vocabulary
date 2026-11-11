@@ -30,7 +30,7 @@ test("dedicated Set review context forces SRS without changing standard learning
   assert.match(source, /reviewContext \? "\/review"/);
   assert.match(source, /if \(reviewContext && nextMode !== "SRS"\) return/);
   assert.match(source, /const presentationStatus = mode === "SRS" && srsSessionStatus === "loading"[\s\S]*\? "loading"[\s\S]*: status/);
-  assert.match(source, /<LearningPageState status=\{presentationStatus\}/);
+  assert.match(source, /<LearningPageState mode=\{mode\} status=\{presentationStatus\}/);
   assert.match(source, /!reviewContext \? <div[\s\S]*aria-label="Chế độ ôn tập"/);
   assert.match(source, /badge=\{reviewContext \? "Ôn tập" : null\}/);
   assert.doesNotMatch(source, /badge=\{mode === "SRS"/);
@@ -47,9 +47,11 @@ test("review UI exposes explicit continuation only after fixed-snapshot completi
   assert.match(source, /setRequestToken\(\(value\) => value \+ 1\)/);
   assert.match(source, /interactionRef=\{cardButtonRef\}/);
   assert.match(source, /cardButtonRef\.current\?\.focus\(\)/);
+  assert.match(source, /cardTransitionVersion > 0 && status === "ready"/);
+  assert.match(source, /retryRequestedRef\.current = event\?\.detail === 0/);
   assert.match(source, /setCardTransitionVersion\(\(value\) => value \+ 1\)/);
   assert.match(source, /\[cardTransitionVersion, currentId, status\]/);
-  assert.doesNotMatch(source, /<h1[^>]+tabIndex=\{-1\}/);
+  assert.match(source, /ref=\{stateHeadingRef\} tabIndex=\{-1\}/);
 });
 
 test("shared Flashcard presentation remains controller-free", async () => {

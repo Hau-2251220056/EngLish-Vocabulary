@@ -28,6 +28,10 @@ export function MyVocabularySetsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
   const managementTriggerRef = useRef(null);
+  const listHeadingRef = useRef(null);
+  const listLoadingFocusRef = useRef(null);
+  const listRetryButtonRef = useRef(null);
+  const listRetryRequestedRef = useRef(false);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -42,9 +46,26 @@ export function MyVocabularySetsPage() {
     return () => { active = false; };
   }, [reload]);
 
+  useEffect(() => {
+    if (!listRetryRequestedRef.current) return;
+    if (listState === "loading") listLoadingFocusRef.current?.focus();
+    if (listState === "error") {
+      listRetryRequestedRef.current = false;
+      listRetryButtonRef.current?.focus();
+    }
+    if (listState === "ready") {
+      listRetryRequestedRef.current = false;
+      listHeadingRef.current?.focus();
+    }
+  }, [listState]);
+
   const visibleSets = useMemo(() => sortSets(filterSets(sets, query), sort), [query, sets, sort]);
 
-  function retry() { setReload((value) => value + 1); }
+  function retry(event) {
+    listRetryRequestedRef.current = event.detail === 0;
+    setListState("loading");
+    setReload((value) => value + 1);
+  }
 
   function openCreate() {
     setFeedback(null);
@@ -130,14 +151,14 @@ export function MyVocabularySetsPage() {
 
       <section className="my-vocabulary-sets-list mt-0" aria-labelledby="my-vocabulary-sets-list-title">
         <div className="my-vocabulary-sets-toolbar flex items-end justify-between gap-6 border-b border-[#e8edf5] pb-4 max-[700px]:flex-col max-[700px]:items-stretch">
-          <div><h2 className="m-0 text-[clamp(1.08rem,1.8vw,1.3rem)] font-semibold" id="my-vocabulary-sets-list-title">Danh sách bộ từ</h2>{listState === "ready" && sets.length > 0 ? <p className="mb-0 mt-1 text-[0.85rem] text-slate-500">{sets.length} bộ từ trong thư viện</p> : null}</div>
+          <div><h2 ref={listHeadingRef} tabIndex="-1" className="m-0 text-[clamp(1.08rem,1.8vw,1.3rem)] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" id="my-vocabulary-sets-list-title">Danh sách bộ từ</h2>{listState === "ready" && sets.length > 0 ? <p className="mb-0 mt-1 text-[0.85rem] text-slate-500">{sets.length} bộ từ trong thư viện</p> : null}</div>
           <div className="my-vocabulary-sets-controls flex w-full max-w-[39rem] min-w-0 items-center gap-[0.65rem] max-[700px]:max-w-none max-[700px]:flex-col max-[700px]:items-stretch">
             <label className="my-vocabulary-sets-search flex min-h-11 min-w-56 flex-1 items-center gap-2 rounded-[0.8rem] border border-slate-300 bg-white px-3 py-[0.55rem] text-slate-500 transition-[border-color,box-shadow] duration-150 focus-within:border-[var(--accent-primary)] focus-within:shadow-[0_0_0_3px_var(--accent-primary-focus)] max-[700px]:w-full max-[700px]:min-w-0"><span className="sr-only">Tìm bộ từ</span><Search className="size-5" aria-hidden="true" /><input className="w-full min-w-0 border-0 bg-transparent font-[inherit] text-[var(--text-primary)] outline-0" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm bộ từ..." autoComplete="off" /></label>
             <label className="my-vocabulary-sets-sort min-w-[12rem] max-[700px]:w-full max-[700px]:min-w-0"><span className="sr-only">Sắp xếp bộ từ</span><NativeSelect className="cursor-pointer font-bold disabled:cursor-not-allowed" value={sort} onChange={(event) => setSort(event.target.value)}><option value="server">Mặc định</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option><option value="count-asc">Số từ tăng dần</option><option value="count-desc">Số từ giảm dần</option></NativeSelect></label>
           </div>
         </div>
-        {listState === "loading" ? <MySetSkeleton /> : null}
-        {listState === "error" ? <MyState role="alert" title="Không thể tải bộ từ" message="Vui lòng thử lại." action={<button type="button" onClick={retry}>Thử lại</button>} /> : null}
+        {listState === "loading" ? <MySetSkeleton focusRef={listLoadingFocusRef} /> : null}
+        {listState === "error" ? <MyState role="alert" title="Không thể tải bộ từ" message="Vui lòng thử lại." action={<button ref={listRetryButtonRef} type="button" onClick={retry}>Thử lại</button>} /> : null}
         {listState === "ready" && sets.length === 0 ? <MyState visual title="Bạn chưa có bộ từ nào" message="Tạo bộ từ đầu tiên để xây dựng thư viện học tập của riêng bạn." action={<><button type="button" aria-label="Tạo bộ từ đầu tiên" onClick={openCreate}><Plus aria-hidden="true" />Tạo bộ từ</button><Link to="/topics">Khám phá bộ từ</Link></>} /> : null}
         {listState === "ready" && sets.length > 0 && visibleSets.length === 0 ? <MyState title="Không tìm thấy bộ từ phù hợp" message="Thử một từ khóa khác hoặc xóa nội dung tìm kiếm." action={<button type="button" onClick={() => setQuery("")}>Xóa tìm kiếm</button>} /> : null}
         {listState === "ready" && visibleSets.length > 0 ? <ul className="my-vocabulary-sets-grid mt-5 grid list-none grid-cols-3 gap-[1.1rem] p-0 max-[1000px]:grid-cols-2 max-[700px]:grid-cols-1" aria-label="Các bộ từ của tôi">{visibleSets.map((set, index) => <MySetCard key={set.id} set={set} accent={index % 3} onManage={openManagement} />)}</ul> : null}
@@ -321,8 +342,8 @@ function DeletePersonalSetDialog({ error, name, onCancel, onConfirm, pending }) 
   return <dialog ref={ref} className="m-auto w-[min(calc(100%-2rem),29rem)] max-w-none border-0 bg-transparent p-0 backdrop:bg-slate-900/50" aria-labelledby="delete-personal-set-title" aria-describedby="delete-personal-set-description" onCancel={(event) => { event.preventDefault(); if (!pending) onCancel(); }} onClick={(event) => { if (event.target === ref.current && !pending) onCancel(); }}><div className="rounded-2xl bg-white p-5 shadow-[0_24px_60px_rgb(15_23_42/30%)]"><h2 className="mt-0" id="delete-personal-set-title">Xóa bộ từ?</h2><p id="delete-personal-set-description">Bạn có chắc muốn xóa bộ từ <strong>{name}</strong> không? Từ vựng và tiến độ học không bị xóa.</p>{error ? <p role="alert" className={MODAL_ERROR_CLASSES}>{error}</p> : null}<footer className="mt-4 flex justify-end gap-[0.65rem] max-[480px]:flex-col-reverse max-[480px]:[&_button]:w-full"><button className={MODAL_BUTTON_CLASSES} type="button" onClick={onCancel} disabled={pending}>Hủy</button><button type="button" className={`${MODAL_BUTTON_CLASSES} border-red-200 text-red-700 hover:not-disabled:border-rose-300 hover:not-disabled:bg-rose-50 hover:not-disabled:text-rose-800`} onClick={() => void onConfirm()} disabled={pending} aria-busy={pending}>{pending ? "Đang xóa…" : "Xác nhận xóa"}</button></footer></div></dialog>;
 }
 
-function MySetSkeleton() {
-  return <div className="my-vocabulary-set-skeleton mt-5 grid grid-cols-3 gap-[1.1rem] max-[1000px]:grid-cols-2 max-[700px]:grid-cols-1" role="status" aria-label="Đang tải bộ từ của bạn"><span className="sr-only">Đang tải bộ từ của bạn…</span>{[0, 1, 2].map((item) => <div className="h-60 rounded-2xl border border-slate-200 bg-white px-4 pb-4 pt-26 max-[700px]:not-first:hidden [&_span]:mt-[0.65rem] [&_span]:block [&_span]:h-[0.8rem] [&_span]:animate-pulse [&_span]:rounded-full [&_span]:bg-[#e9eef6] [&_span:nth-child(2)]:w-[70%] [&_span:nth-child(3)]:w-[45%] motion-reduce:[&_span]:animate-none" key={item} aria-hidden="true"><span /><span /><span /></div>)}</div>;
+function MySetSkeleton({ focusRef }) {
+  return <div ref={focusRef} tabIndex={focusRef ? -1 : undefined} className="my-vocabulary-set-skeleton mt-5 grid grid-cols-3 gap-[1.1rem] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] max-[1000px]:grid-cols-2 max-[700px]:grid-cols-1" role="status" aria-label="Đang tải bộ từ của bạn"><span className="sr-only">Đang tải bộ từ của bạn…</span>{[0, 1, 2].map((item) => <div className="h-60 rounded-2xl border border-slate-200 bg-white px-4 pb-4 pt-26 max-[700px]:not-first:hidden [&_span]:mt-[0.65rem] [&_span]:block [&_span]:h-[0.8rem] [&_span]:animate-pulse [&_span]:rounded-full [&_span]:bg-[#e9eef6] [&_span:nth-child(2)]:w-[70%] [&_span:nth-child(3)]:w-[45%] motion-reduce:[&_span]:animate-none" key={item} aria-hidden="true"><span /><span /><span /></div>)}</div>;
 }
 
 function MyState({ action, loading, message, role, title, visual = false }) { return <div className={`my-vocabulary-set-state mt-5 grid gap-[0.7rem] rounded-2xl border border-dashed border-slate-300 bg-white p-[1.4rem] text-slate-600 ${visual ? "is-visual justify-items-center px-6 py-[clamp(2rem,6vw,4rem)] text-center" : "justify-items-start"}`} role={loading ? "status" : role} aria-live={loading ? "polite" : undefined}>{loading ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : null}{visual ? <span className="my-vocabulary-set-state-visual grid size-[4.25rem] -rotate-3 place-items-center rounded-[1.25rem] bg-[var(--accent-primary-soft)] text-[var(--accent-primary-pressed)] [&_svg]:size-8" aria-hidden="true"><FolderHeart /></span> : null}{title ? <h2 className="m-0">{title}</h2> : null}<p className="m-0">{message}</p>{action ? <div className={`my-vocabulary-set-state-actions flex flex-wrap items-center gap-[0.6rem] [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center [&_a]:justify-center [&_a]:gap-1.5 [&_a]:rounded-xl [&_a]:border [&_a]:border-slate-300 [&_a]:bg-white [&_a]:px-[0.85rem] [&_a]:py-[0.6rem] [&_a]:font-extrabold [&_a]:text-slate-700 [&_a]:no-underline [&_a]:focus-visible:outline-0 [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-[var(--accent-primary-focus)] [&_button]:inline-flex [&_button]:min-h-11 [&_button]:cursor-pointer [&_button]:items-center [&_button]:justify-center [&_button]:gap-1.5 [&_button]:rounded-xl [&_button]:border [&_button]:border-slate-300 [&_button]:bg-white [&_button]:px-[0.85rem] [&_button]:py-[0.6rem] [&_button]:font-[inherit] [&_button]:font-extrabold [&_button]:text-slate-700 [&_button]:focus-visible:outline-0 [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-[var(--accent-primary-focus)] [&_svg]:size-4 ${visual ? "[&_button]:!border-[var(--accent-primary)] [&_button]:!bg-[var(--accent-primary)] [&_button]:!text-white" : ""}`}>{action}</div> : null}</div>; }

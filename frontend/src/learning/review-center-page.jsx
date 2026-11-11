@@ -2,12 +2,12 @@ import {
   ArrowRight,
   BookOpenCheck,
   CircleCheckBig,
-  LoaderCircle,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { learningService } from "../services/learning-service.js";
 
 const ACTION_CLASSES =
@@ -20,6 +20,10 @@ const RETRY_CLASSES =
 export function ReviewCenterPage() {
   const [request, setRequest] = useState(0);
   const [state, setState] = useState({ status: "loading", summary: null });
+  const loadingFocusRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+  const successFocusRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -36,7 +40,19 @@ export function ReviewCenterPage() {
     };
   }, [request]);
 
-  const retry = () => {
+  useEffect(() => {
+    if (!retryRequestedRef.current) return;
+    if (state.status === "loading") {
+      loadingFocusRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (state.status === "error") retryButtonRef.current?.focus();
+    if (state.status === "success") successFocusRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [state.status]);
+
+  const retry = (event) => {
+    retryRequestedRef.current = event.detail === 0;
     setState({ status: "loading", summary: null });
     setRequest((value) => value + 1);
   };
@@ -47,36 +63,26 @@ export function ReviewCenterPage() {
       aria-label="Trung tâm ôn tập"
     >
       <h1 className="sr-only">Ôn tập từ vựng</h1>
-      {state.status === "loading" ? <LoadingState /> : null}
-      {state.status === "error" ? <ErrorState retry={retry} /> : null}
+      {state.status === "loading" ? <LoadingState focusRef={loadingFocusRef} /> : null}
+      {state.status === "error" ? <ErrorState retry={retry} retryButtonRef={retryButtonRef} /> : null}
       {state.status === "success" ? (
-        <ReviewSummary summary={state.summary} />
+        <ReviewSummary focusTargetRef={successFocusRef} summary={state.summary} />
       ) : null}
     </section>
   );
 }
 
-function LoadingState() {
+function LoadingState({ focusRef }) {
   return (
     <div
-      className="grid min-h-52 place-items-center rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm"
-      role="status"
-      aria-live="polite"
+      className="grid min-h-52 place-items-center rounded-3xl border border-sky-100 bg-white p-6 text-center shadow-sm"
     >
-      <div>
-        <LoaderCircle
-          className="mx-auto size-8 animate-spin text-[var(--accent-primary)] motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-        <p className="mb-0 mt-3 font-semibold text-slate-600">
-          Đang tải dữ liệu ôn tập…
-        </p>
-      </div>
+      <LoadingIndicator focusRef={focusRef} label="Đang tải dữ liệu ôn tập…" variant="centered" />
     </div>
   );
 }
 
-function ErrorState({ retry }) {
+function ErrorState({ retry, retryButtonRef }) {
   return (
     <div
       className="rounded-3xl border border-red-200 bg-red-50 p-[clamp(1.25rem,3vw,2rem)] text-red-900"
@@ -87,14 +93,14 @@ function ErrorState({ retry }) {
         Vui lòng kiểm tra kết nối và thử lại. Chúng tôi không hiển thị số liệu
         ước đoán.
       </p>
-      <button className={RETRY_CLASSES} type="button" onClick={retry}>
+      <button className={RETRY_CLASSES} ref={retryButtonRef} type="button" onClick={retry}>
         <RefreshCw className="size-4" aria-hidden="true" /> Thử lại
       </button>
     </div>
   );
 }
 
-function ReviewSummary({ summary }) {
+function ReviewSummary({ focusTargetRef, summary }) {
   const sets = summary.sets.filter(({ due_count: dueCount }) => dueCount > 0);
   return (
     <>
@@ -124,18 +130,22 @@ function ReviewSummary({ summary }) {
         </section>
       </div>
 
-      {summary.has_due_items ? <DueSetList sets={sets} /> : <EmptyState />}
+      {summary.has_due_items
+        ? <DueSetList focusTargetRef={focusTargetRef} sets={sets} />
+        : <EmptyState focusTargetRef={focusTargetRef} />}
     </>
   );
 }
 
-function DueSetList({ sets }) {
+function DueSetList({ focusTargetRef, sets }) {
   return (
     <section aria-labelledby="set-review-title">
       <div className="mb-4">
         <h2
-          className="m-0 text-2xl font-extrabold tracking-[-0.02em] text-slate-950"
+          className="m-0 rounded-sm text-2xl font-extrabold tracking-[-0.02em] text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]"
           id="set-review-title"
+          ref={focusTargetRef}
+          tabIndex={-1}
         >
           Ôn theo bộ từ
         </h2>
@@ -184,7 +194,7 @@ function DueSetCard({ set }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ focusTargetRef }) {
   return (
     <section
       className="rounded-3xl border border-emerald-200 bg-emerald-50 p-[clamp(1.5rem,4vw,2.5rem)] text-center"
@@ -195,8 +205,10 @@ function EmptyState() {
         aria-hidden="true"
       />
       <h2
-        className="mb-0 mt-4 text-2xl text-emerald-950"
+        className="mb-0 mt-4 rounded-sm text-2xl text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
         id="review-empty-title"
+        ref={focusTargetRef}
+        tabIndex={-1}
       >
         Bạn đã ôn xong các từ đến hạn!
       </h2>

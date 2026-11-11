@@ -74,12 +74,17 @@ test("dedicated Set review route forces durable SRS context without erasing stor
 });
 
 test("focuses the initial SRS card only after the authoritative session becomes active", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const calls = await installLearningMock(page, { deferSrsSession: true });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
 
   await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
     && body.mode === "SRS").length).toBe(1);
   await expect(page.getByRole("heading", { name: "Đang chuẩn bị phiên ôn tập" })).toBeVisible();
+  const loadingStatus = page.getByRole("status", { name: "Nội dung bộ từ đang được tải." });
+  await expect(loadingStatus).toBeVisible();
+  await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
+  await expect(page.getByRole("link", { name: "Quay lại bộ từ" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Không thể mở phiên ôn tập" })).toHaveCount(0);
   const cardHeading = page.getByRole("heading", { name: "word-1" });
   await expect(cardHeading).toHaveCount(0);

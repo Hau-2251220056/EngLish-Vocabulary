@@ -1,6 +1,7 @@
-import { ArrowLeft, CalendarDays, LoaderCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { TopicApiError, topicService } from "../services/topic-service.js";
 
 export function TopicDetailPage() {
@@ -48,9 +49,8 @@ function TopicDetailContent({ topicId }) {
       </Link>
 
       {status === "loading" ? (
-        <div className="public-topic-state" role="status" aria-live="polite">
-          <LoaderCircle className="size-6 animate-spin" aria-hidden="true" />
-          <p>Đang tải chủ đề…</p>
+        <div className="public-topic-state">
+          <LoadingIndicator label="Đang tải chủ đề…" variant="centered" />
         </div>
       ) : null}
       {status === "not-found" ? (

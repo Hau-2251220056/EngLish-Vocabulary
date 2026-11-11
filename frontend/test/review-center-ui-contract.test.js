@@ -46,13 +46,21 @@ test("Review Center has truthful loading, recoverable error and zero-due states"
 
 test("Review Center keeps accessible interaction and responsive conventions", () => {
   assert.match(source, /aria-label="Trung tâm ôn tập"/);
-  assert.match(source, /role="status"\s+aria-live="polite"/);
+  assert.match(source, /<LoadingIndicator focusRef=\{focusRef\} label="Đang tải dữ liệu ôn tập…" variant="centered" \/>/);
   assert.match(source, /role="alert"/);
   assert.match(source, /min-h-11/);
   assert.match(source, /focus-visible:ring-2/);
-  assert.match(source, /motion-reduce:animate-none/);
   assert.match(source, /motion-reduce:transform-none/);
   assert.match(source, /sm:max-w-\[17rem\]/);
   assert.match(source, /md:grid-cols-2/);
   assert.match(source, /\[overflow-wrap:anywhere\]/);
+});
+
+test("Review Center restores focus only after keyboard-initiated retry", () => {
+  assert.match(source, /retryRequestedRef\.current = event\.detail === 0/);
+  assert.match(source, /loadingFocusRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(source, /retryButtonRef\.current\?\.focus\(\)/);
+  assert.match(source, /successFocusRef\.current\?\.focus\(\)/);
+  assert.match(source, /tabIndex=\{-1\}/);
+  assert.match(source, /focusTargetRef/);
 });

@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Circ
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { getSpeakingPracticePresentation } from "./speaking-practice-presentation.js";
 import { SPEAKING_PRACTICE_PHASES } from "./speaking-practice-state.js";
 import { bindSpeakingPracticeVisibility, createSpeakingPracticePageSession, resolveSpeakingPracticeReturnTo } from "./speaking-practice-page-session.js";
@@ -124,7 +125,7 @@ export function SpeakingPracticePage() {
   const presentation = getSpeakingPracticePresentation(snapshot ?? { phase: SPEAKING_PRACTICE_PHASES.LOADING, controls: {} });
 
   if (!snapshot || snapshot.phase === SPEAKING_PRACTICE_PHASES.LOADING || snapshot.phase === SPEAKING_PRACTICE_PHASES.CANCELLING) {
-    return <PageState presentation={presentation} />;
+    return <PageState loading presentation={presentation} />;
   }
 
   if (!snapshot.completed && (snapshot.phase === SPEAKING_PRACTICE_PHASES.INACCESSIBLE || snapshot.phase === SPEAKING_PRACTICE_PHASES.EMPTY
@@ -279,12 +280,12 @@ function PageFrame({ children }) {
   return <main className="mx-auto grid min-h-full w-full place-items-center px-4 py-8">{children}</main>;
 }
 
-function PageState({ presentation, onExit = null, onRetry = null }) {
+function PageState({ loading = false, presentation, onExit = null, onRetry = null }) {
   return (
     <PageFrame>
-      <section className="w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.25rem,5vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={presentation.liveRegion ?? "alert"} aria-atomic="true">
+      <section className="w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.25rem,5vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={loading ? undefined : presentation.liveRegion ?? "alert"} aria-atomic={loading ? undefined : "true"}>
         <h1 className="text-2xl font-black text-slate-900">{presentation.heading}</h1>
-        <p className="leading-relaxed text-slate-600">{presentation.description}</p>
+        {loading ? <div className="mt-5"><LoadingIndicator label={presentation.description} variant="centered" /></div> : <p className="leading-relaxed text-slate-600">{presentation.description}</p>}
         {presentation.issue ? <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#b9d8f4] bg-[#f2f8fd] p-3 text-left text-sm leading-relaxed text-[#285f96]"><CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" /><div><p className="m-0 font-bold">{presentation.issue.message}</p><p className="mb-0 mt-1">{presentation.issue.recovery}</p></div></div> : null}
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           {onRetry ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}

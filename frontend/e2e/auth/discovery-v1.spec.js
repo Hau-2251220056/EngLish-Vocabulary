@@ -376,6 +376,46 @@ test("Public Detail copy shares the session saved state, locks rapid activation,
   expect(copyCalls).toBe(2);
 });
 
+test("Public Detail restores keyboard retry focus without stealing pointer focus", async ({ page }) => {
+  let detailCalls = 0;
+  let releaseKeyboardRetry;
+  let releasePointerRetry;
+  const keyboardRetryGate = new Promise((resolve) => { releaseKeyboardRetry = resolve; });
+  const pointerRetryGate = new Promise((resolve) => { releasePointerRetry = resolve; });
+  await installDiscoveryApi(page, {
+    detailHandler: async (route, setId, summary) => {
+      detailCalls += 1;
+      if (detailCalls === 1) {
+        await route.fulfill({ status: 500, json: { success: false } });
+        return;
+      }
+      if (detailCalls === 2) {
+        await keyboardRetryGate;
+        await route.fulfill({ status: 500, json: { success: false } });
+        return;
+      }
+      await pointerRetryGate;
+      await route.fulfill(ok({ ...summary, items: [] }));
+    },
+  });
+  await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.goto("/vocabulary-sets/set-airport");
+
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status", { name: "Đang tải bộ từ…" })).toBeFocused();
+  releaseKeyboardRetry();
+  await expect(retry).toBeFocused();
+
+  await retry.click();
+  await expect(page.getByRole("status", { name: "Đang tải bộ từ…" })).not.toBeFocused();
+  releasePointerRetry();
+  const heading = page.getByRole("heading", { level: 1, name: "Sân bay cơ bản" });
+  await expect(heading).toBeVisible();
+  await expect(heading).not.toBeFocused();
+});
+
 test("Public Detail same-topic links return to durable filtered Discovery without entering legacy routes", async ({ page }) => {
   const api = await installDiscoveryApi(page);
   await installDiscoveryAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });

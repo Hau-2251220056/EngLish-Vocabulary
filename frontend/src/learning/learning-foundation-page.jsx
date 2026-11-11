@@ -1,7 +1,8 @@
-import { ArrowLeft, ArrowRight, BookOpenCheck, LoaderCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpenCheck, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { LearningSessionApiError, learningSessionService } from "../services/learning-session-service.js";
 import { LearningPathApiError, learningPathService } from "../services/learning-path-service.js";
@@ -783,7 +784,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     const presentationStatus = mode === "SRS" && srsSessionStatus === "loading"
       ? "loading"
       : status;
-    return <LearningPageState status={presentationStatus} onRetry={retryLoad} returnTo={returnTo} />;
+    return <LearningPageState mode={mode} status={presentationStatus} onRetry={retryLoad} returnTo={returnTo} />;
   }
 
   const isSrsFinished = mode === "SRS" && summary.completed;
@@ -846,7 +847,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     );
   }
 
-  if (!currentCard) return <LearningPageState status="error" onRetry={retryLoad} returnTo={returnTo} />;
+  if (!currentCard) return <LearningPageState mode={mode} status="error" onRetry={retryLoad} returnTo={returnTo} />;
 
   return (
     <main className="learning-page h-full min-h-0 w-full text-[#172554]" aria-labelledby="learning-page-title">
@@ -891,7 +892,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
           meaning={primaryMeaning}
           onAudio={playFromSpeaker}
           onCardClick={handleCardClick}
-          overlay={pendingMode || (mode === "NORMAL" && normalSessionStatus === "idle") ? <div className="absolute inset-0 z-10 grid place-items-center rounded-3xl bg-white/85 text-[var(--accent-primary-pressed)] backdrop-blur-[1px]" role="status" aria-live="polite"><span className="inline-flex items-center gap-2 font-extrabold"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> {pendingMode ? "Đang chuyển chế độ…" : "Đang chuẩn bị phiên học…"}</span></div> : null}
+          overlay={pendingMode || (mode === "NORMAL" && normalSessionStatus === "idle") ? <div className="absolute inset-0 z-10 grid place-items-center rounded-3xl bg-white/85 px-4 backdrop-blur-[1px]"><LoadingIndicator label={pendingMode ? "Đang chuyển chế độ…" : "Đang chuẩn bị phiên học…"} /></div> : null}
           revealed={revealed}
         />
         <div className="mt-3 grid min-h-[3.35rem] shrink-0 place-items-center">
@@ -938,13 +939,14 @@ function formatNextReview(value) {
   }).format(new Date(value));
 }
 
-function LearningPageState({ onRetry, returnTo, status }) {
+function LearningPageState({ mode, onRetry, returnTo, status }) {
+  const loading = status === "loading";
   const content = {
-    loading: ["Đang chuẩn bị phiên ôn tập", "Nội dung bộ từ đang được tải."],
+    loading: [mode === "SRS" ? "Đang chuẩn bị phiên ôn tập" : "Đang chuẩn bị phiên học", "Nội dung bộ từ đang được tải."],
     empty: ["Bộ từ chưa có nội dung", "Hãy thêm từ vựng trước khi bắt đầu."],
     "not-found": ["Không tìm thấy bộ từ có thể học", "Bộ từ không tồn tại hoặc bạn không có quyền truy cập."],
     locked: ["Cấp độ CEFR chưa được mở khóa", "Bạn có thể xem chi tiết hoặc tạo bản sao riêng, nhưng chưa thể học trực tiếp bộ từ công khai này."],
     error: ["Không thể tải phiên ôn tập", "Vui lòng kiểm tra kết nối và thử lại."],
   }[status] ?? ["Không thể mở phiên ôn tập", "Vui lòng quay lại và thử lại."];
-  return <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}><section className="w-full max-w-[34rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-8 text-center" role={status === "loading" ? "status" : "alert"}><BookOpenCheck className="mx-auto size-14" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p><div className="flex justify-center gap-3">{status === "error" ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}<Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div></section></main>;
+  return <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}><section className="w-full max-w-[34rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-8 text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={loading ? undefined : "alert"}>{loading ? <><h1 className="text-2xl font-black text-slate-900">{content[0]}</h1><div className="mt-5"><LoadingIndicator label={content[1]} variant="centered" /></div></> : <><BookOpenCheck className="mx-auto size-14 rounded-2xl bg-sky-50 p-3 text-[#0877b9]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p></>}<div className="mt-6 flex justify-center gap-3">{status === "error" ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={onRetry}>Thử lại</button> : null}<Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>Quay lại bộ từ</Link></div></section></main>;
 }

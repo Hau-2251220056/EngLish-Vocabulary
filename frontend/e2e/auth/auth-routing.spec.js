@@ -8,11 +8,14 @@ import {
 } from "./fixtures/auth-api.js";
 
 test("initialization shows a neutral status without protected-content flash", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const pending = deferredResponse();
   await installAuthApiMock(page, { "/api/auth/me": pending.response });
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("status")).toContainText("Đang kiểm tra phiên đăng nhập…");
+  const loadingStatus = page.getByRole("status");
+  await expect(loadingStatus).toContainText("Đang kiểm tra phiên đăng nhập…");
+  await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toHaveCount(0);
   await expect(page.getByRole("navigation")).toHaveCount(0);
 
@@ -20,6 +23,20 @@ test("initialization shows a neutral status without protected-content flash", as
   await expect(page.getByRole("heading", {
     name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
   })).toBeVisible();
+});
+
+test("Discovery uses the shared authentication bootstrap without public or protected flash", async ({ page }) => {
+  const pending = deferredResponse();
+  await installAuthApiMock(page, { "/api/auth/me": pending.response });
+
+  await page.goto("/topics");
+  await expect(page.getByRole("status")).toContainText("Đang kiểm tra phiên đăng nhập…");
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toHaveCount(0);
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+
+  pending.resolve(responses.currentUser(publicUser));
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Điều hướng ứng dụng" })).toBeVisible();
 });
 
 test("Guest route table redirects without an expiration warning", async ({ page }) => {

@@ -243,7 +243,7 @@ export function AuthenticatedShell() {
               aria-busy={isLoggingOut}
             >
               {isLoggingOut ? (
-                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
               ) : (
                 <LogOut className="size-4" aria-hidden="true" />
               )}
@@ -302,7 +302,7 @@ export function AuthenticatedShell() {
         {user.role === "USER" ? (
           <div className="authenticated-sidebar-session mt-auto border-t border-[var(--border-soft)] pt-3">
             <button type="button" className="authenticated-sidebar-logout flex min-h-11 w-full cursor-pointer items-center gap-[0.55rem] rounded-xl border border-transparent bg-transparent px-[0.7rem] py-[0.55rem] text-left text-[0.86rem] font-medium text-[#5e687a] transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transition-none" onClick={handleLogout} disabled={isLoggingOut} aria-busy={isLoggingOut}>
-              {isLoggingOut ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}
+              {isLoggingOut ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}
               <span>{isLoggingOut ? "Đang đăng xuất…" : "Đăng xuất"}</span>
             </button>
             {logoutError ? <p className="authenticated-logout-error !mx-[0.35rem] !mb-0 !mt-2 !text-xs !text-red-700" role="alert">{logoutError}</p> : null}

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from "@playwright/test";
-import { installAuthApiMock, publicAdmin, publicUser, responses } from "./fixtures/auth-api.js";
+import { deferredResponse, installAuthApiMock, publicAdmin, publicUser, responses } from "./fixtures/auth-api.js";
 
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const VOCABULARY_ID = "20000000-0000-4000-8000-000000000002";
@@ -33,7 +33,8 @@ test("USER completes one fixed GLOBAL snapshot and explicitly requests continuat
   await expect(page.locator("header.authenticated-header")).toHaveCount(0);
   await expect(page.locator("aside.authenticated-sidebar")).toHaveCount(0);
   const card = page.getByRole("button", { name: /book/ });
-  await expect(card).toBeFocused();
+  await expect(card).not.toBeFocused();
+  await card.focus();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: /quyển sách/ })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -72,7 +73,8 @@ test("successful ratings refocus the flip button for changed-ID and same-ID AGAI
   });
 
   await page.goto("/review/global");
-  await expect(page.getByRole("button", { name: /alpha/ })).toBeFocused();
+  await expect(page.getByRole("button", { name: /alpha/ })).not.toBeFocused();
+  await page.getByRole("button", { name: /alpha/ }).focus();
   await page.keyboard.press("Space");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
@@ -105,7 +107,7 @@ test("restores an existing GLOBAL session without creating a replacement", async
   }));
 
   await page.goto("/review/global");
-  await expect(page.getByRole("button", { name: /book/ })).toBeFocused();
+  await expect(page.getByRole("button", { name: /book/ })).not.toBeFocused();
   expect(createCalls).toBe(0);
 });
 
@@ -189,7 +191,45 @@ test("GLOBAL operational failure remains retryable and recovers explicitly", asy
   await expect(page.getByRole("heading", { name: "Không thể mở ôn tập toàn cục" })).toBeVisible();
   recoveryAuthorized = true;
   await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(page.getByRole("button", { name: /book/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /book/ })).not.toBeFocused();
+});
+
+test("GLOBAL keyboard retry keeps loading focus and focuses the restored card", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const recovery = deferredResponse();
+  let requests = 0;
+  await page.route("**/api/learning/review/sessions", async (route) => {
+    requests += 1;
+    if (requests === 1) return route.fulfill({
+      status: 503,
+      json: { success: false, error: { code: "LEARNING_REQUEST_FAILED" } },
+    });
+    await recovery.response;
+    return route.fulfill({ status: 201, json: { success: true, data: reviewSession() } });
+  });
+
+  await page.goto("/review/global");
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status", { name: "Đang chọn tối đa 10 từ đến hạn." })).toBeFocused();
+  recovery.resolve();
   await expect(page.getByRole("button", { name: /book/ })).toBeFocused();
+});
+
+test("GLOBAL repeated keyboard failure returns focus to the new retry button", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning/review/sessions", (route) => route.fulfill({
+    status: 503,
+    json: { success: false, error: { code: "LEARNING_REQUEST_FAILED" } },
+  }));
+
+  await page.goto("/review/global");
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(retry).toBeFocused();
 });
 
 test("GLOBAL Flashcard uses a meaningful accessible name when meaning is unavailable", async ({ page }) => {
@@ -202,7 +242,9 @@ test("GLOBAL Flashcard uses a meaningful accessible name when meaning is unavail
   }));
 
   await page.goto("/review/global");
-  await expect(page.getByRole("button", { name: /book/ })).toBeFocused();
+  const card = page.getByRole("button", { name: /book/ });
+  await expect(card).not.toBeFocused();
+  await card.focus();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Chưa có nghĩa phù hợp để hiển thị." })).toBeFocused();
   await expect(page.getByRole("button", { name: /book/ })).toHaveCount(0);
@@ -224,7 +266,7 @@ for (const viewport of [
 
     await page.goto("/review/global");
     const card = page.getByRole("button", { name: /book/ });
-    await expect(card).toBeFocused();
+    await expect(card).not.toBeFocused();
     await expect(page.locator(".learning-focus-shell")).toHaveCount(1);
     await expect(page.locator("header.authenticated-header, aside.authenticated-sidebar")).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => ({
@@ -235,6 +277,7 @@ for (const viewport of [
     const cardBox = await card.boundingBox();
     expect(cardBox.x).toBeGreaterThanOrEqual(0);
     expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(viewport.width);
+    await card.focus();
     await page.keyboard.press("Space");
     await expect(page.getByRole("button", { name: /quyển sách/ })).toBeFocused();
     await expect(page.getByRole("region", { name: "Đánh giá SRS" }).getByRole("button")).toHaveCount(4);

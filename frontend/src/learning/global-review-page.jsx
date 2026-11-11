@@ -1,6 +1,7 @@
 import { BookOpenCheck, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
 import {
@@ -34,6 +35,10 @@ export function GlobalReviewPage() {
   const [pendingRating, setPendingRating] = useState(null);
   const [cardTransitionVersion, setCardTransitionVersion] = useState(0);
   const cardButtonRef = useRef(null);
+  const loadingFocusRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const retryRequestedRef = useRef(false);
+  const stateHeadingRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -70,7 +75,6 @@ export function GlobalReviewPage() {
       setSession(result.session); setCards(result.cards); setQueue(nextQueue);
       saveGlobalReviewState(storage, { session_id: result.session.id, cards: result.cards, queue: nextQueue });
       setStatus(result.session.state === "COMPLETED" ? "complete" : "ready");
-      queueMicrotask(() => cardButtonRef.current?.focus());
     }).catch((reason) => {
       if (!active) return;
       if (reason?.code === "LEARNING_SESSION_EXPIRED") setStatus("expired");
@@ -86,8 +90,20 @@ export function GlobalReviewPage() {
   const resolvedCount = session ? session.snapshot_size - new Set(queue).size : 0;
 
   useEffect(() => {
-    if (status === "ready" && currentId) queueMicrotask(() => cardButtonRef.current?.focus());
+    if (cardTransitionVersion > 0 && status === "ready" && currentId) queueMicrotask(() => cardButtonRef.current?.focus());
   }, [cardTransitionVersion, currentId, status]);
+
+  useEffect(() => {
+    if (!retryRequestedRef.current) return;
+    if (status === "loading") {
+      loadingFocusRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (status === "error") retryButtonRef.current?.focus();
+    else if (status === "ready") cardButtonRef.current?.focus();
+    else stateHeadingRef.current?.focus();
+    retryRequestedRef.current = false;
+  }, [status]);
 
   async function rate(rating) {
     if (!currentCard || !session || pendingRating) return;
@@ -111,14 +127,15 @@ export function GlobalReviewPage() {
     } finally { setPendingRating(null); }
   }
 
-  function freshReview() {
+  function freshReview(event) {
+    retryRequestedRef.current = event?.detail === 0;
     clearGlobalReviewState(browserStorage());
     setSession(null); setCards([]); setQueue([]); setRevealed(false); setError(null); setStatus("loading");
     setRequestToken((value) => value + 1);
   }
 
-  if (status !== "ready") return <ReviewState status={status} error={error} nearestFuture={nearestFuture} onRetry={freshReview} />;
-  if (!currentCard) return <ReviewState status="error" error="Phiên ôn tập không còn thẻ hợp lệ." onRetry={freshReview} />;
+  if (status !== "ready") return <ReviewState status={status} error={error} nearestFuture={nearestFuture} onRetry={freshReview} loadingFocusRef={loadingFocusRef} retryButtonRef={retryButtonRef} stateHeadingRef={stateHeadingRef} />;
+  if (!currentCard) return <ReviewState status="error" error="Phiên ôn tập không còn thẻ hợp lệ." onRetry={freshReview} loadingFocusRef={loadingFocusRef} retryButtonRef={retryButtonRef} stateHeadingRef={stateHeadingRef} />;
 
   return (
     <main className="learning-page h-full min-h-0 w-full text-[#172554]" aria-labelledby="global-review-title">
@@ -155,9 +172,9 @@ export function GlobalReviewPage() {
   );
 }
 
-function ReviewState({ status, error, nearestFuture, onRetry }) {
+function ReviewState({ status, error, loadingFocusRef, nearestFuture, onRetry, retryButtonRef, stateHeadingRef }) {
   const content = {
-    loading: ["Đang chuẩn bị ôn tập", "Backend đang chọn tối đa 10 từ đến hạn."],
+    loading: ["Đang chuẩn bị ôn tập", "Đang chọn tối đa 10 từ đến hạn."],
     complete: ["Hoàn thành phiên ôn tập", "Ảnh chụp cố định hiện tại đã được giải quyết."],
     empty: ["Bạn đã ôn tập đầy đủ", "Hiện không có từ phù hợp đến hạn."],
     future: ["Chưa có từ đến hạn", nearestFuture ? `Lần ôn gần nhất: ${formatDate(nearestFuture)}.` : "Hãy quay lại sau."],
@@ -165,9 +182,10 @@ function ReviewState({ status, error, nearestFuture, onRetry }) {
     inaccessible: ["Nội dung không còn truy cập được", "Phiên dừng an toàn và không tiết lộ nội dung đã mất quyền truy cập."],
     error: ["Không thể mở ôn tập toàn cục", error ?? "Vui lòng thử lại."],
   }[status];
+  const loading = status === "loading";
   const canContinue = status === "complete";
   const canRestart = ["expired", "inaccessible"].includes(status);
-  return <main className="mx-auto grid min-h-[calc(100vh_-_7rem)] w-full max-w-2xl place-items-center p-4"><section className="w-full rounded-3xl border border-slate-200 bg-white p-8 text-center" role={status === "loading" ? "status" : status === "error" ? "alert" : "status"}><BookOpenCheck className="mx-auto size-14 text-[var(--accent-primary)]" aria-hidden="true" /><h1>{content[0]}</h1><p>{content[1]}</p><div className="flex flex-wrap justify-center gap-3">{status === "error" ? <button className={BUTTON} type="button" onClick={onRetry}>Thử lại</button> : null}{canContinue ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}{canRestart ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Tạo phiên mới</button> : null}<Link className={BUTTON} to="/review">Trung tâm ôn tập</Link></div></section></main>;
+  return <main className="mx-auto grid min-h-[calc(100vh_-_7rem)] w-full max-w-2xl place-items-center p-4"><section className="w-full rounded-3xl border border-sky-100 bg-white p-8 text-center shadow-[0_16px_36px_rgb(30_41_59/6%)]" role={loading ? undefined : status === "error" ? "alert" : "status"}>{loading ? <><h1 className="text-2xl font-black text-slate-900">{content[0]}</h1><div className="mt-5"><LoadingIndicator focusRef={loadingFocusRef} label={content[1]} variant="centered" /></div></> : <><BookOpenCheck className="mx-auto size-14 rounded-2xl bg-sky-50 p-3 text-[#0877b9]" aria-hidden="true" /><h1 className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" ref={stateHeadingRef} tabIndex={-1}>{content[0]}</h1><p>{content[1]}</p></>}<div className="mt-6 flex flex-wrap justify-center gap-3">{status === "error" ? <button className={BUTTON} ref={retryButtonRef} type="button" onClick={onRetry}>Thử lại</button> : null}{canContinue ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}{canRestart ? <button className={BUTTON} type="button" onClick={onRetry}><RotateCcw aria-hidden="true" /> Tạo phiên mới</button> : null}<Link className={BUTTON} to="/review">Trung tâm ôn tập</Link></div></section></main>;
 }
 
 function randomUuid() { return window.crypto.randomUUID(); }

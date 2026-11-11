@@ -32,8 +32,19 @@ test("dynamic status and errors use concise atomic live regions", () => {
   assert.match(page, /showFeedback \? <FeedbackPanel announce=\{!terminalFocusPending\}/);
   assert.match(page, /className="sr-only" role=\{presentation\.liveRegion\} aria-live=\{presentation\.liveRegion === "status" \? "polite" : undefined\} aria-atomic="true"/);
   assert.match(page, /aria-labelledby="speaking-feedback-title"/);
-  assert.match(page, /role=\{presentation\.liveRegion \?\? "alert"\} aria-atomic="true"/);
+  assert.match(page, /role=\{loading \? undefined : presentation\.liveRegion \?\? "alert"\} aria-atomic=\{loading \? undefined : "true"\}/);
   assert.doesNotMatch(page, /aria-live[^\n]*presentation\.transcript/);
+});
+
+test("startup and cancellation use the shared reduced-motion loading treatment", () => {
+  const presentation = source("src/pronunciation/speaking-practice-presentation.js");
+  const indicator = source("src/components/loading-indicator.jsx");
+  assert.match(page, /snapshot\.phase === SPEAKING_PRACTICE_PHASES\.LOADING \|\| snapshot\.phase === SPEAKING_PRACTICE_PHASES\.CANCELLING/);
+  assert.match(page, /<PageState loading presentation=\{presentation\} \/>/);
+  assert.match(page, /<LoadingIndicator label=\{presentation\.description\} variant="centered" \/>/);
+  assert.match(presentation, /Đang tải nội dung luyện nói\./);
+  assert.match(presentation, /Đang dừng micro và âm thanh\./);
+  assert.match(indicator, /motion-reduce:animate-none/);
 });
 
 test("focused browser coverage asserts actual active elements", () => {

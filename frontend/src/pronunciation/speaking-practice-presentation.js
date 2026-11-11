@@ -27,7 +27,7 @@ export const SPEAKING_PRACTICE_DISCLOSURE = Object.freeze({
 });
 
 const STATE_COPY = Object.freeze({
-  [SPEAKING_PRACTICE_PHASES.LOADING]: copy("Đang chuẩn bị luyện nói", "Đang tải bộ từ và thứ tự từ vựng đã được xác thực.", "status"),
+  [SPEAKING_PRACTICE_PHASES.LOADING]: copy("Đang chuẩn bị luyện nói", "Đang tải nội dung luyện nói.", "status"),
   [SPEAKING_PRACTICE_PHASES.READY]: copy("Sẵn sàng luyện nói", "Nghe từ mẫu hoặc chủ động bắt đầu nhận diện khi bạn đã sẵn sàng."),
   [SPEAKING_PRACTICE_PHASES.DISCLOSURE]: copy("Xác nhận trước khi dùng micro", "Hãy đọc thông tin về xử lý âm thanh trước khi bắt đầu."),
   [SPEAKING_PRACTICE_PHASES.UNSUPPORTED]: copy("Trình duyệt chưa hỗ trợ nhận diện giọng nói", "Bạn vẫn có thể nghe từ mẫu và chuyển giữa các từ. Hãy thử một trình duyệt có hỗ trợ Web Speech.", "status"),
@@ -40,7 +40,7 @@ const STATE_COPY = Object.freeze({
   [SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR]: copy("Chưa thể nhận diện lúc này", "Hãy kiểm tra gợi ý bên dưới rồi thử lại.", "alert"),
   [SPEAKING_PRACTICE_PHASES.INACCESSIBLE]: copy("Không thể mở bộ từ", "Bộ từ có thể không tồn tại hoặc bạn không có quyền truy cập.", "alert"),
   [SPEAKING_PRACTICE_PHASES.EMPTY]: copy("Bộ từ chưa có nội dung", "Hãy thêm từ vựng vào bộ từ trước khi luyện nói.", "status"),
-  [SPEAKING_PRACTICE_PHASES.CANCELLING]: copy("Đang dừng hoạt động", "ELVocab đang hủy nhận diện và phát âm thanh hiện tại.", "status"),
+  [SPEAKING_PRACTICE_PHASES.CANCELLING]: copy("Đang dừng hoạt động", "Đang dừng micro và âm thanh.", "status"),
 });
 
 const COMPLETED_COPY = copy(

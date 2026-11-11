@@ -98,6 +98,7 @@ test("load error remains distinct and keyboard retry restores the list", async (
   retrying = true;
   await page.keyboard.press("Enter");
   await expect(page.getByRole("list", { name: "Các bộ từ của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Danh sách bộ từ" })).toBeFocused();
   expect(calls).toBe(callsBeforeRetry + 1);
 });
 
