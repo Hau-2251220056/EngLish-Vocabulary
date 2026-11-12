@@ -52,6 +52,11 @@ test("Dashboard separates next suggestion, current learning, CEFR, review, featu
   assert.match(source, /catalogSource\.data\?\.sets\.find\(\(\{ id \}\) => id === source\.recommendation\.set_id\)/);
   assert.match(source, /<SetCover[\s\S]*coverImageUrl=\{coverImageUrl\}[\s\S]*<DefaultSetCoverArtwork/);
   assert.match(source, /coverImageUrl=\{catalogSet\?\.cover_image_url \?\? null\}/);
+  assert.match(source, /source\.status === "success" && set \? "overflow-hidden p-0"/);
+  assert.match(source, /className="relative w-\[clamp\(6\.5rem,27%,8\.5rem\)\][^\n]*self-stretch[^\n]*overflow-hidden/);
+  assert.match(source, /imageClassName="absolute inset-0 size-full object-cover"/);
+  assert.match(source, /flex min-w-0 flex-1 flex-col justify-center px-4 py-3/);
+  assert.doesNotMatch(source, /CurrentLearningSummary[\s\S]*min-h-36/);
   assert.match(source, /CONTINUE_LINK_CLASSES = `[^`]*text-\[#075f95\][^`]*hover:text-\[#064d78\]/);
   assert.doesNotMatch(source, /CONTINUE_LINK_CLASSES = `[^`]*(?:bg-\[#0877b9\]|text-white|border-\[#075f95\])/);
   assert.doesNotMatch(source, /Tiến độ từ các phiên học thường đã hoàn thành/);

@@ -224,17 +224,24 @@ test("USER keeps RESUME separate and renders the different authoritative next su
   await expect(currentLearning).toContainText("0 / 10 từ đã học");
   await expect(currentLearning).toContainText("0%");
   await expect(currentLearning.getByRole("progressbar", { name: "Tiến độ lượt học A1 active" })).toHaveAttribute("aria-valuenow", "0");
-  await expect(currentLearning.locator('[data-cover-state="persisted"] img')).toHaveAttribute("src", coverUrl);
+  const persistedCover = currentLearning.locator('[data-cover-state="persisted"]');
+  const persistedCoverImage = persistedCover.locator("img");
+  await expect(persistedCoverImage).toHaveAttribute("src", coverUrl);
+  await expect(persistedCoverImage).toHaveCSS("object-fit", "cover");
   const continueLink = currentLearning.getByRole("link", { name: "Tiếp tục" });
   await expect(continueLink).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(continueLink).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await continueLink.focus();
   await expect(continueLink).toBeFocused();
-  const [nextLessonBox, currentLearningBox, pathBox] = await Promise.all([
+  const [nextLessonBox, currentLearningBox, coverBox, pathBox] = await Promise.all([
     nextLesson.boundingBox(),
     currentLearning.boundingBox(),
+    persistedCover.boundingBox(),
     page.getByRole("region", { name: "Lộ trình CEFR" }).boundingBox(),
   ]);
+  expect(Math.abs(coverBox.x - currentLearningBox.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(coverBox.y - currentLearningBox.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs((coverBox.y + coverBox.height) - (currentLearningBox.y + currentLearningBox.height))).toBeLessThanOrEqual(1);
   expect(currentLearningBox.y).toBeGreaterThanOrEqual(nextLessonBox.y + nextLessonBox.height + 12);
   expect(pathBox.y).toBeGreaterThanOrEqual(currentLearningBox.y + currentLearningBox.height + 12);
   expect(Math.abs(currentLearningBox.x - nextLessonBox.x)).toBeLessThanOrEqual(1);

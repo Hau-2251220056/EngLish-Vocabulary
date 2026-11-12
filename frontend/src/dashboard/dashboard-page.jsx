@@ -218,7 +218,7 @@ function CurrentLearningSection({ catalogSource, pathSource, source }) {
     source.retry();
   }
   return (
-    <section aria-labelledby="dashboard-current-learning-title" aria-busy={source.status === "loading"} className={`${CARD_CLASSES} col-start-1 row-start-3 min-w-0 border-sky-200 bg-white p-[clamp(1rem,2.5vw,1.25rem)] max-[800px]:col-start-auto max-[800px]:row-start-auto`}>
+    <section aria-labelledby="dashboard-current-learning-title" aria-busy={source.status === "loading"} className={`${CARD_CLASSES} col-start-1 row-start-3 min-w-0 border-sky-200 bg-white ${source.status === "success" && set ? "overflow-hidden p-0" : "p-[clamp(1rem,2.5vw,1.25rem)]"} max-[800px]:col-start-auto max-[800px]:row-start-auto`}>
       {source.status !== "success" || !set ? <h2 className="m-0 rounded-sm text-xs font-extrabold uppercase tracking-[0.12em] text-[#075f95]" id="dashboard-current-learning-title">Tiếp tục học</h2> : null}
       {source.status === "loading" ? <div className="grid min-h-28 place-items-center"><LoadingIndicator label="Đang tải lượt học hiện tại…" variant="centered" /></div> : null}
       {source.status === "error" || invalidSet ? <div className="mt-3 flex min-h-28 min-w-0 items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4" role="alert"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" /><div className="min-w-0"><p className="m-0 text-sm font-semibold leading-relaxed text-red-800">{invalidSet ? "Chưa thể xác định bộ từ đang học. Hãy tải lại Dashboard." : "Không thể tải tiến độ lượt học hiện tại. Các khu vực khác vẫn dùng được."}</p>{!invalidSet ? <button className={`mt-3 min-h-11 cursor-pointer rounded-lg border border-red-200 bg-white px-3 text-sm font-extrabold text-red-800 hover:bg-red-100 ${FOCUS_CLASSES}`} ref={retryButtonRef} type="button" onClick={retry}>Thử lại</button> : null}</div></div> : null}
@@ -229,24 +229,24 @@ function CurrentLearningSection({ catalogSource, pathSource, source }) {
 
 function CurrentLearningSummary({ coverImageUrl, headingRef, pass, recommendation, set }) {
   const progress = calculateLearningPassProgress(pass);
-  if (!progress.isValid) return <p className="m-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800" role="alert">Tiến độ lượt học không hợp lệ. Hãy tải lại Dashboard.</p>;
+  if (!progress.isValid) return <p className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800" role="alert">Tiến độ lượt học không hợp lệ. Hãy tải lại Dashboard.</p>;
   const restartRequired = pass.can_continue === false;
   return (
-    <div className="flex min-w-0 items-stretch gap-4 max-[560px]:gap-3">
+    <div className="flex min-w-0 items-stretch">
       <SetCover
         alt=""
-        className="relative min-h-36 w-28 shrink-0 overflow-hidden rounded-xl border border-sky-200 bg-sky-50 shadow-[inset_0_1px_0_rgb(255_255_255/80%)] max-[560px]:min-h-32 max-[560px]:w-20"
+        className="relative w-[clamp(6.5rem,27%,8.5rem)] shrink-0 self-stretch overflow-hidden bg-sky-50 max-[560px]:w-[5.5rem]"
         coverImageUrl={coverImageUrl}
         fallback={<span className="absolute inset-0 grid place-items-center text-[#0877b9] [&_svg]:size-9 max-[560px]:[&_svg]:size-7"><DefaultSetCoverArtwork /></span>}
         imageClassName="absolute inset-0 size-full object-cover"
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3 max-[560px]:px-3">
         <h2 className="m-0 rounded-sm text-xs font-extrabold uppercase tracking-[0.12em] text-[#075f95] focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-current-learning-title" ref={headingRef} tabIndex={-1}>Tiếp tục học</h2>
         <p className="mb-0 mt-1 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{set.name}</p>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm font-bold text-slate-600"><span>{progress.studiedItems} / {progress.snapshotSize} từ đã học</span><span className="tabular-nums">{progress.percentage}%</span></div>
-        <div aria-label={`Tiến độ lượt học ${set.name}`} aria-valuemax={progress.snapshotSize} aria-valuemin={0} aria-valuenow={progress.studiedItems} className="mt-2 h-2 overflow-hidden rounded-full bg-sky-100" role="progressbar"><span className="block h-full rounded-full bg-[#0877b9]" style={{ width: `${progress.percentage}%` }} /></div>
-        {restartRequired ? <p className="mb-0 mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="status">Nội dung bộ từ đã thay đổi. Mở lượt học để xác nhận bắt đầu lại an toàn.</p> : null}
-        <Link className={`${CONTINUE_LINK_CLASSES} mt-auto`} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: "RESUME", passId: recommendation.pass_id }}>Tiếp tục <ArrowRight aria-hidden="true" className="size-4" /></Link>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm font-bold text-slate-600"><span>{progress.studiedItems} / {progress.snapshotSize} từ đã học</span><span className="tabular-nums">{progress.percentage}%</span></div>
+        <div aria-label={`Tiến độ lượt học ${set.name}`} aria-valuemax={progress.snapshotSize} aria-valuemin={0} aria-valuenow={progress.studiedItems} className="mt-1.5 h-2 overflow-hidden rounded-full bg-sky-100" role="progressbar"><span className="block h-full rounded-full bg-[#0877b9]" style={{ width: `${progress.percentage}%` }} /></div>
+        {restartRequired ? <p className="mb-0 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-sm font-semibold text-amber-900" role="status">Nội dung bộ từ đã thay đổi. Mở lượt học để xác nhận bắt đầu lại an toàn.</p> : null}
+        <Link className={`${CONTINUE_LINK_CLASSES} mt-1`} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: "RESUME", passId: recommendation.pass_id }}>Tiếp tục <ArrowRight aria-hidden="true" className="size-4" /></Link>
       </div>
     </div>
   );
