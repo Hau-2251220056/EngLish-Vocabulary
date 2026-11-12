@@ -49,8 +49,13 @@ test("Dashboard separates next suggestion, current learning, CEFR, review, featu
   assert.match(source, /<NextSuggestionSection[\s\S]*<CurrentLearningSection[\s\S]*title="Lộ trình CEFR"[\s\S]*title="Từ cần ôn"/);
   assert.match(source, /Tiếp tục học/);
   assert.match(source, /studiedItems\} \/ \{progress\.snapshotSize\} từ đã học/);
-  assert.match(source, /Tiến độ từ các phiên học thường đã hoàn thành/);
-  assert.match(source, /Mở để bắt đầu lại/);
+  assert.match(source, /catalogSource\.data\?\.sets\.find\(\(\{ id \}\) => id === source\.recommendation\.set_id\)/);
+  assert.match(source, /<SetCover[\s\S]*coverImageUrl=\{coverImageUrl\}[\s\S]*<DefaultSetCoverArtwork/);
+  assert.match(source, /coverImageUrl=\{catalogSet\?\.cover_image_url \?\? null\}/);
+  assert.match(source, /CONTINUE_LINK_CLASSES = `[^`]*text-\[#075f95\][^`]*hover:text-\[#064d78\]/);
+  assert.doesNotMatch(source, /CONTINUE_LINK_CLASSES = `[^`]*(?:bg-\[#0877b9\]|text-white|border-\[#075f95\])/);
+  assert.doesNotMatch(source, /Tiến độ từ các phiên học thường đã hoàn thành/);
+  assert.doesNotMatch(source, /Mở để bắt đầu lại/);
   assert.doesNotMatch(source, /sort\(.*recommendation/s);
   assert.doesNotMatch(`${source}\n${styles}`, /purple|violet|indigo|lavender|#3b5bdb|#2946b4|#3451bd/i);
 });

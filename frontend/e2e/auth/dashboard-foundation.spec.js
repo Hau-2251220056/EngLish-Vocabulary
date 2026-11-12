@@ -166,6 +166,8 @@ test("USER keeps RESUME separate and renders the different authoritative next su
   const setId = "10000000-0000-4000-8000-000000000001";
   const passId = "20000000-0000-4000-8000-000000000002";
   const nextSetId = "10000000-0000-4000-8000-000000000003";
+  const topicId = "60000000-0000-4000-8000-000000000010";
+  const coverUrl = "https://covers.example.test/a1-active.webp";
   await page.route("**/api/learning-path", (route) => route.fulfill({
     status: 200,
     json: {
@@ -194,9 +196,22 @@ test("USER keeps RESUME separate and renders the different authoritative next su
     status: 200,
     json: { success: true, data: {
       id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 10,
-      studied_items: 3, remaining_items: 7, can_continue: true,
+      studied_items: 0, remaining_items: 10, can_continue: true,
       created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
     } },
+  }));
+  await page.route("**/api/topics", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [{ id: topicId, name: "A1", description: null }] },
+  }));
+  await page.route(`**/api/topics/${topicId}/vocabulary-sets`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [publicSet(setId, "A1 active", "A1", 10, coverUrl)] },
+  }));
+  await page.route(coverUrl, (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="320"></svg>',
   }));
 
   await page.goto("/dashboard");
@@ -206,11 +221,15 @@ test("USER keeps RESUME separate and renders the different authoritative next su
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${nextSetId}`);
   const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
   await expect(currentLearning.getByText("A1 active", { exact: true })).toBeVisible();
-  await expect(currentLearning).toContainText("3 / 10 từ đã học");
-  await expect(currentLearning).toContainText("30%");
-  await expect(currentLearning.getByRole("progressbar", { name: "Tiến độ lượt học A1 active" })).toHaveAttribute("aria-valuenow", "3");
+  await expect(currentLearning).toContainText("0 / 10 từ đã học");
+  await expect(currentLearning).toContainText("0%");
+  await expect(currentLearning.getByRole("progressbar", { name: "Tiến độ lượt học A1 active" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(currentLearning.locator('[data-cover-state="persisted"] img')).toHaveAttribute("src", coverUrl);
   const continueLink = currentLearning.getByRole("link", { name: "Tiếp tục" });
   await expect(continueLink).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(continueLink).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await continueLink.focus();
+  await expect(continueLink).toBeFocused();
   const [nextLessonBox, currentLearningBox, pathBox] = await Promise.all([
     nextLesson.boundingBox(),
     currentLearning.boundingBox(),
@@ -228,6 +247,8 @@ test("current learning failure recovers into the safe restart path", async ({ pa
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const setId = "10000000-0000-4000-8000-000000000011";
   const passId = "20000000-0000-4000-8000-000000000012";
+  const topicId = "60000000-0000-4000-8000-000000000011";
+  const coverUrl = "https://covers.example.test/broken.webp";
   let passFails = true;
   await page.route("**/api/learning-path", (route) => route.fulfill(resumePathResponse({ passId, setId, setName: "A1 restart" })));
   await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill(passFails ? {
@@ -240,6 +261,15 @@ test("current learning failure recovers into the safe restart path", async ({ pa
       created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
     } },
   }));
+  await page.route("**/api/topics", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [{ id: topicId, name: "A1", description: null }] },
+  }));
+  await page.route(`**/api/topics/${topicId}/vocabulary-sets`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: [publicSet(setId, "A1 restart", "A1", 8, coverUrl)] },
+  }));
+  await page.route(coverUrl, (route) => route.abort("failed"));
 
   await page.goto("/dashboard");
   const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
@@ -247,8 +277,43 @@ test("current learning failure recovers into the safe restart path", async ({ pa
   passFails = false;
   await currentLearning.getByRole("button", { name: "Thử lại" }).click();
   await expect(currentLearning).toContainText("Nội dung bộ từ đã thay đổi");
-  await expect(currentLearning.getByRole("link", { name: "Mở để bắt đầu lại" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  await expect(currentLearning.locator('[data-cover-state="fallback"]')).toBeVisible();
+  await expect(currentLearning.getByRole("link", { name: "Tiếp tục" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(page.getByRole("heading", { name: "Tiếp tục học" })).toBeFocused();
+});
+
+test("catalog failure keeps the backend-selected current learning action available", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const setId = "10000000-0000-4000-8000-000000000021";
+  const passId = "20000000-0000-4000-8000-000000000022";
+  await page.route("**/api/learning-path", (route) => route.fulfill(resumePathResponse({ passId, setId, setName: "A1 catalog independent" })));
+  await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 10,
+      studied_items: 0, remaining_items: 10, can_continue: true,
+      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
+    } },
+  }));
+  await page.route("**/api/topics", (route) => route.fulfill({
+    status: 500,
+    json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
+  }));
+
+  await page.goto("/dashboard");
+  const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
+  await expect(currentLearning.getByText("A1 catalog independent", { exact: true })).toBeVisible();
+  const fallbackCover = currentLearning.locator('[data-cover-state="fallback"]');
+  await expect(fallbackCover).toBeVisible();
+  await expect(currentLearning.getByRole("link", { name: "Tiếp tục" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
+  const [cardGeometry, coverBox, headingBox] = await Promise.all([
+    currentLearning.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth })),
+    fallbackCover.boundingBox(),
+    currentLearning.getByRole("heading", { name: "Tiếp tục học" }).boundingBox(),
+  ]);
+  expect(cardGeometry.scrollWidth).toBeLessThanOrEqual(cardGeometry.clientWidth);
+  expect(headingBox.x).toBeGreaterThanOrEqual(coverBox.x + coverBox.width);
 });
 
 test("featured Sets use real catalog order and label locked CEFR content as view-only", async ({ page }) => {
@@ -742,10 +807,10 @@ function deferredRoutes() {
   };
 }
 
-function publicSet(id, name, cefrLevel, itemCount) {
+function publicSet(id, name, cefrLevel, itemCount, coverImageUrl = null) {
   return {
     id, topic_id: "60000000-0000-4000-8000-000000000001", name,
     description: `${name} description`, cefr_level: cefrLevel,
-    cover_image_url: null, item_count: itemCount,
+    cover_image_url: coverImageUrl, item_count: itemCount,
   };
 }
