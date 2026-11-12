@@ -138,6 +138,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("loading state is accessible and the whole Flashcard shell flips front-back-front", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await login(page, learner);
   let releaseLoad;
   const loadGate = new Promise((resolve) => { releaseLoad = resolve; });

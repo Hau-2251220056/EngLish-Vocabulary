@@ -355,7 +355,7 @@ test("paginates ordered rows and clamps after removing the final row on the last
 
 test("shows loading, retries an operational error, and keeps not-found private", async ({ page }) => {
   const detailGate = deferred(); await install(page, populated, { detailFailures: 2, detailGate }); await page.goto(`/my/vocabulary-sets/${setId}`);
-  await expect(page.getByRole("status", { name: "Đang tải bộ từ…" })).toBeVisible(); detailGate.resolve();
+  await expect(page.getByRole("status").filter({ hasText: "Đang tải bộ từ…" })).toBeVisible(); detailGate.resolve();
   await expect(page.getByRole("heading", { name: "Không thể tải bộ từ" })).toBeVisible();
   await page.getByRole("button", { name: "Thử lại" }).focus();
   await page.keyboard.press("Enter");

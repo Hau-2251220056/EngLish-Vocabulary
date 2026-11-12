@@ -377,19 +377,18 @@ test("Public Detail copy shares the session saved state, locks rapid activation,
 });
 
 test("Public Detail restores keyboard retry focus without stealing pointer focus", async ({ page }) => {
-  let detailCalls = 0;
+  let detailPhase = "initial-error";
   let releaseKeyboardRetry;
   let releasePointerRetry;
   const keyboardRetryGate = new Promise((resolve) => { releaseKeyboardRetry = resolve; });
   const pointerRetryGate = new Promise((resolve) => { releasePointerRetry = resolve; });
   await installDiscoveryApi(page, {
     detailHandler: async (route, setId, summary) => {
-      detailCalls += 1;
-      if (detailCalls === 1) {
+      if (detailPhase === "initial-error") {
         await route.fulfill({ status: 500, json: { success: false } });
         return;
       }
-      if (detailCalls === 2) {
+      if (detailPhase === "keyboard-retry") {
         await keyboardRetryGate;
         await route.fulfill({ status: 500, json: { success: false } });
         return;
@@ -403,13 +402,15 @@ test("Public Detail restores keyboard retry focus without stealing pointer focus
 
   const retry = page.getByRole("button", { name: "Thử lại" });
   await retry.focus();
+  detailPhase = "keyboard-retry";
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status", { name: "Đang tải bộ từ…" })).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Đang tải bộ từ…" })).toBeFocused();
   releaseKeyboardRetry();
   await expect(retry).toBeFocused();
 
+  detailPhase = "pointer-retry";
   await retry.click();
-  await expect(page.getByRole("status", { name: "Đang tải bộ từ…" })).not.toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Đang tải bộ từ…" })).not.toBeFocused();
   releasePointerRetry();
   const heading = page.getByRole("heading", { level: 1, name: "Sân bay cơ bản" });
   await expect(heading).toBeVisible();

@@ -198,10 +198,9 @@ test("GLOBAL operational failure remains retryable and recovers explicitly", asy
 test("GLOBAL keyboard retry keeps loading focus and focuses the restored card", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const recovery = deferredResponse();
-  let requests = 0;
+  let requestPhase = "initial-error";
   await page.route("**/api/learning/review/sessions", async (route) => {
-    requests += 1;
-    if (requests === 1) return route.fulfill({
+    if (requestPhase === "initial-error") return route.fulfill({
       status: 503,
       json: { success: false, error: { code: "LEARNING_REQUEST_FAILED" } },
     });
@@ -212,8 +211,9 @@ test("GLOBAL keyboard retry keeps loading focus and focuses the restored card", 
   await page.goto("/review/global");
   const retry = page.getByRole("button", { name: "Thử lại" });
   await retry.focus();
+  requestPhase = "keyboard-retry";
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status", { name: "Đang chọn tối đa 10 từ đến hạn." })).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Đang chọn tối đa 10 từ đến hạn." })).toBeFocused();
   recovery.resolve();
   await expect(page.getByRole("button", { name: /book/ })).toBeFocused();
 });

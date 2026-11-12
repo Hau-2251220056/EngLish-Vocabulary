@@ -9,7 +9,7 @@ test("initial authorized load preserves user-owned focus", async ({ page }) => {
   });
   await page.goto("/pronunciation/vocabulary-sets/set-focus");
   await expect(page.getByRole("heading", { name: "Đang chuẩn bị luyện nói" })).toBeVisible();
-  const loadingStatus = page.getByRole("status", { name: "Đang tải nội dung luyện nói." });
+  const loadingStatus = page.getByRole("status").filter({ hasText: "Đang tải nội dung luyện nói." });
   await expect(loadingStatus).toBeVisible();
   await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
   await page.evaluate(() => {

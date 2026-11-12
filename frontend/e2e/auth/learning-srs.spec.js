@@ -81,7 +81,7 @@ test("focuses the initial SRS card only after the authoritative session becomes 
   await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
     && body.mode === "SRS").length).toBe(1);
   await expect(page.getByRole("heading", { name: "Đang chuẩn bị phiên ôn tập" })).toBeVisible();
-  const loadingStatus = page.getByRole("status", { name: "Nội dung bộ từ đang được tải." });
+  const loadingStatus = page.getByRole("status").filter({ hasText: "Nội dung bộ từ đang được tải." });
   await expect(loadingStatus).toBeVisible();
   await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
   await expect(page.getByRole("link", { name: "Quay lại bộ từ" })).toBeVisible();
@@ -352,7 +352,7 @@ test("learning header centers modes, uses a full-width divider and exposes resta
 });
 
 test("NORMAL arrow shortcuts respect boundaries and editable/native controls while SRS arrows never skip", async ({ page }) => {
-  await installLearningMock(page);
+  const calls = await installLearningMock(page);
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
@@ -365,6 +365,8 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByLabel("Phím tắt học")).toContainText("←Thẻ trước");
   await expect(page.getByLabel("Phím tắt học")).toContainText("→Thẻ sau");
+  await expect.poll(() => calls.sessionResponses.filter(({ mode }) => mode === "NORMAL").length).toBe(1);
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
   await page.getByRole("heading", { name: "word-1" }).press("ArrowLeft");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
   await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
@@ -655,7 +657,7 @@ async function installLearningMock(page, options = {}) {
     }
     await route.fulfill({ status: 404, json: failure("CEFR_PASS_NOT_FOUND") });
   });
-  const calls = { reads: [], events: [], sessions: [] };
+  const calls = { reads: [], events: [], sessions: [], sessionResponses: [] };
   let resolveSrsSession;
   const srsSessionReady = options.deferSrsSession
     ? new Promise((resolve) => { resolveSrsSession = resolve; })
@@ -684,6 +686,7 @@ async function installLearningMock(page, options = {}) {
       session = learningSessionProjection(body.mode, ids);
       if (body.mode === "SRS" && srsSessionReady) await srsSessionReady;
       await route.fulfill({ status: 201, json: { success: true, data: { session, replayed: false } } });
+      calls.sessionResponses.push({ mode: body.mode });
       return;
     }
     if (request.method() === "GET") {

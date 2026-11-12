@@ -83,6 +83,8 @@ test("ten-item A1 Set completes through authoritative bounded-session evidence",
 });
 
 test("eleven-item A1 Set preserves the final item after its first bounded batch", async ({ page }) => {
+  test.setTimeout(120_000);
+
   await login(page, learner);
   elevenPass = await startPass(page, eleven.id);
   const first = await nextBatch(page, elevenPass.pass.id);

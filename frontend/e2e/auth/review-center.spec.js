@@ -72,10 +72,9 @@ test("same-name Sets keep distinct identities, scope labels and destinations", a
 test("keyboard retry keeps stable loading focus and focuses restored zero-due content", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const recovery = deferredResponse();
-  let requests = 0;
+  let requestPhase = "initial-error";
   await page.route("**/api/learning/review/center", async (route) => {
-    requests += 1;
-    if (requests === 1) {
+    if (requestPhase === "initial-error") {
       return route.fulfill({ status: 503, json: { success: false, error: { code: "REVIEW_CENTER_UNAVAILABLE" } } });
     }
     await recovery.response;
@@ -88,8 +87,9 @@ test("keyboard retry keeps stable loading focus and focuses restored zero-due co
   await page.goto("/review");
   await expect(page.getByRole("alert")).toContainText("Không thể tải dữ liệu ôn tập");
   await page.getByRole("button", { name: "Thử lại" }).focus();
+  requestPhase = "keyboard-retry";
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status", { name: "Đang tải dữ liệu ôn tập…" })).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Đang tải dữ liệu ôn tập…" })).toBeFocused();
   recovery.resolve();
   const emptyHeading = page.getByRole("heading", { name: "Bạn đã ôn xong các từ đến hạn!" });
   await expect(emptyHeading).toBeVisible();
@@ -120,6 +120,7 @@ test("pointer retry renders restored content without moving focus to its heading
     : { status: 503, json: { success: false, error: { code: "REVIEW_CENTER_UNAVAILABLE" } } }));
 
   await page.goto("/review");
+  await expect(page.getByRole("alert")).toContainText("Không thể tải dữ liệu ôn tập");
   recoveryAuthorized = true;
   await page.getByRole("button", { name: "Thử lại" }).click();
   const restoredHeading = page.getByRole("heading", { name: "Ôn theo bộ từ" });
