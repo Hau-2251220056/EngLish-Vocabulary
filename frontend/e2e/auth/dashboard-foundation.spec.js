@@ -150,6 +150,7 @@ test("USER renders one backend-ordered CEFR recommendation and truthful locked l
   await expect(nextLesson.getByText("A1 starter", { exact: true })).toBeVisible();
   await expect(nextLesson.getByText("A1", { exact: true })).toBeVisible();
   await expect(nextLesson).toContainText("0 / 1 bộ đã hoàn thành");
+  await expect(nextLesson).toContainText("Sắp mở khóa A2. Hoàn thành bộ từ còn lại để tiếp tục lộ trình.");
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(path).not.toContainText("A1 starter");
   await expect(path.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
@@ -287,6 +288,71 @@ test("current learning failure recovers into the safe restart path", async ({ pa
   await expect(currentLearning.locator('[data-cover-state="fallback"]')).toBeVisible();
   await expect(currentLearning.getByRole("link", { name: "Tiếp tục" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
   await expect(page.getByRole("heading", { name: "Tiếp tục học" })).toBeFocused();
+  const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(nextLesson).toContainText("Bộ từ còn lại đang có lượt học hoặc ôn tập");
+  await expect(nextLesson).toContainText("Sắp mở khóa A2");
+  await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
+});
+
+test("multiple active unfinished Sets explain the empty suggestion without an unlock claim", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  const activeSetId = "10000000-0000-4000-8000-000000000031";
+  const otherActiveSetId = "10000000-0000-4000-8000-000000000032";
+  const passId = "20000000-0000-4000-8000-000000000033";
+  await page.route("**/api/learning-path", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      evaluated_at: "2026-11-03T00:00:00.000Z", highest_unlocked_level: "A1", path_completed_at: null,
+      levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+        level, unlocked: index === 0, required_count: index === 0 ? 2 : 0,
+        completed_count: 0, configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+        current_complete: false,
+        incomplete_sets: index === 0 ? [
+          { id: activeSetId, name: "A1 active pass", created_at: "2026-11-02T00:00:00.000Z" },
+          { id: otherActiveSetId, name: "A1 active review", created_at: "2026-11-03T00:00:00.000Z" },
+        ] : [],
+      })),
+      recommendation: { action: "RESUME", set_id: activeSetId, pass_id: passId },
+      next_suggestion: null, next_suggestion_reason: "ALL_INCOMPLETE_SETS_ACTIVE",
+      all_current_sets_complete: false,
+    } },
+  }));
+  await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      id: passId, set_id: activeSetId, state: "ACTIVE", snapshot_size: 5,
+      studied_items: 0, remaining_items: 5, can_continue: true,
+      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
+    } },
+  }));
+
+  await page.goto("/dashboard");
+  const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(nextLesson).toContainText("Những bộ từ chưa hoàn thành ở cấp độ này đang có lượt học hoặc ôn tập");
+  await expect(nextLesson).not.toContainText("Sắp mở khóa");
+  await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveCount(0);
+});
+
+test("terminal C1 completion never presents a C2 milestone", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning-path", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      evaluated_at: "2026-11-03T00:00:00.000Z", highest_unlocked_level: "C1",
+      path_completed_at: "2026-11-03T00:00:00.000Z",
+      levels: ["A1", "A2", "B1", "B2", "C1"].map((level) => ({
+        level, unlocked: true, required_count: 1, completed_count: 1,
+        configuration: "READY", current_complete: true, incomplete_sets: [],
+      })),
+      recommendation: null, next_suggestion: null,
+      next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET", all_current_sets_complete: true,
+    } },
+  }));
+
+  await page.goto("/dashboard");
+  const nextLesson = page.getByRole("region", { name: "Gợi ý tiếp theo" });
+  await expect(nextLesson).toContainText("Bạn đã hoàn thành các bộ từ hiện có trong lộ trình.");
+  await expect(nextLesson).not.toContainText("C2");
 });
 
 test("catalog failure keeps the backend-selected current learning action available", async ({ page }) => {
@@ -712,7 +778,7 @@ function resumePathResponse({ passId, setId, setName }) {
         })),
         recommendation: { action: "RESUME", set_id: setId, pass_id: passId },
         next_suggestion: null,
-        next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET",
+        next_suggestion_reason: "ALL_INCOMPLETE_SETS_ACTIVE",
         all_current_sets_complete: false,
       },
     },

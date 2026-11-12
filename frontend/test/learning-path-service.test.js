@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLearningPathService, LearningPathApiError } from "../src/services/learning-path-service.js";
+import { createLearningPathService, LearningPathApiError, requirePathProjection } from "../src/services/learning-path-service.js";
 
 const ids = {
   set: "10000000-0000-4000-8000-000000000001",
@@ -19,6 +19,34 @@ test("learning path service validates the authoritative A1-C1 projection", async
   assert.equal(value.next_suggestion.set_id, ids.set);
   assert.equal(value.next_suggestion_reason, null);
   assert.equal(client.post, undefined);
+});
+
+test("learning path projection accepts only the stable active-empty discriminator", () => {
+  const active = pathProjection();
+  active.next_suggestion = null;
+  active.next_suggestion_reason = "ALL_INCOMPLETE_SETS_ACTIVE";
+  assert.equal(requirePathProjection(active), active);
+
+  const unknown = pathProjection();
+  unknown.next_suggestion = null;
+  unknown.next_suggestion_reason = "UNKNOWN_REASON";
+  assert.throws(() => requirePathProjection(unknown), (error) => (
+    error instanceof LearningPathApiError && error.code === "INVALID_LEARNING_PATH_RESPONSE"
+  ));
+
+  const contradictory = pathProjection();
+  contradictory.next_suggestion_reason = "ALL_INCOMPLETE_SETS_ACTIVE";
+  assert.throws(() => requirePathProjection(contradictory), (error) => (
+    error instanceof LearningPathApiError && error.code === "INVALID_LEARNING_PATH_RESPONSE"
+  ));
+
+  const empty = pathProjection();
+  empty.next_suggestion = null;
+  empty.next_suggestion_reason = "ALL_INCOMPLETE_SETS_ACTIVE";
+  empty.levels[0].incomplete_sets = [];
+  assert.throws(() => requirePathProjection(empty), (error) => (
+    error instanceof LearningPathApiError && error.code === "INVALID_LEARNING_PATH_RESPONSE"
+  ));
 });
 
 test("learning path mutations submit only operation_id and preserve pass session identity", async () => {

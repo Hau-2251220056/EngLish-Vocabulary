@@ -12,6 +12,10 @@ test("Dashboard separates next suggestion, current learning, CEFR, review, featu
   assert.match(source, /path\.highest_unlocked_level/);
   assert.match(source, /Gợi ý tiếp theo/);
   assert.match(source, /const suggestion = path\.next_suggestion/);
+  assert.match(source, /path\.next_suggestion_reason === "ALL_INCOMPLETE_SETS_ACTIVE"/);
+  assert.match(source, /Sắp mở khóa \$\{nextLevel\.level\}/);
+  assert.match(source, /primaryLevel\.configuration !== "READY"/);
+  assert.match(source, /if \(!nextLevel \|\| nextLevel\.unlocked\) return null/);
   assert.match(source, /findRecommendedSet\(path, suggestion\.set_id\)/);
   assert.match(source, /learningPathAction: suggestion\.action/);
   assert.match(source, /pathSource\.data\?\.recommendation\?\.action === "RESUME"/);

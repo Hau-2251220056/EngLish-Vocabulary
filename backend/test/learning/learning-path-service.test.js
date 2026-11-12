@@ -30,6 +30,34 @@ test("next suggestion skips the RESUME-first active pass and keeps curriculum or
   assert.equal(result.next_suggestion_reason, null);
 });
 
+test("new curriculum and a later active Set keep the earliest untouched recommendation", () => {
+  const sets = [21, 22, 23].map((suffix) => (
+    setRecord("A1", `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`, false)
+  ));
+  const result = projectPath(
+    sets,
+    null,
+    [{ id: PASS_ID, set_id_snapshot: sets[2].id }],
+    NOW,
+  );
+  assert.deepEqual(result.recommendation, { action: "RESUME", set_id: sets[2].id, pass_id: PASS_ID });
+  assert.deepEqual(result.next_suggestion, { action: "START", set_id: sets[0].id, pass_id: null });
+});
+
+test("next suggestion keeps deterministic order across completed active and untouched Sets", () => {
+  const completed = setRecord("A1", "00000000-0000-4000-8000-000000000051", true);
+  const untouched = setRecord("A1", "00000000-0000-4000-8000-000000000052", false);
+  const active = setRecord("A1", "00000000-0000-4000-8000-000000000053", false);
+  const result = projectPath(
+    [completed, untouched, active],
+    null,
+    [{ id: PASS_ID, set_id_snapshot: active.id }],
+    NOW,
+  );
+  assert.deepEqual(result.recommendation, { action: "RESUME", set_id: active.id, pass_id: PASS_ID });
+  assert.deepEqual(result.next_suggestion, { action: "START", set_id: untouched.id, pass_id: null });
+});
+
 test("next suggestion excludes every authoritative SET learning and review context", () => {
   const sets = [31, 32, 33].map((suffix) => (
     setRecord("A1", `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`, false)
@@ -43,7 +71,7 @@ test("next suggestion excludes every authoritative SET learning and review conte
   assert.equal(result.next_suggestion.set_id, sets[2].id);
 });
 
-test("next suggestion reports a stable empty reason without selecting locked completed or empty Sets", () => {
+test("next suggestion reports all active when the only nonempty unfinished Set has an active pass", () => {
   const active = setRecord("A1", "00000000-0000-4000-8000-000000000041", false);
   const completed = setRecord("A1", "00000000-0000-4000-8000-000000000042", true);
   const empty = { ...setRecord("A1", "00000000-0000-4000-8000-000000000043", false), items: [] };
@@ -55,8 +83,34 @@ test("next suggestion reports a stable empty reason without selecting locked com
     NOW,
   );
   assert.equal(result.next_suggestion, null);
-  assert.equal(result.next_suggestion_reason, "NO_ELIGIBLE_NEXT_SET");
+  assert.equal(result.next_suggestion_reason, "ALL_INCOMPLETE_SETS_ACTIVE");
   assert.equal(result.levels.find(({ level }) => level === "A2").unlocked, false);
+});
+
+test("next suggestion reports all active when every unfinished Set has a pass or Set session", () => {
+  const sets = [61, 62, 63].map((suffix) => (
+    setRecord("A1", `00000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`, false)
+  ));
+  const result = projectPath(
+    sets,
+    null,
+    [{ id: PASS_ID, set_id_snapshot: sets[2].id }],
+    NOW,
+    [
+      { set_id_snapshot: sets[0].id, scope: "SET", mode: "NORMAL" },
+      { set_id_snapshot: sets[1].id, scope: "SET", mode: "SRS" },
+    ],
+  );
+  assert.equal(result.next_suggestion, null);
+  assert.equal(result.next_suggestion_reason, "ALL_INCOMPLETE_SETS_ACTIVE");
+});
+
+test("next suggestion preserves the generic reason when no nonempty unfinished Set exists", () => {
+  const completed = setRecord("A1", "00000000-0000-4000-8000-000000000071", true);
+  const empty = { ...setRecord("A1", "00000000-0000-4000-8000-000000000072", false), items: [] };
+  const result = projectPath([completed, empty], null, [], NOW);
+  assert.equal(result.next_suggestion, null);
+  assert.equal(result.next_suggestion_reason, "NO_ELIGIBLE_NEXT_SET");
 });
 
 test("projectPath preserves terminal entitlement without claiming current completion", () => {
@@ -68,6 +122,17 @@ test("projectPath preserves terminal entitlement without claiming current comple
   assert.equal(result.path_completed_at, completedAt);
   assert.equal(result.all_current_sets_complete, false);
   assert.equal(result.recommendation.set_id, curriculum[4].id);
+});
+
+test("completed C1 remains terminal and never invents a C2 suggestion", () => {
+  const curriculum = ["A1", "A2", "B1", "B2", "C1"].map((level, index) => (
+    setRecord(level, `00000000-0000-4000-8000-00000000008${index}`, true)
+  ));
+  const result = projectPath(curriculum, { highest_unlocked_level: "C1", path_completed_at: NOW }, [], NOW);
+  assert.equal(result.recommendation, null);
+  assert.equal(result.next_suggestion, null);
+  assert.equal(result.next_suggestion_reason, "NO_ELIGIBLE_NEXT_SET");
+  assert.equal(result.levels.some(({ level }) => level === "C2"), false);
 });
 
 test("full pass partitions more than ten items and accepts only completed reveal evidence", async () => {

@@ -2034,9 +2034,11 @@ All endpoints below use the existing `/api` base, success envelope `{ "success":
 
 ### 75.1 Learning Path read
 
-`GET /api/learning-path` is side-effect-free. Its data contains `evaluated_at`, `highest_unlocked_level`, nullable `path_completed_at`, `all_current_sets_complete`, exactly A1–C1 `levels`, and nullable `recommendation`.
+`GET /api/learning-path` is side-effect-free. Its data contains `evaluated_at`, `highest_unlocked_level`, nullable `path_completed_at`, `all_current_sets_complete`, exactly A1–C1 `levels`, nullable `recommendation`, nullable `next_suggestion`, and nullable `next_suggestion_reason`.
 
 Each level has `level`, `unlocked`, `required_count`, `completed_count`, `configuration` (`READY`, `NO_REQUIRED_SETS`, or `EMPTY_REQUIRED_SET`), `current_complete`, and ordered `incomplete_sets` summaries (`id`, `name`, `created_at`). A recommendation is `{ action: "START" | "RESUME", set_id, pass_id }`; START has null `pass_id`, while RESUME has an owned pass UUID. The highest unlocked level, active-pass priority, and `created_at` then Set ID order are Backend-owned.
+
+`next_suggestion` is either null or `{ action: "START", set_id, pass_id: null }` for the first ordered nonempty unfinished Set at the highest unlocked level that has no active CEFR pass and no unexpired active Set-scoped NORMAL/SRS session. When a suggestion exists, `next_suggestion_reason` is null. When none exists, the reason is `ALL_INCOMPLETE_SETS_ACTIVE` only if at least one nonempty unfinished Set exists and every such Set is active; all other empty/configuration/completion cases use `NO_ELIGIBLE_NEXT_SET`.
 
 ### 75.2 Full-pass lifecycle
 

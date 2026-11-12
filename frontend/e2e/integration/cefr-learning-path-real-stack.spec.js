@@ -124,6 +124,11 @@ test("eleven-item A1 Set resumes after reload, completes its final item, and unl
   await finishPass(page, elevenPass.pass.id);
   const projection = await api(page, "get", "/api/learning-path");
   expect(projection.highest_unlocked_level).toBe("A2");
+  const laterA1 = await systemSet("03 later a1", "A1", 1);
+  const afterCurriculumAddition = await api(page, "get", "/api/learning-path");
+  expect(afterCurriculumAddition.highest_unlocked_level).toBe("A2");
+  expect(level(afterCurriculumAddition, "A1").incomplete_sets.map(({ id }) => id)).toContain(laterA1.id);
+  expect(afterCurriculumAddition.next_suggestion).toMatchObject({ action: "START", set_id: a2.id, pass_id: null });
 });
 
 test("foreign USER cannot read or mutate another USER's pass or bounded session", async ({ page }) => {

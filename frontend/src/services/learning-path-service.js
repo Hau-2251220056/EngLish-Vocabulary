@@ -5,6 +5,7 @@ const PATH_ENDPOINT = "/api/learning-path";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LEVELS = ["A1", "A2", "B1", "B2", "C1"];
 const PASS_STATES = new Set(["ACTIVE", "INVALIDATED", "COMPLETED"]);
+const NEXT_SUGGESTION_REASONS = new Set(["NO_ELIGIBLE_NEXT_SET", "ALL_INCOMPLETE_SETS_ACTIVE"]);
 
 export class LearningPathApiError extends Error {
   constructor({ kind, code, message, status }) {
@@ -74,8 +75,8 @@ export function requirePathProjection(value) {
     || !value.levels.every((entry, index) => isLevel(entry, LEVELS[index]))
     || !(value.recommendation === null || isRecommendation(value.recommendation))
     || !(value.next_suggestion === null || isNextSuggestion(value.next_suggestion))
-    || !(value.next_suggestion_reason === null || value.next_suggestion_reason === "NO_ELIGIBLE_NEXT_SET")
-    || (value.next_suggestion === null) !== (value.next_suggestion_reason === "NO_ELIGIBLE_NEXT_SET")) {
+    || !(value.next_suggestion_reason === null || NEXT_SUGGESTION_REASONS.has(value.next_suggestion_reason))
+    || (value.next_suggestion === null) !== (value.next_suggestion_reason !== null)) {
     throw invalidResponse();
   }
   const incompleteSetIds = new Set(value.levels.flatMap((level) => (
@@ -84,6 +85,9 @@ export function requirePathProjection(value) {
   if (value.next_suggestion && !incompleteSetIds.has(value.next_suggestion.set_id)) {
     throw invalidResponse();
   }
+  const primaryLevel = value.levels.find(({ level }) => level === value.highest_unlocked_level);
+  if (value.next_suggestion_reason === "ALL_INCOMPLETE_SETS_ACTIVE"
+    && primaryLevel.incomplete_sets.length === 0) throw invalidResponse();
   return value;
 }
 

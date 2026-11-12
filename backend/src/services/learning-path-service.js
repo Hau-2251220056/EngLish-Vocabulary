@@ -213,6 +213,8 @@ export function projectPath(curriculum, state, activePasses, evaluatedAt, active
     ...activeSetContexts.map((context) => context.set_id_snapshot),
   ]);
   const nextSuggestion = primary.incomplete_sets.find((set) => !activeSetIds.has(set.id));
+  const allIncompleteSetsActive = primary.incomplete_sets.length > 0
+    && primary.incomplete_sets.every((set) => activeSetIds.has(set.id));
   return {
     evaluated_at: evaluatedAt,
     highest_unlocked_level: highest,
@@ -224,7 +226,9 @@ export function projectPath(curriculum, state, activePasses, evaluatedAt, active
     next_suggestion: nextSuggestion
       ? { action: "START", set_id: nextSuggestion.id, pass_id: null }
       : null,
-    next_suggestion_reason: nextSuggestion ? null : "NO_ELIGIBLE_NEXT_SET",
+    next_suggestion_reason: nextSuggestion
+      ? null
+      : allIncompleteSetsActive ? "ALL_INCOMPLETE_SETS_ACTIVE" : "NO_ELIGIBLE_NEXT_SET",
     all_current_sets_complete: levels.every((level) => level.current_complete),
   };
 }

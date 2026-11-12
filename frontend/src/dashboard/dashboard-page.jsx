@@ -187,13 +187,21 @@ function NextSuggestionSummary({ path }) {
   const suggestion = path.next_suggestion;
   const suggestedSet = suggestion ? findRecommendedSet(path, suggestion.set_id) : null;
   const configurationMessage = getConfigurationMessage(primaryLevel);
+  const milestoneMessage = getNextLevelMilestone(path, primaryLevel);
   if (!suggestion || !suggestedSet) {
-    const message = path.all_current_sets_complete ? "Bạn đã hoàn thành các bộ từ hiện có trong lộ trình." : configurationMessage ?? "Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.";
-    return <div className="flex h-full min-w-0 items-start gap-4 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p></div></div>;
+    const allIncompleteSetsActive = path.next_suggestion_reason === "ALL_INCOMPLETE_SETS_ACTIVE";
+    const message = allIncompleteSetsActive
+      ? primaryLevel.incomplete_sets.length === 1
+        ? "Bộ từ còn lại đang có lượt học hoặc ôn tập. Hãy tiếp tục hoạt động hiện tại thay vì bắt đầu một lượt trùng lặp."
+        : "Những bộ từ chưa hoàn thành ở cấp độ này đang có lượt học hoặc ôn tập. Hãy tiếp tục các hoạt động hiện tại trước khi chọn gợi ý mới."
+      : path.all_current_sets_complete
+        ? "Bạn đã hoàn thành các bộ từ hiện có trong lộ trình."
+        : configurationMessage ?? "Hiện chưa có bộ từ phù hợp để đề xuất ở cấp độ này.";
+    return <div className="flex h-full min-w-0 items-start gap-4 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-5" role="status"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0"><p className="m-0 font-extrabold text-slate-900">Chưa có gợi ý tiếp theo</p><p className="mb-0 mt-1 text-sm leading-relaxed text-slate-600">{message}</p>{milestoneMessage ? <p className="mb-0 mt-2 text-sm font-bold leading-relaxed text-[#9A3412]">{milestoneMessage}</p> : null}</div></div>;
   }
   return (
     <div className="flex h-full min-w-0 flex-wrap items-center justify-between gap-5 rounded-2xl border border-[#F97316] bg-[#FFF3E9] p-[clamp(1rem,2.5vw,1.25rem)] shadow-[0_10px_24px_rgb(180_83_9/7%)] max-[560px]:items-stretch max-[560px]:flex-col max-[560px]:flex-nowrap">
-      <div className="flex min-w-0 flex-1 basis-64 items-start gap-3 max-[560px]:basis-auto"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0 flex-1"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-[#F97316] bg-white/70 px-3 text-[#9A3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div></div></div>
+      <div className="flex min-w-0 flex-1 basis-64 items-start gap-3 max-[560px]:basis-auto"><span className="grid size-11 shrink-0 place-items-center rounded-xl border border-[#F97316] bg-white/75 text-[#F97316] shadow-sm [&_svg]:size-5" aria-hidden="true"><BookOpenCheck /></span><div className="min-w-0 flex-1"><p className="m-0 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{suggestedSet.name}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600"><span className="inline-flex min-h-8 items-center rounded-full border border-[#F97316] bg-white/70 px-3 text-[#9A3412]">{suggestedSet.level}</span>{primaryLevel ? <span>{primaryLevel.completed_count} / {primaryLevel.required_count} bộ đã hoàn thành</span> : null}</div>{milestoneMessage ? <p className="mb-0 mt-2 text-sm font-bold leading-relaxed text-[#9A3412]">{milestoneMessage}</p> : null}</div></div>
       <Link className={`${SUGGESTION_LINK_CLASSES} ml-auto shrink-0 max-[560px]:ml-0 max-[560px]:w-full`} to={`/learn/vocabulary-sets/${suggestion.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: suggestion.action, passId: suggestion.pass_id }}>Bắt đầu học <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
@@ -349,6 +357,15 @@ function DashboardAdminLanding({ displayName }) {
 
 function getPrimaryLevel(path) { return path.levels.find(({ level }) => level === path.highest_unlocked_level); }
 function findRecommendedSet(path, setId) { return path.levels.flatMap(({ incomplete_sets: sets, level }) => sets.map((set) => ({ ...set, level }))).find(({ id }) => id === setId) ?? null; }
+function getNextLevelMilestone(path, primaryLevel) {
+  if (!primaryLevel || primaryLevel.configuration !== "READY"
+    || primaryLevel.required_count - primaryLevel.completed_count !== 1
+    || primaryLevel.incomplete_sets.length !== 1) return null;
+  const primaryIndex = path.levels.findIndex(({ level }) => level === primaryLevel.level);
+  const nextLevel = path.levels[primaryIndex + 1];
+  if (!nextLevel || nextLevel.unlocked) return null;
+  return `Sắp mở khóa ${nextLevel.level}. Hoàn thành bộ từ còn lại để tiếp tục lộ trình.`;
+}
 function getConfigurationMessage(primaryLevel) {
   if (primaryLevel?.configuration === "NO_REQUIRED_SETS") return "Cấp độ này chưa có bộ từ bắt buộc. Hệ thống chưa thể mở khóa cấp tiếp theo.";
   if (primaryLevel?.configuration === "EMPTY_REQUIRED_SET") return "Có bộ từ bắt buộc chưa có nội dung. Hệ thống chưa thể đề xuất lượt học an toàn.";
