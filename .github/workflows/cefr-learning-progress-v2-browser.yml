@@ -167,9 +167,47 @@ jobs:
           const result = spawnSync(
             process.execPath,
             ['node_modules/prisma/build/index.js', 'db', 'execute', '--stdin'],
-            { cwd: process.cwd(), env: environment, input: sql, encoding: 'utf8', stdio: ['pipe', 'ignore', 'ignore'] },
+            { cwd: process.cwd(), env: environment, input: sql, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
           );
-          if (result.status !== 0) throw new Error('Job-owned PostgreSQL identity verification failed.');
+          if (result.status !== 0 || result.error || result.signal) {
+            const category = result.error
+              ? 'spawn-error'
+              : result.signal
+                ? 'terminated-by-signal'
+                : 'nonzero-exit';
+            const sanitize = (value) => {
+              let output = String(value ?? '')
+                .replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, '')
+                .replace(/\u001b\][\s\S]*$/g, '')
+                .replace(/\u001b[P^_X][\s\S]*?\u001b\\/g, '')
+                .replace(/\u001b[P^_X][\s\S]*$/g, '')
+                .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*?(?:\u009c|\u001b\\)/g, '')
+                .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*$/g, '')
+                .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+                .replace(/\u009b[0-?]*[ -/]*[@-~]/g, '')
+                .replace(/\u001b[ -/]*[0-~]/g, '')
+                .replace(/\u001b/g, '')
+                .replace(/\r\n?/g, '\n')
+                .replace(/[\u2028\u2029]/g, '\n')
+                .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
+              for (const url of [environment.TEST_DATABASE_URL, environment.DATABASE_URL]) {
+                if (url) output = output.split(url).join('<redacted-database-url>');
+              }
+              output = output
+                .replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '<redacted-postgresql-url>')
+                .replace(/\b(password|passwd|pwd)\s*[=:]\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s,;]+)/gi, '$1=<redacted>');
+              const limit = 4096;
+              const formatted = output.split('\n').map((line) => `| ${line}`).join('\n');
+              if (formatted.length <= limit) return formatted;
+              const header = `[truncated to final ${limit} characters]\n`;
+              return `${header}| ${formatted.slice(-(limit - header.length - 2))}`;
+            };
+            const diagnostic = sanitize([result.error?.message, result.stdout, result.stderr]
+              .filter(Boolean).join('\n')).trim();
+            console.error(`Prisma database identity subprocess failed: ${category}.`);
+            if (diagnostic) console.error(diagnostic);
+            throw new Error('Job-owned PostgreSQL identity verification failed.');
+          }
           NODE
 
       - name: Install lockfile-matched Playwright Chromium
