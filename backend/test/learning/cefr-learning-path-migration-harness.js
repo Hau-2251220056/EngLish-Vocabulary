@@ -169,11 +169,20 @@ export async function createCefrHarness(environment = process.env) {
     assert.equal(exitCode, 0, "Prisma migrate deploy failed in the run-owned schema.");
   }
 
-  async function deployMigrationsExpectFailure(target, schemaPath) {
+  async function deployMigrationsFromConfig(target, configPath) {
+    assert.equal(typeof configPath, "string", "Explicit Prisma config is required.");
     assert.equal(owned.has(target.schema), true, "Migration target must be owned by this run.");
     const env = { ...process.env, DATABASE_URL: target.databaseUrl };
-    const args = [prismaCli, "migrate", "deploy"];
-    if (schemaPath) args.push("--schema", schemaPath);
+    const args = [prismaCli, "migrate", "deploy", "--config", configPath];
+    const exitCode = await spawnExit(process.execPath, args, { cwd: backendRoot, env });
+    assert.equal(exitCode, 0, "Prisma migrate deploy failed in the run-owned schema.");
+  }
+
+  async function deployMigrationsExpectFailureFromConfig(target, configPath) {
+    assert.equal(typeof configPath, "string", "Explicit Prisma config is required.");
+    assert.equal(owned.has(target.schema), true, "Migration target must be owned by this run.");
+    const env = { ...process.env, DATABASE_URL: target.databaseUrl };
+    const args = [prismaCli, "migrate", "deploy", "--config", configPath];
     const exitCode = await spawnExit(process.execPath, args, { cwd: backendRoot, env });
     assert.notEqual(exitCode, 0, "Inconsistent V1 evidence must abort the V2 migration.");
   }
@@ -207,7 +216,8 @@ export async function createCefrHarness(environment = process.env) {
     identity,
     createSchema,
     deployMigrations,
-    deployMigrationsExpectFailure,
+    deployMigrationsFromConfig,
+    deployMigrationsExpectFailureFromConfig,
     withClient,
     cleanup,
   });

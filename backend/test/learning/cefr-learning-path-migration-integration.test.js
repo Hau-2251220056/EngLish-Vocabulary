@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,8 +10,22 @@ import { createCefrHarness } from "./cefr-learning-path-migration-harness.js";
 const enabled = process.env.CEFR_TEST_DATABASE_ALLOW_OPERATION === "true";
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url));
 const productionPrisma = path.join(backendRoot, "prisma");
+const productionMigrations = path.join(productionPrisma, "migrations");
+const prismaConfigModule = new URL("../../node_modules/prisma/config.js", import.meta.url).href;
 const cefrMigration = "20261103000000_add_cefr_learning_path_v1";
 const cefrV2Migration = "20261112000000_add_cefr_learning_progress_v2";
+
+test("V1 rehearsal config excludes V2 until the explicit upgrade step", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "elvocab-cefr-v2-ordering-"));
+  try {
+    const rehearsal = await prepareV2UpgradeWorkspace(temporary);
+    await assertConfiguredMigrationSet(rehearsal, false);
+    await addV2Migration(rehearsal);
+    await assertConfiguredMigrationSet(rehearsal, true);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
 
 test("guarded CEFR migration, constraints, lifecycle, concurrency, and cleanup", { skip: !enabled, timeout: 180_000 }, async () => {
   const harness = await createCefrHarness();
@@ -55,28 +69,24 @@ test("guarded CEFR V2 upgrade backfills only exact V1 evidence and preserves lif
   const harness = await createCefrHarness();
   const temporary = await mkdtemp(path.join(os.tmpdir(), "elvocab-cefr-v2-integration-"));
   try {
-    const copiedPrisma = path.join(temporary, "prisma");
-    await cp(productionPrisma, copiedPrisma, {
-      recursive: true,
-      filter: (source) => !source.includes(path.join("migrations", cefrV2Migration)),
-    });
-    const copiedSchema = path.join(copiedPrisma, "schema.prisma");
+    const rehearsal = await prepareV2UpgradeWorkspace(temporary);
+    await assertConfiguredMigrationSet(rehearsal, false);
 
     const upgrade = await harness.createSchema("v2_upgrade");
-    await harness.deployMigrations(upgrade, copiedSchema);
+    await harness.deployMigrationsFromConfig(upgrade, rehearsal.configPath);
+    await harness.withClient(upgrade, assertV2NotApplied);
     const fixture = await harness.withClient(upgrade, (prisma) => seedV1Evidence(prisma));
     const rejected = await harness.createSchema("v2_reject");
-    await harness.deployMigrations(rejected, copiedSchema);
+    await harness.deployMigrationsFromConfig(rejected, rehearsal.configPath);
+    await harness.withClient(rejected, assertV2NotApplied);
     const inconsistent = await harness.withClient(rejected, (prisma) => seedV1Evidence(prisma, {
       inconsistentUser: true,
     }));
-    await cp(
-      path.join(productionPrisma, "migrations", cefrV2Migration),
-      path.join(copiedPrisma, "migrations", cefrV2Migration),
-      { recursive: true },
-    );
-    await harness.deployMigrations(upgrade, copiedSchema);
+    await addV2Migration(rehearsal);
+    await assertConfiguredMigrationSet(rehearsal, true);
+    await harness.deployMigrationsFromConfig(upgrade, rehearsal.configPath);
     await harness.withClient(upgrade, async (prisma) => {
+      await assertV2AppliedOnce(prisma);
       const credited = await prisma.cEFR_LEARNING_PASS_ITEM.findMany({
         where: { pass_id: fixture.passId },
         orderBy: { position: "asc" },
@@ -117,7 +127,7 @@ test("guarded CEFR V2 upgrade backfills only exact V1 evidence and preserves lif
       assert.equal(state.path_completed_at, null);
     });
 
-    await harness.deployMigrationsExpectFailure(rejected, copiedSchema);
+    await harness.deployMigrationsExpectFailureFromConfig(rejected, rehearsal.configPath);
     await harness.withClient(rejected, async (prisma) => {
       const pass = await prisma.$queryRawUnsafe(
         `SELECT "status", "completed_at", "completion_event_id" FROM "CEFR_LEARNING_PASS" WHERE "id" = '${inconsistent.passId}'::uuid`,
@@ -136,6 +146,83 @@ test("guarded CEFR V2 upgrade backfills only exact V1 evidence and preserves lif
     assert.equal(cleanupErrors.length, 0, "CEFR V2 integration cleanup is a hard requirement.");
   }
 });
+
+async function prepareV2UpgradeWorkspace(temporary) {
+  const prismaDirectory = path.join(temporary, "prisma");
+  const migrationsDirectory = path.join(prismaDirectory, "migrations");
+  await cp(productionPrisma, prismaDirectory, {
+    recursive: true,
+    filter: (source) => isMigrationThroughV1(source),
+  });
+  const schemaPath = path.join(prismaDirectory, "schema.prisma");
+  const configPath = path.join(temporary, "prisma.config.ts");
+  await writeFile(configPath, [
+    `import { defineConfig } from ${JSON.stringify(prismaConfigModule)};`,
+    "export default defineConfig({",
+    `  schema: ${JSON.stringify(schemaPath)},`,
+    `  migrations: { path: ${JSON.stringify(migrationsDirectory)} },`,
+    '  engine: "classic",',
+    '  datasource: { url: process.env.DATABASE_URL },',
+    "});",
+    "",
+  ].join("\n"), "utf8");
+  return Object.freeze({ configPath, migrationsDirectory, schemaPath });
+}
+
+function isMigrationThroughV1(source) {
+  const relative = path.relative(productionMigrations, source);
+  if (relative.startsWith("..") || path.isAbsolute(relative) || relative === "") return true;
+  const [entry] = relative.split(path.sep);
+  return entry === "migration_lock.toml" || entry <= cefrMigration;
+}
+
+async function addV2Migration(rehearsal) {
+  await cp(
+    path.join(productionMigrations, cefrV2Migration),
+    path.join(rehearsal.migrationsDirectory, cefrV2Migration),
+    { recursive: true },
+  );
+}
+
+async function assertConfiguredMigrationSet(rehearsal, includesV2) {
+  const entries = await readdir(rehearsal.migrationsDirectory);
+  assert.equal(entries.includes(cefrMigration), true, "V1 migration must be present.");
+  assert.equal(entries.includes(cefrV2Migration), includesV2);
+  assert.equal(
+    entries.filter((entry) => /^\d{14}_/.test(entry) && entry > cefrMigration && entry !== cefrV2Migration).length,
+    0,
+    "V1 rehearsal must not include migrations after the approved V1 boundary.",
+  );
+  const config = await readFile(rehearsal.configPath, "utf8");
+  assert.match(config, new RegExp(escapeRegExp(JSON.stringify(rehearsal.migrationsDirectory))));
+  assert.match(config, new RegExp(escapeRegExp(JSON.stringify(rehearsal.schemaPath))));
+}
+
+async function assertV2NotApplied(prisma) {
+  const migrations = await prisma.$queryRawUnsafe(
+    `SELECT "migration_name" FROM "_prisma_migrations" WHERE "migration_name" = '${cefrV2Migration}'`,
+  );
+  assert.equal(migrations.length, 0, "V2 must not be recorded before V1 evidence is seeded.");
+  const columns = await prisma.$queryRawUnsafe(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema()
+     AND table_name = 'CEFR_LEARNING_PASS_ITEM' AND column_name LIKE 'first_credit_%'`,
+  );
+  assert.equal(columns.length, 0, "V2 first-credit columns must be absent during V1 seeding.");
+}
+
+async function assertV2AppliedOnce(prisma) {
+  const migrations = await prisma.$queryRawUnsafe(
+    `SELECT "migration_name", "finished_at", "rolled_back_at" FROM "_prisma_migrations"
+     WHERE "migration_name" = '${cefrV2Migration}'`,
+  );
+  assert.equal(migrations.length, 1, "V2 migration must be recorded exactly once.");
+  assert.ok(migrations[0].finished_at instanceof Date);
+  assert.equal(migrations[0].rolled_back_at, null);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 async function assertCatalog(prisma) {
   const rows = await prisma.$queryRawUnsafe(
