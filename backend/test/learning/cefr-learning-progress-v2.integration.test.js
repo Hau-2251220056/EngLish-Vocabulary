@@ -16,6 +16,7 @@ import { createCefrHarness } from "./cefr-learning-path-migration-harness.js";
 
 const enabled = process.env.CEFR_TEST_DATABASE_ALLOW_OPERATION === "true";
 const NOW = new Date("2026-11-13T08:00:00.000Z");
+const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 test("NORMAL/SRS first credit is atomic, replay-safe, concurrent, and user-isolated", {
   skip: !enabled,
@@ -83,16 +84,40 @@ test("NORMAL/SRS first credit is atomic, replay-safe, concurrent, and user-isola
     where: { pass_id: started.pass.id, vocabulary_id: first.vocabulary_id,
       first_credit_event_id: { not: null } },
   }), 1);
+  const srsProgress = await prisma.lEARNING_PROGRESS.findUniqueOrThrow({
+    where: { user_id_vocabulary_id: {
+      user_id: user.id,
+      vocabulary_id: first.vocabulary_id,
+    } },
+  });
+  const srsRewardCount = await prisma.xP_REWARD.count({
+    where: { user_id: user.id, source_event_id: srsIdentity.event_id },
+  });
 
   const normalReplay = await runtime.sessions.acknowledgeNormalReveal(
     user.id, normal.session.id, first.vocabulary_id, { operation_id: normalEvent },
   );
   const srsReplay = await runtime.learning.recordMeaningfulEvent(user.id, srsIdentity);
   assert.equal(normalReplay.replayed, true);
-  assert.equal(srsReplay.replayed, true);
+  assert.equal(srsReplay.reward.replayed, true);
+  assert.equal(srsReplay.reward.source_event_id, srsIdentity.event_id);
+  assert.equal(srsReplay.revision, srsProgress.revision);
+  assert.equal(srsReplay.review_count, srsProgress.review_count);
   assert.equal(await prisma.lEARNING_SESSION_SRS_RECEIPT.count({
     where: { event_id: srsIdentity.event_id },
   }), 1);
+  assert.equal(await prisma.lEARNING_PROGRESS.count({
+    where: {
+      user_id: user.id,
+      vocabulary_id: first.vocabulary_id,
+      revision: srsProgress.revision,
+      review_count: srsProgress.review_count,
+      last_event_id: srsIdentity.event_id,
+    },
+  }), 1);
+  assert.equal(await prisma.xP_REWARD.count({
+    where: { user_id: user.id, source_event_id: srsIdentity.event_id },
+  }), srsRewardCount);
 
   const again = srsEvent({
     sessionId: srs.session.id,
@@ -102,14 +127,44 @@ test("NORMAL/SRS first credit is atomic, replay-safe, concurrent, and user-isola
   });
   const againResult = await runtime.learning.recordMeaningfulEvent(user.id, again);
   assert.equal(againResult.cefr_pass.id, started.pass.id);
-  assert.equal(
-    (await passCredit(prisma, started.pass.id, second.vocabulary_id)).first_credit_source,
-    "SRS_AGAIN",
-  );
+  const againCredit = await passCredit(prisma, started.pass.id, second.vocabulary_id);
+  assert.equal(againCredit.first_credit_source, "SRS_AGAIN");
+  assert.equal(againCredit.first_credit_event_id, again.event_id);
   assert.equal(await sessionEvidence(prisma, srs.session.id, second.vocabulary_id), null);
   assert.equal((await runtime.path.readPass(user.id, started.pass.id)).ready_to_complete, true);
+  const againProgress = await prisma.lEARNING_PROGRESS.findUniqueOrThrow({
+    where: { user_id_vocabulary_id: {
+      user_id: user.id,
+      vocabulary_id: second.vocabulary_id,
+    } },
+  });
+  const againRewardCount = await prisma.xP_REWARD.count({
+    where: { user_id: user.id, source_event_id: again.event_id },
+  });
   const againReplay = await runtime.learning.recordMeaningfulEvent(user.id, again);
-  assert.equal(againReplay.replayed, true);
+  assert.equal(againReplay.reward.replayed, true);
+  assert.equal(againReplay.reward.source_event_id, again.event_id);
+  assert.equal(againReplay.revision, againProgress.revision);
+  assert.equal(againReplay.review_count, againProgress.review_count);
+  assert.equal(await prisma.lEARNING_SESSION_SRS_RECEIPT.count({
+    where: { event_id: again.event_id },
+  }), 1);
+  assert.equal(await prisma.lEARNING_PROGRESS.count({
+    where: {
+      user_id: user.id,
+      vocabulary_id: second.vocabulary_id,
+      revision: againProgress.revision,
+      review_count: againProgress.review_count,
+      last_event_id: again.event_id,
+    },
+  }), 1);
+  assert.equal(await prisma.xP_REWARD.count({
+    where: { user_id: user.id, source_event_id: again.event_id },
+  }), againRewardCount);
+  assert.equal(
+    (await passCredit(prisma, started.pass.id, second.vocabulary_id)).first_credit_event_id,
+    again.event_id,
+  );
   assert.equal(await sessionEvidence(prisma, srs.session.id, second.vocabulary_id), null);
 
   await assert.rejects(runtime.path.readPass(outsider.id, started.pass.id), hasCode("CEFR_PASS_NOT_FOUND"));
@@ -132,9 +187,13 @@ test("expired sessions and invalidated passes cannot gain first credit", {
   const normal = await runtime.path.createNextSession(user.id, started.pass.id, {
     ...operation(), mode: "NORMAL",
   });
+  const expiredAt = new Date(NOW.getTime() - 1);
   await prisma.lEARNING_SESSION.update({
     where: { id: normal.session.id },
-    data: { expires_at: new Date(NOW.getTime() - 1) },
+    data: {
+      created_at: new Date(expiredAt.getTime() - SESSION_LIFETIME_MS),
+      expires_at: expiredAt,
+    },
   });
   await assert.rejects(
     runtime.sessions.acknowledgeNormalReveal(
@@ -146,17 +205,18 @@ test("expired sessions and invalidated passes cannot gain first credit", {
     prisma, started.pass.id, normal.session.items[0].vocabulary_id,
   ), null);
 
+  const fresh = await runtime.path.createNextSession(user.id, started.pass.id, {
+    ...operation(), mode: "NORMAL",
+  });
+  assert.notEqual(fresh.session.id, normal.session.id);
+  assert.equal(fresh.session.state, "ACTIVE");
   await prisma.cEFR_LEARNING_PASS.update({
     where: { id: started.pass.id },
     data: { status: "INVALIDATED", invalidated_at: NOW },
   });
-  const activeItem = normal.session.items[1];
-  await prisma.lEARNING_SESSION.update({
-    where: { id: normal.session.id },
-    data: { expires_at: new Date(NOW.getTime() + 86_400_000) },
-  });
+  const activeItem = fresh.session.items[1];
   const result = await runtime.sessions.acknowledgeNormalReveal(
-    user.id, normal.session.id, activeItem.vocabulary_id, operation(),
+    user.id, fresh.session.id, activeItem.vocabulary_id, operation(),
   );
   assert.equal(result.cefr_pass.state, "INVALIDATED");
   assert.equal(await passCredit(prisma, started.pass.id, activeItem.vocabulary_id), null);

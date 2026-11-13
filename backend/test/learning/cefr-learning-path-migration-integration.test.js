@@ -89,7 +89,17 @@ test("guarded CEFR V2 upgrade backfills only exact V1 evidence and preserves lif
       assert.equal(credited[0].first_credit_source, "NORMAL_REVEALED");
       assert.equal(credited[0].first_credit_session_id, fixture.earlierSessionId);
       assert.equal(credited[1].first_credit_session_id, fixture.expiredSessionId);
+      assert.equal(
+        credited[1].first_credit_accepted_at.toISOString(),
+        "2026-10-02T12:00:00.000Z",
+      );
       assert.equal(credited[2].first_credit_source, null);
+      const expiredSession = await prisma.lEARNING_SESSION.findUniqueOrThrow({
+        where: { id: fixture.expiredSessionId },
+      });
+      assert.equal(expiredSession.status, "ACTIVE");
+      assert.equal(expiredSession.created_at.toISOString(), "2026-10-01T00:00:00.000Z");
+      assert.equal(expiredSession.expires_at.toISOString(), "2026-10-08T00:00:00.000Z");
       const pass = await prisma.cEFR_LEARNING_PASS.findUniqueOrThrow({ where: { id: fixture.passId } });
       assert.equal(pass.status, "ACTIVE");
       assert.equal(pass.completed_at, null);
@@ -279,7 +289,7 @@ async function seedV1Evidence(prisma, { inconsistentUser = false } = {}) {
     await insertV1Session(prisma, {
       id: expiredSessionId, userId: fixture.userId, setId: fixture.setId, passId,
       vocabularyId: secondVocabularyId, eventId: expiredSessionEventId,
-      acceptedAt: "2026-10-02 12:00:00", status: "EXPIRED",
+      acceptedAt: "2026-10-02 12:00:00", status: "ACTIVE",
       createdAt: "2026-10-01 00:00:00", expiresAt: "2026-10-08 00:00:00",
     });
     await insertV1Session(prisma, {
