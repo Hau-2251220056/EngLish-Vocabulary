@@ -142,8 +142,10 @@ export function SrsRatingControls({ disabled = false, items, onRate, pendingRati
     <section className="grid w-full grid-cols-4 gap-2 max-[520px]:grid-cols-2" aria-label="Đánh giá SRS">
       {items.map(({ label, rating, subLabel }) => (
         <button key={rating} type="button" className={`${RATING_BUTTON_CLASSES[rating]} relative h-14 min-w-0 w-full flex-col gap-0.5 rounded-xl bg-white px-2 py-2 shadow-none`} aria-label={`${label}, ${subLabel}`} onClick={() => onRate(rating)} disabled={disabled} aria-busy={pendingRating === rating}>
-          {pendingRating === rating ? <LoaderCircle className="absolute right-2 top-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-          <span className="font-extrabold leading-tight">{label}</span>
+          <span className="inline-flex items-center justify-center gap-1.5">
+            {pendingRating === rating ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+            <span className="font-extrabold leading-tight">{label}</span>
+          </span>
           <span className="text-[0.72rem] font-semibold leading-tight opacity-80">{subLabel}</span>
         </button>
       ))}

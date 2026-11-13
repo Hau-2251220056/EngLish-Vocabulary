@@ -574,13 +574,32 @@ test("completed session continuation fetches fresh eligibility and becomes up-to
 });
 
 test("pending and conflict states never advance optimistically", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   let resolveEvent;
   const pending = new Promise((resolve) => { resolveEvent = resolve; });
   await installLearningMock(page, { onEvent: () => pending });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
-  await page.getByRole("button", { name: "Tốt" }).click();
-  await expect(page.getByRole("button", { name: "Tốt" })).toBeDisabled();
+  const ratingButton = page.getByRole("button", { name: "Tốt" });
+  await expect(ratingButton).toBeVisible();
+  const buttonBefore = await ratingButton.boundingBox();
+  expect(buttonBefore).not.toBeNull();
+  await ratingButton.click();
+  await expect(ratingButton).toBeDisabled();
+  await expect(ratingButton).toHaveAttribute("aria-busy", "true");
+  const spinner = ratingButton.locator("svg.animate-spin");
+  const primaryLabel = ratingButton.getByText("Tốt", { exact: true });
+  const primaryRow = primaryLabel.locator("..");
+  await expect(spinner).toBeVisible();
+  await expect(spinner).toHaveCSS("position", "static");
+  await expect(primaryRow).toHaveCSS("display", "inline-flex");
+  await expect(primaryRow).toHaveCSS("align-items", "center");
+  await expect(primaryRow).toHaveCSS("justify-content", "center");
+  const buttonPending = await ratingButton.boundingBox();
+  expect(buttonPending).not.toBeNull();
+  expect(buttonPending.width).toBeCloseTo(buttonBefore.width, 1);
+  expect(buttonPending.height).toBeCloseTo(buttonBefore.height, 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
   resolveEvent({ status: 409, json: failure("LEARNING_PROGRESS_CHANGED") });
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã thay đổi");
