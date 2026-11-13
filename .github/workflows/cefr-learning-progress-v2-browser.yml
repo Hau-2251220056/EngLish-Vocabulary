@@ -1,0 +1,248 @@
+name: CEFR Learning Progress V2 Browser Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorize_cefr_v2_browser:
+        description: Affirmatively authorize isolated CEFR V2 browser verification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elvocab-cefr-v2-browser-verification
+  cancel-in-progress: false
+
+jobs:
+  cefr-v2-browser:
+    name: CEFR V2 Ephemeral Browser Real Stack
+    if: inputs.authorize_cefr_v2_browser == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      CEFR_BROWSER_DATABASE_EXCLUSIVE: "true"
+      CEFR_BROWSER_RUN_ID: ${{ github.run_id }}
+      CEFR_BROWSER_RUN_ATTEMPT: ${{ github.run_attempt }}
+      CEFR_BROWSER_DATABASE_EXPECTED_HOST: 127.0.0.1
+      CEFR_BROWSER_DATABASE_EXPECTED_PORT: "5432"
+      CEFR_BROWSER_DATABASE_EXPECTED_NAME: elvocab_cefr_v2_browser_ci
+      CEFR_BROWSER_DATABASE_EXPECTED_USER: elvocab_cefr_browser_ci
+      TEST_DATABASE_URL: postgresql://elvocab_cefr_browser_ci:elvocab_cefr_browser_ci_password@127.0.0.1:5432/elvocab_cefr_v2_browser_ci
+      DATABASE_URL: postgresql://elvocab_cefr_browser_ci:elvocab_cefr_browser_ci_password@127.0.0.1:5432/elvocab_cefr_v2_browser_ci
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elvocab_cefr_browser_ci
+          POSTGRES_PASSWORD: elvocab_cefr_browser_ci_password
+          POSTGRES_DB: elvocab_cefr_v2_browser_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elvocab_cefr_browser_ci -d elvocab_cefr_v2_browser_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Require approved manual execution
+        working-directory: .
+        env:
+          AUTHORIZED: ${{ inputs.authorize_cefr_v2_browser }}
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$EVENT_NAME" = "workflow_dispatch"
+          test "$AUTHORIZED" = "true"
+          test "$CURRENT_REPOSITORY" = "Hau-2251220056/EngLish-Vocabulary"
+
+      - name: Check out exact approved feature checkpoint
+        uses: actions/checkout@v7
+        with:
+          ref: d069be096d23b8b829a4036dee510ab5635d12a8
+          persist-credentials: false
+
+      - name: Verify exact approved feature checkpoint
+        working-directory: .
+        env:
+          APPROVED_SOURCE_SHA: d069be096d23b8b829a4036dee510ab5635d12a8
+        run: |
+          test "$(git rev-parse HEAD)" = "$APPROVED_SOURCE_SHA"
+          test -z "$(git status --short)"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Fail closed on any non-isolated database target
+        working-directory: .
+        env:
+          AUTHORIZED: ${{ inputs.authorize_cefr_v2_browser }}
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.AUTHORIZED, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.GITHUB_EVENT_NAME, 'workflow_dispatch');
+          assert.equal(environment.GITHUB_REPOSITORY, 'Hau-2251220056/EngLish-Vocabulary');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.TEST_DATABASE_ALLOW_RESET, 'true');
+          assert.equal(environment.CEFR_BROWSER_DATABASE_EXCLUSIVE, 'true');
+          assert.match(environment.CEFR_BROWSER_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.CEFR_BROWSER_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          assert.equal(environment.DATABASE_URL, environment.TEST_DATABASE_URL);
+          const target = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(target.protocol, 'postgresql:');
+          assert.equal(target.hostname, environment.CEFR_BROWSER_DATABASE_EXPECTED_HOST);
+          assert.equal(target.hostname, '127.0.0.1');
+          assert.equal(target.port, environment.CEFR_BROWSER_DATABASE_EXPECTED_PORT);
+          assert.equal(target.pathname, `/${environment.CEFR_BROWSER_DATABASE_EXPECTED_NAME}`);
+          assert.equal(decodeURIComponent(target.username), environment.CEFR_BROWSER_DATABASE_EXPECTED_USER);
+          assert.equal(target.search, '');
+          assert.equal(target.hash, '');
+          assert.ok(target.password.length > 0);
+          assert.equal(/supabase|amazonaws|azure|neon|render|railway|vercel/i.test(target.href), false);
+          for (const name of [
+            'CI_TEST_DATABASE_URL',
+            'SUPABASE_URL',
+            'SUPABASE_SERVICE_ROLE_KEY',
+            'TEST_SUPABASE_URL',
+            'TEST_SUPABASE_SERVICE_ROLE_KEY',
+          ]) assert.equal(environment[name], undefined);
+          NODE
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Prove job-owned PostgreSQL identity
+        id: database-guard
+        working-directory: backend
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { spawnSync } = require('node:child_process');
+          const environment = process.env;
+          assert.match(environment.CEFR_BROWSER_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.CEFR_BROWSER_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          const marker = `github-actions-cefr-browser-${environment.CEFR_BROWSER_RUN_ID}-${environment.CEFR_BROWSER_RUN_ATTEMPT}`;
+          const database = environment.CEFR_BROWSER_DATABASE_EXPECTED_NAME;
+          const user = environment.CEFR_BROWSER_DATABASE_EXPECTED_USER;
+          assert.match(database, /^[a-z0-9_]+$/);
+          assert.match(user, /^[a-z0-9_]+$/);
+          assert.match(marker, /^[a-z0-9-]+$/);
+          const sql = `
+            DO $guard$
+            DECLARE recorded_marker text;
+            BEGIN
+              IF current_database() <> '${database}' OR current_user <> '${user}' THEN
+                RAISE EXCEPTION 'CEFR browser database identity verification failed';
+              END IF;
+              EXECUTE format('COMMENT ON DATABASE %I IS %L', current_database(), '${marker}');
+              SELECT shobj_description(oid, 'pg_database') INTO recorded_marker
+                FROM pg_database WHERE datname = current_database();
+              IF recorded_marker <> '${marker}' THEN
+                RAISE EXCEPTION 'CEFR browser database ownership marker verification failed';
+              END IF;
+            END
+            $guard$;
+          `;
+          const result = spawnSync(
+            process.execPath,
+            ['node_modules/prisma/build/index.js', 'db', 'execute', '--stdin'],
+            { cwd: process.cwd(), env: environment, input: sql, encoding: 'utf8', stdio: ['pipe', 'ignore', 'ignore'] },
+          );
+          if (result.status !== 0) throw new Error('Job-owned PostgreSQL identity verification failed.');
+          NODE
+
+      - name: Install lockfile-matched Playwright Chromium
+        working-directory: frontend
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Run focused mocked SRS loading geometry
+        id: mocked-srs
+        working-directory: frontend
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          ./node_modules/.bin/playwright test \
+            --config=playwright.config.js \
+            learning-srs.spec.js \
+            --grep "pending and conflict states never advance optimistically|segmented header and four ratings remain responsive on desktop-1366" \
+            --workers=1 \
+            --retries=0 \
+            --trace=retain-on-failure \
+            2>&1 | tee artifacts/mocked-srs-loading.log
+
+      - name: Run focused CEFR learning-path real stack
+        id: cefr-path
+        working-directory: frontend
+        run: |
+          set -o pipefail
+          ./node_modules/.bin/playwright test \
+            --config=playwright.integration.config.js \
+            cefr-learning-path-real-stack.spec.js \
+            --workers=1 \
+            --retries=0 \
+            --trace=retain-on-failure \
+            2>&1 | tee artifacts/cefr-learning-path-real-stack.log
+
+      - name: Run focused GLOBAL SRS non-credit regression
+        id: global-review
+        working-directory: frontend
+        run: |
+          set -o pipefail
+          ./node_modules/.bin/playwright test \
+            --config=playwright.integration.config.js \
+            cefr-global-review-real-stack.spec.js \
+            --grep "AGAIN requeues" \
+            --workers=1 \
+            --retries=0 \
+            --trace=retain-on-failure \
+            2>&1 | tee artifacts/cefr-global-review-real-stack.log
+
+      - name: Record browser verification outcomes
+        if: always()
+        working-directory: frontend
+        env:
+          MOCKED_SRS_OUTCOME: ${{ steps.mocked-srs.outcome }}
+          CEFR_PATH_OUTCOME: ${{ steps.cefr-path.outcome }}
+          GLOBAL_REVIEW_OUTCOME: ${{ steps.global-review.outcome }}
+          DATABASE_GUARD_OUTCOME: ${{ steps.database-guard.outcome }}
+        run: |
+          mkdir -p artifacts
+          {
+            echo "source_sha=d069be096d23b8b829a4036dee510ab5635d12a8"
+            echo "database_guard=$DATABASE_GUARD_OUTCOME"
+            echo "mocked_srs=$MOCKED_SRS_OUTCOME"
+            echo "cefr_path=$CEFR_PATH_OUTCOME"
+            echo "global_review=$GLOBAL_REVIEW_OUTCOME"
+          } | tee artifacts/outcomes.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cefr-v2-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/artifacts/**
+            frontend/test-results/**
+          if-no-files-found: error
+          retention-days: 7
