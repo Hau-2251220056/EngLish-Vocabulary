@@ -67,13 +67,13 @@ jobs:
       - name: Check out exact approved source checkpoint
         uses: actions/checkout@v7
         with:
-          ref: 8376bfd2fe2802954927d30219de03c7dfd11386
+          ref: 1183ae260975144b167aad6686af25d5047e0ae7
           persist-credentials: false
 
       - name: Verify exact approved source checkpoint
         working-directory: .
         env:
-          APPROVED_SOURCE_SHA: 8376bfd2fe2802954927d30219de03c7dfd11386
+          APPROVED_SOURCE_SHA: 1183ae260975144b167aad6686af25d5047e0ae7
         run: |
           test "$(git rev-parse HEAD)" = "$APPROVED_SOURCE_SHA"
           test -z "$(git status --short)"
@@ -117,7 +117,7 @@ jobs:
         run: |
           mkdir -p artifacts
           {
-            echo "source_sha=8376bfd2fe2802954927d30219de03c7dfd11386"
+            echo "source_sha=1183ae260975144b167aad6686af25d5047e0ae7"
             echo "offline_guards=$OFFLINE_OUTCOME"
             echo "postgresql_integration=$POSTGRESQL_OUTCOME"
           } | tee artifacts/outcomes.txt >> "$GITHUB_STEP_SUMMARY"
