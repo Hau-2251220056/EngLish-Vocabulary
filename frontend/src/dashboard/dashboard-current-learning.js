@@ -1,16 +1,22 @@
-export function calculateLearningPassProgress(pass) {
-  const snapshotSize = Number.isSafeInteger(pass?.snapshot_size) && pass.snapshot_size > 0
-    ? pass.snapshot_size
-    : 0;
-  const rawStudiedItems = Number.isSafeInteger(pass?.studied_items) ? pass.studied_items : 0;
-  const studiedItems = snapshotSize > 0
-    ? Math.min(snapshotSize, Math.max(0, rawStudiedItems))
-    : 0;
+const ACTIVE_STATES = new Set(["PRISTINE", "IN_PROGRESS", "READY_TO_COMPLETE"]);
 
+export function getCurrentLearningPresentation(pass) {
+  const isValid = pass?.state === "ACTIVE"
+    && Number.isSafeInteger(pass.snapshot_size) && pass.snapshot_size > 0
+    && ACTIVE_STATES.has(pass.activity_state)
+    && typeof pass.ready_to_complete === "boolean"
+    && pass.ready_to_complete === (pass.activity_state === "READY_TO_COMPLETE");
+  if (!isValid) return { isValid: false, status: null };
+  if (pass.can_continue === false) {
+    return { isValid: true, status: "Cần xác nhận bắt đầu lại" };
+  }
+  if (pass.ready_to_complete) {
+    return { isValid: true, status: "Sẵn sàng hoàn thành bộ từ" };
+  }
   return {
-    isValid: snapshotSize > 0,
-    percentage: snapshotSize > 0 ? Math.round((studiedItems / snapshotSize) * 100) : 0,
-    snapshotSize,
-    studiedItems,
+    isValid: true,
+    status: pass.activity_state === "IN_PROGRESS"
+      ? "Tiếp tục những từ còn lại"
+      : "Tiếp tục lượt học hiện tại",
   };
 }

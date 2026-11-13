@@ -13,6 +13,8 @@ const EVIDENCE = new Set([
   "QUIZ_CORRECT",
   "QUIZ_INCORRECT",
 ]);
+const RATINGS = ["AGAIN", "HARD", "GOOD", "EASY"];
+const SRS_INTERVALS = new Set([1, 3, 7, 14, 30]);
 
 export class LearningSessionApiError extends Error {
   constructor({ kind, code, message, status }) {
@@ -47,7 +49,7 @@ export function createLearningSessionService(client = httpClient) {
           `${SESSION_ENDPOINT}/${encodeURIComponent(sessionId)}`,
         )).data?.data, { allowAccessState: true });
         if (session.id !== sessionId) throw invalidResponse();
-        return session;
+        return requirePassLinkedSrsCards(session);
       } catch (error) { throw mapError(error); }
     },
 
@@ -68,7 +70,10 @@ export function createLearningSessionService(client = httpClient) {
         if (session.id !== sessionId || session.mode !== "NORMAL"
           || !session.items.some((item) => item.vocabulary_id === vocabularyId
             && item.evidence === "NORMAL_REVEALED")) throw invalidResponse();
-        return { ...value, session };
+        const cefrPass = Object.hasOwn(value, "cefr_pass")
+          ? requireCefrPassEvidenceSummary(value.cefr_pass)
+          : null;
+        return { ...value, session, ...(cefrPass ? { cefr_pass: cefrPass } : {}) };
       } catch (error) { throw mapError(error); }
     },
 
@@ -141,6 +146,50 @@ export function requireStreakProjection(value) {
     || !(value.last_qualified_date === null || isIsoDate(value.last_qualified_date))
     || value.timezone !== "Asia/Ho_Chi_Minh" || !isInstant(value.evaluated_at)) throw invalidResponse();
   return value;
+}
+
+export function requireCefrPassEvidenceSummary(value) {
+  if (!isRecord(value) || !isUuid(value.id)
+    || !["ACTIVE", "INVALIDATED", "COMPLETED"].includes(value.state)
+    || !isPositiveInteger(value.snapshot_size)
+    || !isNonNegativeInteger(value.credited_items)
+    || !isNonNegativeInteger(value.remaining_items)
+    || value.credited_items + value.remaining_items !== value.snapshot_size
+    || typeof value.ready_to_complete !== "boolean"
+    || value.ready_to_complete !== (value.state === "ACTIVE" && value.remaining_items === 0)) {
+    throw invalidResponse();
+  }
+  return value;
+}
+
+export function requirePassLinkedSrsCards(session) {
+  const hasCards = Object.hasOwn(session, "cards") || Object.hasOwn(session, "evaluated_at");
+  if (!hasCards) return session;
+  if (session.mode !== "SRS" || !Array.isArray(session.cards)
+    || session.cards.length !== session.snapshot_size || !isInstant(session.evaluated_at)
+    || !session.cards.every(isSrsCard)) throw invalidResponse();
+  const itemIds = session.items.map(({ vocabulary_id: id }) => id);
+  if (session.cards.some((card, index) => card.id !== itemIds[index])) throw invalidResponse();
+  return session;
+}
+
+function isSrsCard(value) {
+  return isRecord(value) && isUuid(value.id) && typeof value.word === "string"
+    && isNonNegativeInteger(value.position) && Array.isArray(value.meanings)
+    && isRecord(value.progress) && typeof value.progress.effective_status === "string"
+    && isNonNegativeInteger(value.progress.stage)
+    && (value.progress.interval_days === null || isNonNegativeInteger(value.progress.interval_days))
+    && (value.progress.next_review_at === null || isInstant(value.progress.next_review_at))
+    && isNonNegativeInteger(value.progress.review_count)
+    && isNonNegativeInteger(value.progress.revision)
+    && isRatingPreviews(value.rating_previews);
+}
+
+function isRatingPreviews(value) {
+  if (!isRecord(value) || Object.keys(value).length !== RATINGS.length
+    || value.AGAIN?.kind !== "SESSION_REQUEUE" || value.AGAIN.interval_days !== null) return false;
+  return RATINGS.slice(1).every((rating) => value[rating]?.kind === "SCHEDULED"
+    && SRS_INTERVALS.has(value[rating].interval_days));
 }
 
 function serializeCreate(input) {

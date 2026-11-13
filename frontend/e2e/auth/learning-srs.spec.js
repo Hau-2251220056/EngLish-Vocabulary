@@ -4,6 +4,76 @@ import { installAuthApiMock, publicUser, responses } from "./fixtures/auth-api.j
 
 const SET_ID = "10000000-0000-4000-8000-000000000001";
 const SESSION_ID = "20000000-0000-4000-8000-000000000001";
+const CEFR_PASS_ID = "60000000-0000-4000-8000-000000000001";
+
+test("CEFR SRS credits AGAIN once, preserves exact resume and keeps completion explicit", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let credited = false;
+  let passCompleted = false;
+  let ratingCount = 0;
+  let exactReads = 0;
+  const session = learningSessionProjection("SRS", [vocabularyId(1)]);
+  const card = cards(false, 1, ratingPreviews(1, 3, 7))[0];
+
+  await page.route("**/api/learning/sets/**", (route) => route.fulfill({
+    status: 200, json: { success: true, data: srsPayload(false, false, 1) },
+  }));
+  await page.route("**/api/learning-path/sets/*/passes", (route) => route.fulfill({
+    status: 201, json: { success: true, data: {
+      pass: cefrPassProjection({ credited, completed: passCompleted }), replayed: false, resumed: credited,
+    } },
+  }));
+  await page.route("**/api/learning-path/passes/**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith("/sessions")) {
+      await route.fulfill({ status: 201, json: { success: true, data: {
+        session, cards: [card], evaluated_at: NOW, replayed: false, resumed: false,
+      } } });
+      return;
+    }
+    if (pathname.endsWith("/complete")) {
+      passCompleted = true;
+      await route.fulfill({ status: 200, json: { success: true, data: {
+        pass: cefrPassProjection({ credited: true, completed: true }),
+        path: cefrPathProjection(), replayed: false,
+      } } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { success: true, data: cefrPassProjection({ credited, completed: passCompleted }) } });
+  });
+  await page.route(`**/api/learning-sessions/${SESSION_ID}`, (route) => {
+    exactReads += 1;
+    return route.fulfill({ status: 200, json: { success: true, data: {
+      ...session, can_continue: true, cards: [card], evaluated_at: NOW,
+    } } });
+  });
+  await page.route("**/api/learning/events", (route) => {
+    ratingCount += 1;
+    credited = true;
+    const response = successRating(route.request().postDataJSON());
+    response.data.session = session;
+    response.data.cefr_pass = passEvidenceSummary();
+    return route.fulfill({ status: 200, json: response });
+  });
+
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  const choices = page.getByRole("region", { name: "Tiếp tục lượt học CEFR" });
+  await expect(choices.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
+  await expect(choices.getByRole("button", { name: "Hoàn thành bộ từ" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  expect(exactReads).toBeGreaterThan(0);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  expect(ratingCount).toBe(2);
+  await choices.getByRole("button", { name: "Hoàn thành bộ từ" }).click();
+  await expect(choices).toContainText("Tiến độ CEFR đã được lưu độc lập");
+  await expect(choices.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
+  expect(passCompleted).toBe(true);
+});
 
 test("defaults to SRS, reveals four ratings, focuses deterministically and requeues AGAIN once", async ({ page }) => {
   const calls = await installLearningMock(page);
@@ -831,6 +901,37 @@ function successRating(body) {
   return { success: true, data: { vocabulary_id: body.vocabulary_id, status: again ? "LEARNING" : "LEARNED", stored_status: again ? "LEARNING" : "LEARNED", effective_status: again ? "LEARNING" : "LEARNED", stage: again ? 0 : 1, interval_days: again ? null : 1, next_review_at: again ? NOW : "2026-10-05T00:00:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: body.expected_revision + 1, reward: { source_event_id: body.event_id, xp_earned: again ? 0 : 3, replayed: false, total_xp: again ? 0 : 3, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false } } };
 }
 function failure(code) { return { success: false, error: { code, message: "Changed." } }; }
+function cefrPassProjection({ credited = false, completed = false } = {}) {
+  const creditedItems = credited ? 1 : 0;
+  return {
+    id: CEFR_PASS_ID, set_id: SET_ID, state: completed ? "COMPLETED" : "ACTIVE",
+    snapshot_size: 1, studied_items: creditedItems, credited_items: creditedItems,
+    remaining_items: 1 - creditedItems, ready_to_complete: credited && !completed,
+    evidence_counts: { NORMAL: 0, SRS: creditedItems },
+    activity_state: completed ? "COMPLETED" : credited ? "READY_TO_COMPLETE" : "PRISTINE",
+    active_sessions: { NORMAL: [], SRS: credited ? [{
+      id: SESSION_ID, mode: "SRS", state: "ACTIVE", expires_at: "2026-10-11T00:00:00.000Z",
+      contains_uncredited_items: false, unresolved_items: 1, exact_resume_available: true,
+    }] : [] },
+    created_at: NOW, completed_at: completed ? NOW : null,
+  };
+}
+function passEvidenceSummary() {
+  return { id: CEFR_PASS_ID, state: "ACTIVE", snapshot_size: 1, credited_items: 1, remaining_items: 0, ready_to_complete: true };
+}
+function cefrPathProjection() {
+  return {
+    evaluated_at: NOW, highest_unlocked_level: "A2", path_completed_at: null,
+    levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+      level, unlocked: index < 2, required_count: index === 0 ? 1 : 0,
+      completed_count: index === 0 ? 1 : 0,
+      configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+      current_complete: index === 0, incomplete_sets: [],
+    })),
+    recommendation: null, next_suggestion: null,
+    next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET", all_current_sets_complete: false,
+  };
+}
 const NOW = "2026-10-04T00:00:00.000Z";
 const LONG_CONTEXT = "A deliberately extended learning context that explains how this vocabulary appears in several realistic situations, preserves the complete approved content, and requires substantially more vertical room than the standard card without becoming an internal scrolling panel.";
 const LONG_EXAMPLE = "This deliberately long example demonstrates that unusually detailed learning material can expand the complete shared flashcard while the surrounding page handles any required viewport scrolling. Long example ending marker.";
@@ -858,11 +959,12 @@ async function seedSettledSession(page) {
         current_vocabulary_id: null, batch_status: "COMPLETED", run_status: "COMPLETED",
       },
     }));
-    sessionStorage.setItem("elvocab.backend-learning-session:v2:user-1:10000000-0000-4000-8000-000000000001:SRS_FLASHCARD", JSON.stringify({
-      version: 2,
+    sessionStorage.setItem("elvocab.backend-learning-session.ordinary:v3:user-1:10000000-0000-4000-8000-000000000001:SRS_FLASHCARD", JSON.stringify({
+      version: 3,
       user_id: "user-1",
       set_id: "10000000-0000-4000-8000-000000000001",
       mode: "SRS",
+      pass_id: null,
       session_id: "20000000-0000-4000-8000-000000000001",
       creation_operation_id: "70000000-0000-4000-8000-000000000001",
       expires_at: "2026-10-11T00:00:00.000Z",

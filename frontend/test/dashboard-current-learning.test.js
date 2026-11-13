@@ -1,38 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateLearningPassProgress } from "../src/dashboard/dashboard-current-learning.js";
+import { getCurrentLearningPresentation } from "../src/dashboard/dashboard-current-learning.js";
 
-test("current learning progress uses completed Normal-session evidence", () => {
-  assert.deepEqual(calculateLearningPassProgress({ snapshot_size: 10, studied_items: 3 }), {
-    isValid: true,
-    percentage: 30,
-    snapshotSize: 10,
-    studiedItems: 3,
+test("current learning presents concise backend-owned continuation states", () => {
+  assert.deepEqual(getCurrentLearningPresentation(activePass("PRISTINE")), {
+    isValid: true, status: "Tiếp tục lượt học hiện tại",
+  });
+  assert.deepEqual(getCurrentLearningPresentation(activePass("IN_PROGRESS")), {
+    isValid: true, status: "Tiếp tục những từ còn lại",
+  });
+  assert.deepEqual(getCurrentLearningPresentation(activePass("READY_TO_COMPLETE")), {
+    isValid: true, status: "Sẵn sàng hoàn thành bộ từ",
   });
 });
 
-test("current learning progress safely rejects zero or invalid snapshots", () => {
+test("current learning keeps restart-required separate from ordinary continuation", () => {
+  assert.deepEqual(getCurrentLearningPresentation({
+    ...activePass("IN_PROGRESS"), can_continue: false, restart_reason: "SNAPSHOT_CHANGED",
+  }), { isValid: true, status: "Cần xác nhận bắt đầu lại" });
+});
+
+test("current learning rejects completed, invalidated and malformed pass projections", () => {
   for (const pass of [
-    { snapshot_size: 0, studied_items: 0 },
-    { snapshot_size: Number.NaN, studied_items: 1 },
-    { snapshot_size: "10", studied_items: 1 },
+    { ...activePass("READY_TO_COMPLETE"), state: "COMPLETED" },
+    { ...activePass("IN_PROGRESS"), state: "INVALIDATED" },
+    { ...activePass("PRISTINE"), snapshot_size: 0 },
+    { ...activePass("PRISTINE"), ready_to_complete: true },
+    { ...activePass("UNKNOWN"), activity_state: "UNKNOWN" },
     null,
   ]) {
-    assert.deepEqual(calculateLearningPassProgress(pass), {
-      isValid: false,
-      percentage: 0,
-      snapshotSize: 0,
-      studiedItems: 0,
-    });
+    assert.deepEqual(getCurrentLearningPresentation(pass), { isValid: false, status: null });
   }
 });
 
-test("current learning progress clamps incompatible studied counts", () => {
-  assert.equal(calculateLearningPassProgress({ snapshot_size: 8, studied_items: -4 }).percentage, 0);
-  assert.deepEqual(calculateLearningPassProgress({ snapshot_size: 8, studied_items: 20 }), {
-    isValid: true,
-    percentage: 100,
-    snapshotSize: 8,
-    studiedItems: 8,
-  });
-});
+function activePass(activityState) {
+  return {
+    state: "ACTIVE",
+    snapshot_size: 10,
+    activity_state: activityState,
+    ready_to_complete: activityState === "READY_TO_COMPLETE",
+    can_continue: true,
+  };
+}

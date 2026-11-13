@@ -6,7 +6,10 @@ import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { LearningSessionApiError, learningSessionService } from "../services/learning-session-service.js";
 import { LearningPathApiError, learningPathService } from "../services/learning-path-service.js";
-import { clearLearningSessionState } from "../session-storage/learning-session-state.js";
+import {
+  clearIndependentNormalSessionPresentation,
+  clearLearningSessionState,
+} from "../session-storage/learning-session-state.js";
 import { showXpRewardToast } from "../components/xp-reward-notification.js";
 import {
   acknowledgeNormalReveal,
@@ -26,6 +29,7 @@ import {
 } from "./flashcard-presentation.jsx";
 import {
   acceptSrsRatingProjection,
+  openPassLinkedSrsSession,
   openSrsLearningSession,
   reconcileSrsLearningSession,
 } from "./srs-learning-session.js";
@@ -54,6 +58,7 @@ import {
   selectLearningMode,
   selectNormalCard,
   setSrsRetryContext,
+  startIndependentNormalRun,
   summarizeLearningRun,
   summarizeNormalRun,
 } from "./learning-run-state.js";
@@ -73,9 +78,10 @@ export function LearningFoundationPage({ reviewContext = false }) {
     () => loadLearningRunState(browserSessionStorage(), user.id, setId),
     [setId, user.id],
   );
+  const freshNormalIntent = !reviewContext && location.state?.learningIntent === "FRESH_NORMAL";
   const [mode, setMode] = useState(reviewContext
     ? "SRS"
-    : location.state?.learningPathAction
+    : location.state?.learningPathAction || freshNormalIntent
       ? "NORMAL"
       : storedAtEntry?.version === 3 ? storedAtEntry.active_mode : "SRS");
   const [pendingMode, setPendingMode] = useState(null);
@@ -90,7 +96,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const [normalSessionStatus, setNormalSessionStatus] = useState("idle");
   const [normalRetryVocabularyId, setNormalRetryVocabularyId] = useState(null);
   const [pathPass, setPathPass] = useState(null);
-  const [pathPassStatus, setPathPassStatus] = useState("idle");
+  const [pathPassStatus, setPathPassStatus] = useState(freshNormalIntent ? "loading" : "idle");
   const [pathCompletion, setPathCompletion] = useState(null);
   const [srsSession, setSrsSession] = useState(null);
   const [srsSessionStatus, setSrsSessionStatus] = useState("idle");
@@ -104,6 +110,10 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const answerHeadingRef = useRef(null);
   const summaryHeadingRef = useRef(null);
   const modeHeadingRef = useRef(null);
+  const normalPendingStatusRef = useRef(null);
+  const normalRetryButtonRef = useRef(null);
+  const normalProgressionButtonRef = useRef(null);
+  const normalMutationFocusIntentRef = useRef(false);
   const audioRef = useRef(null);
   const pronunciationRequestRef = useRef(0);
   const returnTo = reviewContext ? "/review" : location.state?.returnTo ?? "/my/vocabulary-sets";
@@ -129,10 +139,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
         setRunState(nextState);
         setMode(requestedMode);
         if (requestedMode === "SRS") setSrsSessionStatus("loading");
-        else {
-          setPathPassStatus("loading");
-          setPathCompletion(null);
-        }
+        else setPathCompletion(null);
         setPendingMode(null);
         modeTransitionRef.current = false;
         setRevealed(false);
@@ -169,7 +176,8 @@ export function LearningFoundationPage({ reviewContext = false }) {
   }, [reloadToken, requestedMode, setId, supportsSpeechSynthesis, user.id]);
 
   useEffect(() => {
-    if (status !== "ready" || mode !== "NORMAL" || !payload) return undefined;
+    if (status !== "ready" || !payload || reviewContext) return undefined;
+    if (pathPass?.set_id === setId) return undefined;
     let active = true;
     void runPathOperation({
       storage: browserSessionStorage(), userId: user.id, setId, kind: "START",
@@ -181,8 +189,24 @@ export function LearningFoundationPage({ reviewContext = false }) {
       setPathPassStatus(pass.can_continue === false ? "restart-required" : "managed");
     }).catch((error) => {
       if (!active) return;
-      if (error instanceof LearningPathApiError
-        && ["CEFR_PASS_NOT_FOUND", "CEFR_SET_ALREADY_COMPLETED"].includes(error.code)) {
+      if (error instanceof LearningPathApiError && error.code === "CEFR_SET_ALREADY_COMPLETED") {
+        if (freshNormalIntent) {
+          clearIndependentNormalSessionPresentation(browserSessionStorage(), {
+            userId: user.id, setId, mode: "NORMAL",
+          });
+          setNormalSession(null);
+          setNormalSessionStatus("idle");
+          setRunState((current) => {
+            const freshRun = startIndependentNormalRun(current, payload.cards);
+            saveLearningRunState(browserSessionStorage(), freshRun);
+            return freshRun;
+          });
+        }
+        setPathPass(null);
+        setPathPassStatus("legacy");
+        return;
+      }
+      if (error instanceof LearningPathApiError && error.code === "CEFR_PASS_NOT_FOUND") {
         setPathPass(null);
         setPathPassStatus("legacy");
         return;
@@ -212,7 +236,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       setEventError("Chưa thể chuẩn bị lượt học CEFR. Vui lòng thử lại.");
     });
     return () => { active = false; };
-  }, [location.state?.passId, mode, payload, setId, status, user.id]);
+  }, [freshNormalIntent, location.state?.passId, pathPass?.id, pathPass?.set_id, pathPass?.state, payload, reviewContext, setId, status, user.id]);
 
   const allCards = useMemo(() => payload?.cards ?? [], [payload]);
   const proposedCards = useMemo(
@@ -240,6 +264,12 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const primaryMeaning = useMemo(() => selectPrimaryMeaning(currentCard?.meanings), [currentCard]);
   const retryEvent = runState?.srs.retry_context ?? null;
   const pendingRating = pendingLearningRating(eventState, retryEvent);
+  const currentPassSrsSession = pathPass?.active_sessions?.SRS?.find(
+    ({ id }) => id === srsSession?.session_id,
+  ) ?? null;
+  const showCefrSrsChoices = mode === "SRS" && pathPassStatus === "managed"
+    && pathPass?.credited_items > 0 && currentPassSrsSession?.exact_resume_available === true
+    && srsSession?.view_state === "ACTIVE";
 
   useEffect(() => {
     if (status !== "ready" || mode !== "NORMAL" || !runState || cards.length === 0
@@ -248,12 +278,15 @@ export function LearningFoundationPage({ reviewContext = false }) {
       return undefined;
     }
     let active = true;
-    const identity = { userId: user.id, setId, mode: "NORMAL" };
+    const identity = {
+      userId: user.id, setId, mode: "NORMAL",
+      ...(pathPassStatus === "managed" && pathPass ? { passId: pathPass.id } : {}),
+    };
     const openSession = pathPassStatus === "managed" && pathPass
       ? runPathOperation({
         storage: browserSessionStorage(), userId: user.id, setId, passId: pathPass.id, kind: "NEXT_SESSION",
         randomUuid: () => window.crypto.randomUUID(),
-        execute: (operationId) => learningPathService.createNextSession(pathPass.id, operationId),
+        execute: (operationId) => learningPathService.createNextSession(pathPass.id, operationId, "NORMAL"),
       }).then((result) => result.session === null ? null : acceptPassLinkedNormalSession({
         storage: browserSessionStorage(), identity, session: result.session,
       }))
@@ -304,19 +337,51 @@ export function LearningFoundationPage({ reviewContext = false }) {
   }, [mode, normalSession?.view_state, pathPass?.id, pathPassStatus, status, setId, user.id, cards.map(({ id }) => id).join(":")]);
 
   useEffect(() => {
-    if (status !== "ready" || mode !== "SRS" || !runState) return undefined;
+    if (status !== "ready" || mode !== "SRS" || !runState
+      || (!reviewContext && !["managed", "legacy"].includes(pathPassStatus))) return undefined;
     let active = true;
-    const identity = { userId: user.id, setId, mode: "SRS" };
-    void openSrsLearningSession({
-      storage: browserSessionStorage(), identity,
-      service: learningSessionService,
-      randomUuid: () => window.crypto.randomUUID(),
-    }).then((sessionState) => {
+    const managed = !reviewContext && pathPassStatus === "managed" && pathPass;
+    const exactSrsSessionId = managed
+      ? pathPass.active_sessions.SRS.filter(({ exact_resume_available: exact }) => exact).at(-1)?.id ?? null
+      : null;
+    const identity = {
+      userId: user.id, setId, mode: "SRS", ...(managed ? { passId: pathPass.id } : {}),
+    };
+    const opening = managed
+      ? openPassLinkedSrsSession({
+        storage: browserSessionStorage(), identity, passId: pathPass.id,
+        exactSessionId: exactSrsSessionId,
+        pathService: learningPathService, sessionService: learningSessionService,
+        runOperation: runPathOperation, randomUuid: () => window.crypto.randomUUID(),
+      })
+      : openSrsLearningSession({
+        storage: browserSessionStorage(), identity,
+        service: learningSessionService, randomUuid: () => window.crypto.randomUUID(),
+      }).then((sessionState) => ({ session_state: sessionState, cards: null, evaluated_at: null }));
+    void opening.then((opened) => {
       if (!active) return;
+      const sessionState = opened.session_state;
+      let activeRun = runState;
+      if (managed && opened.cards) {
+        const authoritativePayload = {
+          ...payload,
+          mode: "SRS",
+          cards: opened.cards,
+          eligible_count: opened.cards.length,
+          evaluated_at: opened.evaluated_at,
+          next_review_at: null,
+        };
+        activeRun = reconcileLearningRunState(runState, user.id, setId, authoritativePayload);
+        setPayload(authoritativePayload);
+      }
       setSrsSession(sessionState);
-      setSrsSessionStatus(sessionState?.view_state ?? "UP_TO_DATE");
-      if (!sessionState) return;
-      const reconciledRun = reconcileSrsSessionRun(runState, sessionState);
+      setSrsSessionStatus(sessionState?.view_state ?? (opened.reason === "PASS_READY_TO_COMPLETE"
+        ? "PASS_READY_TO_COMPLETE" : "UP_TO_DATE"));
+      if (!sessionState) {
+        if (opened.reason === "PASS_READY_TO_COMPLETE") requestFocus("summary");
+        return;
+      }
+      const reconciledRun = reconcileSrsSessionRun(activeRun, sessionState);
       persist(reconciledRun);
       if (reconciledRun.srs.retry_context && sessionState.view_state === "ACTIVE") {
         setEventState("error");
@@ -337,7 +402,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     return () => { active = false; };
   // The Backend session owns the immutable SRS queue for this Set.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, status, setId, user.id]);
+  }, [mode, pathPass?.id, pathPassStatus, reviewContext, status, setId, user.id]);
 
   useEffect(() => {
     if (!focusTarget) return;
@@ -346,6 +411,23 @@ export function LearningFoundationPage({ reviewContext = false }) {
         : focusTarget.kind === "mode" ? modeHeadingRef.current : cardHeadingRef.current;
     target?.focus();
   }, [focusTarget]);
+
+  useEffect(() => {
+    if (!normalMutationFocusIntentRef.current || mode !== "NORMAL") return;
+    if (eventState === "pending") {
+      normalPendingStatusRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (eventState === "error" && normalRetryVocabularyId) {
+      normalRetryButtonRef.current?.focus();
+      normalMutationFocusIntentRef.current = false;
+      return;
+    }
+    if (eventState === "idle" && normalRetryVocabularyId === null && revealed) {
+      normalProgressionButtonRef.current?.focus();
+      normalMutationFocusIntentRef.current = false;
+    }
+  }, [eventState, mode, normalRetryVocabularyId, revealed]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -400,17 +482,19 @@ export function LearningFoundationPage({ reviewContext = false }) {
     requestFocus("answer");
   }
 
-  async function revealNormalAnswer(retry = false) {
+  async function revealNormalAnswer(retry = false, restoreKeyboardFocus = false) {
     if ((!retry && revealed) || mode !== "NORMAL" || !currentCard || !normalSession
       || normalSession.view_state !== "ACTIVE" || eventState === "pending") return;
     if (!revealed) revealAnswer();
+    normalMutationFocusIntentRef.current = restoreKeyboardFocus;
     setEventState("pending");
     setEventError(null);
     setNormalRetryVocabularyId(currentCard.id);
+    setAnnouncement("Đang ghi nhận bằng chứng học tập.");
     try {
       const accepted = await acknowledgeNormalReveal({
         storage: browserSessionStorage(),
-        identity: { userId: user.id, setId, mode: "NORMAL" },
+        identity: learningSessionIdentity("NORMAL"),
         state: normalSession,
         vocabularyId: currentCard.id,
         service: learningSessionService,
@@ -418,6 +502,9 @@ export function LearningFoundationPage({ reviewContext = false }) {
       });
       setNormalSession(accepted);
       setNormalSessionStatus(accepted.view_state);
+      if (accepted.cefr_pass) {
+        setPathPass((current) => mergePassEvidenceSummary(current, accepted.cefr_pass));
+      }
       setNormalRetryVocabularyId(null);
       setEventState("idle");
       setAnnouncement("Đã ghi nhận thẻ được lật. Bạn có thể tiếp tục.");
@@ -425,6 +512,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       if (await reconcileTerminalNormalMutation(error)) return;
       setEventState("error");
       setEventError("Chưa thể ghi nhận lần lật thẻ. Hãy thử lại trước khi hoàn thành phiên.");
+      setAnnouncement("Chưa thể ghi nhận bằng chứng học tập. Hãy thử lại.");
     }
   }
 
@@ -439,7 +527,9 @@ export function LearningFoundationPage({ reviewContext = false }) {
     const interaction = resolveFlashcardInteraction(revealed, trigger);
     if (!interaction.shouldFlip) return;
     if (interaction.nextRevealed) {
-      const reveal = mode === "NORMAL" ? () => void revealNormalAnswer() : revealAnswer;
+      const reveal = mode === "NORMAL"
+        ? () => void revealNormalAnswer(false, trigger === "space")
+        : revealAnswer;
       if (interaction.shouldPlayPronunciation) revealWithPronunciation(reveal, playPronunciation);
       else reveal();
     } else showCardFront();
@@ -481,7 +571,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     try {
       const result = await completeNormalLearningSession({
         storage: browserSessionStorage(),
-        identity: { userId: user.id, setId, mode: "NORMAL" },
+        identity: learningSessionIdentity("NORMAL"),
         state: normalSession,
         service: learningSessionService,
         randomUuid: () => window.crypto.randomUUID(),
@@ -513,7 +603,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     try {
       const reconciled = await reconcileNormalLearningSession({
         storage: browserSessionStorage(),
-        identity: { userId: user.id, setId, mode: "NORMAL" },
+        identity: learningSessionIdentity("NORMAL"),
         state: normalSession,
         service: learningSessionService,
       });
@@ -525,6 +615,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       setNormalSession(reconciled);
       setNormalSessionStatus(reconciled.view_state);
       setNormalRetryVocabularyId(null);
+      normalMutationFocusIntentRef.current = false;
       setEventState("idle");
       setEventError(reconciled.view_state === "EXPIRED"
         ? "Phi\u00ean h\u1ecdc \u0111\u00e3 h\u1ebft h\u1ea1n. H\u00e3y b\u1eaft \u0111\u1ea7u l\u1ea1i nh\u00f3m t\u1eeb \u0111\u1ec3 ti\u1ebfp t\u1ee5c."
@@ -546,7 +637,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     const nextState = continueNormalRun(runState);
     if (nextState === runState) return;
     persist(nextState);
-    clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+    clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("NORMAL"));
     setNormalSession(null);
     setNormalSessionStatus("idle");
     setRevealed(false);
@@ -591,7 +682,8 @@ export function LearningFoundationPage({ reviewContext = false }) {
         randomUuid: () => window.crypto.randomUUID(),
         execute: (operationId) => learningPathService.restartPass(pathPass.id, operationId),
       });
-      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+      clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("NORMAL"));
+      clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("SRS"));
       setPathPass(result.pass);
       setPathPassStatus("managed");
       setNormalSession(null);
@@ -626,15 +718,16 @@ export function LearningFoundationPage({ reviewContext = false }) {
     setAnnouncement(`Đang ghi nhận: ${RATING_LABELS[rating]}.`);
     try {
       const accepted = await learningService.recordMeaningfulEvent(nextAttempt);
-      const { reward, session } = accepted;
+      const { reward, session, cefr_pass: cefrPass } = accepted;
       const progress = Object.fromEntries(Object.entries(accepted).filter(([field]) => (
-        !["reward", "session", "streak"].includes(field)
+        !["reward", "session", "streak", "cefr_pass"].includes(field)
       )));
       const acceptedSession = acceptSrsRatingProjection({
         storage: browserSessionStorage(),
-        identity: { userId: user.id, setId, mode: "SRS" },
+        identity: learningSessionIdentity("SRS"),
         state: srsSession,
         backendSession: session,
+        cefrPass,
       });
       setSrsSession(acceptedSession);
       setSrsSessionStatus(acceptedSession.view_state);
@@ -650,6 +743,15 @@ export function LearningFoundationPage({ reviewContext = false }) {
         throw new TypeError("Accepted SRS result could not be persisted.");
       }
       setRunState(nextState);
+      if (cefrPass) {
+        const mergedPass = mergePassEvidenceSummary(pathPass, cefrPass);
+        setPathPass(mergedPass);
+        try {
+          setPathPass(await learningPathService.readPass(mergedPass.id));
+        } catch {
+          // The accepted event summary remains authoritative for credit/readiness.
+        }
+      }
       cancelPronunciation();
       setRevealed(false);
       setAudioError(null);
@@ -680,7 +782,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     try {
       const reconciled = await reconcileSrsLearningSession({
         storage: browserSessionStorage(),
-        identity: { userId: user.id, setId, mode: "SRS" },
+        identity: learningSessionIdentity("SRS"),
         state: srsSession,
         service: learningSessionService,
       });
@@ -708,7 +810,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       if (summary.presentation_count > 0
         && !window.confirm("Bắt đầu lại phiên SRS? Tiến độ đã lưu sẽ không bị xóa.")) return;
       restartSrsRef.current = true;
-      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "SRS" });
+      clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("SRS"));
       setSrsSession(null);
       setSrsSessionStatus("idle");
       setStatus("loading");
@@ -716,7 +818,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     } else if (pathPassStatus === "managed" && pathPass?.state === "ACTIVE") {
       setEventError("Lượt học CEFR đang được lưu tự động. Hãy tiếp tục lượt hiện tại; chỉ bắt đầu lại khi hệ thống báo nội dung đã thay đổi.");
     } else {
-      clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "NORMAL" });
+      clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("NORMAL"));
       setNormalSession(null);
       setNormalSessionStatus("idle");
       persist(restartNormalRun(runState, allCards));
@@ -731,11 +833,20 @@ export function LearningFoundationPage({ reviewContext = false }) {
   function continueSrsReview() {
     if (mode !== "SRS" || !runState || !summary.completed) return;
     restartSrsRef.current = true;
-    clearLearningSessionState(browserSessionStorage(), { userId: user.id, setId, mode: "SRS" });
+    clearLearningSessionState(browserSessionStorage(), learningSessionIdentity("SRS"));
     setSrsSession(null);
     setSrsSessionStatus("idle");
     setStatus("loading");
     setReloadToken((value) => value + 1);
+  }
+
+  function learningSessionIdentity(sessionMode) {
+    return {
+      userId: user.id,
+      setId,
+      mode: sessionMode,
+      ...(pathPassStatus === "managed" && pathPass ? { passId: pathPass.id } : {}),
+    };
   }
 
   async function playPronunciation() {
@@ -779,8 +890,19 @@ export function LearningFoundationPage({ reviewContext = false }) {
     if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
   }
 
+  if (!reviewContext && ["locked", "error"].includes(pathPassStatus)) {
+    return <LearningPageState
+      mode={mode}
+      status={pathPassStatus === "locked" ? "locked" : "error"}
+      onRetry={retryLoad}
+      returnTo={returnTo}
+    />;
+  }
+
   if (status !== "ready" || !payload || !runState || !summary
-    || (mode === "SRS" && srsSessionStatus === "loading")) {
+    || (freshNormalIntent && pathPassStatus === "loading")
+    || (mode === "SRS" && srsSessionStatus === "loading"
+      && pathPassStatus !== "restart-required")) {
     const presentationStatus = mode === "SRS" && srsSessionStatus === "loading"
       ? "loading"
       : status;
@@ -789,17 +911,26 @@ export function LearningFoundationPage({ reviewContext = false }) {
 
   const isSrsFinished = mode === "SRS" && summary.completed;
   const isUpToDate = mode === "SRS" && summary.up_to_date;
-  if (isSrsFinished || isUpToDate) {
+  const isPassReady = mode === "SRS" && srsSessionStatus === "PASS_READY_TO_COMPLETE";
+  if (isSrsFinished || isUpToDate || isPassReady) {
+    const managedSrs = !reviewContext && pathPassStatus === "managed" && pathPass;
+    const readyToComplete = managedSrs && pathPass.state === "ACTIVE"
+      && pathPass.ready_to_complete;
+    const passCompleted = managedSrs && pathPass.state === "COMPLETED";
     return (
       <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
         <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-[#d9e8f3] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="status">
           <BookOpenCheck className="mx-auto size-14 rounded-2xl bg-[var(--accent-primary-soft)] p-3 text-[var(--accent-primary-pressed)]" aria-hidden="true" />
-          <h1 ref={summaryHeadingRef} tabIndex={-1}>Hoàn thành ôn tập</h1>
-          <p>{isSrsFinished ? `Đã hoàn thành ${summary.completed_count} / ${summary.total} từ trong phiên này.` : reviewContext ? "Hiện chưa có từ nào đến hạn. Bạn có thể quay lại Trung tâm ôn tập." : "Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ."}</p>
+          <h1 ref={summaryHeadingRef} tabIndex={-1}>{readyToComplete ? "Sẵn sàng hoàn thành bộ từ" : passCompleted ? "Hoàn thành bộ từ" : "Hoàn thành ôn tập"}</h1>
+          <p>{readyToComplete
+            ? `Đã học đủ ${pathPass.credited_items} / ${pathPass.snapshot_size} từ. Hãy xác nhận bước cuối.`
+            : isSrsFinished ? `Đã hoàn thành ${summary.completed_count} / ${summary.total} từ trong phiên này.` : reviewContext ? "Hiện chưa có từ nào đến hạn. Bạn có thể quay lại Trung tâm ôn tập." : "Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ."}</p>
           {isUpToDate && payload.next_review_at ? <p>Lần ôn tập tiếp theo: {formatNextReview(payload.next_review_at)}</p> : null}
           <div className="flex flex-wrap justify-center gap-3">
             {!reviewContext ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => switchMode("NORMAL")}>Ôn tập thường</button> : null}
-            {isSrsFinished ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={continueSrsReview}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}
+            {readyToComplete
+              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void completeFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang hoàn thành…" : "Hoàn thành bộ từ"}</button>
+              : isSrsFinished && !passCompleted ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={continueSrsReview}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}
             <Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>{reviewContext ? "Trung tâm ôn tập" : "Quay lại bộ từ"}</Link>
           </div>
         </section>
@@ -807,7 +938,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     );
   }
 
-  if (mode === "NORMAL" && pathPassStatus === "restart-required") {
+  if (!reviewContext && pathPassStatus === "restart-required") {
     return (
       <main className={`${PAGE_CLASSES} grid min-h-[min(38rem,calc(100vh_-_9rem))] place-items-center`}>
         <section className="w-full max-w-[36rem] rounded-[1.4rem] border border-amber-200 bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" role="alert">
@@ -854,7 +985,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       <div className="flex h-full min-h-0 flex-col">
         <FlashcardToolbar
           backLabel={payload.name}
-          badge={reviewContext ? "Ôn tập" : null}
+          badge={reviewContext ? "Ôn tập" : pathPassStatus === "managed" ? "Lượt học CEFR" : null}
           disabled={eventState === "pending"}
           innerClassName={`grid ${reviewContext ? "grid-cols-[minmax(0,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_auto_auto_auto]"} max-[900px]:grid-cols-[minmax(0,1fr)_auto]`}
           onBack={() => navigate(returnTo)}
@@ -879,13 +1010,27 @@ export function LearningFoundationPage({ reviewContext = false }) {
           value={mode === "SRS" ? summary.completed_count : currentIndex + 1}
           valueLabel={mode === "SRS" ? `Đã hoàn thành ${summary.completed_count} / ${summary.total}` : `Thẻ ${currentIndex + 1} / ${cards.length}`}
         />
+        {showCefrSrsChoices ? <section className="mb-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-slate-700" aria-label="Tiếp tục lượt học CEFR">
+          <p className="m-0 font-semibold">Phiên SRS này vẫn còn thẻ cần xử lý. Tiến độ CEFR đã được lưu độc lập.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={() => requestFocus("card")}>Tiếp tục phiên SRS này</button>
+            {pathPass.state === "COMPLETED"
+              ? <span className="inline-flex min-h-11 items-center font-semibold text-emerald-700">Bộ từ đã hoàn thành</span>
+              : pathPass.ready_to_complete
+              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void completeFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang hoàn thành…" : "Hoàn thành bộ từ"}</button>
+              : <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => switchMode("NORMAL")} disabled={eventState === "pending" || Boolean(pendingMode)}>Tiếp tục phần CEFR còn lại</button>}
+          </div>
+        </section> : null}
         <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
-        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void revealNormalAnswer(true)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
+        {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" ref={normalRetryButtonRef} onClick={(event) => void revealNormalAnswer(true, event.detail === 0)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
+        {mode === "NORMAL" && eventState === "pending" ? <p className="mb-2 mt-0 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={-1}>Đang ghi nhận bằng chứng học tập…</p> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <FlashcardCard
           key={`${mode}:${currentCard.id}`}
           answerHeadingRef={answerHeadingRef}
           audioAvailable={Boolean(currentCard.pronunciation_url || supportsSpeechSynthesis)}
+          audioDisabled={mode !== "NORMAL" && eventState === "pending"}
+          busy={mode === "NORMAL" && eventState === "pending"}
           card={currentCard}
           cardHeadingRef={cardHeadingRef}
           disabled={eventState === "pending"}
@@ -907,7 +1052,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
             pendingRating={pendingRating}
             revealed={revealed}
           /> : (
-            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button>{currentIndex === cards.length - 1 ? <button type="button" className={NEXT_BUTTON_CLASSES} onClick={finishNormalBatch} disabled={Boolean(pendingMode) || eventState === "pending" || !canCompleteNormalLearningSession(normalSession)}>Hoàn thành phiên</button> : <button type="button" className={NEXT_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex + 1)} disabled={Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button>}</nav>
+            <nav className="grid w-full max-w-sm grid-cols-2 gap-3" aria-label="Điều hướng thẻ"><button type="button" className={PREVIOUS_BUTTON_CLASSES} onClick={() => navigateNormal(currentIndex - 1)} disabled={currentIndex === 0 || Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2"><ArrowLeft aria-hidden="true" /> Thẻ trước</span><span className="text-xs font-medium opacity-70">Key: ←</span></button>{currentIndex === cards.length - 1 ? <button type="button" className={NEXT_BUTTON_CLASSES} ref={normalProgressionButtonRef} onClick={finishNormalBatch} disabled={Boolean(pendingMode) || eventState === "pending" || !canCompleteNormalLearningSession(normalSession)}>Hoàn thành phiên</button> : <button type="button" className={NEXT_BUTTON_CLASSES} ref={normalProgressionButtonRef} onClick={() => navigateNormal(currentIndex + 1)} disabled={Boolean(pendingMode) || eventState === "pending"}><span className="inline-flex items-center gap-2">Thẻ sau <ArrowRight aria-hidden="true" /></span><span className="text-xs font-medium opacity-80">Key: →</span></button>}</nav>
           )}
         </div>
         </div>
@@ -937,6 +1082,24 @@ function formatNextReview(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function mergePassEvidenceSummary(current, summary) {
+  if (!current || current.id !== summary?.id) {
+    throw new TypeError("CEFR evidence summary does not match the active pass.");
+  }
+  return {
+    ...current,
+    state: summary.state,
+    studied_items: summary.credited_items,
+    credited_items: summary.credited_items,
+    remaining_items: summary.remaining_items,
+    ready_to_complete: summary.ready_to_complete,
+    activity_state: summary.state !== "ACTIVE"
+      ? summary.state
+      : summary.ready_to_complete ? "READY_TO_COMPLETE"
+        : summary.credited_items === 0 ? "PRISTINE" : "IN_PROGRESS",
+  };
 }
 
 function LearningPageState({ mode, onRetry, returnTo, status }) {

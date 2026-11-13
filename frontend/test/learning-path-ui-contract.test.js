@@ -52,7 +52,10 @@ test("Dashboard separates next suggestion, current learning, CEFR, review, featu
   assert.doesNotMatch(source, /DashboardSection|ProgressSummary|MySetsSummary|Bộ từ riêng xem trước/);
   assert.match(source, /<NextSuggestionSection[\s\S]*<CurrentLearningSection[\s\S]*title="Lộ trình CEFR"[\s\S]*title="Từ cần ôn"/);
   assert.match(source, /Tiếp tục học/);
-  assert.match(source, /studiedItems\} \/ \{progress\.snapshotSize\} từ đã học/);
+  assert.match(source, /getCurrentLearningPresentation\(pass\)/);
+  assert.match(source, /\{presentation\.status\}/);
+  assert.doesNotMatch(source, /studiedItems\} \/ \{progress\.snapshotSize\} từ đã học/);
+  assert.doesNotMatch(source, /aria-label=\{`Tiến độ lượt học/);
   assert.match(source, /catalogSource\.data\?\.sets\.find\(\(\{ id \}\) => id === source\.recommendation\.set_id\)/);
   assert.match(source, /<SetCover[\s\S]*coverImageUrl=\{coverImageUrl\}[\s\S]*<DefaultSetCoverArtwork/);
   assert.match(source, /coverImageUrl=\{catalogSet\?\.cover_image_url \?\? null\}/);
@@ -71,22 +74,42 @@ test("Dashboard separates next suggestion, current learning, CEFR, review, featu
 
 test("NORMAL full-pass UI requires explicit final completion and truthful restart", async () => {
   const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  const setDetail = await readFile(new URL("../src/vocabulary-sets/set-detail-primitives.jsx", import.meta.url), "utf8");
+  const sessionState = await readFile(new URL("../src/session-storage/learning-session-state.js", import.meta.url), "utf8");
   assert.match(source, /learningPathService\.createNextSession/);
   assert.match(source, /learningPathService\.completePass/);
   assert.match(source, /Hoàn thành bộ từ/);
   assert.match(source, /CEFR_PASS_RESTART_REQUIRED/);
   assert.match(source, /pathPass\.remaining_items === 0/);
   assert.match(source, /location\.state\?\.learningPathAction/);
+  assert.match(setDetail, /learningIntent: "FRESH_NORMAL"/);
+  assert.match(source, /error\.code === "CEFR_SET_ALREADY_COMPLETED"[\s\S]*freshNormalIntent[\s\S]*clearIndependentNormalSessionPresentation/);
+  assert.match(source, /startIndependentNormalRun\(current, payload\.cards\)/);
+  assert.match(source, /error\.code === "CEFR_PASS_NOT_FOUND"/);
+  assert.doesNotMatch(source, /\["CEFR_PASS_NOT_FOUND", "CEFR_SET_ALREADY_COMPLETED"\]/);
+  assert.match(sessionState, /function clearIndependentNormalSessionPresentation[\s\S]*identity\?\.mode !== "NORMAL" \|\| identity\?\.passId != null[\s\S]*clearLearningSessionState\(storage, identity\)/);
+  assert.doesNotMatch(sessionState, /clearIndependentNormalSessionPresentation[\s\S]{0,500}clearPendingLearningSessionCreation/);
 });
 
 test("changed controls retain semantic, focus, and reduced-motion conventions", async () => {
   const dashboard = await readFile(new URL("../src/dashboard/dashboard-page.jsx", import.meta.url), "utf8");
   const learning = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+  const flashcard = await readFile(new URL("../src/learning/flashcard-presentation.jsx", import.meta.url), "utf8");
   assert.match(dashboard, /<span className="sr-only">\{level\.unlocked/);
   assert.match(dashboard, /role="progressbar"/);
   assert.match(dashboard, /motion-reduce:animate-none/);
   assert.match(dashboard, /min-h-11/);
   assert.match(dashboard, /focus-visible:ring-3/);
   assert.match(learning, /disabled=\{eventState === "pending"\}/);
+  assert.match(learning, /audioDisabled=\{mode !== "NORMAL" && eventState === "pending"\}/);
+  assert.match(learning, /busy=\{mode === "NORMAL" && eventState === "pending"\}/);
+  assert.match(learning, /Đang ghi nhận bằng chứng học tập…/);
+  assert.match(learning, /normalPendingStatusRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(learning, /normalRetryButtonRef\.current\?\.focus\(\)/);
+  assert.match(learning, /normalProgressionButtonRef\.current\?\.focus\(\)/);
+  assert.match(learning, /revealNormalAnswer\(true, event\.detail === 0\)/);
+  assert.match(flashcard, /disabled=\{audioIsDisabled\}/);
+  assert.match(flashcard, /aria-busy=\{busy \|\| undefined\}/);
   assert.match(learning, /motion-reduce:transition-none/);
+  assert.match(flashcard, /motion-reduce:transition-none/);
 });

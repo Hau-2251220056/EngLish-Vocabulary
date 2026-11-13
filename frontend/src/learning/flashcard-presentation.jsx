@@ -59,6 +59,8 @@ export function FlashcardProgress({ label, max, value, valueLabel }) {
 export function FlashcardCard({
   answerHeadingRef,
   audioAvailable = false,
+  audioDisabled,
+  busy = false,
   card,
   cardHeadingRef,
   disabled = false,
@@ -70,6 +72,8 @@ export function FlashcardCard({
   overlay = null,
   revealed,
 }) {
+  const audioIsDisabled = audioDisabled ?? disabled;
+
   function handleKeyDown(event) {
     if (!interactive || disabled || !["Enter", " "].includes(event.key)) return;
     event.preventDefault();
@@ -88,11 +92,11 @@ export function FlashcardCard({
   } : {};
 
   const audioButton = audioAvailable && !interactive ? (
-    <button type="button" className={AUDIO_BUTTON_CLASSES} onClick={onAudio} disabled={disabled} aria-label={`Phát âm từ ${card.word}`} title="Phát âm"><Volume2 aria-hidden="true" /></button>
+    <button type="button" className={AUDIO_BUTTON_CLASSES} onClick={onAudio} disabled={audioIsDisabled} aria-label={`Phát âm từ ${card.word}`} title="Phát âm"><Volume2 aria-hidden="true" /></button>
   ) : null;
 
   return (
-    <div className="learning-flip-stage relative grid min-h-[22rem] w-full shrink-0 cursor-pointer self-center rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] lg:min-h-96 max-[700px]:min-h-56 max-[700px]:rounded-[1.1rem]" onClick={onCardClick} ref={interactionRef} {...interaction}>
+    <div className="learning-flip-stage relative grid min-h-[22rem] w-full shrink-0 cursor-pointer self-center rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] lg:min-h-96 max-[700px]:min-h-56 max-[700px]:rounded-[1.1rem]" aria-busy={busy || undefined} onClick={onCardClick} ref={interactionRef} {...interaction}>
       <div className={`learning-card-flipper relative grid min-h-0 min-w-0 rounded-3xl border border-[#b9dcf6] bg-white shadow-[0_16px_36px_rgb(30_41_59/8%)] focus-within:ring-1 focus-within:ring-[var(--accent-primary-focus)] max-[700px]:rounded-[1.1rem] ${revealed ? "is-revealed" : ""}`}>
         <section className="learning-card relative flex min-h-0 min-w-0 w-full flex-col rounded-[inherit] p-[clamp(1.1rem,2.5vw,1.75rem)] max-[700px]:p-4" aria-labelledby="learning-card-word" aria-hidden={revealed} inert={revealed || undefined}>
           <div className="learning-front-content flex min-h-0 flex-1 items-center justify-center">

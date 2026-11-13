@@ -10,7 +10,7 @@ export function SetLearningActions({ compactMobile = false, enabled, returnTo, s
     <section className="set-detail-learning mt-4" aria-labelledby="set-detail-learning-title">
       <h2 className="sr-only" id="set-detail-learning-title">Bắt đầu học</h2>
       <div className={`set-detail-learning-grid mt-[0.85rem] grid grid-cols-[repeat(3,minmax(10.5rem,13rem))] gap-[0.85rem] max-[800px]:grid-cols-2 max-[480px]:gap-[0.6rem] ${mobileGrid}`}>
-        <LearningCard enabled={enabled} icon={BookOpen} title="Thẻ ghi nhớ" description="Ôn từ vựng theo từng thẻ." mobileClasses={mobileCard} to={`/learn/vocabulary-sets/${setId}`} state={{ returnTo }} />
+        <LearningCard enabled={enabled} icon={BookOpen} title="Thẻ ghi nhớ" description="Ôn từ vựng theo từng thẻ." mobileClasses={mobileCard} to={`/learn/vocabulary-sets/${setId}`} state={{ returnTo, learningIntent: "FRESH_NORMAL" }} />
         <LearningCard enabled={enabled} icon={FileQuestion} title="Quiz" description="Kiểm tra kiến thức với bài Quiz." mobileClasses={mobileCard} to={`/quiz/vocabulary-sets/${setId}`} state={{ returnTo, setName }} />
         <LearningCard enabled={enabled} icon={Mic} title="Luyện nói" description="Nghe từ mẫu và luyện nói." mobileClasses={mobileCard} to={`/pronunciation/vocabulary-sets/${setId}`} state={{ returnTo }} />
       </div>

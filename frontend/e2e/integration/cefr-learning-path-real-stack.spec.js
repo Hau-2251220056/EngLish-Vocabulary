@@ -52,7 +52,7 @@ test("first USER receives A1 recommendation and Guest/ADMIN remain role-correct"
     .toHaveAttribute("href", `/learn/vocabulary-sets/${one.id}`);
 });
 
-test("one-item A1 Set requires completed bounded evidence and explicit pass completion", async ({ page }) => {
+test("one-item A1 Set accepts reveal first credit and still requires explicit pass completion", async ({ page }) => {
   await login(page, learner);
   const concurrent = await Promise.all([
     startPass(page, one.id), startPass(page, one.id),
@@ -63,7 +63,8 @@ test("one-item A1 Set requires completed bounded evidence and explicit pass comp
   await revealBatch(page, batch.session);
   const revealedOnly = await api(page, "get", `/api/learning-path/passes/${started.pass.id}`);
   expect(revealedOnly).toMatchObject({
-    state: "ACTIVE", snapshot_size: 1, studied_items: 0, remaining_items: 1,
+    state: "ACTIVE", snapshot_size: 1, studied_items: 1, remaining_items: 0,
+    ready_to_complete: true, evidence_counts: { NORMAL: 1, SRS: 0 },
     can_continue: true,
   });
   await completeSession(page, batch.session.id);
@@ -73,6 +74,130 @@ test("one-item A1 Set requires completed bounded evidence and explicit pass comp
     can_continue: true,
   });
   await api(page, "post", `/api/learning-path/passes/${started.pass.id}/complete`, { operation_id: randomUUID() });
+});
+
+test("a completed Set starts fresh independent NORMAL study without replacing its completed pass", async ({ page }) => {
+  await login(page, learner);
+  const completedBefore = await prisma.cEFR_LEARNING_PASS.findFirstOrThrow({
+    where: { user_id: learner.id, set_id_snapshot: one.id, status: "COMPLETED" },
+    select: { id: true, completed_at: true, completion_event_id: true },
+  });
+  await page.goto(`/learn/vocabulary-sets/${one.id}`);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" }))
+    .toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: `${run}-01 one-0` })).toBeVisible();
+  await expect.poll(() => prisma.lEARNING_SESSION.count({
+    where: {
+      user_id: learner.id,
+      set_id_snapshot: one.id,
+      mode: "NORMAL",
+      cefr_learning_pass_id: null,
+    },
+  })).toBe(1);
+  const ordinary = await prisma.lEARNING_SESSION.findFirstOrThrow({
+    where: {
+      user_id: learner.id,
+      set_id_snapshot: one.id,
+      mode: "NORMAL",
+      cefr_learning_pass_id: null,
+    },
+    orderBy: { created_at: "desc" },
+  });
+  expect(ordinary.scope).toBe("SET");
+  expect(await prisma.cEFR_LEARNING_PASS.count({
+    where: { user_id: learner.id, set_id_snapshot: one.id },
+  })).toBe(1);
+  expect(await prisma.cEFR_LEARNING_PASS.findUniqueOrThrow({
+    where: { id: completedBefore.id },
+    select: { id: true, status: true, completed_at: true, completion_event_id: true },
+  })).toEqual({ status: "COMPLETED", ...completedBefore });
+});
+
+test("mixed NORMAL/SRS study credits AGAIN once and preserves exact unresolved SRS resume", async ({ page }) => {
+  await login(page, learner);
+  const mixed = await systemSet("01 mixed", "A1", 2);
+  const started = await startPass(page, mixed.id);
+  const normal = await nextBatch(page, started.pass.id, "NORMAL");
+  const [normalItem] = normal.session.items;
+  await api(
+    page,
+    "put",
+    `/api/learning-sessions/${normal.session.id}/items/${normalItem.vocabulary_id}/reveal`,
+    { operation_id: randomUUID() },
+  );
+  const srs = await nextBatch(page, started.pass.id, "SRS");
+  expect(srs.session.items).toHaveLength(1);
+  const [srsItem] = srs.session.items;
+  const eventId = randomUUID();
+  const again = await api(page, "post", "/api/learning/events", {
+    event_id: eventId,
+    session_id: srs.session.id,
+    set_id: mixed.id,
+    vocabulary_id: srsItem.vocabulary_id,
+    expected_revision: 0,
+    rating: "AGAIN",
+  });
+  expect(again).toMatchObject({
+    cefr_pass: {
+      id: started.pass.id,
+      ready_to_complete: true,
+    },
+    session: { id: srs.session.id, state: "ACTIVE" },
+  });
+  expect(again.session.items.find(({ vocabulary_id: id }) => id === srsItem.vocabulary_id))
+    .toMatchObject({ evidence: null });
+  const srsCredit = await prisma.cEFR_LEARNING_PASS_ITEM.findUniqueOrThrow({
+    where: { pass_id_vocabulary_id: {
+      pass_id: started.pass.id,
+      vocabulary_id: srsItem.vocabulary_id,
+    } },
+  });
+  expect(srsCredit).toMatchObject({
+    first_credit_source: "SRS_AGAIN",
+    first_credit_event_id: eventId,
+    first_credit_session_id: srs.session.id,
+  });
+  const authoritative = await api(page, "get", `/api/learning-path/passes/${started.pass.id}`);
+  expect(authoritative).toMatchObject({
+    ready_to_complete: true,
+    evidence_counts: { NORMAL: 1, SRS: 1 },
+    active_sessions: {
+      SRS: [expect.objectContaining({ id: srs.session.id, exact_resume_available: true })],
+    },
+  });
+
+  await page.goto(`/learn/vocabulary-sets/${mixed.id}`);
+  const continuation = page.getByRole("region", { name: "Tiếp tục lượt học CEFR" });
+  await expect(continuation.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
+  await expect(continuation.getByRole("button", { name: "Hoàn thành bộ từ" })).toBeVisible();
+  await api(page, "post", `/api/learning-path/passes/${started.pass.id}/complete`, {
+    operation_id: randomUUID(),
+  });
+});
+
+test("SRS-only study can ready and explicitly complete a CEFR pass", async ({ page }) => {
+  await login(page, learner);
+  const srsOnly = await systemSet("01 srs only", "A1", 1);
+  const started = await startPass(page, srsOnly.id);
+  await page.goto(`/learn/vocabulary-sets/${srsOnly.id}`);
+  await page.getByRole("button", { name: "Ôn tập SRS" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" }))
+    .toHaveAttribute("aria-pressed", "true");
+  const card = page.getByRole("heading", { name: `${run}-01 srs only-0` });
+  await expect(card).toBeVisible();
+  await card.press("Space");
+  await page.getByRole("button", { name: /^Tốt, / }).click();
+  await expect.poll(async () => (
+    await api(page, "get", `/api/learning-path/passes/${started.pass.id}`)
+  ).ready_to_complete).toBe(true);
+  const completed = await api(
+    page,
+    "post",
+    `/api/learning-path/passes/${started.pass.id}/complete`,
+    { operation_id: randomUUID() },
+  );
+  expect(completed.pass).toMatchObject({ state: "COMPLETED", evidence_counts: { NORMAL: 0, SRS: 1 } });
 });
 
 test("ten-item A1 Set completes through authoritative bounded-session evidence", async ({ page }) => {
@@ -105,13 +230,14 @@ test("eleven-item A1 Set preserves the final item after its first bounded batch"
 test("eleven-item A1 Set resumes after reload, completes its final item, and unlocks A2", async ({ page }) => {
   await login(page, learner);
   await page.goto("/dashboard");
-  const featured = page.getByRole("list", { name: "Bộ từ nổi bật" });
-  const currentSet = featured.getByRole("listitem").filter({ hasText: eleven.name });
-  await expect(currentSet).toContainText("A1");
-  await currentSet.getByRole("link", { name: `Xem ${eleven.name}` }).click();
-  await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${eleven.id}$`));
-  await expect(page.getByRole("heading", { level: 1, name: eleven.name })).toBeVisible();
-  await page.getByRole("link", { name: /Thẻ ghi nhớ/ }).click();
+  const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
+  await expect(currentLearning).toContainText(eleven.name);
+  const exactPass = page.waitForResponse((response) => (
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === `/api/learning-path/passes/${elevenPass.pass.id}`
+  ));
+  await currentLearning.getByRole("link", { name: "Tiếp tục" }).click();
+  await exactPass;
   await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${eleven.id}$`));
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
@@ -274,7 +400,7 @@ async function finishPass(page, passId) {
   return api(page, "post", `/api/learning-path/passes/${passId}/complete`, { operation_id: randomUUID() });
 }
 function startPass(page, setId) { return api(page, "post", `/api/learning-path/sets/${setId}/passes`, { operation_id: randomUUID() }); }
-function nextBatch(page, passId) { return api(page, "post", `/api/learning-path/passes/${passId}/sessions`, { operation_id: randomUUID() }); }
+function nextBatch(page, passId, mode = "NORMAL") { return api(page, "post", `/api/learning-path/passes/${passId}/sessions`, { operation_id: randomUUID(), mode }); }
 async function revealBatch(page, session) { for (const item of session.items) await api(page, "put", `/api/learning-sessions/${session.id}/items/${item.vocabulary_id}/reveal`, { operation_id: randomUUID() }); }
 function completeSession(page, id) { return api(page, "post", `/api/learning-sessions/${id}/complete`, { operation_id: randomUUID() }); }
 async function api(page, method, url, data) { const response = await page.request[method](url, data ? { data } : undefined); expect(response.ok(), `${method.toUpperCase()} ${url}`).toBe(true); return (await response.json()).data; }

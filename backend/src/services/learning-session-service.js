@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { randomUUID } from "node:crypto";
-import { evaluateProgress } from "./srs-scheduler.js";
+import { SRS_RATINGS, calculateRatingTransition, evaluateProgress } from "./srs-scheduler.js";
 import {
   captureOperationTime,
   deriveSessionExpiry,
@@ -30,6 +30,7 @@ export function createLearningSessionService({
   createSessionRepository,
   createStreakRepository,
   createLearningRepository,
+  recordLearningPathFirstCredit,
   authorizeSetActivity = async () => {},
   authorizeGlobalReview = async () => {},
   now = () => new Date(),
@@ -113,15 +114,22 @@ export function createLearningSessionService({
         const sessions = createSessionRepository(transaction);
         const session = await sessions.findOwnedSession(sessionId, userId);
         if (!session) throw notFound();
-        const accessible = session.scope === "GLOBAL"
-          ? await authorizeGlobalReview(transaction, userId, session.items, { throwOnFailure: false })
-          : await authorizeSetSession(
+        const accessibleSet = session.scope === "GLOBAL"
+          ? null
+          : await readAccessibleSessionSet(
             transaction, userId, session, createLearningRepository, authorizeSetActivity,
           );
+        const accessible = session.scope === "GLOBAL"
+          ? await authorizeGlobalReview(transaction, userId, session.items, { throwOnFailure: false })
+          : Boolean(accessibleSet);
         return {
           ...toSessionProjection(session, operationTime.instant),
           can_continue: accessible && projectSessionLifecycle(session, operationTime.instant) === "ACTIVE",
           ...(accessible ? {} : { restart_reason: "SESSION_INACCESSIBLE" }),
+          ...(accessibleSet && session.cefr_learning_pass_id && session.mode === "SRS" ? {
+            cards: projectCefrSrsCards(accessibleSet.items, session.items, operationTime.instant),
+            evaluated_at: operationTime.instant,
+          } : {}),
         };
       });
     },
@@ -147,13 +155,21 @@ export function createLearningSessionService({
         );
         if (replay) {
           const operationTime = captureOperationTime(now);
-          return revealResult(session, replay, operationTime.instant, true, false);
+          const cefrPass = await recordNormalFirstCredit(
+            recordLearningPathFirstCredit, transaction, userId, session, replay,
+          );
+          return revealResult(session, replay, operationTime.instant, true, false, cefrPass);
         }
 
         await requireSnapshotAccessible(createLearningRepository(transaction), session, true);
         const operationTime = captureOperationTime(now);
         assertActive(session, operationTime.instant);
-        if (item.evidence !== null) return revealResult(session, item, operationTime.instant, false, true);
+        if (item.evidence !== null) {
+          const cefrPass = await recordNormalFirstCredit(
+            recordLearningPathFirstCredit, transaction, userId, session, item,
+          );
+          return revealResult(session, item, operationTime.instant, false, true, cefrPass);
+        }
         const updated = await sessions.recordEvidence({
           session,
           item,
@@ -164,7 +180,10 @@ export function createLearningSessionService({
         if (updated.count !== 1) throw conflict("LEARNING_SESSION_EVENT_CONFLICT", "The reveal was accepted concurrently.");
         const recorded = { ...item, evidence, evidence_event_id: operationId, evidence_at: operationTime.instant };
         const projected = { ...session, items: session.items.map((candidate) => candidate.id === item.id ? recorded : candidate) };
-        return revealResult(projected, recorded, operationTime.instant, false, false);
+        const cefrPass = await recordNormalFirstCredit(
+          recordLearningPathFirstCredit, transaction, userId, session, recorded,
+        );
+        return revealResult(projected, recorded, operationTime.instant, false, false, cefrPass);
       });
     },
 
@@ -255,11 +274,17 @@ function compareSrsItems(left, right) {
   return leftNew - rightNew || left.position - right.position || left.vocabulary_id.localeCompare(right.vocabulary_id);
 }
 
-async function authorizeSetSession(
+async function readAccessibleSessionSet(
   transaction, userId, session, createLearningRepository, authorizeSetActivity,
 ) {
   await authorizeSetActivity(transaction, userId, session.set_id_snapshot);
-  return snapshotIsAccessible(createLearningRepository(transaction), session, false);
+  const set = await createLearningRepository(transaction).findAccessibleSetForUser(
+    session.set_id_snapshot,
+    session.user_id,
+  );
+  if (!set) return null;
+  const ids = new Set(set.items.map((item) => item.vocabulary.id));
+  return session.items.every((item) => ids.has(item.vocabulary_id)) ? set : null;
 }
 
 async function snapshotIsAccessible(learning, session, lock) {
@@ -354,13 +379,30 @@ function assertActive(session, instant) {
   if (state !== "ACTIVE") throw conflict("LEARNING_SESSION_EVENT_CONFLICT", "The learning session is already complete.");
 }
 
-function revealResult(session, item, instant, replayed, alreadyAcknowledged) {
+function revealResult(session, item, instant, replayed, alreadyAcknowledged, cefrPass = null) {
   return {
     item: { vocabulary_id: item.vocabulary_id, evidence: item.evidence, evidence_at: item.evidence_at },
     session: toSessionProjection(session, instant),
     replayed,
     already_acknowledged: alreadyAcknowledged,
+    ...(cefrPass ? { cefr_pass: cefrPass } : {}),
   };
+}
+
+async function recordNormalFirstCredit(recorder, transaction, userId, session, item) {
+  if (!session.cefr_learning_pass_id) return null;
+  if (typeof recorder !== "function") {
+    throw new TypeError("Learning Path first-credit recorder is required for pass-linked sessions.");
+  }
+  const result = await recorder(transaction, {
+    userId,
+    session,
+    item,
+    source: "NORMAL_REVEALED",
+    eventId: item.evidence_event_id,
+    acceptedAt: item.evidence_at,
+  });
+  return result.pass;
 }
 
 export function toSessionProjection(session, evaluatedAt) {
@@ -382,6 +424,39 @@ export function toSessionProjection(session, evaluatedAt) {
     completed_items: items.filter((item) => item.evidence !== null).length,
     items,
   };
+}
+
+export function projectCefrSrsCards(setItems, sessionItems, evaluatedAt) {
+  const byVocabularyId = new Map(setItems.map((item) => [item.vocabulary.id, item]));
+  return sessionItems.map(({ vocabulary_id: vocabularyId }) => {
+    const item = byVocabularyId.get(vocabularyId);
+    if (!item) throw inaccessible();
+    const progress = item.vocabulary.learning_progress?.[0] ?? null;
+    const evaluation = evaluateProgress(progress, evaluatedAt);
+    const { learning_progress: _progressRows, ...vocabulary } = item.vocabulary;
+    return {
+      position: item.position,
+      ...vocabulary,
+      progress: {
+        status: evaluation.effective_status,
+        stored_status: evaluation.stored_status,
+        effective_status: evaluation.effective_status,
+        stage: evaluation.stage,
+        interval_days: evaluation.interval_days,
+        next_review_at: evaluation.next_review_at,
+        review_count: evaluation.review_count ?? 0,
+        revision: evaluation.revision ?? 0,
+        last_reviewed_at: evaluation.last_reviewed_at ?? null,
+      },
+      rating_previews: Object.fromEntries(SRS_RATINGS.map((rating) => {
+        if (rating === "AGAIN") {
+          return [rating, { kind: "SESSION_REQUEUE", interval_days: null }];
+        }
+        const transition = calculateRatingTransition(progress, rating, evaluatedAt);
+        return [rating, { kind: "SCHEDULED", interval_days: transition.interval_days }];
+      })),
+    };
+  });
 }
 
 function validateCreateInput(input) {

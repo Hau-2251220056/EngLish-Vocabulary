@@ -195,11 +195,7 @@ test("USER keeps RESUME separate and renders the different authoritative next su
   }));
   await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
     status: 200,
-    json: { success: true, data: {
-      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 10,
-      studied_items: 0, remaining_items: 10, can_continue: true,
-      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
-    } },
+    json: { success: true, data: activePassProjection({ passId, setId, snapshotSize: 10 }) },
   }));
   await page.route("**/api/topics", (route) => route.fulfill({
     status: 200,
@@ -222,9 +218,9 @@ test("USER keeps RESUME separate and renders the different authoritative next su
   await expect(nextLesson.getByRole("link", { name: "Bắt đầu học" })).toHaveAttribute("href", `/learn/vocabulary-sets/${nextSetId}`);
   const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
   await expect(currentLearning.getByText("A1 active", { exact: true })).toBeVisible();
-  await expect(currentLearning).toContainText("0 / 10 từ đã học");
-  await expect(currentLearning).toContainText("0%");
-  await expect(currentLearning.getByRole("progressbar", { name: "Tiến độ lượt học A1 active" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(currentLearning).toContainText("Tiếp tục lượt học hiện tại");
+  await expect(currentLearning).not.toContainText("0 / 10 từ đã học");
+  await expect(currentLearning.getByRole("progressbar")).toHaveCount(0);
   const persistedCover = currentLearning.locator('[data-cover-state="persisted"]');
   const persistedCoverImage = persistedCover.locator("img");
   await expect(persistedCoverImage).toHaveAttribute("src", coverUrl);
@@ -263,11 +259,10 @@ test("current learning failure recovers into the safe restart path", async ({ pa
     status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } },
   } : {
     status: 200,
-    json: { success: true, data: {
-      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 8,
-      studied_items: 2, remaining_items: 6, can_continue: false, restart_reason: "SNAPSHOT_CHANGED",
-      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
-    } },
+    json: { success: true, data: activePassProjection({
+      activityState: "IN_PROGRESS", canContinue: false, passId, setId,
+      snapshotSize: 8, studiedItems: 2,
+    }) },
   }));
   await page.route("**/api/topics", (route) => route.fulfill({
     status: 200,
@@ -284,6 +279,7 @@ test("current learning failure recovers into the safe restart path", async ({ pa
   await expect(currentLearning.getByRole("alert")).toContainText("Không thể tải tiến độ lượt học hiện tại");
   passFails = false;
   await currentLearning.getByRole("button", { name: "Thử lại" }).click();
+  await expect(currentLearning).toContainText("Cần xác nhận bắt đầu lại");
   await expect(currentLearning).toContainText("Nội dung bộ từ đã thay đổi");
   await expect(currentLearning.locator('[data-cover-state="fallback"]')).toBeVisible();
   await expect(currentLearning.getByRole("link", { name: "Tiếp tục" })).toHaveAttribute("href", `/learn/vocabulary-sets/${setId}`);
@@ -319,11 +315,7 @@ test("multiple active unfinished Sets explain the empty suggestion without an un
   }));
   await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
     status: 200,
-    json: { success: true, data: {
-      id: passId, set_id: activeSetId, state: "ACTIVE", snapshot_size: 5,
-      studied_items: 0, remaining_items: 5, can_continue: true,
-      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
-    } },
+    json: { success: true, data: activePassProjection({ passId, setId: activeSetId, snapshotSize: 5 }) },
   }));
 
   await page.goto("/dashboard");
@@ -363,11 +355,7 @@ test("catalog failure keeps the backend-selected current learning action availab
   await page.route("**/api/learning-path", (route) => route.fulfill(resumePathResponse({ passId, setId, setName: "A1 catalog independent" })));
   await page.route(`**/api/learning-path/passes/${passId}`, (route) => route.fulfill({
     status: 200,
-    json: { success: true, data: {
-      id: passId, set_id: setId, state: "ACTIVE", snapshot_size: 10,
-      studied_items: 0, remaining_items: 10, can_continue: true,
-      created_at: "2026-11-02T00:00:00.000Z", completed_at: null,
-    } },
+    json: { success: true, data: activePassProjection({ passId, setId, snapshotSize: 10 }) },
   }));
   await page.route("**/api/topics", (route) => route.fulfill({
     status: 500,
@@ -877,6 +865,34 @@ function deferredRoutes() {
       response = nextResponse;
       await Promise.allSettled(routes.map((route) => route.fulfill(response)));
     },
+  };
+}
+
+function activePassProjection({
+  activityState = "PRISTINE",
+  canContinue = true,
+  passId,
+  setId,
+  snapshotSize,
+  studiedItems = 0,
+}) {
+  const readyToComplete = activityState === "READY_TO_COMPLETE";
+  return {
+    id: passId,
+    set_id: setId,
+    state: "ACTIVE",
+    snapshot_size: snapshotSize,
+    studied_items: studiedItems,
+    credited_items: studiedItems,
+    remaining_items: snapshotSize - studiedItems,
+    ready_to_complete: readyToComplete,
+    evidence_counts: { NORMAL: studiedItems, SRS: 0 },
+    activity_state: activityState,
+    active_sessions: { NORMAL: [], SRS: [] },
+    can_continue: canContinue,
+    ...(canContinue ? {} : { restart_reason: "SNAPSHOT_CHANGED" }),
+    created_at: "2026-11-02T00:00:00.000Z",
+    completed_at: null,
   };
 }
 

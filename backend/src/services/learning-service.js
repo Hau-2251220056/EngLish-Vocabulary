@@ -53,6 +53,7 @@ export function createLearningService({
   createSessionRepository,
   createStreakRepository,
   createLearningPathRepository,
+  recordLearningPathFirstCredit,
   authorizeSetActivity = async () => {},
   authorizeGlobalReview = async () => {},
   now = () => new Date(),
@@ -224,12 +225,14 @@ export function createLearningService({
         try {
           return await recordSessionAwareSrsEvent({
             learningRepository, createSessionRepository, createStreakRepository,
+            recordLearningPathFirstCredit,
             authorizeSetActivity, authorizeGlobalReview, userId, event, now,
           });
         } catch (error) {
           if (isSrsReceiptCollision(error) || isEvidenceEventCollision(error)) {
             return recordSessionAwareSrsEvent({
               learningRepository, createSessionRepository, createStreakRepository,
+              recordLearningPathFirstCredit,
               authorizeSetActivity, authorizeGlobalReview, userId, event, now,
             });
           }
@@ -395,6 +398,7 @@ function projectLearningSet(set, mode, evaluatedAt) {
 
 async function recordSessionAwareSrsEvent({
   learningRepository, createSessionRepository, createStreakRepository,
+  recordLearningPathFirstCredit,
   authorizeSetActivity, authorizeGlobalReview, userId, event, now,
 }) {
   return learningRepository.withTransaction(async (repository, transaction) => {
@@ -403,6 +407,7 @@ async function recordSessionAwareSrsEvent({
     const session = await sessions.lockOwnedSession(event.session_id, userId);
     if (!session) throw sessionNotFoundError();
     const globalSession = session.scope === "GLOBAL";
+    const cefrScoped = session.scope === "SET" && Boolean(session.cefr_learning_pass_id);
     if (session.mode !== "SRS"
       || (globalSession ? event.set_id !== null : session.set_id_snapshot !== event.set_id)) {
       throw sessionEventConflictError();
@@ -420,6 +425,7 @@ async function recordSessionAwareSrsEvent({
     if (receipt) {
       return replaySessionAwareSrsEvent({
         repository, streaks, session, lockedItems, item, receipt,
+        transaction, recordLearningPathFirstCredit, cefrScoped,
         userId, event, resolvingEvidence, now,
       });
     }
@@ -451,6 +457,7 @@ async function recordSessionAwareSrsEvent({
     if (serializedReceipt) {
       return replaySessionAwareSrsEvent({
         repository, streaks, session, lockedItems, item, receipt: serializedReceipt,
+        transaction, recordLearningPathFirstCredit, cefrScoped,
         userId, event, resolvingEvidence, now, progressAlreadyLocked: true,
       });
     }
@@ -462,7 +469,9 @@ async function recordSessionAwareSrsEvent({
     const lifecycle = projectSessionLifecycle(session, acceptedAt);
     if (lifecycle === "EXPIRED") throw sessionExpiredError();
     if (item.evidence !== null || lifecycle !== "ACTIVE") throw sessionEventConflictError();
-    const result = await applyAcceptedSrsMutation(repository, userId, event, acceptedAt, current);
+    const result = await applyAcceptedSrsMutation(
+      repository, userId, event, acceptedAt, current, cefrScoped,
+    );
     await sessions.recordSrsReceipt({
       item,
       eventId: event.event_id,
@@ -471,8 +480,12 @@ async function recordSessionAwareSrsEvent({
       acceptedRevision: result.revision,
       acceptedAt,
     });
+    const cefrPass = await recordSrsFirstCredit(
+      recordLearningPathFirstCredit, transaction, userId, session, item, event, acceptedAt,
+    );
+    const accepted = cefrPass ? { ...result, cefr_pass: cefrPass } : result;
     if (!resolvingEvidence) {
-      return { ...result, session: toSessionProjection({ ...session, items: lockedItems }, acceptedAt) };
+      return { ...accepted, session: toSessionProjection({ ...session, items: lockedItems }, acceptedAt) };
     }
 
     const recorded = await sessions.recordEvidence({
@@ -490,7 +503,7 @@ async function recordSessionAwareSrsEvent({
       evidence_at: acceptedAt,
     } : candidate);
     if (!resolvedItems.every(({ evidence }) => evidence !== null)) {
-      return { ...result, session: toSessionProjection({ ...session, items: resolvedItems }, acceptedAt) };
+      return { ...accepted, session: toSessionProjection({ ...session, items: resolvedItems }, acceptedAt) };
     }
 
     const completion = await completeLearningSessionAtomically({
@@ -502,7 +515,7 @@ async function recordSessionAwareSrsEvent({
       captureTime: () => captureOperationTime(() => acceptedAt),
     });
     return {
-      ...result,
+      ...accepted,
       session: toSessionProjection(completion.session, acceptedAt),
       streak: await readStreakProjection(streaks, userId, acceptedAt),
     };
@@ -511,6 +524,7 @@ async function recordSessionAwareSrsEvent({
 
 async function replaySessionAwareSrsEvent({
   repository, streaks, session, lockedItems, item, receipt,
+  transaction, recordLearningPathFirstCredit, cefrScoped,
   userId, event, resolvingEvidence, now, progressAlreadyLocked = false,
 }) {
   if (receipt.session_item?.session?.user_id !== userId) throw sessionNotFoundError();
@@ -542,14 +556,26 @@ async function replaySessionAwareSrsEvent({
     throw sessionEventConflictError();
   }
   const evaluatedAt = captureNow(now);
+  const result = await toAcceptedEventResult(repository, userId, event, current, true);
+  const cefrPass = cefrScoped ? await recordSrsFirstCredit(
+    recordLearningPathFirstCredit,
+    transaction,
+    userId,
+    session,
+    item,
+    event,
+    receipt.accepted_at,
+  ) : null;
   return attachSessionResult(
-    await toAcceptedEventResult(repository, userId, event, current, true),
+    cefrPass ? { ...result, cefr_pass: cefrPass } : result,
     session, lockedItems, streaks, userId, evaluatedAt,
   );
 }
 
-async function applyAcceptedSrsMutation(repository, userId, event, acceptedAt, current) {
-  if (current && !evaluateProgress(current, acceptedAt).is_eligible) {
+async function applyAcceptedSrsMutation(
+  repository, userId, event, acceptedAt, current, allowSnapshotCandidate = false,
+) {
+  if (!allowSnapshotCandidate && current && !evaluateProgress(current, acceptedAt).is_eligible) {
     throw learningProgressChangedError();
   }
   if ((!current && event.expected_revision !== 0)
@@ -598,6 +624,24 @@ async function applyAcceptedSrsMutation(repository, userId, event, acceptedAt, c
     await repository.findProgress(userId, event.vocabulary_id),
     rewardCandidate,
   );
+}
+
+async function recordSrsFirstCredit(
+  recorder, transaction, userId, session, item, event, acceptedAt,
+) {
+  if (!session.cefr_learning_pass_id) return null;
+  if (typeof recorder !== "function") {
+    throw new TypeError("Learning Path first-credit recorder is required for pass-linked sessions.");
+  }
+  const result = await recorder(transaction, {
+    userId,
+    session,
+    item,
+    source: `SRS_${event.rating}`,
+    eventId: event.event_id,
+    acceptedAt,
+  });
+  return result.pass;
 }
 
 async function attachSessionResult(result, session, items, streaks, userId, acceptedAt) {

@@ -1,6 +1,10 @@
 import { httpClient } from "./http-client.js";
 import { isRewardProjection, isXpLevelProjection } from "./xp-level-response.js";
-import { requireSessionProjection, requireStreakProjection } from "./learning-session-service.js";
+import {
+  requireCefrPassEvidenceSummary,
+  requireSessionProjection,
+  requireStreakProjection,
+} from "./learning-session-service.js";
 
 const LEARNING_ENDPOINT = "/api/learning";
 const MODES = new Set(["SRS", "NORMAL"]);
@@ -231,6 +235,13 @@ function requireRatingProgress(value, request) {
     }
   } else if (Object.hasOwn(value, "streak")) {
     throw invalidResponseError();
+  }
+  if (Object.hasOwn(value, "cefr_pass")) {
+    try {
+      requireCefrPassEvidenceSummary(value.cefr_pass);
+    } catch {
+      throw invalidResponseError();
+    }
   }
   return value;
 }

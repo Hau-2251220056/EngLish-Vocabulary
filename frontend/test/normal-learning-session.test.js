@@ -18,6 +18,7 @@ const IDS = Object.freeze({
   reveal: "66666666-6666-4666-8666-666666666666",
   secondReveal: "77777777-7777-4777-8777-777777777777",
   complete: "88888888-8888-4888-8888-888888888888",
+  pass: "99999999-9999-4999-8999-999999999999",
 });
 const identity = Object.freeze({ userId: "user-a", setId: IDS.set, mode: "NORMAL" });
 
@@ -108,6 +109,28 @@ test("terminal mutation reconciliation keeps pending operation identity and acce
   assert.deepEqual(calls.filter(([kind]) => kind === "reveal").map((call) => call[3]), [IDS.reveal, IDS.reveal]);
 });
 
+test("pass-linked NORMAL reveal returns Backend credit without persisting it as presentation evidence", async () => {
+  const storage = memoryStorage();
+  const calls = [];
+  const passIdentity = { ...identity, passId: IDS.pass };
+  const service = serviceFake(calls, { cefrPass: passSummary() });
+  const state = await openNormalLearningSession({
+    storage, identity: passIdentity, vocabularyIds: [IDS.first, IDS.second],
+    service, randomUuid: () => IDS.create,
+  });
+  const accepted = await acknowledgeNormalReveal({
+    storage, identity: passIdentity, state, vocabularyId: IDS.first,
+    service, randomUuid: () => IDS.reveal,
+  });
+  assert.deepEqual(accepted.cefr_pass, passSummary());
+  assert.equal(loadRaw(storage).includes("cefr_pass"), false);
+  await assert.rejects(acknowledgeNormalReveal({
+    storage, identity: passIdentity, state, vocabularyId: IDS.second,
+    service: serviceFake([], { cefrPass: { ...passSummary(), id: IDS.session } }),
+    randomUuid: () => IDS.secondReveal,
+  }), /does not match/);
+});
+
 function serviceFake(calls, options = {}) {
   let projection = session();
   let revealFailures = options.failRevealOnce ? 1 : 0;
@@ -123,7 +146,8 @@ function serviceFake(calls, options = {}) {
       if (revealFailures-- > 0) throw new Error("lost response");
       projection = { ...projection, completed_items: projection.items.filter((item) => item.evidence || item.vocabulary_id === vocabularyId).length,
         items: projection.items.map((item) => item.vocabulary_id === vocabularyId ? { ...item, evidence: "NORMAL_REVEALED" } : item) };
-      return { session: projection, replayed: false, already_acknowledged: false };
+      return { session: projection, replayed: false, already_acknowledged: false,
+        ...(options.cefrPass ? { cefr_pass: options.cefrPass } : {}) };
     },
     async completeNormalSession(sessionId, operationId) {
       calls.push(["complete", sessionId, operationId]);
@@ -139,10 +163,13 @@ function session() {
     items: [{ vocabulary_id: IDS.first, position: 0, evidence: null }, { vocabulary_id: IDS.second, position: 1, evidence: null }] };
 }
 
+function passSummary() { return { id: IDS.pass, state: "ACTIVE", snapshot_size: 2, credited_items: 1, remaining_items: 1, ready_to_complete: false }; }
+function loadRaw(storage) { return storage.values().join("\n"); }
+
 function memoryStorage() {
   const values = new Map();
   return { failWrites: false, getItem: (key) => values.get(key) ?? null,
     setItem(key, value) { if (this.failWrites) throw new Error("quota"); values.set(key, value); },
     removeItem: (key) => values.delete(key), key: (index) => [...values.keys()][index] ?? null,
-    get length() { return values.size; } };
+    get length() { return values.size; }, values: () => [...values.values()] };
 }

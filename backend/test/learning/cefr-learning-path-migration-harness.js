@@ -11,8 +11,62 @@ const SAFE_DATABASE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
 const SAFE_SCHEMA = /^elvocab_cefr_([a-z0-9_]{2,20})_([A-Za-z0-9_.-]{1,32})_([A-Za-z0-9_.-]{1,16})_([a-f0-9]{8})$/;
 const MARKER_PREFIX = "elvocab-cefr-harness:v1:";
 const FORBIDDEN_IDENTITY = /(main|preview|prod(?:uction)?|development|daily[-_. ]?goal|shared|manual)/i;
+const V2_EVIDENCE_SOURCES = Object.freeze([
+  "NORMAL_REVEALED",
+  "SRS_AGAIN",
+  "SRS_HARD",
+  "SRS_GOOD",
+  "SRS_EASY",
+]);
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url));
 const prismaCli = fileURLToPath(new URL("../../node_modules/prisma/build/index.js", import.meta.url));
+
+export function inspectCefrV2Migration(sql) {
+  assert.equal(typeof sql, "string");
+  assert.ok(sql.length > 0, "CEFR V2 migration SQL is required.");
+
+  for (const source of V2_EVIDENCE_SOURCES) {
+    assert.match(sql, new RegExp(`'${source}'`), `Missing CEFR evidence source ${source}.`);
+  }
+  for (const column of [
+    "first_credit_source",
+    "first_credit_event_id",
+    "first_credit_session_id",
+    "first_credit_accepted_at",
+  ]) {
+    assert.match(sql, new RegExp(`ADD COLUMN "${column}"`), `Missing ${column}.`);
+  }
+
+  assert.match(sql, /CEFR_LEARNING_PASS_ITEM_first_credit_tuple_check/);
+  assert.match(sql, /CEFR_LEARNING_PASS_ITEM_first_credit_event_id_key/);
+  assert.match(sql, /CEFR_LEARNING_PASS_ITEM_first_credit_session_id_fkey/);
+  assert.match(sql, /DROP CONSTRAINT "LEARNING_SESSION_pass_scope_check"/);
+  assert.match(sql, /"scope" = 'SET' AND "mode" IN \('NORMAL', 'SRS'\)/);
+  assert.match(sql, /ROW_NUMBER\(\) OVER/);
+  assert.match(
+    sql,
+    /ORDER BY session_item\."evidence_at" ASC, session_item\."evidence_event_id" ASC/,
+  );
+  assert.match(sql, /session\."user_id" = pass\."user_id"/);
+  assert.match(sql, /session\."set_id_snapshot" = pass\."set_id_snapshot"/);
+  assert.match(sql, /session_item\."vocabulary_id" = pass_item\."vocabulary_id"/);
+  assert.match(sql, /session_item\."evidence_at" >= session\."created_at"/);
+  assert.match(sql, /session_item\."evidence_at" < session\."expires_at"/);
+  assert.match(sql, /RAISE EXCEPTION 'CEFR V2 backfill rejected inconsistent pass-linked NORMAL evidence \(pass %, session %, session item %\)'/);
+
+  const updateTargets = [...sql.matchAll(/\bUPDATE\s+"([A-Z_]+)"/gi)]
+    .map((match) => match[1]);
+  assert.deepEqual([...new Set(updateTargets)], ["CEFR_LEARNING_PASS_ITEM"]);
+  assert.doesNotMatch(sql, /\b(?:INSERT\s+INTO|DELETE\s+FROM)\b/i);
+  assert.doesNotMatch(sql, /\bUPDATE\s+"(?:CEFR_LEARNING_PASS|CEFR_LEARNING_PATH_STATE)"/i);
+  assert.doesNotMatch(sql, /"(?:completion_event_id|completed_at|highest_unlocked_level|path_completed_at)"/);
+  assert.doesNotMatch(sql, /ALTER\s+TABLE\s+"(?:LEARNING_PROGRESS|XP_REWARD|STREAK_DAY)"/i);
+
+  return Object.freeze({
+    evidenceSources: V2_EVIDENCE_SOURCES,
+    updateTargets: Object.freeze(updateTargets),
+  });
+}
 
 export function authorizeCefrHarness(environment = process.env) {
   assert.equal(environment.NODE_ENV, "test", "NODE_ENV must equal test.");
@@ -115,6 +169,15 @@ export async function createCefrHarness(environment = process.env) {
     assert.equal(exitCode, 0, "Prisma migrate deploy failed in the run-owned schema.");
   }
 
+  async function deployMigrationsExpectFailure(target, schemaPath) {
+    assert.equal(owned.has(target.schema), true, "Migration target must be owned by this run.");
+    const env = { ...process.env, DATABASE_URL: target.databaseUrl };
+    const args = [prismaCli, "migrate", "deploy"];
+    if (schemaPath) args.push("--schema", schemaPath);
+    const exitCode = await spawnExit(process.execPath, args, { cwd: backendRoot, env });
+    assert.notEqual(exitCode, 0, "Inconsistent V1 evidence must abort the V2 migration.");
+  }
+
   async function withClient(target, action) {
     assert.equal(owned.has(target.schema), true);
     const prisma = new PrismaClient({ datasourceUrl: target.databaseUrl });
@@ -140,7 +203,14 @@ export async function createCefrHarness(environment = process.env) {
     assert.equal(errors.length, 0, `CEFR schema cleanup failed for ${errors.length} run-owned schema(s).`);
   }
 
-  return Object.freeze({ identity, createSchema, deployMigrations, withClient, cleanup });
+  return Object.freeze({
+    identity,
+    createSchema,
+    deployMigrations,
+    deployMigrationsExpectFailure,
+    withClient,
+    cleanup,
+  });
 }
 
 async function assertOwnedSchema(baseUrl, schema, ownership, PrismaClient) {

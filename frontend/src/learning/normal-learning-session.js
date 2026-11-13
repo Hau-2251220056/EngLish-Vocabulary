@@ -36,9 +36,10 @@ export async function acknowledgeNormalReveal({ storage, identity, state, vocabu
   const result = await service.acknowledgeNormalReveal(
     state.session_id, vocabularyId, operation.operation_id,
   );
+  requirePassEvidenceIdentity(identity, result.cefr_pass);
   const accepted = persistProjection(storage, identity, state, result.session);
   clearOperation(storage, identity, state.session_id, "REVEAL", vocabularyId, operation.operation_id);
-  return accepted;
+  return { ...accepted, ...(result.cefr_pass ? { cefr_pass: result.cefr_pass } : {}) };
 }
 
 export async function completeNormalLearningSession({ storage, identity, state, service, randomUuid }) {
@@ -134,4 +135,14 @@ function requireActiveItem(state, vocabularyId) {
 function requireDependencies(identity, service, randomUuid) {
   if (identity?.mode !== "NORMAL" || typeof service?.createSession !== "function"
     || typeof randomUuid !== "function") throw new TypeError("NORMAL session dependencies are invalid.");
+}
+
+function requirePassEvidenceIdentity(identity, cefrPass) {
+  if (identity.passId) {
+    if (cefrPass?.id !== identity.passId) {
+      throw new TypeError("NORMAL CEFR evidence does not match the active pass.");
+    }
+  } else if (cefrPass) {
+    throw new TypeError("Ordinary NORMAL evidence cannot include a CEFR pass.");
+  }
 }

@@ -49,6 +49,28 @@ test("read path preserves recommendation and exposes additive next suggestion fi
   assert.deepEqual(res.body.data, projection);
 });
 
+test("controller forwards optional pass-session mode without accepting client identity fields", async () => {
+  let received;
+  const controller = createLearningPathController({
+    learningPathService: {
+      createNextSession: async (userId, passId, input) => {
+        received = { userId, passId, input };
+        return { session: { mode: "SRS" }, replayed: false, resumed: false };
+      },
+    },
+  });
+  const req = request({ passId: PASS_ID });
+  req.body = { operation_id: OPERATION_ID, mode: "SRS" };
+  const res = response();
+  await controller.createNextSession(req, res, failOnNext);
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(received, {
+    userId: USER_ID,
+    passId: PASS_ID,
+    input: { operation_id: OPERATION_ID, mode: "SRS" },
+  });
+});
+
 test("controller maps stable validation, concealment, lock and conflict errors", async () => {
   const expected = [
     ["CEFR_PATH_VALIDATION_ERROR", 400],
@@ -99,11 +121,13 @@ test("Learning Path middleware contract returns Guest 401 and ADMIN 403", async 
   assert.equal(adminResponse.body.error.code, "FORBIDDEN");
 });
 
-test("application wiring mounts Learning Path and injects shared authorization into all activity services", async () => {
+test("application wiring mounts Learning Path and injects authorization plus first credit into activity services", async () => {
   const source = await readFile(new URL("../../src/create-app.js", import.meta.url), "utf8");
   assert.match(source, /app\.use\("\/api\/learning-path", learningPathRouter\)/);
   assert.match(source, /createLearningPathActivityAuthorizer\(\{\s*createLearningPathRepository,?\s*\}\)/);
+  assert.match(source, /createLearningPathFirstCreditRecorder\(\{\s*createLearningPathRepository,?\s*\}\)/);
   assert.equal((source.match(/authorizeSetActivity,/g) ?? []).length, 3);
+  assert.equal((source.match(/recordLearningPathFirstCredit,/g) ?? []).length, 2);
 });
 
 test("repository scopes active contexts to unexpired SET NORMAL and SRS sessions", async () => {
@@ -116,6 +140,8 @@ test("repository scopes active contexts to unexpired SET NORMAL and SRS sessions
   assert.match(source, /mode: \{ in: \["NORMAL", "SRS"\] \}/);
   assert.match(source, /set_id_snapshot: \{ not: null \}/);
   assert.doesNotMatch(source, /mode: \{ in: \["NORMAL", "SRS", "QUIZ"\] \}/);
+  assert.match(source, /findRequiredSetForCards\(setId, userId\)/);
+  assert.match(source, /learning_progress:[\s\S]*where: \{ user_id: userId \}/);
 });
 
 function serviceDouble(calls) {
