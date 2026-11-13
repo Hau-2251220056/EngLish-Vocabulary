@@ -166,7 +166,7 @@ jobs:
           `;
           const result = spawnSync(
             process.execPath,
-            ['node_modules/prisma/build/index.js', 'db', 'execute', '--stdin'],
+            ['node_modules/prisma/build/index.js', 'db', 'execute', '--stdin', '--schema', 'prisma/schema.prisma'],
             { cwd: process.cwd(), env: environment, input: sql, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
           );
           if (result.status !== 0 || result.error || result.signal) {
