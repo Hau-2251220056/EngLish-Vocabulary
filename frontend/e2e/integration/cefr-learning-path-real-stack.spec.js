@@ -232,12 +232,13 @@ test("eleven-item A1 Set resumes after reload, completes its final item, and unl
   await page.goto("/dashboard");
   const currentLearning = page.getByRole("region", { name: "Tiếp tục học" });
   await expect(currentLearning).toContainText(eleven.name);
-  const exactPass = page.waitForResponse((response) => (
-    response.request().method() === "GET"
-    && new URL(response.url()).pathname === `/api/learning-path/passes/${elevenPass.pass.id}`
-  ));
-  await currentLearning.getByRole("link", { name: "Tiếp tục" }).click();
-  await exactPass;
+  const dashboardPath = await api(page, "get", "/api/learning-path");
+  expect(dashboardPath.recommendation).toMatchObject({
+    action: "RESUME", set_id: eleven.id, pass_id: elevenPass.pass.id,
+  });
+  const continueLink = currentLearning.getByRole("link", { name: "Tiếp tục" });
+  await expect(continueLink).toHaveAttribute("href", `/learn/vocabulary-sets/${eleven.id}`);
+  await continueLink.click();
   await expect(page).toHaveURL(new RegExp(`/learn/vocabulary-sets/${eleven.id}$`));
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
@@ -492,6 +493,12 @@ async function sentinelState() {
 }
 async function cleanup() {
   await prisma.sTREAK_DAY.deleteMany({ where: { user_id: { in: created.users } } });
+  const runOwnedPasses = await prisma.cEFR_LEARNING_PASS.findMany({
+    where: { user_id: { in: created.users } }, select: { id: true },
+  });
+  await prisma.cEFR_LEARNING_PASS_ITEM.deleteMany({
+    where: { pass_id: { in: runOwnedPasses.map(({ id }) => id) } },
+  });
   await prisma.lEARNING_SESSION.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.xP_REWARD.deleteMany({ where: { user_id: { in: created.users } } });
   await prisma.lEARNING_PROGRESS.deleteMany({ where: { user_id: { in: created.users } } });
