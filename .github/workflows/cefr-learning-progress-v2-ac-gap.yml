@@ -1,0 +1,437 @@
+name: CEFR Learning Progress V2 Acceptance Gap Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorize_cefr_v2_ac_gap:
+        description: Affirmatively authorize isolated CEFR V2 acceptance-gap verification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elvocab-cefr-v2-ac-gap-verification
+  cancel-in-progress: false
+
+jobs:
+  cefr-v2-acceptance-gaps:
+    name: CEFR V2 Mocked UX and Quiz Non-Credit
+    if: inputs.authorize_cefr_v2_ac_gap == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      NODE_ENV: test
+      CEFR_TEST_DATABASE_ALLOW_OPERATION: "true"
+      CEFR_TEST_DATABASE_EXCLUSIVE: "true"
+      CEFR_TEST_RUN_ID: ${{ github.run_id }}
+      CEFR_TEST_RUN_ATTEMPT: ${{ github.run_attempt }}
+      CEFR_TEST_DATABASE_EXPECTED_HOST: 127.0.0.1
+      CEFR_TEST_DATABASE_EXPECTED_PORT: "5432"
+      CEFR_TEST_DATABASE_EXPECTED_NAME: elvocab_cefr_v2_ac_gap_ci
+      CEFR_TEST_DATABASE_EXPECTED_USER: elvocab_cefr_ac_gap_ci
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elvocab_cefr_ac_gap_ci
+          POSTGRES_PASSWORD: elvocab_cefr_ac_gap_ci_password
+          POSTGRES_DB: elvocab_cefr_v2_ac_gap_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elvocab_cefr_ac_gap_ci -d elvocab_cefr_v2_ac_gap_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Require approved manual execution
+        working-directory: .
+        env:
+          AUTHORIZED: ${{ inputs.authorize_cefr_v2_ac_gap }}
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$EVENT_NAME" = "workflow_dispatch"
+          test "$AUTHORIZED" = "true"
+          test "$CURRENT_REPOSITORY" = "Hau-2251220056/EngLish-Vocabulary"
+
+      - name: Check out exact approved feature checkpoint
+        uses: actions/checkout@v7
+        with:
+          ref: 7a212108c7ae63294ce43c97dffe6bb1270a7a84
+          persist-credentials: false
+
+      - name: Verify exact approved feature checkpoint
+        working-directory: .
+        env:
+          APPROVED_SOURCE_SHA: 7a212108c7ae63294ce43c97dffe6bb1270a7a84
+        run: |
+          test "$(git rev-parse HEAD)" = "$APPROVED_SOURCE_SHA"
+          test -z "$(git status --short)"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Fail closed on any non-isolated database target
+        working-directory: .
+        env:
+          AUTHORIZED: ${{ inputs.authorize_cefr_v2_ac_gap }}
+          TEST_DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+          DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.AUTHORIZED, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.GITHUB_EVENT_NAME, 'workflow_dispatch');
+          assert.equal(environment.GITHUB_REPOSITORY, 'Hau-2251220056/EngLish-Vocabulary');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.CEFR_TEST_DATABASE_ALLOW_OPERATION, 'true');
+          assert.equal(environment.CEFR_TEST_DATABASE_EXCLUSIVE, 'true');
+          assert.match(environment.CEFR_TEST_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.CEFR_TEST_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          assert.equal(environment.DATABASE_URL, environment.TEST_DATABASE_URL);
+          const target = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(target.protocol, 'postgresql:');
+          assert.equal(target.hostname, environment.CEFR_TEST_DATABASE_EXPECTED_HOST);
+          assert.equal(target.hostname, '127.0.0.1');
+          assert.equal(target.port, environment.CEFR_TEST_DATABASE_EXPECTED_PORT);
+          assert.equal(target.pathname, `/${environment.CEFR_TEST_DATABASE_EXPECTED_NAME}`);
+          assert.equal(decodeURIComponent(target.username), environment.CEFR_TEST_DATABASE_EXPECTED_USER);
+          assert.equal(target.search, '');
+          assert.equal(target.hash, '');
+          assert.ok(target.password.length > 0);
+          assert.equal(/supabase|amazonaws|azure|neon|render|railway|vercel/i.test(target.href), false);
+          for (const name of [
+            'CI_TEST_DATABASE_URL',
+            'SUPABASE_URL',
+            'SUPABASE_SERVICE_ROLE_KEY',
+            'TEST_SUPABASE_URL',
+            'TEST_SUPABASE_SERVICE_ROLE_KEY',
+          ]) assert.equal(environment[name], undefined);
+          NODE
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+          DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+        run: npm ci
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Prove job-owned PostgreSQL identity
+        id: database-guard
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+          DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { spawnSync } = require('node:child_process');
+          const environment = process.env;
+          assert.equal(environment.DATABASE_URL, environment.TEST_DATABASE_URL);
+          assert.match(environment.CEFR_TEST_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.CEFR_TEST_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          const marker = `github-actions-cefr-ac-gap-${environment.CEFR_TEST_RUN_ID}-${environment.CEFR_TEST_RUN_ATTEMPT}`;
+          const database = environment.CEFR_TEST_DATABASE_EXPECTED_NAME;
+          const user = environment.CEFR_TEST_DATABASE_EXPECTED_USER;
+          assert.match(database, /^[a-z0-9_]+$/);
+          assert.match(user, /^[a-z0-9_]+$/);
+          assert.match(marker, /^[a-z0-9-]+$/);
+          const sql = `
+            DO $guard$
+            DECLARE recorded_marker text;
+            BEGIN
+              IF current_database() <> '${database}' OR current_user <> '${user}' THEN
+                RAISE EXCEPTION 'CEFR acceptance-gap database identity verification failed';
+              END IF;
+              EXECUTE format('COMMENT ON DATABASE %I IS %L', current_database(), '${marker}');
+              SELECT shobj_description(oid, 'pg_database') INTO recorded_marker
+                FROM pg_database WHERE datname = current_database();
+              IF recorded_marker <> '${marker}' THEN
+                RAISE EXCEPTION 'CEFR acceptance-gap database ownership marker verification failed';
+              END IF;
+            END
+            $guard$;
+          `;
+          const result = spawnSync(
+            process.execPath,
+            ['node_modules/prisma/build/index.js', 'db', 'execute', '--stdin', '--schema', 'prisma/schema.prisma'],
+            { cwd: process.cwd(), env: environment, input: sql, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+          );
+          if (result.status !== 0 || result.error || result.signal) {
+            const category = result.error
+              ? 'spawn-error'
+              : result.signal
+                ? 'terminated-by-signal'
+                : 'nonzero-exit';
+            const sanitize = (value) => {
+              let output = String(value ?? '')
+                .replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, '')
+                .replace(/\u001b\][\s\S]*$/g, '')
+                .replace(/\u001b[P^_X][\s\S]*?\u001b\\/g, '')
+                .replace(/\u001b[P^_X][\s\S]*$/g, '')
+                .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*?(?:\u009c|\u001b\\)/g, '')
+                .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*$/g, '')
+                .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+                .replace(/\u009b[0-?]*[ -/]*[@-~]/g, '')
+                .replace(/\u001b[ -/]*[0-~]/g, '')
+                .replace(/\u001b/g, '')
+                .replace(/\r\n?/g, '\n')
+                .replace(/[\u2028\u2029]/g, '\n')
+                .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
+              for (const url of [environment.TEST_DATABASE_URL, environment.DATABASE_URL]) {
+                if (url) output = output.split(url).join('<redacted-database-url>');
+              }
+              output = output
+                .replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '<redacted-postgresql-url>')
+                .replace(/\b(password|passwd|pwd)\s*[=:]\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s,;]+)/gi, '$1=<redacted>');
+              const limit = 4096;
+              const formatted = output.split('\n').map((line) => `| ${line}`).join('\n');
+              if (formatted.length <= limit) return formatted;
+              const header = `[truncated to final ${limit} characters]\n`;
+              return `${header}| ${formatted.slice(-(limit - header.length - 2))}`;
+            };
+            const diagnostic = sanitize([result.error?.message, result.stdout, result.stderr]
+              .filter(Boolean).join('\n')).trim();
+            console.error(`Prisma database identity subprocess failed: ${category}.`);
+            if (diagnostic) console.error(diagnostic);
+            throw new Error('Job-owned PostgreSQL identity verification failed.');
+          }
+          NODE
+
+      - name: Install lockfile-matched Playwright Chromium
+        working-directory: frontend
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Run exactly three mocked acceptance-gap tests
+        id: mocked-acceptance
+        continue-on-error: true
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts/mocked-results.json
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          ./node_modules/.bin/playwright test \
+            e2e/auth/learning-path-full-pass.spec.js \
+            e2e/auth/quiz-flow.spec.js \
+            e2e/auth/speaking-practice-flow.spec.js \
+            --config=playwright.config.js \
+            --grep "required NORMAL Set needs bounded completion and explicit full-pass confirmation|starts directly, completes ordered questions and writes no Learning event|USER enters from public Set Detail and completes a read-only mocked speaking journey" \
+            --workers=1 \
+            --retries=0 \
+            --trace=retain-on-failure \
+            --reporter=line,json \
+            2>&1 | tee artifacts/mocked-acceptance.log
+
+      - name: Attribute mocked outcomes to exact acceptance criteria
+        id: mocked-report
+        if: always()
+        working-directory: frontend
+        run: |
+          mkdir -p artifacts
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'artifacts/mocked-results.json';
+          const expected = new Map([
+            ['required NORMAL Set needs bounded completion and explicit full-pass confirmation', 'AC-V2-024_NORMAL_PENDING'],
+            ['starts directly, completes ordered questions and writes no Learning event', 'AC-V2-019_QUIZ_FRONTEND'],
+            ['USER enters from public Set Detail and completes a read-only mocked speaking journey', 'AC-V2-019_SPEAKING_FRONTEND'],
+          ]);
+          const found = [];
+          const visit = (suite) => {
+            for (const spec of suite.specs ?? []) found.push(spec);
+            for (const child of suite.suites ?? []) visit(child);
+          };
+          if (fs.existsSync(path)) {
+            const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+            for (const suite of report.suites ?? []) visit(suite);
+          }
+          const assert = require('node:assert/strict');
+          assert.equal(found.length, expected.size, 'Mocked report must contain exactly three selected specifications.');
+          const lines = [];
+          for (const [title, key] of expected) {
+            const matches = found.filter((spec) => spec.title === title);
+            assert.equal(matches.length, 1, `${title}: expected exactly one specification.`);
+            const [spec] = matches;
+            assert.equal(spec.tests?.length, 1, `${title}: expected exactly one project test.`);
+            const [projectTest] = spec.tests;
+            assert.equal(projectTest.projectName, 'chromium', `${title}: unexpected project variant.`);
+            assert.equal(projectTest.expectedStatus, 'passed', `${title}: expectedStatus must be passed.`);
+            assert.equal(projectTest.status, 'expected', `${title}: computed outcome must be expected.`);
+            assert.equal(projectTest.results?.length, 1, `${title}: expected exactly one completed result.`);
+            assert.equal(projectTest.results[0].status, 'passed', `${title}: actual result must be passed.`);
+            lines.push(`${key}=passed`);
+          }
+          lines.push(`selected_mocked_tests=${found.length}`);
+          fs.writeFileSync('artifacts/mock-outcomes.txt', `${lines.join('\n')}\n`);
+          fs.rmSync(path, { force: true });
+          process.stdout.write(`${lines.map((line) => `| ${line}`).join('\n')}\n`);
+          NODE
+
+      - name: Run focused AC-V2-019 backend Quiz non-credit test
+        id: backend-quiz
+        continue-on-error: true
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+          DATABASE_URL: postgresql://elvocab_cefr_ac_gap_ci:elvocab_cefr_ac_gap_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ac_gap_ci
+        run: |
+          mkdir -p artifacts
+          raw_report="$RUNNER_TEMP/ac019-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tap"
+          raw_stderr="$RUNNER_TEMP/ac019-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.stderr.log"
+          set +e
+          node --test --test-concurrency=1 --test-reporter=tap \
+            --test-name-pattern="^authorized Quiz activity preserves active CEFR pass evidence and entitlement$" \
+            test/learning/cefr-learning-progress-v2.integration.test.js \
+            > "$raw_report" 2> "$raw_stderr"
+          test_status=$?
+          set -e
+          set +e
+          RAW_REPORT="$raw_report" TEST_STATUS="$test_status" BACKEND_OUTCOMES="artifacts/backend-outcomes.txt" node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const environment = process.env;
+          const title = 'authorized Quiz activity preserves active CEFR pass evidence and entitlement';
+          assert.equal(environment.TEST_STATUS, '0', 'Backend test process must exit successfully.');
+          const report = fs.readFileSync(environment.RAW_REPORT, 'utf8');
+          assert.ok(report.startsWith('TAP version 13\n'), 'Backend report must be TAP version 13.');
+          const lines = report.split(/\r?\n/).map((line) => line.trim());
+          const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const subtestPattern = new RegExp(`^# Subtest: ${escapedTitle}$`);
+          const resultPattern = new RegExp(`^(ok|not ok) \\d+ - ${escapedTitle}(?: # (SKIP|TODO)\\b.*)?$`, 'i');
+          const subtests = lines.filter((line) => subtestPattern.test(line));
+          const results = lines.map((line) => line.match(resultPattern)).filter(Boolean);
+          assert.equal(subtests.length, 1, 'Intended backend test must appear exactly once as a subtest.');
+          assert.equal(results.length, 1, 'Intended backend test must have exactly one terminal result.');
+          assert.equal(results[0][1].toLowerCase(), 'ok', 'Intended backend test must pass.');
+          assert.equal(results[0][2], undefined, 'Intended backend test must not be skipped or TODO.');
+          const summary = (name) => {
+            const matches = lines.map((line) => line.match(new RegExp(`^# ${name} (\\d+)$`))).filter(Boolean);
+            assert.equal(matches.length, 1, `TAP summary must contain exactly one ${name} count.`);
+            return Number(matches[0][1]);
+          };
+          assert.equal(summary('pass'), 1, 'Exactly the intended backend test must pass.');
+          assert.equal(summary('fail'), 0, 'Backend report must contain no failures.');
+          assert.equal(summary('cancelled'), 0, 'Backend report must contain no cancelled tests.');
+          assert.equal(summary('todo'), 0, 'Backend report must contain no TODO tests.');
+          fs.writeFileSync(environment.BACKEND_OUTCOMES, 'AC-V2-019_QUIZ_BACKEND=passed\n');
+          NODE
+          parser_status=$?
+          set -e
+          RAW_REPORT="$raw_report" RAW_STDERR="$raw_stderr" SANITIZED_LOG="artifacts/ac019-backend.log" node <<'NODE'
+          const fs = require('node:fs');
+          const environment = process.env;
+          let output = [environment.RAW_REPORT, environment.RAW_STDERR]
+            .filter((path) => fs.existsSync(path))
+            .map((path) => fs.readFileSync(path, 'utf8'))
+            .join('\n')
+            .replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, '')
+            .replace(/\u001b\][\s\S]*$/g, '')
+            .replace(/\u001b[P^_X][\s\S]*?\u001b\\/g, '')
+            .replace(/\u001b[P^_X][\s\S]*$/g, '')
+            .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*?(?:\u009c|\u001b\\)/g, '')
+            .replace(/[\u0090\u0098\u009d-\u009f][\s\S]*$/g, '')
+            .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+            .replace(/\u009b[0-?]*[ -/]*[@-~]/g, '')
+            .replace(/\u001b[ -/]*[0-~]/g, '')
+            .replace(/\u001b/g, '')
+            .replace(/\r\n?/g, '\n')
+            .replace(/[\u2028\u2029]/g, '\n')
+            .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
+          for (const url of [environment.TEST_DATABASE_URL, environment.DATABASE_URL]) {
+            if (url) output = output.split(url).join('<redacted-database-url>');
+          }
+          output = output
+            .replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '<redacted-postgresql-url>')
+            .replace(/\b(password|passwd|pwd)\s*[=:]\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s,;]+)/gi, '$1=<redacted>');
+          const limit = 65536;
+          const prefixed = output.split('\n').map((line) => `| ${line}`).join('\n');
+          const bounded = prefixed.length <= limit
+            ? prefixed
+            : `[truncated to final ${limit} characters]\n${prefixed.slice(-limit)}`;
+          fs.writeFileSync(environment.SANITIZED_LOG, `${bounded}\n`);
+          NODE
+          cat artifacts/ac019-backend.log
+          rm -f "$raw_report" "$raw_stderr"
+          if test "$test_status" -ne 0; then exit "$test_status"; fi
+          exit "$parser_status"
+
+      - name: Record acceptance-gap outcomes
+        if: always()
+        working-directory: .
+        env:
+          DATABASE_GUARD_OUTCOME: ${{ steps.database-guard.outcome }}
+          MOCKED_INVOCATION_OUTCOME: ${{ steps.mocked-acceptance.outcome }}
+          MOCKED_REPORT_OUTCOME: ${{ steps.mocked-report.outcome }}
+          BACKEND_QUIZ_OUTCOME: ${{ steps.backend-quiz.outcome }}
+        run: |
+          mkdir -p frontend/artifacts
+          {
+            echo "source_sha=7a212108c7ae63294ce43c97dffe6bb1270a7a84"
+            echo "database_guard=$DATABASE_GUARD_OUTCOME"
+            echo "mocked_invocation=$MOCKED_INVOCATION_OUTCOME"
+            echo "mocked_reporting=$MOCKED_REPORT_OUTCOME"
+            if test -f frontend/artifacts/mock-outcomes.txt; then
+              cat frontend/artifacts/mock-outcomes.txt
+            else
+              echo "AC-V2-024_NORMAL_PENDING=not_run"
+              echo "AC-V2-019_QUIZ_FRONTEND=not_run"
+              echo "AC-V2-019_SPEAKING_FRONTEND=not_run"
+              echo "selected_mocked_tests=0"
+            fi
+            if test -f backend/artifacts/backend-outcomes.txt; then
+              cat backend/artifacts/backend-outcomes.txt
+            else
+              echo "AC-V2-019_QUIZ_BACKEND=not_run"
+            fi
+          } | tee frontend/artifacts/outcomes.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload acceptance-gap artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cefr-v2-ac-gap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend/artifacts/**
+            frontend/artifacts/**
+            frontend/test-results/**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce complete acceptance-gap success
+        if: always()
+        working-directory: .
+        env:
+          DATABASE_GUARD_OUTCOME: ${{ steps.database-guard.outcome }}
+          MOCKED_INVOCATION_OUTCOME: ${{ steps.mocked-acceptance.outcome }}
+          MOCKED_REPORT_OUTCOME: ${{ steps.mocked-report.outcome }}
+          BACKEND_QUIZ_OUTCOME: ${{ steps.backend-quiz.outcome }}
+        run: |
+          test "$DATABASE_GUARD_OUTCOME" = "success"
+          test "$MOCKED_INVOCATION_OUTCOME" = "success"
+          test "$MOCKED_REPORT_OUTCOME" = "success"
+          test "$BACKEND_QUIZ_OUTCOME" = "success"
+          grep -qx 'AC-V2-024_NORMAL_PENDING=passed' frontend/artifacts/mock-outcomes.txt
+          grep -qx 'AC-V2-019_QUIZ_FRONTEND=passed' frontend/artifacts/mock-outcomes.txt
+          grep -qx 'AC-V2-019_SPEAKING_FRONTEND=passed' frontend/artifacts/mock-outcomes.txt
+          grep -qx 'selected_mocked_tests=3' frontend/artifacts/mock-outcomes.txt
+          grep -qx 'AC-V2-019_QUIZ_BACKEND=passed' backend/artifacts/backend-outcomes.txt
