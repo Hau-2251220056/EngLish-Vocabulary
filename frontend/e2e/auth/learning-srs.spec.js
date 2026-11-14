@@ -592,11 +592,28 @@ test("pending and conflict states never advance optimistically", async ({ page }
   const primaryRow = primaryLabel.locator("..");
   await expect(spinner).toBeVisible();
   await expect(spinner).toHaveCSS("position", "static");
-  await expect(primaryRow).toHaveCSS("display", "inline-flex");
+  await expect(primaryRow.locator(":scope > svg.animate-spin")).toHaveCount(1);
+  expect(["flex", "inline-flex"]).toContain(await primaryRow.evaluate((element) => getComputedStyle(element).display));
   await expect(primaryRow).toHaveCSS("align-items", "center");
   await expect(primaryRow).toHaveCSS("justify-content", "center");
-  const buttonPending = await ratingButton.boundingBox();
+  const [buttonPending, spinnerPending, labelPending, primaryRowPending] = await Promise.all([
+    ratingButton.boundingBox(),
+    spinner.boundingBox(),
+    primaryLabel.boundingBox(),
+    primaryRow.boundingBox(),
+  ]);
   expect(buttonPending).not.toBeNull();
+  expect(spinnerPending).not.toBeNull();
+  expect(labelPending).not.toBeNull();
+  expect(primaryRowPending).not.toBeNull();
+  expect(Math.abs(
+    (spinnerPending.y + (spinnerPending.height / 2))
+    - (labelPending.y + (labelPending.height / 2)),
+  )).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(
+    (primaryRowPending.x + (primaryRowPending.width / 2))
+    - (buttonPending.x + (buttonPending.width / 2)),
+  )).toBeLessThanOrEqual(1.5);
   expect(buttonPending.width).toBeCloseTo(buttonBefore.width, 1);
   expect(buttonPending.height).toBeCloseTo(buttonBefore.height, 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
