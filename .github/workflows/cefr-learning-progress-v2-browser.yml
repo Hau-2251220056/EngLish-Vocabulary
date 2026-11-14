@@ -66,13 +66,13 @@ jobs:
       - name: Check out exact approved feature checkpoint
         uses: actions/checkout@v7
         with:
-          ref: d069be096d23b8b829a4036dee510ab5635d12a8
+          ref: 4682322bc1411263ded9035b553f80b89bda44de
           persist-credentials: false
 
       - name: Verify exact approved feature checkpoint
         working-directory: .
         env:
-          APPROVED_SOURCE_SHA: d069be096d23b8b829a4036dee510ab5635d12a8
+          APPROVED_SOURCE_SHA: 4682322bc1411263ded9035b553f80b89bda44de
         run: |
           test "$(git rev-parse HEAD)" = "$APPROVED_SOURCE_SHA"
           test -z "$(git status --short)"
@@ -267,7 +267,7 @@ jobs:
         run: |
           mkdir -p artifacts
           {
-            echo "source_sha=d069be096d23b8b829a4036dee510ab5635d12a8"
+            echo "source_sha=4682322bc1411263ded9035b553f80b89bda44de"
             echo "database_guard=$DATABASE_GUARD_OUTCOME"
             echo "mocked_srs=$MOCKED_SRS_OUTCOME"
             echo "cefr_path=$CEFR_PATH_OUTCOME"
