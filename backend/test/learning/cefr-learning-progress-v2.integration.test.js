@@ -4,6 +4,7 @@ import test from "node:test";
 import { createLearningPathRepository } from "../../src/repositories/learning-path-repository.js";
 import { createLearningRepository } from "../../src/repositories/learning-repository.js";
 import { createLearningSessionRepository } from "../../src/repositories/learning-session-repository.js";
+import { createQuizRepository } from "../../src/repositories/quiz-repository.js";
 import { createStreakRepository } from "../../src/repositories/streak-repository.js";
 import {
   createLearningPathActivityAuthorizer,
@@ -12,6 +13,7 @@ import {
 } from "../../src/services/learning-path-service.js";
 import { createLearningService } from "../../src/services/learning-service.js";
 import { createLearningSessionService } from "../../src/services/learning-session-service.js";
+import { createQuizService } from "../../src/services/quiz-service.js";
 import { createCefrHarness } from "./cefr-learning-path-migration-harness.js";
 
 const enabled = process.env.CEFR_TEST_DATABASE_ALLOW_OPERATION === "true";
@@ -222,6 +224,126 @@ test("expired sessions and invalidated passes cannot gain first credit", {
   assert.equal(await passCredit(prisma, started.pass.id, activeItem.vocabulary_id), null);
 }));
 
+test("authorized Quiz activity preserves active CEFR pass evidence and entitlement", {
+  skip: !enabled,
+  timeout: 180_000,
+}, async () => withSchema("v2_quiz", async (prisma) => {
+  const user = await createUser(prisma, "quiz-non-credit");
+  const fixture = await createQuizEligibleSet(prisma, user.id);
+  const runtime = createRuntime(prisma);
+  const quiz = createQuizRuntime(prisma);
+  const started = await runtime.path.startPass(user.id, fixture.set.id, operation());
+  const passId = started.pass.id;
+  const baselinePass = await runtime.path.readPass(user.id, passId);
+  const baselinePath = await runtime.path.getPath(user.id);
+  const baselineState = await readQuizNonCreditState(
+    prisma, user.id, passId, fixture.vocabulary_id,
+  );
+
+  assert.equal(user.role, "USER");
+  assert.equal(fixture.set.is_public, true);
+  assert.equal(fixture.set.cefr_level, "A1");
+  assert.equal(baselineState.cefr.pass.id, passId);
+  assert.equal(baselineState.cefr.pass.user_id, user.id);
+  assert.equal(baselineState.cefr.pass.set_id_snapshot, fixture.set.id);
+  assert.equal(baselineState.cefr.pass.status, "ACTIVE");
+  assert.equal(baselineState.cefr.pass.completed_at, null);
+  assert.equal(baselineState.cefr.pass.completion_event_id, null);
+  assert.equal(baselineState.cefr.pass.invalidated_at, null);
+  assert.equal(baselineState.cefr.pass.items.length, 1);
+  assert.deepEqual(
+    baselineState.cefr.pass.items.map((item) => ({
+      source: item.first_credit_source,
+      event_id: item.first_credit_event_id,
+      session_id: item.first_credit_session_id,
+      accepted_at: item.first_credit_accepted_at,
+    })),
+    [{ source: null, event_id: null, session_id: null, accepted_at: null }],
+  );
+  assert.equal(baselinePass.state, "ACTIVE");
+  assert.equal(baselinePass.credited_items, 0);
+  assert.equal(baselinePass.ready_to_complete, false);
+  assert.equal(baselinePath.highest_unlocked_level, "A1");
+  assert.equal(baselinePath.path_completed_at, null);
+  assert.equal(baselineState.progress, null);
+  assert.equal(baselineState.total_xp, 0);
+  assert.deepEqual(baselineState.rewards, []);
+
+  const runId = randomUUID();
+  const questions = await quiz.getQuestions(user.id, fixture.set.id, {
+    type: "MULTIPLE_CHOICE",
+    run_id: runId,
+  });
+  assert.equal(questions.id, fixture.set.id);
+  assert.equal(questions.run_id, runId);
+  assert.equal(questions.questions.length, 1);
+  const question = questions.questions[0];
+  const correctChoice = question.choices.find(({ label }) => label === fixture.meaning);
+  assert.ok(correctChoice, "Quiz exposes the authoritative target meaning among its choices");
+
+  const eventId = randomUUID();
+  const answer = {
+    event_id: eventId,
+    set_id: fixture.set.id,
+    vocabulary_id: fixture.vocabulary_id,
+    run_id: runId,
+    question_revision: question.question_revision,
+    quiz_type: "MULTIPLE_CHOICE",
+    expected_revision: question.progress.revision,
+    selected_choice_id: correctChoice.choice_id,
+  };
+  const accepted = await quiz.recordAnswer(user.id, answer);
+
+  assert.equal(accepted.is_correct, true);
+  assert.deepEqual(accepted.progress, {
+    status: "LEARNED",
+    review_count: 1,
+    revision: 1,
+    last_reviewed_at: accepted.progress.last_reviewed_at,
+  });
+  assert.equal(accepted.reward.source_event_id, eventId);
+  assert.equal(accepted.reward.xp_earned, 3);
+  assert.equal(accepted.reward.total_xp, 3);
+  assert.equal(accepted.reward.replayed, false);
+
+  const afterAnswer = await readQuizNonCreditState(
+    prisma, user.id, passId, fixture.vocabulary_id,
+  );
+  assert.deepEqual(afterAnswer.cefr, baselineState.cefr);
+  assert.equal(afterAnswer.progress.status, "LEARNED");
+  assert.equal(afterAnswer.progress.review_count, 1);
+  assert.equal(afterAnswer.progress.revision, 1);
+  assert.equal(afterAnswer.progress.last_event_id, eventId);
+  assert.equal(afterAnswer.total_xp, 3);
+  assert.deepEqual(afterAnswer.rewards, [{
+    vocabulary_id: fixture.vocabulary_id,
+    reward_type: "QUIZ_FIRST_CORRECT",
+    reward_cycle: 0,
+    source_event_id: eventId,
+    xp_amount: 3,
+  }]);
+
+  const passAfterAnswer = await runtime.path.readPass(user.id, passId);
+  const pathAfterAnswer = await runtime.path.getPath(user.id);
+  assert.equal(passAfterAnswer.state, "ACTIVE");
+  assert.equal(passAfterAnswer.credited_items, 0);
+  assert.equal(passAfterAnswer.remaining_items, baselinePass.remaining_items);
+  assert.equal(passAfterAnswer.ready_to_complete, false);
+  assert.equal(pathAfterAnswer.highest_unlocked_level, baselinePath.highest_unlocked_level);
+  assert.equal(pathAfterAnswer.path_completed_at, baselinePath.path_completed_at);
+
+  const replay = await quiz.recordAnswer(user.id, answer);
+  assert.equal(replay.reward.replayed, true);
+  assert.equal(replay.reward.source_event_id, eventId);
+  assert.equal(replay.reward.xp_earned, 3);
+  assert.equal(replay.reward.total_xp, 3);
+  assert.equal(replay.progress.revision, 1);
+  assert.deepEqual(
+    await readQuizNonCreditState(prisma, user.id, passId, fixture.vocabulary_id),
+    afterAnswer,
+  );
+}));
+
 test("10/11/15/20 item passes support NORMAL-only, SRS-only, and mixed completion", {
   skip: !enabled,
   timeout: 300_000,
@@ -336,6 +458,15 @@ function createRuntime(prisma, { failFirstCredit = false } = {}) {
   };
 }
 
+function createQuizRuntime(prisma) {
+  return createQuizService({
+    quizRepository: createQuizRepository(prisma),
+    authorizeSetActivity: createLearningPathActivityAuthorizer({
+      createLearningPathRepository,
+    }),
+  });
+}
+
 async function createUser(prisma, suffix) {
   return prisma.uSER.create({ data: {
     email: `${suffix}-${randomUUID()}@cefr-v2.integration.test`,
@@ -365,6 +496,89 @@ async function createPublicSet(prisma, ownerId, suffix, size, cefrLevel) {
       position: index + 1,
     })) },
   } });
+}
+
+async function createQuizEligibleSet(prisma, ownerId) {
+  const set = await createPublicSet(prisma, ownerId, "quiz-non-credit", 1, "A1");
+  const item = await prisma.vOCABULARY_SET_ITEM.findFirstOrThrow({
+    where: { vocabulary_set_id: set.id },
+    select: { vocabulary_id: true },
+  });
+  const meaning = `quiz-target-${randomUUID()}`;
+  await prisma.vOCABULARY_MEANING.create({ data: {
+    vocabulary_id: item.vocabulary_id,
+    part_of_speech: "noun",
+    meaning_vi: meaning,
+    cefr_level: "A1",
+  } });
+  for (let index = 0; index < 4; index += 1) {
+    await prisma.vOCABULARY.create({ data: {
+      word: `cefr-v2-quiz-distractor-${index}-${randomUUID()}`,
+      meanings: { create: [{
+        part_of_speech: "noun",
+        meaning_vi: `quiz-distractor-${index}-${randomUUID()}`,
+        cefr_level: "A1",
+      }] },
+    } });
+  }
+  return { set, vocabulary_id: item.vocabulary_id, meaning };
+}
+
+async function readQuizNonCreditState(prisma, userId, passId, vocabularyId) {
+  const [pass, pathState, passCount, passItemCount, progress, user, rewards] = await Promise.all([
+    prisma.cEFR_LEARNING_PASS.findUniqueOrThrow({
+      where: { id: passId },
+      select: {
+        id: true,
+        user_id: true,
+        set_id_snapshot: true,
+        status: true,
+        snapshot_size: true,
+        completed_at: true,
+        completion_event_id: true,
+        invalidated_at: true,
+        items: {
+          orderBy: { position: "asc" },
+          select: {
+            id: true,
+            vocabulary_id: true,
+            position: true,
+            first_credit_source: true,
+            first_credit_event_id: true,
+            first_credit_session_id: true,
+            first_credit_accepted_at: true,
+          },
+        },
+      },
+    }),
+    prisma.cEFR_LEARNING_PATH_STATE.findUnique({ where: { user_id: userId } }),
+    prisma.cEFR_LEARNING_PASS.count({ where: { user_id: userId } }),
+    prisma.cEFR_LEARNING_PASS_ITEM.count({ where: { pass_id: passId } }),
+    prisma.lEARNING_PROGRESS.findUnique({
+      where: { user_id_vocabulary_id: {
+        user_id: userId,
+        vocabulary_id: vocabularyId,
+      } },
+    }),
+    prisma.uSER.findUniqueOrThrow({ where: { id: userId }, select: { total_xp: true } }),
+    prisma.xP_REWARD.findMany({
+      where: { user_id: userId },
+      orderBy: [{ reward_type: "asc" }, { vocabulary_id: "asc" }],
+      select: {
+        vocabulary_id: true,
+        reward_type: true,
+        reward_cycle: true,
+        source_event_id: true,
+        xp_amount: true,
+      },
+    }),
+  ]);
+  return {
+    cefr: { pass, path_state: pathState, pass_count: passCount, pass_item_count: passItemCount },
+    progress,
+    total_xp: user.total_xp,
+    rewards,
+  };
 }
 
 function operation() {
