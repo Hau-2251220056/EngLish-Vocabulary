@@ -3,6 +3,11 @@ import test from "node:test";
 import { createAuthenticationController } from "../../src/controllers/auth-controller.js";
 import { createAuthenticationMiddleware } from "../../src/middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "../../src/middleware/role-authorization-middleware.js";
+import {
+  createRequestDiagnosticsMiddleware,
+  createUnexpectedErrorMiddleware,
+  logUnexpectedRequestError,
+} from "../../src/middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "../../src/repositories/auth-session-repository.js";
 import { createAuthenticationService } from "../../src/services/authentication-service.js";
 
@@ -11,6 +16,91 @@ const PUBLIC_USER = Object.freeze({
   email: "user@example.test",
   display_name: "Test User",
   role: "USER",
+});
+
+test("unexpected request diagnostics emit only sanitized structured fields", () => {
+  const entries = [];
+  const req = {
+    method: "GET",
+    originalUrl: "/api/learning-path/passes/11111111-1111-4111-8111-111111111111?token=secret-query",
+    headers: { "x-vercel-id": "iad1::safe-request-id" },
+    cookies: { session_id: "secret-cookie" },
+    body: { password: "secret-password" },
+  };
+  let nextCalled = false;
+  createRequestDiagnosticsMiddleware({ now: () => 10 })(req, {}, () => { nextCalled = true; });
+  const error = Object.assign(new Error("SELECT secret-sql DATABASE_URL=secret-url"), {
+    name: "PrismaClientKnownRequestError",
+    code: "P2024",
+  });
+
+  const event = logUnexpectedRequestError({
+    error,
+    req,
+    logger: { error: (entry) => entries.push(entry) },
+    now: () => 27.6,
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(entries.length, 1);
+  assert.deepEqual(JSON.parse(entries[0]), event);
+  assert.deepEqual(event, {
+    event: "unexpected_request_error",
+    schema_version: 1,
+    correlation_id: "iad1::safe-request-id",
+    method: "GET",
+    route: "/api/learning-path/passes/:id",
+    error_name: "PrismaClientKnownRequestError",
+    prisma_code: "P2024",
+    category: "prisma_connection",
+    elapsed_ms: 18,
+    instance_request: "FIRST",
+  });
+  const output = entries[0];
+  for (const secret of ["secret-query", "secret-cookie", "secret-password", "secret-sql", "secret-url"]) {
+    assert.equal(output.includes(secret), false, `${secret} leaked`);
+  }
+});
+
+test("unexpected request diagnostics classify Prisma initialization and sanitize untrusted identity", () => {
+  const req = { method: "not safe", originalUrl: "/api/topics/private-user-value", headers: { "x-vercel-id": "unsafe id" } };
+  createRequestDiagnosticsMiddleware({ now: () => 5, uuid: () => "safe-fallback-id" })(req, {}, () => {});
+  const event = logUnexpectedRequestError({
+    error: { name: "PrismaClientInitializationError", code: "untrusted-code", message: "secret" },
+    req,
+    logger: { error() {} },
+    now: () => 8,
+  });
+
+  assert.equal(event.correlation_id, "safe-fallback-id");
+  assert.equal(event.method, "UNKNOWN");
+  assert.equal(event.route, "/api/topics/:segment");
+  assert.equal(event.error_name, "PrismaClientInitializationError");
+  assert.equal(event.prisma_code, null);
+  assert.equal(event.category, "prisma_initialization");
+  assert.equal(event.instance_request, "SUBSEQUENT");
+});
+
+test("unexpected error middleware preserves the generic HTTP 500 contract", () => {
+  const entries = [];
+  const req = { method: "GET", originalUrl: "/api/topics", headers: {} };
+  createRequestDiagnosticsMiddleware({ now: () => 1, uuid: () => "generated-id" })(req, {}, () => {});
+  const res = createResponseSpy();
+
+  createUnexpectedErrorMiddleware({ logger: { error: (entry) => entries.push(entry) } })(
+    new Error("private failure detail"), req, res, () => {},
+  );
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, {
+    success: false,
+    error: {
+      code: "INTERNAL_SERVER_ERROR",
+      message: "An unexpected error occurred.",
+    },
+  });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].includes("private failure detail"), false);
 });
 
 test("registration maps a Prisma P2002 race to the approved conflict", async () => {
