@@ -4,22 +4,30 @@ import { AuthenticationLoadingState } from "./authentication-loading-state.jsx";
 import { useAuthentication } from "../use-authentication.js";
 
 export function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuthentication();
+  const authentication = useAuthentication();
+  const { isAuthenticated, isLoading } = authentication;
 
   if (isLoading) return <AuthenticationLoadingState />;
+  if (authentication.authenticationRecoveryRequired) {
+    return <AuthenticationLoadingState error={authentication.authError} onRetry={authentication.refreshCurrentUser} />;
+  }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   return <Outlet />;
 }
 
 export function GuestRoute() {
-  const { isAuthenticated, isLoading } = useAuthentication();
+  const authentication = useAuthentication();
+  const { isAuthenticated, isLoading } = authentication;
   const location = useLocation();
 
   if (isLoading) {
     return location.pathname === "/"
       ? <LandingPageLoadingState />
       : <AuthenticationLoadingState />;
+  }
+  if (authentication.authenticationRecoveryRequired) {
+    return <AuthenticationLoadingState error={authentication.authError} onRetry={authentication.refreshCurrentUser} />;
   }
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 

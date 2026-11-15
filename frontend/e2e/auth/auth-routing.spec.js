@@ -25,6 +25,53 @@ test("initialization shows a neutral status without protected-content flash", as
   })).toBeVisible();
 });
 
+test("protected route keeps transient auth failure recoverable and retry restores the route", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  let attempts = 0;
+  const api = await installAuthApiMock(page, {
+    "/api/auth/me": () => {
+      attempts += 1;
+      return attempts === 1
+        ? responses.error(500, "INTERNAL_SERVER_ERROR", "An unexpected error occurred.", "raw detail")
+        : responses.currentUser(publicUser);
+    },
+  });
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("alert")).toContainText("Không thể xác minh phiên đăng nhập lúc này.");
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await expect(retry).toHaveCSS("cursor", "pointer");
+  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await retry.press("Enter");
+  await expect(page.getByRole("heading", {
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
+  })).toBeVisible();
+  expect(api.callsFor("/api/auth/me")).toHaveLength(2);
+});
+
+test("protected route retry redirects only after confirmed authentication failure", async ({ page }) => {
+  let attempts = 0;
+  await installAuthApiMock(page, {
+    "/api/auth/me": () => {
+      attempts += 1;
+      return attempts === 1
+        ? responses.abort()
+        : responses.guest();
+    },
+  });
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test("Discovery uses the shared authentication bootstrap without public or protected flash", async ({ page }) => {
   const pending = deferredResponse();
   await installAuthApiMock(page, { "/api/auth/me": pending.response });

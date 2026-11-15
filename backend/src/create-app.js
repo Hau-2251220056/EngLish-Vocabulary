@@ -12,6 +12,10 @@ import { createLearningSessionController } from "./controllers/learning-session-
 import { createLearningPathController } from "./controllers/learning-path-controller.js";
 import { createAuthenticationMiddleware } from "./middleware/authentication-middleware.js";
 import { createRoleAuthorizationMiddleware } from "./middleware/role-authorization-middleware.js";
+import {
+  createRequestDiagnosticsMiddleware,
+  createUnexpectedErrorMiddleware,
+} from "./middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
 import { createTopicRepository } from "./repositories/topic-repository.js";
 import { createUserRepository } from "./repositories/user-repository.js";
@@ -57,7 +61,7 @@ import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-
 import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
 
-export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor }) {
+export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor, diagnosticLogger }) {
   if (!prisma) {
     throw new TypeError("A Prisma client is required to create the application.");
   }
@@ -212,6 +216,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   });
   const app = express();
 
+  app.use(createRequestDiagnosticsMiddleware());
   app.use(express.json({ strict: false }));
   app.use(cookieParser());
   app.use("/api/auth", authRouter);
@@ -235,22 +240,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     });
   });
 
-  app.use((error, _req, res, _next) => {
-    if (error?.code === "CEFR_LEVEL_LOCKED") {
-      res.status(403).json({
-        success: false,
-        error: { code: error.code, message: error.message },
-      });
-      return;
-    }
-    res.status(500).json({
-      success: false,
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "An unexpected error occurred.",
-      },
-    });
-  });
+  app.use(createUnexpectedErrorMiddleware({ logger: diagnosticLogger ?? console }));
 
   return app;
 }

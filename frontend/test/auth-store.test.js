@@ -26,7 +26,7 @@ test("bootstrap resolves authentication failure to Guest", async () => {
   assert.deepEqual(store.getSnapshot(), guestState);
 });
 
-test("bootstrap preserves a sanitized operational error", async () => {
+test("bootstrap preserves a sanitized operational error as recoverable validation", async () => {
   const store = createAuthenticationStore(
     createService({
       getCurrentUser: async () => {
@@ -39,7 +39,43 @@ test("bootstrap preserves a sanitized operational error", async () => {
   assert.deepEqual(store.getSnapshot(), {
     ...guestState,
     authError: operationalStateError,
+    authenticationRecoveryRequired: true,
   });
+});
+
+test("bootstrap HTTP 500 remains recoverable and retry restores authentication", async () => {
+  let attempts = 0;
+  const store = createAuthenticationStore(createService({
+    getCurrentUser: async () => {
+      attempts += 1;
+      if (attempts === 1) throw serverFailure();
+      return publicUser;
+    },
+  }));
+
+  await store.initialize();
+  assert.equal(store.getSnapshot().isAuthenticated, false);
+  assert.equal(store.getSnapshot().authenticationRecoveryRequired, true);
+  assert.equal(store.getSnapshot().authError.status, 500);
+
+  await store.refreshCurrentUser();
+  assert.deepEqual(store.getSnapshot(), authenticatedState);
+});
+
+test("recoverable bootstrap retry returning 401 becomes confirmed Guest", async () => {
+  let attempts = 0;
+  const store = createAuthenticationStore(createService({
+    getCurrentUser: async () => {
+      attempts += 1;
+      if (attempts === 1) throw operationalFailure();
+      throw authenticationFailure();
+    },
+  }));
+
+  await store.initialize();
+  assert.equal(store.getSnapshot().authenticationRecoveryRequired, true);
+  await store.refreshCurrentUser();
+  assert.deepEqual(store.getSnapshot(), guestState);
 });
 
 test("registration does not authenticate the shared state", async () => {
@@ -57,6 +93,7 @@ test("registration does not authenticate the shared state", async () => {
     isLoading: true,
     authError: null,
     sessionExpired: false,
+    authenticationRecoveryRequired: false,
   });
 });
 
@@ -228,6 +265,15 @@ function operationalFailure() {
   });
 }
 
+function serverFailure() {
+  return new AuthenticationApiError({
+    kind: "api",
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Authentication request failed.",
+    status: 500,
+  });
+}
+
 const publicUser = Object.freeze({
   id: "user-1",
   email: "learner@example.com",
@@ -241,6 +287,7 @@ const authenticatedState = Object.freeze({
   isLoading: false,
   authError: null,
   sessionExpired: false,
+  authenticationRecoveryRequired: false,
 });
 
 const guestState = Object.freeze({
@@ -249,6 +296,7 @@ const guestState = Object.freeze({
   isLoading: false,
   authError: null,
   sessionExpired: false,
+  authenticationRecoveryRequired: false,
 });
 
 const operationalStateError = Object.freeze({

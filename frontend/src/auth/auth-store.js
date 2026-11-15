@@ -9,6 +9,7 @@ const INITIAL_STATE = Object.freeze({
   isLoading: true,
   authError: null,
   sessionExpired: false,
+  authenticationRecoveryRequired: false,
 });
 
 export function createAuthenticationStore(authService = defaultAuthService) {
@@ -38,6 +39,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
       isLoading: false,
       authError,
       sessionExpired,
+      authenticationRecoveryRequired: false,
     });
   }
 
@@ -63,6 +65,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         isLoading: false,
         authError: null,
         sessionExpired: false,
+        authenticationRecoveryRequired: false,
       });
       return user;
     } catch (error) {
@@ -85,7 +88,13 @@ export function createAuthenticationStore(authService = defaultAuthService) {
 
   async function refreshCurrentUser() {
     const hadAuthenticatedSession = state.isAuthenticated;
-    setState({ ...state, isLoading: true, authError: null });
+    const previousState = state;
+    setState({
+      ...state,
+      isLoading: true,
+      authError: null,
+      authenticationRecoveryRequired: false,
+    });
 
     try {
       const user = await authService.getCurrentUser();
@@ -95,6 +104,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         isLoading: false,
         authError: null,
         sessionExpired: false,
+        authenticationRecoveryRequired: false,
       });
       return user;
     } catch (error) {
@@ -103,7 +113,12 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         return null;
       }
 
-      setGuest(toStateError(error));
+      setState({
+        ...previousState,
+        isLoading: false,
+        authError: toStateError(error),
+        authenticationRecoveryRequired: true,
+      });
       return null;
     }
   }
