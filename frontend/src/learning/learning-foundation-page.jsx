@@ -264,13 +264,6 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const primaryMeaning = useMemo(() => selectPrimaryMeaning(currentCard?.meanings), [currentCard]);
   const retryEvent = runState?.srs.retry_context ?? null;
   const pendingRating = pendingLearningRating(eventState, retryEvent);
-  const currentPassSrsSession = pathPass?.active_sessions?.SRS?.find(
-    ({ id }) => id === srsSession?.session_id,
-  ) ?? null;
-  const showCefrSrsChoices = mode === "SRS" && pathPassStatus === "managed"
-    && pathPass?.credited_items > 0 && currentPassSrsSession?.exact_resume_available === true
-    && srsSession?.view_state === "ACTIVE";
-
   useEffect(() => {
     if (status !== "ready" || mode !== "NORMAL" || !runState || cards.length === 0
       || ["idle", "loading", "locked", "error", "restart-required"].includes(pathPassStatus)
@@ -432,7 +425,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
   useEffect(() => {
     function handleKeyDown(event) {
       if (status !== "ready" || pendingMode || !currentCard || eventState === "pending"
-        || !isKeyboardShortcutSafe(event.target)) return;
+        || (!isKeyboardShortcutSafe(event.target) && !isNormalNavigationArrow(event))) return;
       if (event.code === "Space") {
         event.preventDefault();
         toggleCardFace("space");
@@ -445,6 +438,11 @@ export function LearningFoundationPage({ reviewContext = false }) {
         event.preventDefault();
         navigateNormal(currentIndex + 1);
       }
+    }
+    function isNormalNavigationArrow(event) {
+      return mode === "NORMAL"
+        && ["ArrowLeft", "ArrowRight"].includes(event.key)
+        && Boolean(event.target?.closest?.('nav[aria-label="Điều hướng thẻ"]'));
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1010,17 +1008,6 @@ export function LearningFoundationPage({ reviewContext = false }) {
           value={mode === "SRS" ? summary.completed_count : currentIndex + 1}
           valueLabel={mode === "SRS" ? `Đã hoàn thành ${summary.completed_count} / ${summary.total}` : `Thẻ ${currentIndex + 1} / ${cards.length}`}
         />
-        {showCefrSrsChoices ? <section className="mb-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-slate-700" aria-label="Tiếp tục lượt học CEFR">
-          <p className="m-0 font-semibold">Phiên SRS này vẫn còn thẻ cần xử lý. Tiến độ CEFR đã được lưu độc lập.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={() => requestFocus("card")}>Tiếp tục phiên SRS này</button>
-            {pathPass.state === "COMPLETED"
-              ? <span className="inline-flex min-h-11 items-center font-semibold text-emerald-700">Bộ từ đã hoàn thành</span>
-              : pathPass.ready_to_complete
-              ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void completeFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang hoàn thành…" : "Hoàn thành bộ từ"}</button>
-              : <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => switchMode("NORMAL")} disabled={eventState === "pending" || Boolean(pendingMode)}>Tiếp tục phần CEFR còn lại</button>}
-          </div>
-        </section> : null}
         <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
         {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" ref={normalRetryButtonRef} onClick={(event) => void revealNormalAnswer(true, event.detail === 0)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
         {mode === "NORMAL" && eventState === "pending" ? <p className="mb-2 mt-0 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={-1}>Đang ghi nhận bằng chứng học tập…</p> : null}

@@ -168,9 +168,9 @@ test("mixed NORMAL/SRS study credits AGAIN once and preserves exact unresolved S
   });
 
   await page.goto(`/learn/vocabulary-sets/${mixed.id}`);
-  const continuation = page.getByRole("region", { name: "Tiếp tục lượt học CEFR" });
-  await expect(continuation.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
-  await expect(continuation.getByRole("button", { name: "Hoàn thành bộ từ" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Tiến độ SRS", { exact: true })).toBeVisible();
   await api(page, "post", `/api/learning-path/passes/${started.pass.id}/complete`, {
     operation_id: randomUUID(),
   });

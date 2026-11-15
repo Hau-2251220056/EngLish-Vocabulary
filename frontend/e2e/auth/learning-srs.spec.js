@@ -6,7 +6,7 @@ const SET_ID = "10000000-0000-4000-8000-000000000001";
 const SESSION_ID = "20000000-0000-4000-8000-000000000001";
 const CEFR_PASS_ID = "60000000-0000-4000-8000-000000000001";
 
-test("CEFR SRS credits AGAIN once, preserves exact resume and keeps completion explicit", async ({ page }) => {
+test("CEFR SRS credits AGAIN once and preserves exact resume without a transition notice", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   let credited = false;
   let passCompleted = false;
@@ -60,19 +60,33 @@ test("CEFR SRS credits AGAIN once, preserves exact resume and keeps completion e
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
-  const choices = page.getByRole("region", { name: "Tiếp tục lượt học CEFR" });
-  await expect(choices.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
-  await expect(choices.getByRole("button", { name: "Hoàn thành bộ từ" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
   expect(exactReads).toBeGreaterThan(0);
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
   expect(ratingCount).toBe(2);
-  await choices.getByRole("button", { name: "Hoàn thành bộ từ" }).click();
-  await expect(choices).toContainText("Tiến độ CEFR đã được lưu độc lập");
-  await expect(choices.getByRole("button", { name: "Tiếp tục phiên SRS này" })).toBeVisible();
-  expect(passCompleted).toBe(true);
+  await expect(page.getByText("Tiến độ CEFR đã được lưu độc lập")).toHaveCount(0);
+  expect(passCompleted).toBe(false);
+});
+
+test("CEFR transition notice stays absent in SRS and NORMAL while learning controls remain", async ({ page }) => {
+  await installLearningMock(page);
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByText("Tiến độ SRS", { exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await expect(page.getByRole("region", { name: "Đánh giá SRS" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByText("Tiến độ", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thẻ sau" })).toBeVisible();
 });
 
 test("defaults to SRS, reveals four ratings, focuses deterministically and requeues AGAIN once", async ({ page }) => {
@@ -422,7 +436,7 @@ test("learning header centers modes, uses a full-width divider and exposes resta
 });
 
 test("NORMAL arrow shortcuts respect boundaries and editable/native controls while SRS arrows never skip", async ({ page }) => {
-  const calls = await installLearningMock(page);
+  const calls = await installLearningMock(page, { deferNormalReveal: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
@@ -444,6 +458,18 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
 
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await expect(page.getByText("Đang ghi nhận bằng chứng học tập…")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  calls.resolveNormalReveal();
+  const next = page.getByRole("navigation", { name: "Điều hướng thẻ" }).getByRole("button", { name: /Thẻ sau/ });
+  await expect(next).toBeFocused();
+  await next.press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
+  await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+
   await page.evaluate(() => {
     const input = document.createElement("input");
     input.setAttribute("aria-label", "Shortcut guard input");
@@ -454,9 +480,8 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await input.press("ArrowRight");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
 
-  const next = page.getByRole("navigation", { name: "Điều hướng thẻ" }).getByRole("button", { name: /Thẻ sau/ });
-  await next.focus();
-  await next.press("ArrowRight");
+  await page.getByRole("button", { name: "Ôn tập SRS" }).focus();
+  await page.getByRole("button", { name: "Ôn tập SRS" }).press("ArrowRight");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
 });
 
@@ -770,6 +795,11 @@ async function installLearningMock(page, options = {}) {
     : null;
   calls.resolveSrsSession = () => resolveSrsSession?.();
   let session = options.initialSession ?? null;
+  let resolveNormalReveal;
+  const normalRevealReady = options.deferNormalReveal
+    ? new Promise((resolve) => { resolveNormalReveal = resolve; })
+    : null;
+  calls.resolveNormalReveal = () => resolveNormalReveal?.();
   let revealFailures = options.failRevealOnce ? 1 : 0;
   let eventFailures = options.failEventOnce ? 1 : 0;
   await page.route("**/api/learning-sessions**", async (route) => {
@@ -803,6 +833,7 @@ async function installLearningMock(page, options = {}) {
     }
     if (request.method() === "PUT") {
       const vocabularyId = url.pathname.split("/").at(-2);
+      if (normalRevealReady) await normalRevealReady;
       if (revealFailures > 0) {
         revealFailures -= 1;
         await route.fulfill({ status: 503, json: failure("LEARNING_SESSION_REQUEST_FAILED") });
