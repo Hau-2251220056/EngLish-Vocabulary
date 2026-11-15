@@ -32,7 +32,7 @@ test("dedicated Set review context forces SRS without changing standard learning
   assert.match(source, /const presentationStatus = mode === "SRS" && srsSessionStatus === "loading"[\s\S]*\? "loading"[\s\S]*: status/);
   assert.match(source, /<LearningPageState mode=\{mode\} status=\{presentationStatus\}/);
   assert.match(source, /!reviewContext \? <div[\s\S]*aria-label="Chế độ ôn tập"/);
-  assert.match(source, /badge=\{reviewContext \? "Ôn tập" : null\}/);
+  assert.match(source, /badge=\{reviewContext \? "Ôn tập" : pathPassStatus === "managed" \? "Lượt học CEFR" : null\}/);
   assert.doesNotMatch(source, /badge=\{mode === "SRS"/);
 });
 
