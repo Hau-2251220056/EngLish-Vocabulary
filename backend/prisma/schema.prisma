@@ -48,6 +48,14 @@ enum CEFR_LEARNING_PASS_STATUS {
   COMPLETED
 }
 
+enum CEFR_LEARNING_EVIDENCE_SOURCE {
+  NORMAL_REVEALED
+  SRS_AGAIN
+  SRS_HARD
+  SRS_GOOD
+  SRS_EASY
+}
+
 enum SESSION_ITEM_EVIDENCE {
   NORMAL_REVEALED
   SRS_HARD
@@ -227,6 +235,7 @@ model LEARNING_SESSION {
   cefr_learning_pass  CEFR_LEARNING_PASS?     @relation(fields: [cefr_learning_pass_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items               LEARNING_SESSION_ITEM[]
   streak_days         STREAK_DAY[]
+  cefr_first_credit_items CEFR_LEARNING_PASS_ITEM[] @relation("CefrPassItemFirstCreditSession")
 
   @@unique([user_id, create_operation_id])
   @@unique([user_id, completion_event_id])
@@ -260,14 +269,20 @@ model CEFR_LEARNING_PASS {
 }
 
 model CEFR_LEARNING_PASS_ITEM {
-  id             String             @id @default(uuid()) @db.Uuid
-  pass_id        String             @db.Uuid
-  vocabulary_id  String             @db.Uuid
-  position       Int
-  pass           CEFR_LEARNING_PASS @relation(fields: [pass_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  id                       String                         @id @default(uuid()) @db.Uuid
+  pass_id                  String                         @db.Uuid
+  vocabulary_id            String                         @db.Uuid
+  position                 Int
+  first_credit_source      CEFR_LEARNING_EVIDENCE_SOURCE?
+  first_credit_event_id    String?                        @unique @db.Uuid
+  first_credit_session_id  String?                        @db.Uuid
+  first_credit_accepted_at DateTime?                      @db.Timestamp(3)
+  pass                     CEFR_LEARNING_PASS             @relation(fields: [pass_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  first_credit_session     LEARNING_SESSION?              @relation("CefrPassItemFirstCreditSession", fields: [first_credit_session_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([pass_id, vocabulary_id])
   @@unique([pass_id, position])
+  @@index([first_credit_session_id])
 }
 
 model CEFR_LEARNING_PATH_STATE {

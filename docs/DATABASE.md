@@ -1918,24 +1918,27 @@ Dễ test.
 Dễ mở rộng khi feature thực sự cần.
 Phù hợp với kiến trúc Backend REST API.
 
-43. CEFR Learning Path V1 Active Data Contract
+43. CEFR Learning Progress V2 Active Data Contract
 
-The additive forward migration is `backend/prisma/migrations/20261103000000_add_cefr_learning_path_v1/migration.sql`. It is authored but has not been applied or database-verified under the current authorized worktree activity.
+V2 builds on `backend/prisma/migrations/20261103000000_add_cefr_learning_path_v1/migration.sql` through the additive forward migration `backend/prisma/migrations/20261112000000_add_cefr_learning_progress_v2/migration.sql`. The approved feature source is `7a212108c7ae63294ce43c97dffe6bb1270a7a84`.
 
 ### 43.1 Enums
 
 - `CEFR_LEARNING_PASS_STATUS`: `ACTIVE`, `INVALIDATED`, `COMPLETED`.
 - `LEARNING_SESSION_SCOPE`: `SET`, `GLOBAL`; existing and ordinary sessions default to `SET`.
+- `CEFR_LEARNING_EVIDENCE_SOURCE`: `NORMAL_REVEALED`, `SRS_AGAIN`, `SRS_HARD`, `SRS_GOOD`, `SRS_EASY`.
 
 ### 43.2 CEFR_LEARNING_PASS
 
-One row represents one backend-owned full NORMAL pass attempt for one USER and exact Set identity. It has a UUID primary key, required `user_id`, nullable current `vocabulary_set_id` using `ON DELETE SET NULL`, immutable `set_id_snapshot`, required `create_operation_id`, positive `snapshot_size`, lifecycle status/timestamps, and nullable terminal `completion_event_id`. Lifecycle checks enforce compatible ACTIVE, INVALIDATED, and COMPLETED timestamps.
+One row represents one backend-owned full pass attempt for one USER and exact Set identity. It has a UUID primary key, required `user_id`, nullable current `vocabulary_set_id` using `ON DELETE SET NULL`, immutable `set_id_snapshot`, required `create_operation_id`, positive `snapshot_size`, lifecycle status/timestamps, and nullable terminal `completion_event_id`. Lifecycle checks enforce compatible ACTIVE, INVALIDATED, and COMPLETED timestamps.
 
 USER-scoped unique creation/completion operation identities provide replay boundaries. Partial unique indexes allow at most one ACTIVE and one COMPLETED pass for `(user_id, set_id_snapshot)`; invalidated attempts may remain as narrowly scoped retry history. Historical scalar Set identity survives deletion without making inaccessible content readable.
 
 ### 43.3 CEFR_LEARNING_PASS_ITEM
 
-Each row stores an immutable Vocabulary UUID and zero-based position for the ordered full-pass snapshot. There is deliberately no Vocabulary foreign key. Unique `(pass_id, vocabulary_id)` and `(pass_id, position)` constraints enforce exact coverage and order. Deleting the owning pass cascades to its items; V1 exposes no pass-delete API. Reveal evidence is not duplicated here: accepted proof remains `NORMAL_REVEALED` evidence in completed linked `LEARNING_SESSION_ITEM` rows.
+Each row stores an immutable Vocabulary UUID and zero-based position for the ordered full-pass snapshot. There is deliberately no Vocabulary foreign key. Unique `(pass_id, vocabulary_id)` and `(pass_id, position)` constraints enforce exact coverage and order.
+
+V2 adds the canonical nullable first-credit tuple: `first_credit_source`, unique `first_credit_event_id`, `first_credit_session_id`, and `first_credit_accepted_at`. A check requires all four values to be null or all four to be present. The source session foreign key uses `ON DELETE RESTRICT`; the event UUID is unique across pass items and the session identity is indexed. Application writes never replace an existing tuple. Session event/receipt rows remain the source event record, while this tuple answers whether the exact pass item is credited.
 
 ### 43.4 CEFR_LEARNING_PATH_STATE
 
@@ -1947,13 +1950,15 @@ One optional row per USER stores `highest_unlocked_level` (`A1`–`C1`) and null
 
 - `SET` requires a non-null Set snapshot.
 - `GLOBAL` requires mode `SRS`, null current/snapshot Set identities, and no pass relation.
-- A pass relation requires `SET` scope and `NORMAL` mode.
+- A pass relation requires `SET` scope and mode `NORMAL` or `SRS`.
 - Existing 1–10 snapshot size, evidence, lifecycle, expiry, operation identity, receipt/revision, XP, and Streak constraints remain active.
 - The optional pass foreign key uses `ON DELETE RESTRICT` and is indexed.
 
 ### 43.6 Migration and compatibility boundary
 
-The migration adds enums, tables, relations, checks, and indexes and assigns existing Learning Sessions the default `SET` meaning. It creates no pass, completion, unlock, or path-complete rows from legacy Learning Progress, Quiz, rewards, Streak, Learning Sessions, or client state. It changes no Set CEFR value and has no C2, `is_required`, analytics, or Daily Goal data.
+The V2 migration validates the complete USER/pass/Set/session/Vocabulary identity chain, then backfills only exact accepted V1 pass-linked `NORMAL_REVEALED` evidence. Multiple valid candidates use earliest acceptance time and event UUID as the deterministic tie-break. Missing, foreign, malformed, ambiguous, or temporally invalid evidence aborts instead of fabricating credit.
 
-Static migration assertions exist, but migration application, PostgreSQL constraints, transaction concurrency, deletion/reclassification behavior, and no-backfill preservation remain `NOT RUN` until a separately authorized isolated TEST stage.
+The migration does not infer evidence from Learning Progress, ordinary/GLOBAL SRS, Quiz, Speaking, XP, Streak, Daily Goal, or client storage. It does not change pass status, completion events/timestamps, `highest_unlocked_level`, or `path_completed_at`; a fully backfilled active pass may become ready but still requires explicit USER confirmation.
+
+Ephemeral PostgreSQL run [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) passed 7/7 fail-closed offline guards and 6/6 PostgreSQL integration tests, including migration, constraints, lifecycle, first-credit concurrency, boundary sizes, and cleanup. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) additionally passed one focused Quiz non-credit integration test against guarded ephemeral PostgreSQL. These runs do not represent a Main, Preview, or Production migration or deployment.
 ```

@@ -4,6 +4,90 @@ import { installAuthApiMock, publicUser, responses } from "./fixtures/auth-api.j
 
 const SET_ID = "10000000-0000-4000-8000-000000000001";
 const SESSION_ID = "20000000-0000-4000-8000-000000000001";
+const CEFR_PASS_ID = "60000000-0000-4000-8000-000000000001";
+
+test("CEFR SRS credits AGAIN once and preserves exact resume without a transition notice", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let credited = false;
+  let passCompleted = false;
+  let ratingCount = 0;
+  let exactReads = 0;
+  const session = learningSessionProjection("SRS", [vocabularyId(1)]);
+  const card = cards(false, 1, ratingPreviews(1, 3, 7))[0];
+
+  await page.route("**/api/learning/sets/**", (route) => route.fulfill({
+    status: 200, json: { success: true, data: srsPayload(false, false, 1) },
+  }));
+  await page.route("**/api/learning-path/sets/*/passes", (route) => route.fulfill({
+    status: 201, json: { success: true, data: {
+      pass: cefrPassProjection({ credited, completed: passCompleted }), replayed: false, resumed: credited,
+    } },
+  }));
+  await page.route("**/api/learning-path/passes/**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith("/sessions")) {
+      await route.fulfill({ status: 201, json: { success: true, data: {
+        session, cards: [card], evaluated_at: NOW, replayed: false, resumed: false,
+      } } });
+      return;
+    }
+    if (pathname.endsWith("/complete")) {
+      passCompleted = true;
+      await route.fulfill({ status: 200, json: { success: true, data: {
+        pass: cefrPassProjection({ credited: true, completed: true }),
+        path: cefrPathProjection(), replayed: false,
+      } } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { success: true, data: cefrPassProjection({ credited, completed: passCompleted }) } });
+  });
+  await page.route(`**/api/learning-sessions/${SESSION_ID}`, (route) => {
+    exactReads += 1;
+    return route.fulfill({ status: 200, json: { success: true, data: {
+      ...session, can_continue: true, cards: [card], evaluated_at: NOW,
+    } } });
+  });
+  await page.route("**/api/learning/events", (route) => {
+    ratingCount += 1;
+    credited = true;
+    const response = successRating(route.request().postDataJSON());
+    response.data.session = session;
+    response.data.cefr_pass = passEvidenceSummary();
+    return route.fulfill({ status: 200, json: response });
+  });
+
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  expect(exactReads).toBeGreaterThan(0);
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  expect(ratingCount).toBe(2);
+  await expect(page.getByText("Tiến độ CEFR đã được lưu độc lập")).toHaveCount(0);
+  expect(passCompleted).toBe(false);
+});
+
+test("CEFR transition notice stays absent in SRS and NORMAL while learning controls remain", async ({ page }) => {
+  await installLearningMock(page);
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByText("Tiến độ SRS", { exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await expect(page.getByRole("region", { name: "Đánh giá SRS" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
+  await expect(page.getByText("Tiến độ", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thẻ sau" })).toBeVisible();
+});
 
 test("defaults to SRS, reveals four ratings, focuses deterministically and requeues AGAIN once", async ({ page }) => {
   const calls = await installLearningMock(page);
@@ -352,7 +436,7 @@ test("learning header centers modes, uses a full-width divider and exposes resta
 });
 
 test("NORMAL arrow shortcuts respect boundaries and editable/native controls while SRS arrows never skip", async ({ page }) => {
-  const calls = await installLearningMock(page);
+  const calls = await installLearningMock(page, { deferNormalReveal: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
@@ -374,6 +458,18 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
 
+  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await expect(page.getByText("Đang ghi nhận bằng chứng học tập…")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  calls.resolveNormalReveal();
+  const next = page.getByRole("navigation", { name: "Điều hướng thẻ" }).getByRole("button", { name: /Thẻ sau/ });
+  await expect(next).toBeFocused();
+  await next.press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
+  await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+
   await page.evaluate(() => {
     const input = document.createElement("input");
     input.setAttribute("aria-label", "Shortcut guard input");
@@ -384,9 +480,8 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await input.press("ArrowRight");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
 
-  const next = page.getByRole("navigation", { name: "Điều hướng thẻ" }).getByRole("button", { name: /Thẻ sau/ });
-  await next.focus();
-  await next.press("ArrowRight");
+  await page.getByRole("button", { name: "Ôn tập SRS" }).focus();
+  await page.getByRole("button", { name: "Ôn tập SRS" }).press("ArrowRight");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
 });
 
@@ -504,13 +599,49 @@ test("completed session continuation fetches fresh eligibility and becomes up-to
 });
 
 test("pending and conflict states never advance optimistically", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   let resolveEvent;
   const pending = new Promise((resolve) => { resolveEvent = resolve; });
   await installLearningMock(page, { onEvent: () => pending });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
-  await page.getByRole("button", { name: "Tốt" }).click();
-  await expect(page.getByRole("button", { name: "Tốt" })).toBeDisabled();
+  const ratingButton = page.getByRole("button", { name: "Tốt" });
+  await expect(ratingButton).toBeVisible();
+  const buttonBefore = await ratingButton.boundingBox();
+  expect(buttonBefore).not.toBeNull();
+  await ratingButton.click();
+  await expect(ratingButton).toBeDisabled();
+  await expect(ratingButton).toHaveAttribute("aria-busy", "true");
+  const spinner = ratingButton.locator("svg.animate-spin");
+  const primaryLabel = ratingButton.getByText("Tốt", { exact: true });
+  const primaryRow = primaryLabel.locator("..");
+  await expect(spinner).toBeVisible();
+  await expect(spinner).toHaveCSS("position", "static");
+  await expect(primaryRow.locator(":scope > svg.animate-spin")).toHaveCount(1);
+  expect(["flex", "inline-flex"]).toContain(await primaryRow.evaluate((element) => getComputedStyle(element).display));
+  await expect(primaryRow).toHaveCSS("align-items", "center");
+  await expect(primaryRow).toHaveCSS("justify-content", "center");
+  const [buttonPending, spinnerPending, labelPending, primaryRowPending] = await Promise.all([
+    ratingButton.boundingBox(),
+    spinner.boundingBox(),
+    primaryLabel.boundingBox(),
+    primaryRow.boundingBox(),
+  ]);
+  expect(buttonPending).not.toBeNull();
+  expect(spinnerPending).not.toBeNull();
+  expect(labelPending).not.toBeNull();
+  expect(primaryRowPending).not.toBeNull();
+  expect(Math.abs(
+    (spinnerPending.y + (spinnerPending.height / 2))
+    - (labelPending.y + (labelPending.height / 2)),
+  )).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(
+    (primaryRowPending.x + (primaryRowPending.width / 2))
+    - (buttonPending.x + (buttonPending.width / 2)),
+  )).toBeLessThanOrEqual(1.5);
+  expect(buttonPending.width).toBeCloseTo(buttonBefore.width, 1);
+  expect(buttonPending.height).toBeCloseTo(buttonBefore.height, 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
   resolveEvent({ status: 409, json: failure("LEARNING_PROGRESS_CHANGED") });
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã thay đổi");
@@ -664,6 +795,11 @@ async function installLearningMock(page, options = {}) {
     : null;
   calls.resolveSrsSession = () => resolveSrsSession?.();
   let session = options.initialSession ?? null;
+  let resolveNormalReveal;
+  const normalRevealReady = options.deferNormalReveal
+    ? new Promise((resolve) => { resolveNormalReveal = resolve; })
+    : null;
+  calls.resolveNormalReveal = () => resolveNormalReveal?.();
   let revealFailures = options.failRevealOnce ? 1 : 0;
   let eventFailures = options.failEventOnce ? 1 : 0;
   await page.route("**/api/learning-sessions**", async (route) => {
@@ -697,6 +833,7 @@ async function installLearningMock(page, options = {}) {
     }
     if (request.method() === "PUT") {
       const vocabularyId = url.pathname.split("/").at(-2);
+      if (normalRevealReady) await normalRevealReady;
       if (revealFailures > 0) {
         revealFailures -= 1;
         await route.fulfill({ status: 503, json: failure("LEARNING_SESSION_REQUEST_FAILED") });
@@ -831,6 +968,37 @@ function successRating(body) {
   return { success: true, data: { vocabulary_id: body.vocabulary_id, status: again ? "LEARNING" : "LEARNED", stored_status: again ? "LEARNING" : "LEARNED", effective_status: again ? "LEARNING" : "LEARNED", stage: again ? 0 : 1, interval_days: again ? null : 1, next_review_at: again ? NOW : "2026-10-05T00:00:00.000Z", last_reviewed_at: NOW, review_count: 1, revision: body.expected_revision + 1, reward: { source_event_id: body.event_id, xp_earned: again ? 0 : 3, replayed: false, total_xp: again ? 0 : 3, level: 1, level_min_xp: 0, next_level_xp: 50, is_max_level: false } } };
 }
 function failure(code) { return { success: false, error: { code, message: "Changed." } }; }
+function cefrPassProjection({ credited = false, completed = false } = {}) {
+  const creditedItems = credited ? 1 : 0;
+  return {
+    id: CEFR_PASS_ID, set_id: SET_ID, state: completed ? "COMPLETED" : "ACTIVE",
+    snapshot_size: 1, studied_items: creditedItems, credited_items: creditedItems,
+    remaining_items: 1 - creditedItems, ready_to_complete: credited && !completed,
+    evidence_counts: { NORMAL: 0, SRS: creditedItems },
+    activity_state: completed ? "COMPLETED" : credited ? "READY_TO_COMPLETE" : "PRISTINE",
+    active_sessions: { NORMAL: [], SRS: credited ? [{
+      id: SESSION_ID, mode: "SRS", state: "ACTIVE", expires_at: "2026-10-11T00:00:00.000Z",
+      contains_uncredited_items: false, unresolved_items: 1, exact_resume_available: true,
+    }] : [] },
+    created_at: NOW, completed_at: completed ? NOW : null,
+  };
+}
+function passEvidenceSummary() {
+  return { id: CEFR_PASS_ID, state: "ACTIVE", snapshot_size: 1, credited_items: 1, remaining_items: 0, ready_to_complete: true };
+}
+function cefrPathProjection() {
+  return {
+    evaluated_at: NOW, highest_unlocked_level: "A2", path_completed_at: null,
+    levels: ["A1", "A2", "B1", "B2", "C1"].map((level, index) => ({
+      level, unlocked: index < 2, required_count: index === 0 ? 1 : 0,
+      completed_count: index === 0 ? 1 : 0,
+      configuration: index === 0 ? "READY" : "NO_REQUIRED_SETS",
+      current_complete: index === 0, incomplete_sets: [],
+    })),
+    recommendation: null, next_suggestion: null,
+    next_suggestion_reason: "NO_ELIGIBLE_NEXT_SET", all_current_sets_complete: false,
+  };
+}
 const NOW = "2026-10-04T00:00:00.000Z";
 const LONG_CONTEXT = "A deliberately extended learning context that explains how this vocabulary appears in several realistic situations, preserves the complete approved content, and requires substantially more vertical room than the standard card without becoming an internal scrolling panel.";
 const LONG_EXAMPLE = "This deliberately long example demonstrates that unusually detailed learning material can expand the complete shared flashcard while the surrounding page handles any required viewport scrolling. Long example ending marker.";
@@ -858,11 +1026,12 @@ async function seedSettledSession(page) {
         current_vocabulary_id: null, batch_status: "COMPLETED", run_status: "COMPLETED",
       },
     }));
-    sessionStorage.setItem("elvocab.backend-learning-session:v2:user-1:10000000-0000-4000-8000-000000000001:SRS_FLASHCARD", JSON.stringify({
-      version: 2,
+    sessionStorage.setItem("elvocab.backend-learning-session.ordinary:v3:user-1:10000000-0000-4000-8000-000000000001:SRS_FLASHCARD", JSON.stringify({
+      version: 3,
       user_id: "user-1",
       set_id: "10000000-0000-4000-8000-000000000001",
       mode: "SRS",
+      pass_id: null,
       session_id: "20000000-0000-4000-8000-000000000001",
       creation_operation_id: "70000000-0000-4000-8000-000000000001",
       expires_at: "2026-10-11T00:00:00.000Z",

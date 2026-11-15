@@ -83,6 +83,7 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   expect(orderedWords).toHaveLength(ratingWords.length);
   expect(orderedWords.every(Boolean)).toBe(true);
   expect(await prisma.lEARNING_SESSION.count({ where: { user_id: ratingUser.id, scope: "GLOBAL" } })).toBe(1);
+  expect(await prisma.cEFR_LEARNING_PASS.count({ where: { user_id: ratingUser.id } })).toBe(0);
 
   const firstItem = createdSession.session.items.find(({ position }) => position === 0);
   expect(firstItem).toBeTruthy();
@@ -133,6 +134,10 @@ test("AGAIN requeues, HARD/GOOD/EASY resolve, and Ôn tiếp obtains a fresh sna
   const futureState = page.getByRole("status").filter({ hasText: "Chưa có từ đến hạn" });
   await expect(futureState).toBeVisible();
   await expect(futureState.getByRole("heading", { name: "Chưa có từ đến hạn" })).toBeVisible();
+  expect(await prisma.cEFR_LEARNING_PASS.count({ where: { user_id: ratingUser.id } })).toBe(0);
+  expect(await prisma.cEFR_LEARNING_PASS_ITEM.count({
+    where: { first_credit_session_id: createdSession.session.id },
+  })).toBe(0);
 });
 
 test("ADMIN and Guest cannot enter global review and review does not duplicate XP/Streak", async ({ page }) => {

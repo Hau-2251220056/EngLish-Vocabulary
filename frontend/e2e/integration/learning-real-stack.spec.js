@@ -242,13 +242,13 @@ test("Flashcard keeps focus stable and pronunciation failures do not block NORMA
   await expect(learningStatus).toContainText("Đã ghi nhận thẻ được lật.");
 
   await page.keyboard.press("Space");
+  await expect(frontHeading).toBeFocused();
   await page.keyboard.press("Space");
-  await page.keyboard.press("Space");
-  await page.keyboard.press("Space");
-  await expect(meaningHeading).toBeFocused();
+  await expect(meaningHeading).toBeVisible();
   await expect(meaningHeading).toHaveCSS("box-shadow", "none");
-  await page.keyboard.press("Space");
-  await page.getByRole("button", { name: /Thẻ sau/ }).click();
+  const nextButton = page.getByRole("button", { name: /Thẻ sau/ });
+  await expect(nextButton).toBeFocused();
+  await nextButton.press("ArrowRight");
   await expect(page.getByRole("heading", { name: secondVocabulary.word })).toBeFocused();
 
   await page.locator('.learning-card:not([inert]) button[aria-label^="Phát âm từ"]').click();

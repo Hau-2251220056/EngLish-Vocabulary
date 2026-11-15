@@ -50,6 +50,7 @@ import { createQuizService } from "./services/quiz-service.js";
 import { createLearningSessionService, createStreakService } from "./services/learning-session-service.js";
 import {
   createLearningPathActivityAuthorizer,
+  createLearningPathFirstCreditRecorder,
   createLearningPathService,
 } from "./services/learning-path-service.js";
 import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
@@ -135,6 +136,9 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     createLearningRepository,
     createLearningPathRepository,
   });
+  const recordLearningPathFirstCredit = createLearningPathFirstCreditRecorder({
+    createLearningPathRepository,
+  });
   const learningPathService = createLearningPathService({
     learningPathRepository,
     createSessionRepository: createLearningSessionRepository,
@@ -151,6 +155,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     createSessionRepository: createLearningSessionRepository,
     createStreakRepository,
     createLearningPathRepository,
+    recordLearningPathFirstCredit,
     authorizeSetActivity,
     authorizeGlobalReview,
     ...(learningNow ? { now: learningNow } : {}),
@@ -184,6 +189,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     createSessionRepository: createLearningSessionRepository,
     createStreakRepository,
     createLearningRepository,
+    recordLearningPathFirstCredit,
     authorizeSetActivity,
     authorizeGlobalReview,
     ...(learningNow ? { now: learningNow } : {}),

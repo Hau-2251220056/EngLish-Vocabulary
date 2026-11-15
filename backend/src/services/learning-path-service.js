@@ -2,10 +2,17 @@
 import { randomUUID } from "node:crypto";
 import { captureOperationTime, deriveSessionExpiry, projectSessionLifecycle } from "./learning-session-domain.js";
 import { CEFR_LEVELS } from "../repositories/learning-path-repository.js";
-import { toSessionProjection } from "./learning-session-service.js";
+import { projectCefrSrsCards, toSessionProjection } from "./learning-session-service.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LEVEL_INDEX = new Map(CEFR_LEVELS.map((level, index) => [level, index]));
+const FIRST_CREDIT_MODE = Object.freeze({
+  NORMAL_REVEALED: "NORMAL",
+  SRS_AGAIN: "SRS",
+  SRS_HARD: "SRS",
+  SRS_GOOD: "SRS",
+  SRS_EASY: "SRS",
+});
 
 export class LearningPathServiceError extends Error {
   constructor(code, message) {
@@ -91,32 +98,40 @@ export function createLearningPathService({
 
     async createNextSession(userId, passId, input) {
       validateUuid(userId); validateUuid(passId);
-      const operationId = validateOperation(input);
+      const { operationId, mode } = validateSessionOperation(input);
       return transact(async (paths, sessions) => {
         const instant = captureOperationTime(now).instant;
         await paths.lockOperationIdentity(userId, operationId);
         if (await paths.findCreationReplay(userId, operationId) || await paths.findCompletionReplay(userId, operationId) || await sessions.findCompletionReplay(userId, operationId)) throw operationConflict();
         const replay = await sessions.findCreationReplay(userId, operationId);
         if (replay) {
-          if (replay.cefr_learning_pass_id !== passId || replay.mode !== "NORMAL") throw operationConflict();
-          return { session: toSessionProjection(replay, instant), replayed: true };
+          if (replay.cefr_learning_pass_id !== passId || replay.mode !== mode) throw operationConflict();
+          return sessionResult(paths, userId, replay, instant, { replayed: true });
         }
         const pass = await paths.lockOwnedPass(passId, userId);
         requireActivePass(pass);
         const set = await paths.findRequiredSet(pass.set_id_snapshot);
         assertCompatibleSnapshot(pass, set);
-        const existing = newestContinuableSession(pass.learning_sessions, instant);
-        if (existing) return { session: toSessionProjection(existing, instant), replayed: false, resumed: true };
-        const unresolved = unresolvedPassItems(pass).slice(0, 10);
+        const remaining = unresolvedPassItems(pass);
+        const existing = newestContinuableSession(
+          pass.learning_sessions,
+          instant,
+          mode,
+          new Set(remaining.map(({ vocabulary_id: id }) => id)),
+        );
+        if (existing) {
+          return sessionResult(paths, userId, existing, instant, { replayed: false, resumed: true });
+        }
+        const unresolved = remaining.slice(0, 10);
         if (unresolved.length === 0) return { session: null, reason: "PASS_READY_TO_COMPLETE", replayed: false };
         const session = await sessions.createSessionWithItems({
           id: uuid(), user_id: userId, vocabulary_set_id: pass.set_id_snapshot,
           set_id_snapshot: pass.set_id_snapshot, scope: "SET", cefr_learning_pass_id: pass.id,
-          mode: "NORMAL", create_operation_id: operationId, snapshot_size: unresolved.length,
+          mode, create_operation_id: operationId, snapshot_size: unresolved.length,
           created_at: instant, expires_at: deriveSessionExpiry(instant),
           items: unresolved.map((item, position) => ({ vocabulary_id: item.vocabulary_id, position })),
         });
-        return { session: toSessionProjection(session, instant), replayed: false, resumed: false };
+        return sessionResult(paths, userId, session, instant, { replayed: false, resumed: false });
       });
     },
 
@@ -188,6 +203,64 @@ export function createLearningPathActivityAuthorizer({ createLearningPathReposit
   };
 }
 
+export function createLearningPathFirstCreditRecorder({ createLearningPathRepository }) {
+  if (typeof createLearningPathRepository !== "function") {
+    throw new TypeError("Learning Path repository factory is required.");
+  }
+  return async function recordFirstCredit(transaction, input) {
+    if (!transaction) throw new TypeError("First credit requires a transaction client.");
+    const event = validateFirstCreditInput(input);
+    const { userId, session, item, source, eventId, acceptedAt } = event;
+    if (session.user_id !== userId || item.session_id !== session.id) throw notFound();
+    if (!session.cefr_learning_pass_id) return noPassCreditResult();
+    if (
+      session.scope !== "SET"
+      || session.mode !== FIRST_CREDIT_MODE[source]
+    ) throw notFound();
+
+    const paths = createLearningPathRepository(transaction);
+    const pass = await paths.lockOwnedPass(session.cefr_learning_pass_id, userId);
+    if (!pass) throw notFound();
+    if (
+      pass.set_id_snapshot !== session.set_id_snapshot
+      || pass.vocabulary_set_id !== session.vocabulary_set_id
+    ) throw notFound();
+    const selectedItem = pass.items.find(({ vocabulary_id: id }) => id === event.vocabularyId);
+    if (!selectedItem) throw notFound();
+
+    if (pass.status !== "ACTIVE") {
+      const replayed = selectedItem.first_credit_event_id
+        ? assertFirstCreditReplay(selectedItem, event)
+        : false;
+      return firstCreditResult(pass, selectedItem, false, replayed, "PASS_INACTIVE");
+    }
+
+    const passItem = await paths.lockPassItem(pass.id, event.vocabularyId);
+    if (!passItem) throw notFound();
+    const write = await paths.setFirstCreditIfEmpty({
+      passItemId: passItem.id,
+      passId: pass.id,
+      source,
+      eventId,
+      sessionId: session.id,
+      acceptedAt,
+    });
+    if (write.count !== 0 && write.count !== 1) throw operationConflict();
+    const authoritativeItem = await paths.findPassItem(pass.id, event.vocabularyId);
+    if (!authoritativeItem?.first_credit_event_id) throw operationConflict();
+    const replayed = write.count === 0 && assertFirstCreditReplay(authoritativeItem, event);
+    const authoritativePass = await paths.findOwnedPass(pass.id, userId);
+    if (!authoritativePass) throw notFound();
+    return firstCreditResult(
+      authoritativePass,
+      authoritativeItem,
+      write.count === 1,
+      replayed,
+      null,
+    );
+  };
+}
+
 export function projectPath(curriculum, state, activePasses, evaluatedAt, activeSetContexts = []) {
   const highest = state?.highest_unlocked_level ?? "A1";
   const highestIndex = LEVEL_INDEX.get(highest) ?? 0;
@@ -253,20 +326,56 @@ function levelCurrentlyComplete(curriculum, level) {
 }
 
 function unresolvedPassItems(pass) {
-  const resolved = new Set();
-  for (const session of pass.learning_sessions ?? []) {
-    if (session.status !== "COMPLETED" || session.mode !== "NORMAL") continue;
-    for (const item of session.items) {
-      if (item.evidence === "NORMAL_REVEALED" && item.evidence_event_id && item.evidence_at) resolved.add(item.vocabulary_id);
-    }
-  }
-  return pass.items.filter((item) => !resolved.has(item.vocabulary_id));
+  return pass.items.filter((item) => item.first_credit_event_id === null);
 }
 
-function newestContinuableSession(sessions, instant) {
+function newestContinuableSession(sessions, instant, mode, remainingIds) {
   return [...(sessions ?? [])].reverse().find((session) => (
-    session.status === "ACTIVE" && session.mode === "NORMAL" && projectSessionLifecycle(session, instant) === "ACTIVE"
+    session.status === "ACTIVE"
+    && session.mode === mode
+    && projectSessionLifecycle(session, instant) === "ACTIVE"
+    && session.items.some(({ vocabulary_id: id }) => remainingIds.has(id))
   )) ?? null;
+}
+
+async function sessionResult(paths, userId, session, instant, metadata) {
+  const result = {
+    session: toSessionProjection(session, instant),
+    ...metadata,
+  };
+  if (session.mode !== "SRS") return result;
+  const set = await paths.findRequiredSetForCards(session.set_id_snapshot, userId);
+  if (!set) throw restartRequired();
+  try {
+    return {
+      ...result,
+      cards: projectCefrSrsCards(set.items, session.items, instant),
+      evaluated_at: instant,
+    };
+  } catch (error) {
+    if (error?.code === "LEARNING_SESSION_INACCESSIBLE") throw restartRequired();
+    throw error;
+  }
+}
+
+function projectActiveSessions(pass, instant) {
+  const remainingIds = new Set(unresolvedPassItems(pass).map(({ vocabulary_id: id }) => id));
+  const summaries = { NORMAL: [], SRS: [] };
+  for (const session of pass.learning_sessions ?? []) {
+    if (!Object.hasOwn(summaries, session.mode)) continue;
+    if (session.status !== "ACTIVE" || projectSessionLifecycle(session, instant) !== "ACTIVE") continue;
+    const unresolvedItems = session.items.filter(({ evidence }) => evidence === null).length;
+    summaries[session.mode].push({
+      id: session.id,
+      mode: session.mode,
+      state: "ACTIVE",
+      expires_at: session.expires_at,
+      contains_uncredited_items: session.items.some(({ vocabulary_id: id }) => remainingIds.has(id)),
+      unresolved_items: unresolvedItems,
+      exact_resume_available: session.mode === "SRS" && unresolvedItems > 0,
+    });
+  }
+  return summaries;
 }
 
 function assertCompatibleSnapshot(pass, set) {
@@ -280,11 +389,23 @@ function normalizeSetItems(items) {
 }
 
 function projectPass(pass, instant) {
-  const remaining = pass.status === "ACTIVE" ? unresolvedPassItems(pass).length : 0;
+  const remaining = unresolvedPassItems(pass).length;
+  const studied = pass.snapshot_size - remaining;
+  const evidenceCounts = pass.items.reduce((counts, item) => {
+    if (item.first_credit_source === "NORMAL_REVEALED") counts.NORMAL += 1;
+    else if (item.first_credit_source?.startsWith("SRS_")) counts.SRS += 1;
+    return counts;
+  }, { NORMAL: 0, SRS: 0 });
   return {
     id: pass.id, set_id: pass.set_id_snapshot, state: pass.status,
-    snapshot_size: pass.snapshot_size, studied_items: pass.snapshot_size - remaining,
+    snapshot_size: pass.snapshot_size, studied_items: studied, credited_items: studied,
     remaining_items: remaining, created_at: pass.created_at, completed_at: pass.completed_at,
+    ready_to_complete: pass.status === "ACTIVE" && remaining === 0,
+    evidence_counts: evidenceCounts,
+    activity_state: pass.status !== "ACTIVE"
+      ? pass.status
+      : remaining === 0 ? "READY_TO_COMPLETE" : studied === 0 ? "PRISTINE" : "IN_PROGRESS",
+    active_sessions: projectActiveSessions(pass, instant),
   };
 }
 
@@ -296,9 +417,83 @@ function projectPassWithCompatibility(pass, set, instant) {
   }
 }
 
+function validateFirstCreditInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError("First-credit input is required.");
+  const { userId, session, item, source, eventId, acceptedAt } = input;
+  validateUuid(userId);
+  validateUuid(eventId);
+  if (!session || typeof session !== "object" || !item || typeof item !== "object") throw new TypeError("Locked session and item are required.");
+  validateUuid(session.id);
+  validateUuid(item.session_id);
+  validateUuid(item.vocabulary_id);
+  if (session.cefr_learning_pass_id !== null) validateUuid(session.cefr_learning_pass_id);
+  if (!Object.hasOwn(FIRST_CREDIT_MODE, source)) throw validation();
+  if (!(acceptedAt instanceof Date) || Number.isNaN(acceptedAt.getTime())) throw validation();
+  return { userId, session, item, source, eventId, acceptedAt, vocabularyId: item.vocabulary_id };
+}
+
+function assertFirstCreditReplay(item, event) {
+  if (item.first_credit_event_id !== event.eventId) return false;
+  if (
+    item.first_credit_source !== event.source
+    || item.first_credit_session_id !== event.session.id
+    || item.first_credit_accepted_at?.getTime() !== event.acceptedAt.getTime()
+  ) throw operationConflict();
+  return true;
+}
+
+function firstCreditResult(pass, item, wonFirstCredit, replayed, reason) {
+  const creditedItems = pass.items.filter(({ first_credit_event_id: eventId }) => Boolean(eventId)).length;
+  return Object.freeze({
+    won_first_credit: wonFirstCredit,
+    replayed,
+    reason,
+    credit: projectFirstCredit(item),
+    pass: Object.freeze({
+      id: pass.id,
+      state: pass.status,
+      snapshot_size: pass.snapshot_size,
+      credited_items: creditedItems,
+      remaining_items: Math.max(0, pass.snapshot_size - creditedItems),
+      ready_to_complete: pass.status === "ACTIVE" && creditedItems === pass.snapshot_size,
+    }),
+  });
+}
+
+function projectFirstCredit(item) {
+  if (!item?.first_credit_event_id) return null;
+  return Object.freeze({
+    pass_item_id: item.id,
+    vocabulary_id: item.vocabulary_id,
+    source: item.first_credit_source,
+    event_id: item.first_credit_event_id,
+    session_id: item.first_credit_session_id,
+    accepted_at: item.first_credit_accepted_at,
+  });
+}
+
+function noPassCreditResult() {
+  return Object.freeze({
+    won_first_credit: false,
+    replayed: false,
+    reason: "NO_CEFR_PASS",
+    credit: null,
+    pass: null,
+  });
+}
+
 function assertPassCreationReplay(pass, setId) { if (pass.set_id_snapshot !== setId) throw operationConflict(); }
 function requireActivePass(pass) { if (!pass) throw notFound(); if (pass.status !== "ACTIVE") throw conflict("CEFR_PASS_TERMINAL", "The learning pass is not active."); }
 function validateOperation(input) { if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input, "operation_id")) throw validation(); validateUuid(input.operation_id); return input.operation_id; }
+function validateSessionOperation(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw validation();
+  const fields = Object.keys(input);
+  if (fields.some((field) => field !== "operation_id" && field !== "mode") || !Object.hasOwn(input, "operation_id")) throw validation();
+  validateUuid(input.operation_id);
+  const mode = input.mode ?? "NORMAL";
+  if (mode !== "NORMAL" && mode !== "SRS") throw validation();
+  return { operationId: input.operation_id, mode };
+}
 function validateUuid(value) { if (typeof value !== "string" || !UUID_PATTERN.test(value)) throw validation(); }
 function validation() { return new LearningPathServiceError("CEFR_PATH_VALIDATION_ERROR", "Learning Path request data is invalid."); }
 function notFound() { return new LearningPathServiceError("CEFR_PASS_NOT_FOUND", "Learning pass was not found."); }

@@ -171,6 +171,13 @@ export function restartNormalRun(state, cards) {
   };
 }
 
+export function startIndependentNormalRun(state, cards) {
+  if (!isStoredState(state, state?.user_id, state?.set_id)) {
+    throw new TypeError("Learning run state is invalid.");
+  }
+  return selectLearningMode(restartNormalRun(state, cards), "NORMAL");
+}
+
 export function completeNormalBatch(state) {
   const batch = currentOrderedSessionBatch(state.normal);
   if (state.active_mode !== "NORMAL"

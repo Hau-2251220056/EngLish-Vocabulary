@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const learning = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
+const flashcard = await readFile(new URL("../src/learning/flashcard-presentation.jsx", import.meta.url), "utf8");
 const globalReview = await readFile(new URL("../src/learning/global-review-page.jsx", import.meta.url), "utf8");
 const speaking = await readFile(new URL("../src/pronunciation/speaking-practice-page.jsx", import.meta.url), "utf8");
 const speakingPresentation = await readFile(new URL("../src/pronunciation/speaking-practice-presentation.js", import.meta.url), "utf8");
@@ -16,6 +17,12 @@ test("Learning startup and mode transitions use the shared loading language", ()
   assert.match(learning, /pendingRating=\{pendingRating\}/);
   assert.match(learning, /max-w-\[30rem\][^"\n]*border-sky-100[^"\n]*px-6 py-7/);
   assert.match(learning, /min-h-\[min\(28rem,calc\(100vh_-_9rem\)\)\]/);
+  assert.match(learning, /ref=\{normalPendingStatusRef\} role="status" tabIndex=\{-1\}>Đang ghi nhận bằng chứng học tập…<\/p>/);
+  assert.match(learning, /setAnnouncement\("Đang ghi nhận bằng chứng học tập\."\)/);
+  assert.match(learning, /setAnnouncement\("Đã ghi nhận thẻ được lật\. Bạn có thể tiếp tục\."\)/);
+  assert.match(learning, /setAnnouncement\("Chưa thể ghi nhận bằng chứng học tập\. Hãy thử lại\."\)/);
+  assert.match(flashcard, /const audioIsDisabled = audioDisabled \?\? disabled/);
+  assert.match(flashcard, /aria-busy=\{busy \|\| undefined\}/);
 });
 
 test("Global Review restores focus only for keyboard retry and card transitions", () => {

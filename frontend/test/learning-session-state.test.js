@@ -25,7 +25,7 @@ test("storage persists only Backend identity, expiry and presentation cursor/sta
   assert.equal(saveLearningSessionState(storage, state), true);
   const raw = [...storage.values()][0];
   assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), [
-    "creation_operation_id", "cursor_vocabulary_id", "expires_at", "mode", "session_id", "set_id", "user_id", "version", "view_state",
+    "creation_operation_id", "cursor_vocabulary_id", "expires_at", "mode", "pass_id", "session_id", "set_id", "user_id", "version", "view_state",
   ]);
   assert.equal(raw.includes("acknowledged_ids"), false);
   assert.equal(raw.includes("item_ids"), false);
@@ -98,6 +98,18 @@ test("clear removes only the selected USER/Set/mode record", () => {
   assert.notEqual(loadLearningSessionState(storage, other), null);
 });
 
+test("ordinary and pass-scoped sessions remain isolated by exact pass identity", () => {
+  const storage = memoryStorage();
+  const passIdentity = { ...IDENTITY, passId: "66666666-6666-4666-8666-666666666666" };
+  saveLearningSessionState(storage, reconcileLearningSessionState(null, IDENTITY, session()));
+  saveLearningSessionState(storage, reconcileLearningSessionState(null, passIdentity, session()));
+  assert.equal(loadLearningSessionState(storage, IDENTITY).pass_id, null);
+  assert.equal(loadLearningSessionState(storage, passIdentity).pass_id, passIdentity.passId);
+  clearLearningSessionState(storage, passIdentity);
+  assert.notEqual(loadLearningSessionState(storage, IDENTITY), null);
+  assert.equal(loadLearningSessionState(storage, passIdentity), null);
+});
+
 test("unknown create result survives refresh and exact retry reuses the operation UUID", () => {
   const storage = memoryStorage();
   const firstOperation = "66666666-6666-4666-8666-666666666666";
@@ -159,7 +171,7 @@ test("initial durable storage failure fails closed before the Backend create cal
 test("accepted-state storage failure retains pending identity for exact recovery retry", async () => {
   let failAcceptedWrite = true;
   const storage = failingStorage(({ key }) => (
-    failAcceptedWrite && key.includes("backend-learning-session:v2")
+    failAcceptedWrite && key.includes("backend-learning-session.ordinary:v3")
   ));
   const firstOperation = "66666666-6666-4666-8666-666666666666";
   const replacementOperation = "77777777-7777-4777-8777-777777777777";

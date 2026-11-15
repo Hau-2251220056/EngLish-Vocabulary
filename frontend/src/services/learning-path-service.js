@@ -1,5 +1,8 @@
 import { httpClient } from "./http-client.js";
-import { requireSessionProjection } from "./learning-session-service.js";
+import {
+  requirePassLinkedSrsCards,
+  requireSessionProjection,
+} from "./learning-session-service.js";
 
 const PATH_ENDPOINT = "/api/learning-path";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,11 +37,15 @@ export function createLearningPathService(client = httpClient) {
         requirePassProjection,
       );
     },
-    async createNextSession(passId, operationId) {
+    async createNextSession(passId, operationId, mode = "NORMAL") {
       requireUuid(passId); requireUuid(operationId);
+      if (!new Set(["NORMAL", "SRS"]).has(mode)) throw validationError();
       return request(
-        () => client.post(`${PATH_ENDPOINT}/passes/${encodeURIComponent(passId)}/sessions`, { operation_id: operationId }),
-        requirePassSessionMutation,
+        () => client.post(`${PATH_ENDPOINT}/passes/${encodeURIComponent(passId)}/sessions`, {
+          operation_id: operationId,
+          ...(mode === "NORMAL" ? {} : { mode }),
+        }),
+        (value) => requirePassSessionMutation(value, passId, mode),
       );
     },
     async restartPass(passId, operationId) {
@@ -95,8 +102,16 @@ export function requirePassProjection(value) {
   if (!isRecord(value) || !isUuid(value.id) || !isUuid(value.set_id)
     || !PASS_STATES.has(value.state) || !isPositiveInteger(value.snapshot_size)
     || !isNonNegativeInteger(value.studied_items)
+    || !isNonNegativeInteger(value.credited_items)
     || !isNonNegativeInteger(value.remaining_items)
     || value.studied_items + value.remaining_items !== value.snapshot_size
+    || value.credited_items !== value.studied_items
+    || typeof value.ready_to_complete !== "boolean"
+    || value.ready_to_complete !== (value.state === "ACTIVE" && value.remaining_items === 0)
+    || !isEvidenceCounts(value.evidence_counts)
+    || value.evidence_counts.NORMAL + value.evidence_counts.SRS !== value.credited_items
+    || !isActivityState(value.activity_state, value.state, value.credited_items, value.remaining_items)
+    || !isActiveSessions(value.active_sessions)
     || !isInstant(value.created_at)
     || !(value.completed_at === null || isInstant(value.completed_at))) throw invalidResponse();
   if (Object.hasOwn(value, "can_continue") && typeof value.can_continue !== "boolean") throw invalidResponse();
@@ -110,15 +125,52 @@ function requirePassMutation(value) {
   return { ...value, pass: requirePassProjection(value.pass) };
 }
 
-function requirePassSessionMutation(value) {
-  if (!isRecord(value) || typeof value.replayed !== "boolean") throw invalidResponse();
+function requirePassSessionMutation(value, passId, mode) {
+  if (!isRecord(value) || typeof value.replayed !== "boolean"
+    || (Object.hasOwn(value, "resumed") && typeof value.resumed !== "boolean")) throw invalidResponse();
   if (value.session === null) {
     if (value.reason !== "PASS_READY_TO_COMPLETE") throw invalidResponse();
     return value;
   }
   const session = requireSessionProjection(value.session);
-  if (session.mode !== "NORMAL") throw invalidResponse();
-  return { ...value, session };
+  if (session.mode !== mode) throw invalidResponse();
+  if (mode === "NORMAL") {
+    if (Object.hasOwn(value, "cards") || Object.hasOwn(value, "evaluated_at")) throw invalidResponse();
+    return { ...value, session };
+  }
+  const withCards = requirePassLinkedSrsCards({
+    ...session,
+    cards: value.cards,
+    evaluated_at: value.evaluated_at,
+  });
+  if (!isUuid(passId)) throw invalidResponse();
+  return { ...value, session, cards: withCards.cards, evaluated_at: withCards.evaluated_at };
+}
+
+function isEvidenceCounts(value) {
+  return isRecord(value) && Object.keys(value).length === 2
+    && isNonNegativeInteger(value.NORMAL) && isNonNegativeInteger(value.SRS);
+}
+
+function isActivityState(value, state, credited, remaining) {
+  if (state !== "ACTIVE") return value === state;
+  return value === (remaining === 0 ? "READY_TO_COMPLETE" : credited === 0 ? "PRISTINE" : "IN_PROGRESS");
+}
+
+function isActiveSessions(value) {
+  return isRecord(value) && Object.keys(value).length === 2
+    && ["NORMAL", "SRS"].every((mode) => Array.isArray(value[mode])
+      && value[mode].every((entry) => isActiveSessionSummary(entry, mode)));
+}
+
+function isActiveSessionSummary(value, mode) {
+  return isRecord(value) && isUuid(value.id) && value.mode === mode && value.state === "ACTIVE"
+    && isInstant(value.expires_at) && typeof value.contains_uncredited_items === "boolean"
+    && isNonNegativeInteger(value.unresolved_items)
+    && typeof value.exact_resume_available === "boolean"
+    && (mode === "SRS"
+      ? value.exact_resume_available === (value.unresolved_items > 0)
+      : value.exact_resume_available === false);
 }
 
 function requireCompletionMutation(value) {

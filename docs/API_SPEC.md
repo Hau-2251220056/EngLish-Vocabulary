@@ -2028,7 +2028,7 @@ SPEC
 
 trước khi thay đổi implementation.
 
-75. CEFR Learning Path V1 Active API Contract
+75. CEFR Learning Progress V2 Active API Contract
 
 All endpoints below use the existing `/api` base, success envelope `{ "success": true, "data": ... }`, error envelope `{ "success": false, "error": { "code", "message" } }`, Authentication middleware, and USER-role authorization. USER identity comes from `req.user.id`; no endpoint accepts a user ID, unlocked level, count, or completion timestamp from the client.
 
@@ -2038,19 +2038,23 @@ All endpoints below use the existing `/api` base, success envelope `{ "success":
 
 Each level has `level`, `unlocked`, `required_count`, `completed_count`, `configuration` (`READY`, `NO_REQUIRED_SETS`, or `EMPTY_REQUIRED_SET`), `current_complete`, and ordered `incomplete_sets` summaries (`id`, `name`, `created_at`). A recommendation is `{ action: "START" | "RESUME", set_id, pass_id }`; START has null `pass_id`, while RESUME has an owned pass UUID. The highest unlocked level, active-pass priority, and `created_at` then Set ID order are Backend-owned.
 
-`next_suggestion` is either null or `{ action: "START", set_id, pass_id: null }` for the first ordered nonempty unfinished Set at the highest unlocked level that has no active CEFR pass and no unexpired active Set-scoped NORMAL/SRS session. When a suggestion exists, `next_suggestion_reason` is null. When none exists, the reason is `ALL_INCOMPLETE_SETS_ACTIVE` only if at least one nonempty unfinished Set exists and every such Set is active; all other empty/configuration/completion cases use `NO_ELIGIBLE_NEXT_SET`.
+`recommendation` resumes the exact active compatible pass before recommending a new Set. Its active-pass projection is Backend-authored and never treats completed or invalidated passes as resumable. `next_suggestion` is either null or `{ action: "START", set_id, pass_id: null }` for the first ordered nonempty unfinished Set at the highest unlocked level that has no active CEFR pass and no unexpired active Set-scoped NORMAL/SRS session. It remains independent from Current Learning and never duplicates its active pass Set.
 
 ### 75.2 Full-pass lifecycle
 
-All mutation bodies allow exactly `{ "operation_id": "<uuid>" }`.
+Mutation bodies remain strict. Pass creation/restart/completion allow exactly `{ "operation_id": "<uuid>" }`; pass-session creation allows `{ "operation_id": "<uuid>", "mode"?: "NORMAL" | "SRS" }`, with omitted `mode` normalized to `NORMAL`.
 
 - `POST /api/learning-path/sets/:setId/passes`: `201` new; `200` exact replay or active-pass resume.
 - `GET /api/learning-path/passes/:passId`: owner-scoped, side-effect-free pass projection.
-- `POST /api/learning-path/passes/:passId/sessions`: `201` new linked bounded NORMAL session; `200` replay/resume or `{ session: null, reason: "PASS_READY_TO_COMPLETE", replayed: false }`.
+- `POST /api/learning-path/passes/:passId/sessions`: `201` new linked bounded NORMAL/SRS session; `200` replay/resume or `{ session: null, reason: "PASS_READY_TO_COMPLETE", replayed: false }`. SRS results include exact `cards` and backend `evaluated_at`.
 - `POST /api/learning-path/passes/:passId/restart`: explicitly invalidates the active pass and returns a new snapshot (`201`) or exact replay (`200`).
 - `POST /api/learning-path/passes/:passId/complete`: explicit final Set completion, returning `{ pass, path, replayed }` with `200`.
 
-A pass projection has `id`, `set_id`, `state`, `snapshot_size`, `studied_items`, `remaining_items`, `created_at`, and nullable `completed_at`. Pass reads may additionally include `can_continue` and `restart_reason: "SNAPSHOT_CHANGED"`. Linked session projections retain the existing contract plus `scope`; pass-linked batches are `SET`/`NORMAL` and cannot be attached by a client.
+A pass projection has `id`, `set_id`, `state`, `snapshot_size`, canonical `studied_items`, `credited_items`, `remaining_items`, `evidence_counts`, `ready_to_complete`, `activity_state`, `active_sessions` grouped by mode, `created_at`, and nullable `completed_at`. Pass reads may additionally include `can_continue` and `restart_reason: "SNAPSHOT_CHANGED"`. Linked sessions are backend-created `SET`/`NORMAL` or `SET`/`SRS`; clients cannot submit pass-item identities, evidence sources/counts, or attach an ordinary session to a pass.
+
+`PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal` returns additive authoritative `cefr_pass` state for an accepted pass-linked NORMAL reveal. `GET /api/learning-sessions/:sessionId` returns validated cards and `evaluated_at` for a pass-linked SET/SRS exact-session resume. `POST /api/learning/events` retains its existing request, rating, revision, replay, scheduler, Progress, XP, and Streak contract and returns additive `cefr_pass` state only for an accepted pass-linked SET/SRS rating. `AGAIN` may win first CEFR credit while remaining unresolved in the SRS session.
+
+Ordinary SET SRS, Review Center, GLOBAL SRS, Quiz, and Speaking have no pass relation and return no CEFR credit. Quiz and Speaking retain existing ordered batches of at most ten. The focused acceptance-gap evidence for Quiz/Speaking is recorded in run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817): its Quiz and Speaking frontend cases are mocked browser evidence, while only the Quiz non-credit backend case used ephemeral PostgreSQL.
 
 Learning Path domain mappings are: `CEFR_PATH_VALIDATION_ERROR` -> `400`; `CEFR_PASS_NOT_FOUND` -> `404`; `CEFR_LEVEL_LOCKED` -> `403`; and `CEFR_CURRICULUM_NOT_CONFIGURED`, `CEFR_SET_ALREADY_COMPLETED`, `CEFR_PASS_RESTART_REQUIRED`, `CEFR_PASS_INCOMPLETE`, `CEFR_PASS_OPERATION_CONFLICT`, and `CEFR_PASS_TERMINAL` -> `409`. Missing and foreign passes share the concealed not-found response.
 

@@ -11,6 +11,7 @@ const IDS = Object.freeze({
   session: "33333333-3333-4333-8333-333333333333",
   vocabulary: "44444444-4444-4444-8444-444444444444",
   vocabularyTwo: "55555555-5555-4555-8555-555555555555",
+  pass: "66666666-6666-4666-8666-666666666666",
 });
 
 test("session API sends exact create/read/reveal/complete and Streak contracts", async () => {
@@ -76,6 +77,31 @@ test("empty/up-to-date, replay and inaccessible reads remain explicit", async ()
   assert.deepEqual(await empty.createSession({ operation_id: IDS.operation, set_id: IDS.set, mode: "SRS" }), { session: null, reason: "SRS_UP_TO_DATE", replayed: false });
   const inaccessible = createLearningSessionService({ async get() { return envelope({ ...session(), can_continue: false, restart_reason: "SESSION_INACCESSIBLE" }); } });
   assert.equal((await inaccessible.readSession(IDS.session)).restart_reason, "SESSION_INACCESSIBLE");
+});
+
+test("pass-linked reads validate SRS cards and NORMAL reveals preserve authoritative pass evidence", async () => {
+  const service = createLearningSessionService({
+    async get() { return envelope(srsSessionWithCards()); },
+    async put() {
+      return envelope({
+        item: { vocabulary_id: IDS.vocabulary, evidence: "NORMAL_REVEALED", evidence_at: "2026-10-18T00:01:00.000Z" },
+        session: { ...session(), completed_items: 1, items: [{ ...session().items[0], evidence: "NORMAL_REVEALED" }] },
+        replayed: false, already_acknowledged: false, cefr_pass: passSummary(),
+      });
+    },
+  });
+  assert.equal((await service.readSession(IDS.session)).cards[0].id, IDS.vocabulary);
+  assert.equal((await service.acknowledgeNormalReveal(
+    IDS.session, IDS.vocabulary, IDS.operation,
+  )).cefr_pass.id, IDS.pass);
+
+  for (const malformed of [
+    { ...srsSessionWithCards(), cards: [{ ...srsCard(), id: IDS.vocabularyTwo }] },
+    { ...srsSessionWithCards(), evaluated_at: "2026-10-18" },
+  ]) await assert.rejects(
+    createLearningSessionService({ async get() { return envelope(malformed); } }).readSession(IDS.session),
+    { code: "INVALID_LEARNING_SESSION_RESPONSE" },
+  );
 });
 
 test("HTTP failures retain not-found/conflict distinctions", async () => {
@@ -147,3 +173,6 @@ function envelope(data) { return { data: { data } }; }
 function session(overrides = {}) { return { id: IDS.session, set_id: IDS.set, mode: "NORMAL", state: "ACTIVE", created_at: "2026-10-18T00:00:00.000Z", expires_at: "2026-10-25T00:00:00.000Z", completed_at: null, snapshot_size: 1, completed_items: 0, items: [{ vocabulary_id: IDS.vocabulary, position: 0, evidence: null }], ...overrides }; }
 function completedSession() { return { ...session(), state: "COMPLETED", completed_at: "2026-10-18T00:02:00.000Z", completed_items: 1, items: [{ ...session().items[0], evidence: "NORMAL_REVEALED" }] }; }
 function streak() { return { current_streak: 1, completed_today: true, last_qualified_date: "2026-10-18", timezone: "Asia/Ho_Chi_Minh", evaluated_at: "2026-10-18T00:02:00.000Z" }; }
+function passSummary() { return { id: IDS.pass, state: "ACTIVE", snapshot_size: 1, credited_items: 1, remaining_items: 0, ready_to_complete: true }; }
+function srsSessionWithCards() { return { ...session({ mode: "SRS" }), can_continue: true, cards: [srsCard()], evaluated_at: "2026-10-18T00:00:00.000Z" }; }
+function srsCard() { return { id: IDS.vocabulary, word: "book", position: 0, meanings: [], progress: { effective_status: "NEW", stage: 0, interval_days: null, next_review_at: null, review_count: 0, revision: 0 }, rating_previews: { AGAIN: { kind: "SESSION_REQUEUE", interval_days: null }, HARD: { kind: "SCHEDULED", interval_days: 1 }, GOOD: { kind: "SCHEDULED", interval_days: 3 }, EASY: { kind: "SCHEDULED", interval_days: 7 } } }; }

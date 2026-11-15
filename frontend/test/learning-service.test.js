@@ -182,6 +182,26 @@ test("session-aware AGAIN requires unresolved evidence and nonterminal responses
   });
 });
 
+test("session-aware SRS accepts only a canonical authoritative CEFR pass summary", async () => {
+  const request = {
+    event_id: reward.source_event_id, session_id: SESSION_ID, set_id: SET_ID,
+    vocabulary_id: VOCABULARY_ID, expected_revision: 0, rating: "AGAIN",
+  };
+  const cefrPass = { id: PASS_ID, state: "ACTIVE", snapshot_size: 2, credited_items: 1, remaining_items: 1, ready_to_complete: false };
+  const value = { ...ratingProgress, vocabulary_id: VOCABULARY_ID, session: srsSession(), cefr_pass: cefrPass };
+  assert.deepEqual(await createLearningService({ async post() { return { data: { data: value } }; } })
+    .recordMeaningfulEvent(request), value);
+  for (const malformed of [
+    { ...cefrPass, credited_items: 2 },
+    { ...cefrPass, ready_to_complete: true },
+    { ...cefrPass, id: "not-a-uuid" },
+  ]) await assert.rejects(
+    createLearningService({ async post() { return { data: { data: { ...value, cefr_pass: malformed } } }; } })
+      .recordMeaningfulEvent(request),
+    { code: "INVALID_LEARNING_RESPONSE" },
+  );
+});
+
 test("NORMAL reads preserve server-authored identity, word and order without issuing writes", async () => {
   const calls = [];
   const duplicateWordSet = {
@@ -260,6 +280,7 @@ const NOW = "2026-10-04T03:15:00.000Z";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const SET_ID = "44444444-4444-4444-8444-444444444444";
 const VOCABULARY_ID = "55555555-5555-4555-8555-555555555555";
+const PASS_ID = "66666666-6666-4666-8666-666666666666";
 const xpLevel = Object.freeze({ total_xp: 50, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false });
 const reward = Object.freeze({ source_event_id: "22222222-2222-4222-8222-222222222222", xp_earned: 3, replayed: false, ...xpLevel });
 const previews = Object.freeze({ AGAIN: { kind: "SESSION_REQUEUE", interval_days: null }, HARD: { kind: "SCHEDULED", interval_days: 1 }, GOOD: { kind: "SCHEDULED", interval_days: 3 }, EASY: { kind: "SCHEDULED", interval_days: 7 } });

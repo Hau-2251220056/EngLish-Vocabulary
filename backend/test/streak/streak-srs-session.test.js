@@ -161,6 +161,119 @@ test("GLOBAL SRS accepts null Set identity while preserving receipt, resolution,
   assert.equal(result.session.state, "COMPLETED");
   assert.equal(fixture.receipts.length, 1);
   assert.equal(fixture.streakDates.length, 1);
+  assert.equal(fixture.creditCalls.length, 0);
+});
+
+test("CEFR-scoped SRS credits every rating without changing AGAIN or passing session semantics", async () => {
+  for (const rating of ["AGAIN", "HARD", "GOOD", "EASY"]) {
+    const fixture = createFixture({ passLinked: true });
+    const result = await fixture.service.recordMeaningfulEvent(USER, event(rating));
+    assert.equal(fixture.creditCalls.length, 1);
+    assert.equal(fixture.creditCalls[0].source, `SRS_${rating}`);
+    assert.equal(fixture.creditCalls[0].eventId, EVENT);
+    assert.equal(result.cefr_pass.credited_items, 1);
+    assert.equal(result.cefr_pass.ready_to_complete, true);
+    assert.equal(result.session.items[0].evidence, rating === "AGAIN" ? null : `SRS_${rating}`);
+    assert.equal(result.session.state, rating === "AGAIN" ? "ACTIVE" : "COMPLETED");
+  }
+});
+
+test("repeated CEFR AGAIN preserves scheduler revisions while first credit stays deduplicated", async () => {
+  const fixture = createFixture({ passLinked: true });
+  const first = await fixture.service.recordMeaningfulEvent(USER, event("AGAIN"));
+  const replay = await fixture.service.recordMeaningfulEvent(USER, event("AGAIN"));
+  const repeated = await fixture.service.recordMeaningfulEvent(USER, event("AGAIN", {
+    event_id: "99999999-9999-4999-8999-999999999991",
+    expected_revision: 1,
+  }));
+  assert.equal(first.cefr_pass.credited_items, 1);
+  assert.equal(replay.reward.replayed, true);
+  assert.equal(repeated.revision, 2);
+  assert.equal(fixture.creditCalls.length, 3);
+  assert.equal(fixture.firstCreditEvent, EVENT);
+  assert.equal(fixture.item.evidence, null);
+  assert.equal(fixture.session.status, "ACTIVE");
+});
+
+test("CEFR SRS first-credit failure rolls back receipt, Progress, reward and session evidence", async () => {
+  const fixture = createFixture({
+    passLinked: true,
+    creditFailure: true,
+    transactionalRollback: true,
+  });
+  await assert.rejects(
+    fixture.service.recordMeaningfulEvent(USER, event("GOOD")),
+    { code: "CREDIT_FAILED" },
+  );
+  assert.equal(fixture.progress, null);
+  assert.equal(fixture.receipts.length, 0);
+  assert.equal(fixture.rewards.length, 0);
+  assert.equal(fixture.totalXp, 0);
+  assert.equal(fixture.item.evidence, null);
+  assert.equal(fixture.session.status, "ACTIVE");
+  assert.equal(fixture.streakDates.length, 0);
+});
+
+test("expired CEFR SRS rejects new ratings but preserves exact accepted-event replay", async () => {
+  const rejected = createFixture({ passLinked: true });
+  rejected.session.expires_at = new Date("2026-10-18T02:30:00.000Z");
+  await assert.rejects(
+    rejected.service.recordMeaningfulEvent(USER, event("AGAIN")),
+    { code: "LEARNING_SESSION_EXPIRED" },
+  );
+  assert.equal(rejected.progress, null);
+  assert.equal(rejected.creditCalls.length, 0);
+
+  const accepted = createFixture({ passLinked: true });
+  await accepted.service.recordMeaningfulEvent(USER, event("AGAIN"));
+  accepted.session.expires_at = new Date("2026-10-18T02:30:00.000Z");
+  const replay = await accepted.service.recordMeaningfulEvent(USER, event("AGAIN"));
+  assert.equal(replay.reward.replayed, true);
+  assert.equal(replay.cefr_pass.credited_items, 1);
+  assert.equal(accepted.receipts.length, 1);
+});
+
+test("only pass-linked SET/SRS may rate a backend snapshot candidate before it is due", async () => {
+  const notDue = {
+    id: "progress-1", user_id: USER, vocabulary_id: VOCABULARY,
+    status: "LEARNED", review_count: 1, revision: 1,
+    interval_days: 7, next_review_at: new Date("2026-10-25T03:00:00.000Z"),
+    last_reviewed_at: new Date("2026-10-18T02:00:00.000Z"),
+    last_event_id: "99999999-9999-4999-8999-999999999990",
+  };
+  const ordinary = createFixture();
+  ordinary.progress = { ...notDue };
+  await assert.rejects(
+    ordinary.service.recordMeaningfulEvent(USER, event("GOOD", { expected_revision: 1 })),
+    { code: "LEARNING_PROGRESS_CHANGED" },
+  );
+  assert.equal(ordinary.receipts.length, 0);
+  assert.equal(ordinary.creditCalls.length, 0);
+
+  const global = createFixture();
+  Object.assign(global.session, {
+    scope: "GLOBAL",
+    vocabulary_set_id: null,
+    set_id_snapshot: null,
+  });
+  global.progress = { ...notDue };
+  await assert.rejects(
+    global.service.recordMeaningfulEvent(
+      USER, event("GOOD", { set_id: null, expected_revision: 1 }),
+    ),
+    { code: "LEARNING_PROGRESS_CHANGED" },
+  );
+  assert.equal(global.receipts.length, 0);
+  assert.equal(global.creditCalls.length, 0);
+
+  const scoped = createFixture({ passLinked: true });
+  scoped.progress = { ...notDue };
+  const accepted = await scoped.service.recordMeaningfulEvent(
+    USER, event("GOOD", { expected_revision: 1 }),
+  );
+  assert.equal(accepted.revision, 2);
+  assert.equal(accepted.cefr_pass.credited_items, 1);
+  assert.equal(scoped.receipts.length, 1);
 });
 
 function event(rating, overrides = {}) {
@@ -175,7 +288,13 @@ function event(rating, overrides = {}) {
   };
 }
 
-function createFixture({ mode = "SRS", receiptCollision = null } = {}) {
+function createFixture({
+  mode = "SRS",
+  receiptCollision = null,
+  passLinked = false,
+  creditFailure = false,
+  transactionalRollback = false,
+} = {}) {
   const fixture = {
     accessible: true,
     progress: null,
@@ -183,6 +302,8 @@ function createFixture({ mode = "SRS", receiptCollision = null } = {}) {
     receipts: [],
     totalXp: 0,
     streakDates: [],
+    creditCalls: [],
+    firstCreditEvent: null,
     item: {
       id: "item-1", session_id: SESSION, vocabulary_id: VOCABULARY, position: 0,
       evidence: null, evidence_event_id: null, evidence_at: null,
@@ -190,6 +311,9 @@ function createFixture({ mode = "SRS", receiptCollision = null } = {}) {
   };
   fixture.session = {
     id: SESSION, user_id: USER, vocabulary_set_id: SET, set_id_snapshot: SET,
+    scope: "SET", cefr_learning_pass_id: passLinked
+      ? "99999999-9999-4999-8999-999999999999"
+      : null,
     mode, status: "ACTIVE", create_operation_id: "66666666-6666-4666-8666-666666666666",
     snapshot_size: 1, created_at: new Date("2026-10-18T02:00:00.000Z"),
     expires_at: new Date("2026-10-25T02:00:00.000Z"), completed_at: null,
@@ -232,7 +356,30 @@ function createFixture({ mode = "SRS", receiptCollision = null } = {}) {
   };
   fixture.learningRepository = {
     ...learningMethods,
-    withTransaction: (callback) => callback(learningMethods, {}),
+    withTransaction: async (callback) => {
+      if (!transactionalRollback) return callback(learningMethods, {});
+      const snapshot = {
+        progress: fixture.progress ? { ...fixture.progress } : null,
+        rewards: [...fixture.rewards],
+        receipts: [...fixture.receipts],
+        totalXp: fixture.totalXp,
+        streakDates: [...fixture.streakDates],
+        item: { ...fixture.item },
+        session: { ...fixture.session },
+      };
+      try {
+        return await callback(learningMethods, { kind: "transaction" });
+      } catch (error) {
+        fixture.progress = snapshot.progress;
+        fixture.rewards.splice(0, fixture.rewards.length, ...snapshot.rewards);
+        fixture.receipts.splice(0, fixture.receipts.length, ...snapshot.receipts);
+        fixture.totalXp = snapshot.totalXp;
+        fixture.streakDates.splice(0, fixture.streakDates.length, ...snapshot.streakDates);
+        Object.assign(fixture.item, snapshot.item);
+        Object.assign(fixture.session, snapshot.session);
+        throw error;
+      }
+    },
   };
   fixture.service = createLearningService({
     learningRepository: fixture.learningRepository,
@@ -298,6 +445,27 @@ function createFixture({ mode = "SRS", receiptCollision = null } = {}) {
       },
       listActivityDatesThrough: async () => [...fixture.streakDates].reverse(),
     }),
+    recordLearningPathFirstCredit: async (transaction, input) => {
+      assert.ok(transaction);
+      fixture.creditCalls.push(input);
+      if (creditFailure) {
+        throw Object.assign(new Error("credit failed"), { code: "CREDIT_FAILED" });
+      }
+      const wonFirstCredit = fixture.firstCreditEvent === null;
+      fixture.firstCreditEvent ??= input.eventId;
+      return {
+        won_first_credit: wonFirstCredit,
+        replayed: !wonFirstCredit && fixture.firstCreditEvent === input.eventId,
+        pass: {
+          id: fixture.session.cefr_learning_pass_id,
+          state: "ACTIVE",
+          snapshot_size: 1,
+          credited_items: 1,
+          remaining_items: 0,
+          ready_to_complete: true,
+        },
+      };
+    },
     now: () => new Date(NOW),
   });
   return fixture;

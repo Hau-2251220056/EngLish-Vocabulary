@@ -6,8 +6,10 @@ import {
   currentSrsVocabularyId, loadLearningRunState, reconcileLearningRunState,
   reconcileSrsSessionRun,
   restartNormalRun, restartSrsRun, saveLearningRunState, selectLearningMode,
-  selectNormalCard, setSrsRetryContext, summarizeLearningRun, summarizeNormalRun,
+  selectNormalCard, setSrsRetryContext, startIndependentNormalRun,
+  summarizeLearningRun, summarizeNormalRun,
 } from "../src/learning/learning-run-state.js";
+import { clearIndependentNormalSessionPresentation } from "../src/session-storage/learning-session-state.js";
 
 const srsPayload = payload("SRS", ["one", "two", "three", "four", "five"]);
 const normalPayload = payload("NORMAL", ["one", "two", "three", "four", "five"]);
@@ -247,6 +249,52 @@ test("NORMAL completed batch restores, continues explicitly and full restart ado
   assert.equal(state.normal.active_batch_index, 1);
   state = restartNormalRun(state, [{ id: "latest-b" }, { id: "latest-a" }]);
   assert.deepEqual(state.normal.snapshot_ids, ["latest-b", "latest-a"]);
+});
+
+test("independent NORMAL relearning replaces only the completed NORMAL presentation run", () => {
+  const cards = makeCards(3);
+  let completed = createLearningRunState("relearn-user", "relearn-set", srsPayload, cards);
+  completed = applySrsRating(completed, "one", "AGAIN", { revision: 1 });
+  completed = selectLearningMode(completed, "NORMAL");
+  completed = selectNormalCard(completed, cards.at(-1).id, cards);
+  completed = completeNormalBatch(completed);
+  const preservedSrs = structuredClone(completed.srs);
+
+  const restarted = startIndependentNormalRun(completed, [...cards].reverse());
+
+  assert.equal(restarted.active_mode, "NORMAL");
+  assert.deepEqual(restarted.normal.snapshot_ids, cards.map(({ id }) => id).reverse());
+  assert.equal(restarted.normal.batch_status, "ACTIVE");
+  assert.equal(restarted.normal.run_status, "ACTIVE");
+  assert.deepEqual(restarted.srs, preservedSrs);
+  assert.deepEqual(restarted.srs.queue, ["two", "three", "four", "one", "five"]);
+});
+
+test("independent NORMAL cleanup removes only its ordinary projection", () => {
+  const storage = createStorage();
+  const target = { userId: "relearn-user", setId: "relearn-set", mode: "NORMAL" };
+  const targetKey = "elvocab.backend-learning-session.ordinary:v3:relearn-user:relearn-set:NORMAL_FLASHCARD";
+  const preservedKeys = [
+    "elvocab.backend-learning-session-create.ordinary:v3:relearn-user:relearn-set:NORMAL_FLASHCARD",
+    "elvocab.backend-learning-session.ordinary:v3:relearn-user:relearn-set:SRS_FLASHCARD",
+    "elvocab.backend-learning-session.ordinary:v3:relearn-user:other-set:NORMAL_FLASHCARD",
+    "elvocab.backend-learning-session.ordinary:v3:other-user:relearn-set:NORMAL_FLASHCARD",
+    "elvocab.normal-learning-operation:v1:relearn-user:relearn-set:session:REVEAL:item",
+  ];
+  storage.setItem(targetKey, JSON.stringify({ marker: "remove" }));
+  preservedKeys.forEach((key) => storage.setItem(key, JSON.stringify({ marker: "preserve" })));
+
+  assert.equal(clearIndependentNormalSessionPresentation(storage, target), true);
+  assert.equal(storage.getItem(targetKey), null);
+  preservedKeys.forEach((key) => assert.notEqual(storage.getItem(key), null));
+  assert.throws(
+    () => clearIndependentNormalSessionPresentation(storage, { ...target, mode: "SRS" }),
+    /Independent NORMAL session identity is invalid/,
+  );
+  assert.throws(
+    () => clearIndependentNormalSessionPresentation(storage, { ...target, passId: "20000000-0000-4000-8000-000000000002" }),
+    /Independent NORMAL session identity is invalid/,
+  );
 });
 
 test("NORMAL reconciliation excludes additions and preserves original batches across removal and reorder", () => {

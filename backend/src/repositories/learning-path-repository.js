@@ -2,6 +2,38 @@
 
 const LEVELS = Object.freeze(["A1", "A2", "B1", "B2", "C1"]);
 
+const FIRST_CREDIT_SELECT = Object.freeze({
+  id: true,
+  pass_id: true,
+  vocabulary_id: true,
+  position: true,
+  first_credit_source: true,
+  first_credit_event_id: true,
+  first_credit_session_id: true,
+  first_credit_accepted_at: true,
+});
+
+const VOCABULARY_CARD_SELECT = Object.freeze({
+  id: true,
+  word: true,
+  phonetic: true,
+  pronunciation_url: true,
+  meanings: {
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      part_of_speech: true,
+      meaning_vi: true,
+      context: true,
+      cefr_level: true,
+      examples: {
+        orderBy: [{ created_at: "asc" }, { id: "asc" }],
+        select: { id: true, example_en: true, example_vi: true },
+      },
+    },
+  },
+});
+
 const PASS_SELECT = Object.freeze({
   id: true,
   user_id: true,
@@ -19,7 +51,7 @@ const PASS_SELECT = Object.freeze({
   },
   items: {
     orderBy: { position: "asc" },
-    select: { id: true, pass_id: true, vocabulary_id: true, position: true },
+    select: FIRST_CREDIT_SELECT,
   },
   learning_sessions: {
     orderBy: { created_at: "asc" },
@@ -63,6 +95,38 @@ export function createLearningPathRepository(prisma) {
         select: {
           id: true, name: true, cefr_level: true, created_at: true,
           items: { orderBy: { position: "asc" }, select: { vocabulary_id: true, position: true } },
+        },
+      });
+    },
+
+    findRequiredSetForCards(setId, userId) {
+      return prisma.vOCABULARY_SET.findFirst({
+        where: { id: setId, is_public: true, cefr_level: { in: LEVELS } },
+        select: {
+          id: true,
+          items: {
+            orderBy: { position: "asc" },
+            select: {
+              position: true,
+              vocabulary: {
+                select: {
+                  ...VOCABULARY_CARD_SELECT,
+                  learning_progress: {
+                    where: { user_id: userId },
+                    select: {
+                      status: true,
+                      review_count: true,
+                      revision: true,
+                      last_reviewed_at: true,
+                      last_event_id: true,
+                      interval_days: true,
+                      next_review_at: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       });
     },
@@ -184,6 +248,57 @@ export function createLearningPathRepository(prisma) {
       return rows[0] ? findOwnedPass(passId, userId) : null;
     },
 
+    async lockPassItem(passId, vocabularyId) {
+      const rows = await prisma.$queryRaw`
+        SELECT "id"
+        FROM "CEFR_LEARNING_PASS_ITEM"
+        WHERE "pass_id" = ${passId}::uuid
+          AND "vocabulary_id" = ${vocabularyId}::uuid
+        FOR UPDATE
+      `;
+      if (!rows[0]) return null;
+      return prisma.cEFR_LEARNING_PASS_ITEM.findUnique({
+        where: {
+          pass_id_vocabulary_id: {
+            pass_id: passId,
+            vocabulary_id: vocabularyId,
+          },
+        },
+        select: FIRST_CREDIT_SELECT,
+      });
+    },
+
+    setFirstCreditIfEmpty({ passItemId, passId, source, eventId, sessionId, acceptedAt }) {
+      return prisma.cEFR_LEARNING_PASS_ITEM.updateMany({
+        where: {
+          id: passItemId,
+          pass_id: passId,
+          first_credit_source: null,
+          first_credit_event_id: null,
+          first_credit_session_id: null,
+          first_credit_accepted_at: null,
+        },
+        data: {
+          first_credit_source: source,
+          first_credit_event_id: eventId,
+          first_credit_session_id: sessionId,
+          first_credit_accepted_at: cloneDate(acceptedAt),
+        },
+      });
+    },
+
+    findPassItem(passId, vocabularyId) {
+      return prisma.cEFR_LEARNING_PASS_ITEM.findUnique({
+        where: {
+          pass_id_vocabulary_id: {
+            pass_id: passId,
+            vocabulary_id: vocabularyId,
+          },
+        },
+        select: FIRST_CREDIT_SELECT,
+      });
+    },
+
     invalidatePass(passId, userId, invalidatedAt) {
       return prisma.cEFR_LEARNING_PASS.updateMany({
         where: { id: passId, user_id: userId, status: "ACTIVE" },
@@ -210,7 +325,7 @@ export function createLearningPathRepository(prisma) {
 export { LEVELS as CEFR_LEVELS };
 
 function requireClient(prisma) {
-  if (!prisma?.cEFR_LEARNING_PASS || !prisma?.cEFR_LEARNING_PATH_STATE || !prisma?.lEARNING_SESSION || !prisma?.vOCABULARY_SET || typeof prisma.$queryRaw !== "function") {
+  if (!prisma?.cEFR_LEARNING_PASS || !prisma?.cEFR_LEARNING_PASS_ITEM || !prisma?.cEFR_LEARNING_PATH_STATE || !prisma?.lEARNING_SESSION || !prisma?.vOCABULARY_SET || typeof prisma.$queryRaw !== "function") {
     throw new TypeError("A Prisma client or transaction is required.");
   }
 }

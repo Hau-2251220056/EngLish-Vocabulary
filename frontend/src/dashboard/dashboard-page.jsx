@@ -11,7 +11,7 @@ import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { loadDiscoveryCatalog, selectDiscoveryFeaturedSets } from "../topics/discovery-catalog.js";
 import { DefaultSetCoverArtwork, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
-import { calculateLearningPassProgress } from "./dashboard-current-learning.js";
+import { getCurrentLearningPresentation } from "./dashboard-current-learning.js";
 import "./dashboard-page.css";
 
 const FOCUS_CLASSES = "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#0877b9]/30";
@@ -236,8 +236,8 @@ function CurrentLearningSection({ catalogSource, pathSource, source }) {
 }
 
 function CurrentLearningSummary({ coverImageUrl, headingRef, pass, recommendation, set }) {
-  const progress = calculateLearningPassProgress(pass);
-  if (!progress.isValid) return <p className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800" role="alert">Tiến độ lượt học không hợp lệ. Hãy tải lại Dashboard.</p>;
+  const presentation = getCurrentLearningPresentation(pass);
+  if (!presentation.isValid) return <p className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800" role="alert">Trạng thái lượt học không hợp lệ. Hãy tải lại Dashboard.</p>;
   const restartRequired = pass.can_continue === false;
   return (
     <div className="flex min-w-0 items-stretch">
@@ -251,8 +251,7 @@ function CurrentLearningSummary({ coverImageUrl, headingRef, pass, recommendatio
       <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3 max-[560px]:px-3">
         <h2 className="m-0 rounded-sm text-xs font-extrabold uppercase tracking-[0.12em] text-[#075f95] focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#0877b9]/30" id="dashboard-current-learning-title" ref={headingRef} tabIndex={-1}>Tiếp tục học</h2>
         <p className="mb-0 mt-1 text-lg font-extrabold leading-tight text-slate-900 [overflow-wrap:anywhere]">{set.name}</p>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm font-bold text-slate-600"><span>{progress.studiedItems} / {progress.snapshotSize} từ đã học</span><span className="tabular-nums">{progress.percentage}%</span></div>
-        <div aria-label={`Tiến độ lượt học ${set.name}`} aria-valuemax={progress.snapshotSize} aria-valuemin={0} aria-valuenow={progress.studiedItems} className="mt-1.5 h-2 overflow-hidden rounded-full bg-sky-100" role="progressbar"><span className="block h-full rounded-full bg-[#0877b9]" style={{ width: `${progress.percentage}%` }} /></div>
+        <p className="mb-0 mt-2 text-sm font-bold leading-relaxed text-slate-600" role="status">{presentation.status}</p>
         {restartRequired ? <p className="mb-0 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-sm font-semibold text-amber-900" role="status">Nội dung bộ từ đã thay đổi. Mở lượt học để xác nhận bắt đầu lại an toàn.</p> : null}
         <Link className={`${CONTINUE_LINK_CLASSES} mt-1`} to={`/learn/vocabulary-sets/${recommendation.set_id}`} state={{ returnTo: "/dashboard", learningPathAction: "RESUME", passId: recommendation.pass_id }}>Tiếp tục <ArrowRight aria-hidden="true" className="size-4" /></Link>
       </div>
@@ -410,8 +409,8 @@ function useCurrentLearningPass(enabled, pathSource) {
     requestIdRef.current = requestId;
     learningPathService.readPass(passId).then((pass) => {
       if (requestIdRef.current !== requestId) return;
-      const progress = calculateLearningPassProgress(pass);
-      if (pass.id !== passId || pass.set_id !== setId || pass.state !== "ACTIVE" || !progress.isValid) throw new TypeError("Current Learning pass does not match the recommendation.");
+      const presentation = getCurrentLearningPresentation(pass);
+      if (pass.id !== passId || pass.set_id !== setId || pass.state !== "ACTIVE" || !presentation.isValid) throw new TypeError("Current Learning pass does not match the recommendation.");
       setState({ data: pass, key, status: "success" });
     }).catch(() => {
       if (requestIdRef.current === requestId) setState({ data: null, key, status: "error" });

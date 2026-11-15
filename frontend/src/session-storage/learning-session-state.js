@@ -8,7 +8,7 @@ import {
 } from "./resilient-session-store.js";
 import { requireSessionProjection } from "../services/learning-session-service.js";
 
-const VERSION = 2;
+const VERSION = 3;
 const NAMESPACE = "elvocab.backend-learning-session";
 const PENDING_NAMESPACE = "elvocab.backend-learning-session-create";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,15 +19,17 @@ const MODE_TO_STORAGE = Object.freeze({
 });
 const VIEW_STATES = new Set(["ACTIVE", "EXPIRED", "INACCESSIBLE", "COMPLETED"]);
 
-export function reconcileLearningSessionState(stored, { userId, setId, mode }, backendValue) {
+export function reconcileLearningSessionState(
+  stored, { userId, setId, mode, passId = null }, backendValue,
+) {
   const session = requireSessionProjection(backendValue, {
     allowAccessState: Object.hasOwn(backendValue, "can_continue"),
   });
-  requireIdentity(userId, setId, mode);
+  requireIdentity(userId, setId, mode, passId);
   if (session.set_id !== setId || session.mode !== mode) {
     throw new TypeError("Backend Learning Session does not match the requested identity.");
   }
-  const matchingStored = isStoredRecord(stored, userId, setId, mode)
+  const matchingStored = isStoredRecord(stored, userId, setId, mode, passId)
     && stored.session_id === session.id ? stored : null;
   const itemIds = session.items.map(({ vocabulary_id: id }) => id);
   const cursor = itemIds.includes(matchingStored?.cursor_vocabulary_id)
@@ -40,6 +42,7 @@ export function reconcileLearningSessionState(stored, { userId, setId, mode }, b
     user_id: userId,
     set_id: setId,
     mode,
+    pass_id: passId,
     session_id: session.id,
     creation_operation_id: matchingStored?.creation_operation_id ?? null,
     expires_at: session.expires_at,
@@ -64,7 +67,7 @@ export function selectLearningSessionCursor(state, vocabularyId) {
 export function loadLearningSessionState(storage, identity) {
   const key = storageKey(identity);
   const stored = readSessionValue(storage, key, (value) => isStoredRecord(
-    value, identity.userId, identity.setId, identity.mode,
+    value, identity.userId, identity.setId, identity.mode, identity.passId ?? null,
   ));
   return stored ? {
     ...stored, item_ids: [], acknowledged_ids: [], needs_reconciliation: true,
@@ -78,6 +81,7 @@ export function saveLearningSessionState(storage, state) {
     user_id: state.user_id,
     set_id: state.set_id,
     mode: state.mode,
+    pass_id: state.pass_id,
     session_id: state.session_id,
     creation_operation_id: state.creation_operation_id,
     expires_at: state.expires_at,
@@ -85,12 +89,19 @@ export function saveLearningSessionState(storage, state) {
     view_state: state.view_state,
   };
   return writeSessionValue(storage, storageKey({
-    userId: state.user_id, setId: state.set_id, mode: state.mode,
+    userId: state.user_id, setId: state.set_id, mode: state.mode, passId: state.pass_id,
   }), stored);
 }
 
 export function clearLearningSessionState(storage, identity) {
   return removeSessionValue(storage, storageKey(identity));
+}
+
+export function clearIndependentNormalSessionPresentation(storage, identity) {
+  if (identity?.mode !== "NORMAL" || identity?.passId != null) {
+    throw new TypeError("Independent NORMAL session identity is invalid.");
+  }
+  return clearLearningSessionState(storage, identity);
 }
 
 export async function createLearningSessionWithPendingReplay({
@@ -132,9 +143,10 @@ export function prepareLearningSessionCreation(storage, identity, operationId) {
     user_id: identity.userId,
     set_id: identity.setId,
     mode: identity.mode,
+    pass_id: identity.passId ?? null,
     creation_operation_id: operationId,
   });
-  requireIdentity(identity.userId, identity.setId, identity.mode);
+  requireIdentity(identity.userId, identity.setId, identity.mode, identity.passId ?? null);
   const key = pendingStorageKey(identity);
   if (!writeSessionValue(storage, key, pending)) {
     removeSessionValue(storage, key);
@@ -146,7 +158,7 @@ export function prepareLearningSessionCreation(storage, identity, operationId) {
 export function loadPendingLearningSessionCreation(storage, identity) {
   const key = pendingStorageKey(identity);
   return readSessionValue(storage, key, (value) => isPendingCreationRecord(
-    value, identity.userId, identity.setId, identity.mode,
+    value, identity.userId, identity.setId, identity.mode, identity.passId ?? null,
   ));
 }
 
@@ -173,9 +185,9 @@ export function clearPendingLearningSessionCreation(storage, identity, operation
   return removeSessionValue(storage, pendingStorageKey(identity));
 }
 
-function storageKey({ userId, setId, mode }) {
-  requireIdentity(userId, setId, mode);
-  return createSessionStorageKey(NAMESPACE, createSessionIdentity({
+function storageKey({ userId, setId, mode, passId = null }) {
+  requireIdentity(userId, setId, mode, passId);
+  return createSessionStorageKey(`${NAMESPACE}.${passId ?? "ordinary"}`, createSessionIdentity({
     version: VERSION,
     userId,
     setId,
@@ -183,9 +195,9 @@ function storageKey({ userId, setId, mode }) {
   }));
 }
 
-function pendingStorageKey({ userId, setId, mode }) {
-  requireIdentity(userId, setId, mode);
-  return createSessionStorageKey(PENDING_NAMESPACE, createSessionIdentity({
+function pendingStorageKey({ userId, setId, mode, passId = null }) {
+  requireIdentity(userId, setId, mode, passId);
+  return createSessionStorageKey(`${PENDING_NAMESPACE}.${passId ?? "ordinary"}`, createSessionIdentity({
     version: VERSION,
     userId,
     setId,
@@ -193,16 +205,17 @@ function pendingStorageKey({ userId, setId, mode }) {
   }));
 }
 
-function requireIdentity(userId, setId, mode) {
+function requireIdentity(userId, setId, mode, passId = null) {
   if (typeof userId !== "string" || userId.length === 0
     || typeof setId !== "string" || setId.length === 0
-    || !Object.hasOwn(MODE_TO_STORAGE, mode)) throw new TypeError("Learning Session identity is invalid.");
+    || !Object.hasOwn(MODE_TO_STORAGE, mode)
+    || !(passId === null || UUID_PATTERN.test(passId))) throw new TypeError("Learning Session identity is invalid.");
 }
 
-function isStoredRecord(value, userId, setId, mode) {
+function isStoredRecord(value, userId, setId, mode, passId = null) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
     && value.version === VERSION && value.user_id === userId && value.set_id === setId
-    && value.mode === mode && UUID_PATTERN.test(value.session_id)
+    && value.mode === mode && value.pass_id === passId && UUID_PATTERN.test(value.session_id)
     && (value.creation_operation_id === null || UUID_PATTERN.test(value.creation_operation_id))
     && typeof value.expires_at === "string" && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.expires_at)
     && !Number.isNaN(Date.parse(value.expires_at))
@@ -211,17 +224,18 @@ function isStoredRecord(value, userId, setId, mode) {
 }
 
 function isRuntimeState(value) {
-  return isStoredRecord(value, value?.user_id, value?.set_id, value?.mode)
+  return isStoredRecord(value, value?.user_id, value?.set_id, value?.mode, value?.pass_id ?? null)
     && Array.isArray(value.acknowledged_ids)
     && Array.isArray(value.item_ids)
     && typeof value.needs_reconciliation === "boolean";
 }
 
-function isPendingCreationRecord(value, userId, setId, mode) {
+function isPendingCreationRecord(value, userId, setId, mode, passId = null) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === 5
+    && Object.keys(value).length === 6
     && value.version === VERSION && value.user_id === userId && value.set_id === setId
-    && value.mode === mode && UUID_PATTERN.test(value.creation_operation_id));
+    && value.mode === mode && value.pass_id === passId
+    && UUID_PATTERN.test(value.creation_operation_id));
 }
 
 function requireUuid(value, message) {

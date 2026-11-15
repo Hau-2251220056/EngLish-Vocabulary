@@ -1,0 +1,132 @@
+name: CEFR Learning Progress V2 Guarded Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorize_cefr_v2_integration:
+        description: Affirmatively authorize isolated CEFR V2 PostgreSQL verification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elvocab-ci-test-db
+  cancel-in-progress: false
+
+jobs:
+  cefr-v2-postgresql:
+    name: CEFR V2 Ephemeral PostgreSQL
+    if: inputs.authorize_cefr_v2_integration == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      CEFR_TEST_DATABASE_ALLOW_OPERATION: "true"
+      CEFR_TEST_DATABASE_EXCLUSIVE: "true"
+      CEFR_TEST_RUN_ID: ${{ github.run_id }}
+      CEFR_TEST_RUN_ATTEMPT: ${{ github.run_attempt }}
+      CEFR_TEST_DATABASE_EXPECTED_HOST: 127.0.0.1
+      CEFR_TEST_DATABASE_EXPECTED_PORT: "5432"
+      CEFR_TEST_DATABASE_EXPECTED_NAME: elvocab_cefr_v2_ci
+      TEST_DATABASE_URL: postgresql://elvocab_cefr_ci:elvocab_cefr_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ci
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elvocab_cefr_ci
+          POSTGRES_PASSWORD: elvocab_cefr_ci_password
+          POSTGRES_DB: elvocab_cefr_v2_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elvocab_cefr_ci -d elvocab_cefr_v2_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Require approved manual execution
+        working-directory: .
+        env:
+          AUTHORIZED: ${{ inputs.authorize_cefr_v2_integration }}
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$EVENT_NAME" = "workflow_dispatch"
+          test "$AUTHORIZED" = "true"
+          test "$CURRENT_REPOSITORY" = "Hau-2251220056/EngLish-Vocabulary"
+
+      - name: Check out exact approved source checkpoint
+        uses: actions/checkout@v7
+        with:
+          ref: 8376bfd2fe2802954927d30219de03c7dfd11386
+          persist-credentials: false
+
+      - name: Verify exact approved source checkpoint
+        working-directory: .
+        env:
+          APPROVED_SOURCE_SHA: 8376bfd2fe2802954927d30219de03c7dfd11386
+        run: |
+          test "$(git rev-parse HEAD)" = "$APPROVED_SOURCE_SHA"
+          test -z "$(git status --short)"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          DATABASE_URL: postgresql://elvocab_cefr_ci:elvocab_cefr_ci_password@127.0.0.1:5432/elvocab_cefr_v2_ci
+        run: npm ci
+
+      - name: Run fail-closed offline guard tests
+        id: offline
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          node --test --test-concurrency=1 \
+            test/learning/cefr-learning-path-migration-safety.test.js \
+            test/learning/cefr-learning-path-guard-offline.test.js \
+            2>&1 | tee artifacts/offline-guards.log
+
+      - name: Run guarded migration and first-credit integration tests
+        id: postgresql
+        run: |
+          set -o pipefail
+          node --test --test-concurrency=1 \
+            test/learning/cefr-learning-path-migration-integration.test.js \
+            test/learning/cefr-learning-progress-v2.integration.test.js \
+            2>&1 | tee artifacts/postgresql-integration.log
+
+      - name: Record verification outcomes
+        if: always()
+        env:
+          OFFLINE_OUTCOME: ${{ steps.offline.outcome }}
+          POSTGRESQL_OUTCOME: ${{ steps.postgresql.outcome }}
+        run: |
+          mkdir -p artifacts
+          {
+            echo "source_sha=8376bfd2fe2802954927d30219de03c7dfd11386"
+            echo "offline_guards=$OFFLINE_OUTCOME"
+            echo "postgresql_integration=$POSTGRESQL_OUTCOME"
+          } | tee artifacts/outcomes.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CEFR V2 verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cefr-v2-postgresql-${{ github.run_id }}-${{ github.run_attempt }}
+          path: backend/artifacts/**
+          if-no-files-found: error
+          retention-days: 7
