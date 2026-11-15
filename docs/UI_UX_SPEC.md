@@ -1545,23 +1545,25 @@ The interface should help users focus on learning vocabulary rather than navigat
 
 The design should look professional enough for a graduation thesis project while remaining realistic to implement within the project's available development time.
 
-28. CEFR Learning Path V1 Active UX Contract
+28. CEFR Learning Progress V2 Active UX Contract
 
 ### 28.1 Dashboard learning path
 
-The authenticated USER Dashboard independently loads one CEFR path section. It identifies the highest unlocked A1–C1 level, shows current completed/required Set counts and textual locked/unlocked meaning, and exposes at most one primary START or RESUME action. A resumable pass at that primary level has priority; otherwise Backend order determines the first incomplete required Set. Earlier unlocked-level incomplete Sets remain available in a separate expandable list and never pull the primary recommendation backward.
+The authenticated USER Dashboard independently loads one CEFR path section. It identifies the highest unlocked A1–C1 level and exposes at most one primary START or RESUME action. Current Learning uses the exact active pass and a concise Backend-authored state; V2 removes the numeric pass fraction and progress bar so encounter credit is not presented as mastery. Earlier unlocked-level incomplete Sets remain available separately and never pull the primary recommendation backward.
 
 The section distinguishes `NO_REQUIRED_SETS`, `EMPTY_REQUIRED_SET`, no eligible recommendation, current all-Sets-complete, and preserved terminal achievement with newly incomplete current curriculum. Terminal achievement text does not imply every current Set remains complete. Private My Sets previews and Discovery Featured content keep their existing meaning.
 
-Path loading, error, retry, and stale-response handling remain section-scoped. Existing Progress, XP/Level, Streak, and My Sets content remains usable when the path source fails. ADMIN retains the neutral Dashboard and makes no USER learning-path or global-review request.
+Next Suggestion remains independent from Current Learning and never duplicates the active pass Set. Path loading, error, retry, and stale-response handling remain section-scoped. Existing Progress, XP/Level, Streak, and My Sets content remains usable when the path source fails. ADMIN retains the neutral Dashboard and makes no USER learning-path or global-review request.
 
-### 28.2 Full NORMAL Set pass
+### 28.2 Mixed-mode full Set pass
 
-For a required unlocked public Set, NORMAL learning starts or resumes the backend pass before requesting a bounded session. The UI reuses existing flashcards and reveal evidence for batches of at most 10, shows authoritative full-pass studied/remaining counts between batches, explicitly completes each bounded session, and requests the next unresolved batch.
+For a required unlocked public Set, the UI starts or resumes the backend pass before requesting a bounded session. A pristine or partial pass may continue through NORMAL or CEFR-scoped SRS. Each immutable batch contains at most ten items and the UI reconciles authoritative credited/remaining state after accepted events rather than incrementing locally.
+
+NORMAL credits only after the Backend accepts the exact reveal. CEFR-scoped SRS credits after any accepted rating, including `AGAIN`; the existing SRS queue, scheduler, replay, XP, and Streak behavior remains independent. When `AGAIN` leaves an item unresolved, the UI keeps separate actions for **Continue this SRS review session** and **Continue remaining CEFR items**. The first resumes the exact queue; the second leaves it unchanged and requests only uncredited pass items.
 
 Reaching or revealing the final card does not complete the Set. When the Backend returns `PASS_READY_TO_COMPLETE`, the UI shows **Sẵn sàng hoàn thành bộ từ** and enables explicit **Hoàn thành bộ từ**. Accepted final completion shows the refreshed highest unlocked level and terminal-achievement state when applicable. Reload/login recovery reconciles pass and session APIs; client storage remains presentation-only.
 
-Expired/inaccessible batches offer safe recovery. A frozen snapshot whose item was removed or became inaccessible shows a restart-required state and an explicit new-snapshot action; it never silently credits the item. Locked direct routes show a textual Backend-derived lock state. Existing private/copied Set NORMAL behavior remains outside CEFR credit.
+Expired/inaccessible batches offer safe recovery and preserve evidence accepted before expiry. A frozen snapshot whose item was removed or became inaccessible shows a restart-required state and an explicit new-snapshot action; it never silently credits the item. Locked direct routes show a textual Backend-derived lock state. A historically completed Set starts a fresh independent NORMAL run without creating another pass or restoring stale completed presentation state. Private/copied Set learning remains outside CEFR credit.
 
 ### 28.3 Review Center and focused review routes
 
@@ -1575,6 +1577,12 @@ The dedicated `/review/sets/:setId` route also uses the focused learning shell a
 
 Dashboard independently loads the global-review summary. After a successful summary load, both positive and zero-due states show **Xem ôn tập** linking to `/review`; no navigation alone creates a session. Review failure does not discard sibling Dashboard sections, and ADMIN makes no review-summary request.
 
-### 28.4 Accessibility and review status
+### 28.4 Pending NORMAL evidence
 
-Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state. Batch 1 was HUMAN accepted on 2026-11-08; Batch 2 and the final compact Review Center UI were HUMAN accepted on 2026-11-09 after recorded offline, isolated mocked-browser, focused review and HUMAN visual evidence. Database-backed/real-stack E2E remains `NOT RUN`, and acceptance does not imply Git integration, deployment, feature closure or resolution of the intermittent login and deferred SET SRS performance risks.
+While a reveal acknowledgement is pending, the UI announces status accessibly, keeps passive reading/scrolling and safe pronunciation audio available, and blocks only correctness-sensitive evidence-changing navigation, completion, restart, or mode-switch actions. Retry reuses the same operation identity. Success reconciles authoritative pass state immediately; failure keeps the card and restores meaningful focus to the exact retry action. No optimistic credit or arbitrary timer is used.
+
+### 28.5 Accessibility and verification status
+
+Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state.
+
+Guarded browser run [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) passed 16/16 selected browser tests: 13 CEFR real-stack cases, two mocked SRS cases, and one global SRS non-credit regression. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) passed three deliberately selected mocked browser cases for pending NORMAL, Quiz non-credit, and Speaking non-credit. The Speaking result proves the mocked read-only frontend journey only; it does not claim live microphone/vendor recognition or full real-stack Speaking backend coverage.

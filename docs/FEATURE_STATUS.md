@@ -595,6 +595,69 @@ Status: DONE — HUMAN FINAL ACCEPTED on 2026-11-05; documentation publication i
 
 - Verification publication is complete. Merge, deployment, Production verification and post-deployment smoke testing were not performed and remain separate from feature acceptance.
 
+## CEFR Learning Progress V2
+
+Status: IN_PROGRESS — ACCEPTANCE EVIDENCE PASS
+
+### Scope and source
+
+- Approved feature source: `7a212108c7ae63294ce43c97dffe6bb1270a7a84`.
+- Approved SPEC: `docs/specs/CEFR_LEARNING_PROGRESS_V2_SPEC.md`.
+- Approved PLAN: `docs/plans/CEFR_LEARNING_PROGRESS_V2_PLAN.md`.
+- Approved TASK: `docs/tasks/CEFR_LEARNING_PROGRESS_V2_TASK.md`; TASK-010 documentation sync is implemented in this worktree.
+- V2 combines immediate durable first credit from pass-linked NORMAL reveals and CEFR-scoped SRS ratings, including `AGAIN`, while preserving explicit final completion, bounded sessions, SRS scheduling, monotonic entitlement, and independent Quiz/Speaking/ordinary SRS boundaries.
+
+### Verified CI evidence
+
+- [PostgreSQL Integration run 43402432992](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992): `SUCCESS`, attempt 1; 7/7 offline guards and 6/6 ephemeral PostgreSQL integration tests.
+- [Browser run 43553259145](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145): `SUCCESS`, attempt 1; 16/16 selected browser tests comprising 13 CEFR real-stack cases, two mocked SRS cases, and one global SRS non-credit regression.
+- [Acceptance-gap run 43678604817](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817): `SUCCESS`, attempt 1, job `132704119326`, artifact `14146963833`; workflow registration merge `2a282f119a05aa94501a9b61efdf12c0772d0986` checked out pinned feature source `7a212108c7ae63294ce43c97dffe6bb1270a7a84` and enforced three selected mocked browser outcomes plus one guarded PostgreSQL Quiz non-credit outcome.
+- The initial TASK-010 audit recorded 28/30 acceptance criteria as PASS. Run `43678604817` supplies the previously missing runtime evidence for AC-V2-019 and AC-V2-024; it is not used as a substitute for the other 28 criteria.
+
+### Acceptance matrix
+
+Evidence abbreviations: `PG` = run `43402432992`; `BR` = run `43553259145`; `AG` = run `43678604817`; `AUDIT` = initial TASK-010 source/test traceability audit at the approved feature source.
+
+| AC | Result | Evidence | Limitation / boundary |
+|---|---|---|---|
+| AC-V2-001 | PASS | AUDIT, PG, BR | NORMAL evidence is Backend-accepted; explicit completion remains separate. |
+| AC-V2-002 | PASS | AUDIT, PG, BR | CEFR-scoped SRS only; ordinary/GLOBAL SRS does not credit. |
+| AC-V2-003 | PASS | AUDIT, PG, BR | Mixed-mode first credit is deduplicated by exact pass item. |
+| AC-V2-004 | PASS | AUDIT, PG, BR | `AGAIN` credits CEFR but remains unresolved in SRS. |
+| AC-V2-005 | PASS | AUDIT, PG | Replays/repeated ratings do not increase unique credited count. |
+| AC-V2-006 | PASS | AUDIT, PG, BR | Every immutable Learning Session batch remains at most ten items. |
+| AC-V2-007 | PASS | AUDIT, PG, BR | Eleven-item boundary requires the final item. |
+| AC-V2-008 | PASS | AUDIT, PG, BR | Replacement/next batches contain only uncredited items in pass order. |
+| AC-V2-009 | PASS | AUDIT, PG, BR | Accepted evidence persists across recovery and later expiry. |
+| AC-V2-010 | PASS | AUDIT, PG | Expired-session mutations are rejected. |
+| AC-V2-011 | PASS | AUDIT, PG, BR | Ready state still requires explicit USER confirmation. |
+| AC-V2-012 | PASS | AUDIT, PG, BR | Completion is idempotent and entitlement remains Backend-owned. |
+| AC-V2-013 | PASS | AUDIT, PG, BR | A2 unlock is demonstrated only after required A1 completion. |
+| AC-V2-014 | PASS | AUDIT, PG, BR | Earned/terminal entitlement remains monotonic after curriculum change. |
+| AC-V2-015 | PASS | AUDIT, PG, BR | Restart preserves the invalidated attempt and does not transfer credit. |
+| AC-V2-016 | PASS | AUDIT, PG, BR | Ordinary SET, Review Center, and GLOBAL SRS retain non-credit behavior. |
+| AC-V2-017 | PASS | AUDIT, PG, BR | Existing SRS transitions, Progress, XP, and Streak remain authoritative. |
+| AC-V2-018 | PASS | AUDIT, BR | Completed-Set relearning is fresh independent NORMAL, not a new pass. |
+| AC-V2-019 | PASS | AG | Quiz frontend and Speaking frontend are mocked; Quiz backend non-credit uses PostgreSQL. No full real-stack Speaking backend claim. |
+| AC-V2-020 | PASS | AUDIT, PG, BR | Only the exact active pass is resumable. |
+| AC-V2-021 | PASS | AUDIT, BR | Next Suggestion remains independent and excludes the active Set. |
+| AC-V2-022 | PASS | AUDIT, PG, BR | Foreign, locked, private, and malformed attempts do not credit. |
+| AC-V2-023 | PASS | AUDIT, PG | Guarded concurrent NORMAL/SRS acceptance permits at most one first credit. |
+| AC-V2-024 | PASS | AG | Focused mocked browser evidence verifies accessible pending/retry behavior; it is not a latency benchmark. |
+| AC-V2-025 | PASS | AUDIT, PG | Guarded migration accepts only exact V1 pass-linked NORMAL evidence. |
+| AC-V2-026 | PASS | AUDIT, PG, BR | First `AGAIN` credits once while ordinary requeue remains active. |
+| AC-V2-027 | PASS | AUDIT, BR | Exact SRS resume and remaining-CEFR continuation remain distinct. |
+| AC-V2-028 | PASS | AUDIT, PG, BR | Unresolved SRS remains resumable until completion/expiry; prior credit survives expiry. |
+| AC-V2-029 | PASS | AUDIT, PG | Backfill can make a pass ready but cannot complete or unlock it. |
+| AC-V2-030 | PASS | AUDIT, PG | Migration preserves completion/entitlement and fails closed on invalid evidence. |
+
+### Verification limitations and status gate
+
+- The acceptance matrix records acceptance evidence, not deployment. No Main, Preview, or Production migration/deployment is claimed.
+- Acceptance-gap frontend coverage is intentionally mocked and selected; it does not expand into live Speaking recognition, device audio, or full Speaking backend real-stack coverage.
+- Workflow runtime evidence passed, but formal HUMAN acceptance of TASK-010 and the CEFR V2 `DONE` transition has not occurred.
+- Proposed final status remains `IN_PROGRESS — ACCEPTANCE EVIDENCE PASS` until HUMAN reviews this documentation, formal TEST/REVIEW results, and explicitly authorizes `DONE`.
+
 Learning Progress represents the current learning state of a user for individual vocabulary.
 
 Conceptual learning states include:
