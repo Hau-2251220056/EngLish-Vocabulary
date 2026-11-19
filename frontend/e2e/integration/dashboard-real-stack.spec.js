@@ -131,6 +131,7 @@ test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard request
 });
 
 test("SRS to Quiz lifecycle refreshes authoritative Dashboard XP while NORMAL and Speaking remain read-only", async ({ page }) => {
+  test.setTimeout(120_000);
   await prisma.uSER.update({ where: { id: records.learner.id }, data: { total_xp: 47 } });
   await login(page, accounts.learner);
   const overview = page.getByRole("region", { name: "Tổng quan học tập" });

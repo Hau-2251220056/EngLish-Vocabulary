@@ -127,7 +127,7 @@ test("USER sees isolated persisted overview without writes", async ({
   await expect(summaryCard(page, "Từ đã học")).toContainText("23");
   await expect(summaryCard(page, "Đã thuộc")).toContainText("13");
   await expect(summaryCard(page, "Đang học")).toContainText("8");
-  await expect(summaryCard(page, "Cần ôn")).toContainText("2");
+  await expect(summaryCard(page, "Đến hạn ôn hôm nay")).toContainText("0");
   await expect(page.getByRole("list", { name: "Hoạt động học trong 7 ngày" }).getByRole("listitem")).toHaveCount(7);
   await expect(page.getByText("Chưa đủ dữ liệu để xác định hoạt động trong 7 ngày này.")).toBeVisible();
   await expect(page.getByText("Level hiện tại")).toBeVisible();
