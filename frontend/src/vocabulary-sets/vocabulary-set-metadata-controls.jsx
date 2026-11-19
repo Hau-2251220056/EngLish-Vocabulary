@@ -26,7 +26,7 @@ export function VocabularySetMetadataControls({ compact = false, idPrefix, legen
       <div className="text-sm text-slate-500">Hoặc tải JPEG, PNG, WebP tối đa 5 MiB. Ảnh được tối ưu trước khi lưu.</div>
       <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50 focus-within:ring-2 focus-within:ring-[var(--accent-primary-focus)]">
         <ImagePlus className="size-4" aria-hidden="true" /> Chọn ảnh bìa
-        <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseFile(event.target.files?.[0])} />
+        <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) chooseFile(file); }} />
       </label>
       {value.coverFile ? <p className="m-0 text-sm text-slate-600">Đã chọn: {value.coverFile.name}</p> : null}
       {preview && !value.removeCover ? <img className="max-h-40 w-full rounded-xl border border-slate-200 object-contain" src={preview} alt="Xem trước ảnh bìa bộ từ" /> : null}

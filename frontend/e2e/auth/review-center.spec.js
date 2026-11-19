@@ -45,6 +45,7 @@ test("Review Center renders authoritative due-only data without creating a sessi
   await expect(setList).toContainText("Bộ từ công khai");
   await expect(setList).toContainText("Bộ từ cá nhân");
   await expect(setList).toContainText("2 từ đến hạn");
+  await expect(page.getByRole("region", { name: "Ôn theo bộ từ" })).toContainText("Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục.");
   await expect(setList.getByRole("link", { name: "Ôn tập ngay Bộ từ Beta" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
   expect(sessionCreates).toBe(0);
 });

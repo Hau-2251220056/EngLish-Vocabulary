@@ -6,6 +6,7 @@ import { createAuthenticationMiddleware } from "../../src/middleware/authenticat
 import { createRoleAuthorizationMiddleware } from "../../src/middleware/role-authorization-middleware.js";
 import { createLearningRepository } from "../../src/repositories/learning-repository.js";
 import { createLearningService } from "../../src/services/learning-service.js";
+import { evaluateProgress } from "../../src/services/srs-scheduler.js";
 
 const USER_ID = "10000000-0000-4000-8000-000000000001";
 const VOCABULARY_ONE = "20000000-0000-4000-8000-000000000001";
@@ -71,6 +72,25 @@ test("Review Center excludes future progress and returns truthful zero state", a
     nearest_future_review_at: new Date("2026-11-09T12:00:00.000Z"),
     sets: [],
   });
+});
+
+test("an eligible Learning word counts as due without becoming Needs Review", async () => {
+  const learning = { status: "LEARNING", interval_days: null, next_review_at: NOW };
+  const evaluation = evaluateProgress(learning, NOW);
+  assert.equal(evaluation.is_eligible, true);
+  assert.equal(evaluation.effective_status, "LEARNING");
+
+  const service = serviceWith([candidate(VOCABULARY_ONE, learning, [setItem(SET_ALPHA, "Alpha", true)])]);
+  const center = await service.getReviewCenterSummary(USER_ID);
+  assert.equal(center.due_count, 1);
+  assert.deepEqual(center.sets.map(({ due_count }) => due_count), [1]);
+});
+
+test("a new word can enter Set SRS without increasing the persisted Review Center due count", async () => {
+  assert.equal(evaluateProgress(null, NOW).is_eligible, true);
+  const center = await serviceWith([]).getReviewCenterSummary(USER_ID);
+  assert.equal(center.due_count, 0);
+  assert.deepEqual(center.sets, []);
 });
 
 test("Review Center global count matches the existing Global Review summary at the same instant", async () => {

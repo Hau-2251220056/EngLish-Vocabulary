@@ -13,6 +13,7 @@ test("Review Center prioritizes Set review without a visible large page heading 
   assert.match(source, /to=\{`\/review\/sets\/\$\{set\.set_id\}`\}/);
   assert.match(source, /\{set\.name\}/);
   assert.match(source, /\{set\.due_count\} từ đến hạn/);
+  assert.match(source, /Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục\./);
   assert.match(source, /Bộ từ công khai/);
   assert.match(source, /Bộ từ cá nhân/);
   assert.match(source, /set\.set_scope === "PUBLIC"/);
@@ -26,7 +27,6 @@ test("Review Center uses one authoritative summary and never discovers or create
   assert.doesNotMatch(source, /createGlobalReviewSession|review\/sessions|recordMeaningfulEvent/);
   assert.doesNotMatch(source, /Bộ từ của bạn|publicCandidates/);
   assert.doesNotMatch(source, /Mỗi từ chỉ được tính một lần/);
-  assert.doesNotMatch(source, /Phiên SRS theo bộ có thể thêm từ mới/);
   assert.doesNotMatch(source, /tổng của từng bộ không nhất thiết bằng số tổng quan/);
   assert.doesNotMatch(source, /indigo-/);
   assert.match(source, /bg-\[var\(--accent-primary-soft\)\]/);

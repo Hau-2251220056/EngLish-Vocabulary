@@ -149,6 +149,9 @@ function DueSetList({ focusTargetRef, sets }) {
         >
           Ôn theo bộ từ
         </h2>
+        <p className="mb-0 mt-1 text-sm leading-5 text-slate-600">
+          Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục.
+        </p>
       </div>
       <ul
         className="m-0 grid list-none grid-cols-1 gap-4 p-0 md:grid-cols-2"

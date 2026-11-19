@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { LoadingIndicator } from "./components/loading-indicator.jsx";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
 import {
   AdminRoute,
   GuestRoute,
@@ -10,6 +10,8 @@ import {
 import { LearningSessionStorageObserver } from "./learning/learning-session-storage-observer.jsx";
 import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer.jsx";
 import { SpeakingSessionStorageObserver } from "./pronunciation/speaking-session-storage-observer.jsx";
+import { useAuthentication } from "./auth/use-authentication.js";
+import { AuthenticationLoadingState } from "./auth/ui/authentication-loading-state.jsx";
 
 const AuthPage = lazyRoute(() => import("./auth/ui/auth-page.jsx"), "AuthPage");
 const AuthenticatedShell = lazyRoute(
@@ -71,6 +73,7 @@ const PublicVocabularySetDiscoveryPage = lazyRoute(
   () => import("./vocabulary-sets/public-vocabulary-set-pages.jsx"),
   "PublicVocabularySetDiscoveryPage",
 );
+const NotFoundPage = lazyRoute(() => import("./not-found/not-found-page.jsx"), "NotFoundPage");
 
 export function AppRouter() {
   return (
@@ -113,10 +116,21 @@ export function AppRouter() {
             </Route>
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route element={<NotFoundBoundary />}>
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
+}
+
+function NotFoundBoundary() {
+  const authentication = useAuthentication();
+  if (authentication.isLoading) return <AuthenticationLoadingState />;
+  if (authentication.authenticationRecoveryRequired) {
+    return <AuthenticationLoadingState error={authentication.authError} onRetry={authentication.refreshCurrentUser} />;
+  }
+  return <Outlet />;
 }
 
 function lazyRoute(loadModule, exportName) {

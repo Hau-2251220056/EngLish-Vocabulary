@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { learningService } from "../services/learning-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
+import { useAuthentication } from "../auth/use-authentication.js";
 
 const FOCUS_CLASSES = "focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[#0877b9]/30";
 const ACTION_BUTTON_CLASSES = `inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#0877b9] bg-[#0877b9] px-4 font-[inherit] text-sm font-extrabold text-white hover:bg-[#075f95] ${FOCUS_CLASSES}`;
@@ -26,8 +27,10 @@ const ACTIVITY_META = {
 };
 
 export function LearningProgressPage() {
+  const { user } = useAuthentication();
   const progress = useProgressSource();
   const streak = useStreakSource();
+  const due = useDueCountSource(user?.id);
   const progressTitleRef = useRef(null);
   const progressRetryButtonRef = useRef(null);
   const progressRetryRequestedRef = useRef(false);
@@ -63,27 +66,43 @@ export function LearningProgressPage() {
 
       {progress.status === "loading" ? <ProgressLoadingState /> : null}
       {progress.status === "error" ? <ProgressErrorState onRetry={retryProgress} retryButtonRef={progressRetryButtonRef} /> : null}
-      {progress.status === "success" ? <ProgressContent data={progress.data} streak={streak} /> : null}
+      {progress.status === "success" ? <ProgressContent data={progress.data} streak={streak} due={due} /> : null}
     </section>
   );
 }
 
-function ProgressContent({ data, streak }) {
+function ProgressContent({ data, streak, due }) {
   return (
     <div className="space-y-6 max-sm:space-y-4">
-      <SummaryCards summary={data.summary} />
+      <SummaryCards summary={data.summary} due={due} />
       <ActivityWeek activity={data.streak_activity_7d} />
       <LearningOverview streak={streak} xp={data.xp_level} />
     </div>
   );
 }
 
-function SummaryCards({ summary }) {
+function SummaryCards({ summary, due }) {
+  const dueHeadingRef = useRef(null);
+  const dueRetryButtonRef = useRef(null);
+  const dueRetryRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!dueRetryRequestedRef.current || due.status === "loading") return;
+    if (due.status === "error") dueRetryButtonRef.current?.focus();
+    if (due.status === "success") dueHeadingRef.current?.focus();
+    dueRetryRequestedRef.current = false;
+  }, [due.status]);
+
+  function retryDue(event) {
+    dueRetryRequestedRef.current = event.detail === 0;
+    if (dueRetryRequestedRef.current) dueHeadingRef.current?.focus();
+    due.retry();
+  }
+
   const cards = [
     { key: "total", label: "Từ đã học", value: summary.total_started, icon: <BookOpen aria-hidden="true" />, note: "Đã bắt đầu học, chưa nhất thiết đã thuộc." },
     { key: "learned", label: "Đã thuộc", value: summary.learned, icon: <Check aria-hidden="true" /> },
     { key: "learning", label: "Đang học", value: summary.learning, icon: <RefreshCw aria-hidden="true" /> },
-    { key: "review", label: "Cần ôn", value: summary.needs_review, icon: <Clock3 aria-hidden="true" /> },
+    { key: "review", label: "Đến hạn ôn hôm nay", value: due.status === "success" ? due.data.due_count : null, icon: <Clock3 aria-hidden="true" />, note: "Theo lịch ôn SRS." },
   ];
 
   return (
@@ -94,9 +113,11 @@ function SummaryCards({ summary }) {
           <article className={`learning-progress-summary-card flex min-h-36 min-w-0 flex-col rounded-2xl border p-4 shadow-[0_10px_24px_rgb(15_83_115/6%)] max-[420px]:min-h-[8.25rem] max-[420px]:p-3 ${styles.card}`} key={card.key}>
             <div className="flex min-w-0 items-center gap-2.5 max-[420px]:gap-2">
               <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-xl border border-white/80 shadow-sm max-[420px]:size-9 [&_svg]:size-5 ${styles.icon}`}>{card.icon}</span>
-              <p className={`m-0 min-w-0 text-sm font-extrabold leading-tight max-[420px]:text-xs ${styles.label}`}>{card.label}</p>
+              <p className={`m-0 min-w-0 text-sm font-extrabold leading-tight max-[420px]:text-xs ${styles.label} ${card.key === "review" ? FOCUS_CLASSES : ""}`} ref={card.key === "review" ? dueHeadingRef : undefined} tabIndex={card.key === "review" ? -1 : undefined}>{card.label}</p>
             </div>
-            <strong className="mt-3 block text-3xl font-extrabold leading-none text-slate-950 tabular-nums max-[420px]:text-2xl">{formatNumber(card.value)}</strong>
+            {card.key === "review" && due.status === "loading" ? <span className="mt-3 block text-sm font-semibold text-slate-600" role="status">Đang tải số từ đến hạn…</span> : null}
+            {card.key === "review" && due.status === "error" ? <div className="mt-3" role="alert"><p className="m-0 text-xs font-semibold text-red-700">Chưa thể tải số từ đến hạn.</p><button className={`mt-2 min-h-11 cursor-pointer rounded-lg border border-[#f7cbd2] bg-white px-3 text-xs font-extrabold text-[#9f2434] ${FOCUS_CLASSES}`} ref={dueRetryButtonRef} type="button" onClick={retryDue}>Thử lại số từ đến hạn</button></div> : null}
+            {card.value !== null ? <strong className="mt-3 block text-3xl font-extrabold leading-none text-slate-950 tabular-nums max-[420px]:text-2xl">{formatNumber(card.value)}</strong> : null}
             <p className="mb-0 mt-1 text-xs font-semibold leading-snug text-slate-600 max-[420px]:text-[0.6875rem]">{card.note ?? "từ vựng"}</p>
           </article>
         );
@@ -246,6 +267,27 @@ function useProgressSource() {
     setRetryToken((value) => value + 1);
   }
   return { ...state, retry };
+}
+
+function useDueCountSource(userId) {
+  const [retryToken, setRetryToken] = useState(0);
+  const [state, setState] = useState({ userId, data: null, status: "loading" });
+  const requestIdRef = useRef(0);
+  useEffect(() => {
+    if (!userId) return;
+    const requestId = ++requestIdRef.current;
+    learningService.getReviewCenterSummary()
+      .then((data) => { if (requestIdRef.current === requestId) setState({ userId, data, status: "success" }); })
+      .catch(() => { if (requestIdRef.current === requestId) setState({ userId, data: null, status: "error" }); });
+    return () => { if (requestIdRef.current === requestId) requestIdRef.current += 1; };
+  }, [userId, retryToken]);
+  const current = state.userId === userId ? state : { userId, data: null, status: "loading" };
+  function retry() {
+    if (current.status === "loading") return;
+    setState({ userId, data: null, status: "loading" });
+    setRetryToken((value) => value + 1);
+  }
+  return { ...current, retry };
 }
 
 function useStreakSource() {

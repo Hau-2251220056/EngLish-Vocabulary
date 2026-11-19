@@ -11,6 +11,7 @@ test.beforeEach(async ({ page }) => {
     "/api/auth/me": responses.currentUser(publicUser),
   });
   await installStreakMock(page, currentStreak());
+  await installDueMock(page, () => success(dueSummary(2)));
 });
 
 test("renders authoritative Progress V2 metrics, activity and overview without word details", async ({ page }) => {
@@ -27,7 +28,8 @@ test("renders authoritative Progress V2 metrics, activity and overview without w
   await expect(summary.getByText("Từ đã học", { exact: true }).locator("../..")).toContainText("chưa nhất thiết đã thuộc");
   await expect(summary.getByText("Đã thuộc", { exact: true }).locator("../..")).toContainText("14");
   await expect(summary.getByText("Đang học", { exact: true }).locator("../..")).toContainText("9");
-  await expect(summary.getByText("Cần ôn", { exact: true }).locator("../..")).toContainText("2");
+  await expect(summary.getByText("Đến hạn ôn hôm nay", { exact: true }).locator("../..")).toContainText("2");
+  await expect(summary.getByText("Cần ôn lại", { exact: true })).toHaveCount(0);
 
   const activity = page.getByRole("list", { name: "Hoạt động học trong 7 ngày" });
   await expect(activity.getByRole("listitem")).toHaveCount(7);
@@ -43,6 +45,52 @@ test("renders authoritative Progress V2 metrics, activity and overview without w
   await expect(page.getByRole("combobox", { name: "Trạng thái" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Phân trang tiến độ" })).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Danh sách tiến độ từ vựng" })).toHaveCount(0);
+});
+
+test("uses Review Center's global count, including due Learning words, without summing Set counts", async ({ page }) => {
+  await installProgressMock(page, () => success(populatedProgress({ needsReview: 0 })));
+  await page.goto("/my/learning-progress");
+  const dueCard = page.getByText("Đến hạn ôn hôm nay", { exact: true }).locator("../..");
+  await expect(dueCard).toContainText("2");
+  await expect(page.getByText("Đang học", { exact: true }).locator("../..")).toContainText("11");
+  await page.goto("/review");
+  await expect(page.getByRole("region", { name: "Cần ôn hôm nay" }).getByLabel("2 từ đến hạn")).toBeVisible();
+});
+
+test("keeps due loading, zero, failure and explicit retry distinct from Progress", async ({ page }) => {
+  const pending = deferred();
+  await installDueMock(page, () => pending.promise);
+  await installProgressMock(page, () => success(populatedProgress({ needsReview: 2 })));
+  await page.goto("/my/learning-progress");
+  const summary = page.getByRole("region", { name: "Tóm tắt tiến độ" });
+  const dueCard = summary.getByText("Đến hạn ôn hôm nay", { exact: true }).locator("../..");
+  await expect(dueCard.getByRole("status")).toContainText("Đang tải số từ đến hạn");
+  await expect(dueCard.locator("strong")).toHaveCount(0);
+  await expect(summary.getByText("Từ đã học", { exact: true }).locator("../..")).toContainText("25");
+  pending.resolve(failedRequest());
+  await expect(dueCard.getByRole("alert")).toContainText("Chưa thể tải số từ đến hạn");
+  await expect(dueCard.locator("strong")).toHaveCount(0);
+  await installDueMock(page, () => success(dueSummary(0)));
+  await dueCard.getByRole("button", { name: "Thử lại số từ đến hạn" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(dueCard.locator("strong")).toHaveText("0");
+  await expect(dueCard.getByText("Đến hạn ôn hôm nay", { exact: true })).toBeFocused();
+});
+
+test("does not reuse the due count after an authenticated user change", async ({ page }) => {
+  await installProgressMock(page, () => success(populatedProgress()));
+  await page.goto("/my/learning-progress");
+  const dueCard = page.getByText("Đến hạn ôn hôm nay", { exact: true }).locator("../..");
+  await expect(dueCard.locator("strong")).toHaveText("2");
+  await page.unroute("**/api/auth/me");
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser({ ...publicUser, id: "user-2" }) });
+  const pending = deferred();
+  await installDueMock(page, () => pending.promise);
+  await page.reload();
+  await expect(dueCard.getByRole("status")).toBeVisible();
+  await expect(dueCard.locator("strong")).toHaveCount(0);
+  pending.resolve(success(dueSummary(0)));
+  await expect(dueCard.locator("strong")).toHaveText("0");
 });
 
 test("shows unknown activity honestly and keeps Streak failure independent", async ({ page }) => {
@@ -176,18 +224,35 @@ async function installStreakMock(page, data, status = 200) {
   }));
 }
 
+async function installDueMock(page, handler) {
+  await page.route("**/api/learning/review/center", async (route) => route.fulfill(await handler()));
+}
+
+function dueSummary(dueCount) {
+  return {
+    evaluated_at: "2026-09-24T12:00:00.000Z",
+    due_count: dueCount,
+    has_due_items: dueCount > 0,
+    nearest_future_review_at: null,
+    sets: dueCount ? [
+      { set_id: "10000000-0000-4000-8000-000000000001", name: "Bộ A", due_count: 2, set_scope: "PUBLIC" },
+      { set_id: "10000000-0000-4000-8000-000000000002", name: "Bộ B", due_count: 1, set_scope: "PERSONAL" },
+    ] : [],
+  };
+}
+
 function success(data) { return { status: 200, json: { success: true, data } }; }
 
 function failedRequest() { return { status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR" } } }; }
 
-function populatedProgress({ allUnavailable = false } = {}) {
+function populatedProgress({ allUnavailable = false, needsReview = 2 } = {}) {
   const statuses = allUnavailable
     ? Array(7).fill("UNAVAILABLE")
     : ["UNAVAILABLE", "UNAVAILABLE", "ACTIVE", "INACTIVE", "INACTIVE", "ACTIVE", "ACTIVE"];
   return {
     evaluated_at: "2026-09-24T12:00:00.000Z",
     xp_level: { total_xp: 50, level: 2, level_min_xp: 50, next_level_xp: 150, is_max_level: false },
-    summary: { total_started: 25, learning: 9, learned: 14, needs_review: 2 },
+    summary: { total_started: 25, learning: 11 - needsReview, learned: 14, needs_review: needsReview },
     streak_activity_7d: {
       timezone: "Asia/Ho_Chi_Minh",
       days: ["2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"].map((date, index) => ({ date, status: statuses[index] })),

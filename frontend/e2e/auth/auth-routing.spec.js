@@ -89,11 +89,9 @@ test("Discovery uses the shared authentication bootstrap without public or prote
 test("Guest route table redirects without an expiration warning", async ({ page }) => {
   await installAuthApiMock(page);
 
-  for (const path of ["/dashboard", "/unknown-route"]) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByText("Phiên đăng nhập đã hết hạn.")).toHaveCount(0);
-  }
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByText("Phiên đăng nhập đã hết hạn.")).toHaveCount(0);
 
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);

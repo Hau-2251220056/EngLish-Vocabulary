@@ -193,6 +193,8 @@ Footer responsibilities:
 
 The existing Authentication `AuthenticatedShell` must be reused and extended. The application must not create a second authenticated shell.
 
+Unknown frontend routes render a standalone, full-viewport **404 — Không tìm thấy trang** view after authentication validation. It uses a soft sky, white, mint and peach gradient, a dominant responsive 404 number, the approved heading and description, and only **Về trang chủ**; it has no application Header, Navbar, Sidebar, panel, decorative icon or illustration. The action leads to the public landing page for guests and Dashboard for authenticated USER and ADMIN. The page preserves authentication loading/recovery without exposing protected route content and does not replace `/api/*` responses. The frontend SPA fallback can serve `index.html` with HTTP 200 while React renders this Not Found view; this is not a server-level HTTP 404.
+
 The following diagram is an information-architecture illustration. Search, Profile and future navigation items are not part of the App Layout foundation until their routes/features are separately implemented and approved.
 
 ┌─────────────────────────────────────────────────────┐
@@ -963,6 +965,7 @@ Inside the existing authenticated App Layout, USER navigation exposes My Sets on
 - USER create/update requests do not own Vocabulary membership and contain neither Topic nor Item fields. The modal has no Topic loading dependency or selector, Vocabulary picker, selected-Vocabulary collection, or add/remove/reorder controls.
 - Vocabulary membership management belongs to the dedicated Personal Set Detail V1, not the Create/Edit modal. Set Detail provides the approved flows to add existing Vocabulary, create private Vocabulary, edit owner-private Vocabulary, and remove Set membership.
 - Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
+- Successful personal Set creation, editing and deletion use the existing top-right notification toast with concise action-specific text; the toast auto-dismisses. Cover-upload and cleanup failures retain persistent, actionable feedback, and a failed Set mutation never shows a success toast.
 
 #### ADMIN System Set Management
 
@@ -1127,7 +1130,7 @@ Speaking restores only position/lifecycle in a non-listening state. Transcript, 
 
 Learning Progress View V1 adds `/my/learning-progress` under the existing authenticated App Layout and `UserRoute`, plus a USER-only **Tiến độ học** navigation destination. Guest and ADMIN cannot use the route. This is a read-only view over the completed per-USER/per-Vocabulary progress engine, not Dashboard or a standalone Vocabulary catalog.
 
-The page presents persisted counts for total started, Learning, Learned and compatibility-only Needs Review. Conceptual New is excluded and the UI must not present total started as total available Vocabulary or calculate a global completion percentage.
+The page presents persisted counts for total started, Learning and Learned, plus **Đến hạn ôn hôm nay** from the same backend-authoritative, unique global SRS `due_count` used by Review Center. This fourth card measures due scheduling rather than a mutually exclusive Progress status; eligible Learning words can contribute, and the compatibility-only Needs Review status remains unchanged in backend Progress data. The card distinguishes loading, confirmed zero and independent request failure with retry. Conceptual New is excluded from the persisted Progress counts, and the UI must not present total started as total available Vocabulary or calculate a global completion percentage.
 
 The server-paginated current-state list displays only word, optional phonetic, textual status, review count and last-reviewed time. A status control supports All, Learning, Learned and Needs Review; changing it returns to page 1. Search, client sorting, charts, review actions, recommendations, Topic/Set progress and gamification are deferred.
 
@@ -1567,7 +1570,7 @@ Expired/inaccessible batches offer safe recovery and preserve evidence accepted 
 
 ### 28.3 Review Center and focused review routes
 
-The authenticated USER route `/review` is the non-mutating Review Center inside the application shell. Its visible content uses a compact, non-interactive **Cần ôn hôm nay** statistic card and an **Ôn theo bộ từ** section; the page retains an accessible screen-reader heading without restoring the superseded large visible title/subtitle. The statistic card displays the Backend-provided unique global due count but has no **Ôn tất cả** action. Only positive-due Sets are listed. Each Set card preserves its exact Set UUID, displays the authoritative **Bộ từ công khai** or **Bộ từ cá nhân** label and due count, and links through **Ôn tập ngay** to `/review/sets/:setId`. The previously proposed explanatory count paragraphs are superseded and are not active UI requirements.
+The authenticated USER route `/review` is the non-mutating Review Center inside the application shell. Its visible content uses a compact, non-interactive **Cần ôn hôm nay** statistic card and an **Ôn theo bộ từ** section; the page retains an accessible screen-reader heading without restoring the superseded large visible title/subtitle. The statistic card displays the Backend-provided unique global due count but has no **Ôn tất cả** action. Only positive-due Sets are listed. Each Set card preserves its exact Set UUID, displays the authoritative **Bộ từ công khai** or **Bộ từ cá nhân** label and due count, and links through **Ôn tập ngay** to `/review/sets/:setId`. One short note above the Set list clarifies that an SRS session can also contain new words or cards from a continuing session; it does not alter the authoritative due count.
 
 Review Center loading, error/retry, positive-due and zero-due states never fabricate counts or create a session. Zero due shows the completed/up-to-date state and a safe **Tiếp tục học** path. The compact statistic is left-aligned and bounded on desktop, full-width on mobile; Set cards wrap long names, retain visible focus/hover states and reflow responsively without public/private grouping sections.
 

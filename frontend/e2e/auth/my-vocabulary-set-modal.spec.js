@@ -64,6 +64,9 @@ test("create modal is metadata-only and omits Topic and items", async ({ page })
   await dialog.getByRole("button", { name: "Tạo bộ từ", exact: true }).click();
 
   await expect(dialog).toHaveCount(0);
+  const createToast = page.getByText("Đã tạo bộ từ thành công.", { exact: true });
+  await expect(createToast).toHaveCount(1);
+  await expect(page.locator(".my-vocabulary-sets-feedback.is-success")).toHaveCount(0);
   const create = calls.find((call) => call.method === "POST");
   expect(create.body.cefr_level).toBeNull();
   expect(create.body.cover_image_url).toBeNull();
@@ -72,6 +75,9 @@ test("create modal is metadata-only and omits Topic and items", async ({ page })
   expect(create.body).toEqual({ name: "Du lịch", description: "Từ vựng cần thiết cho chuyến đi" });
   expect(create.body).not.toHaveProperty("topic_id");
   expect(create.body).not.toHaveProperty("items");
+  await page.bringToFront();
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+  await expect(createToast).toHaveCount(0, { timeout: 5_000 });
 });
 
 test("pending submit is guarded and a server error preserves entered values", async ({ page }) => {
@@ -95,6 +101,7 @@ test("pending submit is guarded and a server error preserves entered values", as
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
   gate.resolve(responses.error(500, "INTERNAL_SERVER_ERROR", "Internal server error."));
   await expect(dialog.getByRole("alert")).toContainText("Không thể lưu bộ từ");
+  await expect(page.getByText("Đã tạo bộ từ thành công.", { exact: true })).toHaveCount(0);
   await expect(dialog.getByLabel("Tên bộ từ")).toHaveValue("Bộ từ đang soạn");
   await expect(dialog.getByLabel("Mô tả (không bắt buộc)")).toHaveValue("Giữ lại nội dung này");
   await submit.click();
@@ -114,7 +121,8 @@ test("file create persists once, retries only upload, and keeps the private-cove
   await page.goto("/my/vocabulary-sets");
   await page.getByRole("button", { name: "Tạo bộ từ", exact: true }).first().click();
   const dialog = page.getByRole("dialog", { name: "Tạo bộ từ" });
-  await expect(dialog.getByText(/ảnh bìa có thể được truy cập công khai/i)).toBeVisible();
+  await expect(dialog.getByText("Không tải ảnh riêng tư hoặc nhạy cảm.", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/Ảnh bìa có thể được truy cập công khai/)).toHaveCount(0);
   await dialog.getByLabel("Tên bộ từ").fill("Bộ từ có ảnh");
   await dialog.locator('input[type="file"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: Buffer.from("mock-image") });
   await dialog.getByRole("button", { name: "Tạo bộ từ", exact: true }).click();
@@ -125,6 +133,42 @@ test("file create persists once, retries only upload, and keeps the private-cove
   expect(calls.filter((call) => call.method === "POST" && call.pathname === "/api/my/vocabulary-sets")).toHaveLength(1);
   expect(calls.filter((call) => call.pathname.endsWith("/cover"))).toHaveLength(2);
 });
+
+for (const mode of ["create", "edit"]) {
+  test(`${mode} Set picker cancellation keeps the modal and selected cover`, async ({ page }) => {
+    const calls = await installMySets(page, { list: mode === "edit" ? [summary] : [] });
+    await page.goto("/my/vocabulary-sets");
+    if (mode === "create") {
+      await page.getByRole("button", { name: "Tạo bộ từ", exact: true }).first().click();
+    } else {
+      await page.getByRole("button", { name: `Quản lý ${summary.name}` }).click();
+      await page.getByRole("menuitem", { name: "Chỉnh sửa" }).click();
+    }
+    const dialog = page.getByRole("dialog", { name: mode === "create" ? "Tạo bộ từ" : "Chỉnh sửa bộ từ" });
+    await dialog.getByLabel("Tên bộ từ").fill("Nội dung chưa lưu");
+    await dialog.getByLabel("Mô tả (không bắt buộc)").fill("Mô tả vẫn còn");
+    const fileInput = dialog.locator('input[type="file"]');
+    await fileInput.setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: Buffer.from("mock-image") });
+    const preview = dialog.getByRole("img", { name: "Xem trước ảnh bìa bộ từ" });
+    const previewSrc = await preview.getAttribute("src");
+    await expect(dialog.getByText("Đã chọn: cover.png")).toBeVisible();
+
+    await fileInput.evaluate((input) => {
+      input.value = "";
+      input.dispatchEvent(new Event("cancel", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Tên bộ từ")).toHaveValue("Nội dung chưa lưu");
+    await expect(dialog.getByLabel("Mô tả (không bắt buộc)")).toHaveValue("Mô tả vẫn còn");
+    await expect(dialog.getByText("Đã chọn: cover.png")).toBeVisible();
+    await expect(preview).toHaveAttribute("src", previewSrc);
+    await expect(dialog.getByText("Không tải ảnh riêng tư hoặc nhạy cảm.", { exact: true })).toBeVisible();
+    expect(calls.filter((call) => ["POST", "PATCH", "PUT", "DELETE"].includes(call.method))).toHaveLength(0);
+  });
+}
 
 test("Escape, backdrop, and close button dismiss safely and restore trigger focus", async ({ page }) => {
   await installMySets(page);
@@ -202,6 +246,10 @@ test("edit modal sends metadata only and remains within the mobile viewport", as
 
   await dialog.getByLabel("Tên bộ từ").fill("Du lịch nâng cao");
   await dialog.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page.getByText("Đã cập nhật bộ từ thành công.", { exact: true })).toHaveCount(1);
+  const toastBounds = await page.locator(".elvocab-toast-container").boundingBox();
+  expect(toastBounds.x).toBeGreaterThanOrEqual(0);
+  expect(toastBounds.x + toastBounds.width).toBeLessThanOrEqual(375);
   const update = calls.find((call) => call.method === "PATCH");
   expect(update.body).toEqual({
     name: "Du lịch nâng cao", description: summary.description,
@@ -209,6 +257,23 @@ test("edit modal sends metadata only and remains within the mobile viewport", as
   });
   expect(update.body).not.toHaveProperty("topic_id");
   expect(update.body).not.toHaveProperty("items");
+});
+
+test("failed Set edit keeps the modal actionable without a success toast", async ({ page }) => {
+  await installMySets(page, { list: [summary], mutation: async (call) => (
+    call.method === "PATCH"
+      ? responses.error(500, "INTERNAL_SERVER_ERROR", "hidden")
+      : { status: 200, json: { success: true, data: aggregate } }
+  ) });
+  await page.goto("/my/vocabulary-sets");
+  await page.getByRole("button", { name: `Quản lý ${summary.name}` }).click();
+  await page.getByRole("menuitem", { name: "Chỉnh sửa" }).click();
+  const dialog = page.getByRole("dialog", { name: "Chỉnh sửa bộ từ" });
+  await dialog.getByLabel("Tên bộ từ").fill("Tên chưa lưu");
+  await dialog.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Không thể lưu bộ từ");
+  await expect(dialog.getByLabel("Tên bộ từ")).toHaveValue("Tên chưa lưu");
+  await expect(page.getByText("Đã cập nhật bộ từ thành công.", { exact: true })).toHaveCount(0);
 });
 
 test("card management menu keeps delete failure recoverable and retry removes the Set", async ({ page }) => {
@@ -224,8 +289,12 @@ test("card management menu keeps delete failure recoverable and retry removes th
   const dialog = page.getByRole("dialog", { name: "Xóa bộ từ?" });
   await dialog.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Không thể xóa bộ từ");
+  await expect(page.getByText("Đã xóa bộ từ thành công.", { exact: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Hủy" }).click(); await expect(trigger).toBeFocused();
   await trigger.click(); await page.getByRole("menuitem", { name: "Xóa bộ từ" }).click();
   await dialog.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(dialog).toHaveCount(0); await expect(card).toHaveCount(0);
+  await expect(page.getByText("Đã xóa bộ từ thành công.", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".my-vocabulary-sets-feedback.is-success")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Danh sách bộ từ" })).toBeFocused();
 });

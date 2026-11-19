@@ -2,6 +2,7 @@ import { ArrowDown, ArrowRight, ArrowUp, FolderHeart, LoaderCircle, Plus, Search
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { topicService } from "../services/topic-service.js";
+import { notifications } from "../components/notification-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 import { ActionMenu } from "../components/action-menu.jsx";
 import { NativeSelect } from "../components/native-select.jsx";
@@ -91,9 +92,15 @@ export function MyVocabularySetsPage() {
       setSets((current) => upsertSummary(current, saved));
       setEditor(null);
       setEditorError(null);
-      setFeedback(saved.storage_cleanup === "retry_required"
-        ? { type: "error", message: "Bộ từ đã lưu. Cần thử dọn ảnh bìa cũ lại.", cleanupSetId: saved.id }
-        : { type: "success", message: editing ? "Đã cập nhật bộ từ." : "Đã tạo bộ từ riêng tư." });
+      if (saved.storage_cleanup === "retry_required") {
+        setFeedback({ type: "error", message: "Bộ từ đã lưu. Cần thử dọn ảnh bìa cũ lại.", cleanupSetId: saved.id });
+      } else {
+        setFeedback(null);
+        notifications.success(
+          editing ? "Đã cập nhật bộ từ thành công." : "Đã tạo bộ từ thành công.",
+          `personal-set-${editing ? "updated" : "created"}-${saved.id}`,
+        );
+      }
       if (!editing) navigate(`/my/vocabulary-sets/${saved.id}`);
       else requestAnimationFrame(() => managementTriggerRef.current?.focus?.());
       return true;
@@ -134,7 +141,7 @@ export function MyVocabularySetsPage() {
   function closeDelete() { if (pending === "delete") return; setDeleteTarget(null); setDeleteError(null); requestAnimationFrame(() => managementTriggerRef.current?.focus?.()); }
   async function confirmDelete() {
     setPending("delete"); setDeleteError(null);
-    try { await vocabularySetService.deleteMySet(deleteTarget.id); setSets((current) => current.filter((set) => set.id !== deleteTarget.id)); setDeleteTarget(null); setFeedback({ type: "success", message: "Đã xóa bộ từ riêng tư." }); }
+    try { await vocabularySetService.deleteMySet(deleteTarget.id); setSets((current) => current.filter((set) => set.id !== deleteTarget.id)); setDeleteTarget(null); setFeedback(null); notifications.success("Đã xóa bộ từ thành công.", `personal-set-deleted-${deleteTarget.id}`); requestAnimationFrame(() => listHeadingRef.current?.focus?.()); }
     catch (error) { setDeleteError(errorMessage(error, "Không thể xóa bộ từ. Vui lòng thử lại.")); }
     finally { setPending(null); }
   }
@@ -197,6 +204,7 @@ export function PersonalVocabularySetModal({ aggregate, error, mode, onCancel, o
   }
 
   function handleCancel(event) {
+    if (event.target !== dialogRef.current) return;
     event.preventDefault();
     closeWhenSafe();
   }
@@ -236,7 +244,7 @@ export function PersonalVocabularySetModal({ aggregate, error, mode, onCancel, o
           <div className="grid content-start gap-2">
             <VocabularySetMetadataControls compact idPrefix="personal-set-cover" legend="Ảnh bìa" requiredCefr={false} showCefr={false} value={values.metadata} onChange={(metadata) => setValues((current) => ({ ...current, metadata }))} pending={pending} />
             {errors.metadata ? <p className={MODAL_ERROR_CLASSES} role="alert">{errors.metadata}</p> : null}
-            <p className="m-0 text-xs leading-relaxed text-amber-800">Ảnh bìa có thể được truy cập công khai. Không tải ảnh riêng tư hoặc nhạy cảm.</p>
+            <p className="m-0 text-xs leading-relaxed text-amber-800">Không tải ảnh riêng tư hoặc nhạy cảm.</p>
           </div>
           <footer className="col-span-full flex justify-end gap-[0.65rem] border-t border-[#e8edf5] pt-3 max-[700px]:flex-col-reverse max-[700px]:[&_button]:w-full"><button className={MODAL_BUTTON_CLASSES} type="button" onClick={closeWhenSafe} disabled={pending}>Hủy</button><button className={PRIMARY_BUTTON_CLASSES} type="submit" disabled={pending} aria-busy={pending}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{pending ? "Đang lưu…" : mode === "create" ? "Tạo bộ từ" : "Lưu thay đổi"}</button></footer>
         </form>
