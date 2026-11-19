@@ -14,6 +14,17 @@ import { clearIndependentNormalSessionPresentation } from "../src/session-storag
 const srsPayload = payload("SRS", ["one", "two", "three", "four", "five"]);
 const normalPayload = payload("NORMAL", ["one", "two", "three", "four", "five"]);
 
+test("due-only and ordinary SET/SRS run presentation remain isolated", () => {
+  const storage = new Map();
+  const adapter = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) };
+  const standard = createLearningRunState("u", "s", srsPayload);
+  const dueOnly = createLearningRunState("u", "s", payload("SRS", ["one"]));
+  assert.equal(saveLearningRunState(adapter, standard), true);
+  assert.equal(saveLearningRunState(adapter, dueOnly, "DUE_ONLY"), true);
+  assert.equal(loadLearningRunState(adapter, "u", "s").srs.initial_ids.length, 5);
+  assert.equal(loadLearningRunState(adapter, "u", "s", "DUE_ONLY").srs.initial_ids.length, 1);
+});
+
 test("legacy and corrupt state fail closed into fresh v3 SRS state", () => {
   const legacy = { version: 1, user_id: "u", set_id: "s", assessments: { one: "REMEMBERED" } };
   const fresh = reconcileLearningRunState(legacy, "u", "s", srsPayload);

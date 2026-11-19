@@ -1249,6 +1249,8 @@ Supabase
 
 Managed PostgreSQL database.
 
+SEC-01 login abuse protection uses PostgreSQL shared state and transaction-scoped advisory locking, so thresholds remain consistent across Backend instances and concurrent requests. Identifier and source keys are HMAC-SHA-256 values produced with the backend-only `LOGIN_ABUSE_HMAC_SECRET` (minimum 32 characters). `LOGIN_ABUSE_PROXY_MODE=direct` ignores forwarding headers and uses the socket peer. The documented Render deployment uses `render`, accepting the validated first address from Render's `X-Forwarded-For` contract. The separately recorded two-project Vercel topology uses `vercel`, accepting one validated `X-Vercel-Forwarded-For` address from Vercel's overwrite-protected platform contract. Production must explicitly select its actual topology; other proxy chains require a separately validated trust boundary.
+
 GitHub / GitHub Actions
 
 Source code repository và CI/CD automation.

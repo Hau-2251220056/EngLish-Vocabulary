@@ -33,11 +33,11 @@ export const responses = Object.freeze({
     json: { success: true, message: "Registration successful" },
   }),
   noContent: () => ({ status: 204, body: "" }),
-  error: (status, code, message, rawDetail) => ({
+  error: (status, code, message, rawDetail, details = {}) => ({
     status,
     json: {
       success: false,
-      error: { code, message, rawDetail },
+      error: { code, message, rawDetail, ...details },
     },
   }),
   abort: () => ({ abort: "failed" }),

@@ -42,6 +42,11 @@ enum LEARNING_SESSION_SCOPE {
   GLOBAL
 }
 
+enum LEARNING_SESSION_INTENT {
+  STANDARD
+  DUE_ONLY
+}
+
 enum CEFR_LEARNING_PASS_STATUS {
   ACTIVE
   INVALIDATED
@@ -96,6 +101,18 @@ model AUTH_SESSION {
   created_at              DateTime @default(now())
   expires_at              DateTime
   user                    USER     @relation(fields: [user_id], references: [id])
+}
+
+model LOGIN_ABUSE_STATE {
+  identifier_key String    @db.Char(64)
+  source_key     String    @db.Char(64)
+  failure_count  Int
+  last_failed_at DateTime
+  blocked_until  DateTime?
+  updated_at     DateTime  @updatedAt
+
+  @@id([identifier_key, source_key])
+  @@index([updated_at])
 }
 
 model TOPIC {
@@ -221,6 +238,7 @@ model LEARNING_SESSION {
   vocabulary_set_id   String?                 @db.Uuid
   set_id_snapshot     String?                 @db.Uuid
   scope               LEARNING_SESSION_SCOPE  @default(SET)
+  session_intent      LEARNING_SESSION_INTENT @default(STANDARD)
   mode                LEARNING_SESSION_MODE
   status              LEARNING_SESSION_STATUS @default(ACTIVE)
   create_operation_id String                  @db.Uuid

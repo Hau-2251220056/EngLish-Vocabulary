@@ -1961,4 +1961,8 @@ The V2 migration validates the complete USER/pass/Set/session/Vocabulary identit
 The migration does not infer evidence from Learning Progress, ordinary/GLOBAL SRS, Quiz, Speaking, XP, Streak, Daily Goal, or client storage. It does not change pass status, completion events/timestamps, `highest_unlocked_level`, or `path_completed_at`; a fully backfilled active pass may become ready but still requires explicit USER confirmation.
 
 Ephemeral PostgreSQL run [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) passed 7/7 fail-closed offline guards and 6/6 PostgreSQL integration tests, including migration, constraints, lifecycle, first-credit concurrency, boundary sizes, and cleanup. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) additionally passed one focused Quiz non-credit integration test against guarded ephemeral PostgreSQL. These runs do not represent a Main, Preview, or Production migration or deployment.
+
+## 44. LOGIN_ABUSE_STATE (SEC-01)
+
+`LOGIN_ABUSE_STATE` is bounded shared security state keyed by the composite HMAC-SHA-256 pair `(identifier_key, source_key)`. It stores `failure_count` (constrained to 1-5), `last_failed_at`, nullable `blocked_until`, and `updated_at`; it has no USER foreign key so unknown and existing identifiers receive equivalent handling. Raw email, client address and password values are never persisted. The composite primary key supports one serialized state per identifier/source pair, and `updated_at` is indexed for bounded maintenance. The forward-only migration creates only this table, check constraint and index; it does not rewrite existing data.
 ```

@@ -14,7 +14,7 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MODES = new Set(["NORMAL", "SRS", "QUIZ"]);
-const CREATE_FIELDS = new Set(["operation_id", "set_id", "mode", "vocabulary_ids"]);
+const CREATE_FIELDS = new Set(["operation_id", "set_id", "mode", "vocabulary_ids", "session_intent"]);
 const OPERATION_FIELDS = new Set(["operation_id"]);
 
 export class LearningSessionServiceError extends Error {
@@ -80,6 +80,7 @@ export function createLearningSessionService({
             vocabulary_set_id: request.set_id,
             set_id_snapshot: request.set_id,
             mode: request.mode,
+            session_intent: request.session_intent,
             create_operation_id: request.operation_id,
             snapshot_size: items.length,
             created_at: createdAt,
@@ -126,10 +127,11 @@ export function createLearningSessionService({
           ...toSessionProjection(session, operationTime.instant),
           can_continue: accessible && projectSessionLifecycle(session, operationTime.instant) === "ACTIVE",
           ...(accessible ? {} : { restart_reason: "SESSION_INACCESSIBLE" }),
-          ...(accessibleSet && session.cefr_learning_pass_id && session.mode === "SRS" ? {
+          ...(accessibleSet && session.mode === "SRS" && (session.cefr_learning_pass_id || session.session_intent === "DUE_ONLY") ? {
             cards: projectCefrSrsCards(accessibleSet.items, session.items, operationTime.instant),
             evaluated_at: operationTime.instant,
           } : {}),
+          ...(accessibleSet ? { set_name: accessibleSet.name } : {}),
         };
       });
     },
@@ -251,7 +253,8 @@ function selectSnapshot(setItems, request, instant) {
   if (request.mode === "SRS") {
     return ordered
       .map((item) => ({ ...item, evaluation: evaluateProgress(item.progress, instant) }))
-      .filter((item) => item.evaluation.is_eligible)
+      .filter((item) => item.evaluation.is_eligible
+        && (request.session_intent !== "DUE_ONLY" || item.progress !== null))
       .sort(compareSrsItems)
       .slice(0, 10)
       .map((item, position) => ({ vocabulary_id: item.vocabulary_id, position }));
@@ -328,7 +331,8 @@ function assertCreationRequestReplayMatches(existing, userId, request) {
   if (!existing) return null;
   const baseMatches = existing.user_id === userId
     && existing.set_id_snapshot === request.set_id
-    && existing.mode === request.mode;
+    && existing.mode === request.mode
+    && (existing.session_intent ?? "STANDARD") === request.session_intent;
   const itemMatches = request.mode === "SRS"
     || (
       existing.snapshot_size === request.vocabulary_ids.length
@@ -415,6 +419,7 @@ export function toSessionProjection(session, evaluatedAt) {
     id: session.id,
     set_id: session.set_id_snapshot,
     scope: session.scope ?? "SET",
+    session_intent: session.session_intent ?? "STANDARD",
     mode: session.mode,
     state: projectSessionLifecycle(session, evaluatedAt),
     created_at: session.created_at,
@@ -467,6 +472,9 @@ function validateCreateInput(input) {
   validateUuid(input.operation_id);
   validateUuid(input.set_id);
   if (!MODES.has(input.mode)) throw validationError();
+  const sessionIntent = input.session_intent ?? "STANDARD";
+  if (!["STANDARD", "DUE_ONLY"].includes(sessionIntent)
+    || (sessionIntent === "DUE_ONLY" && input.mode !== "SRS")) throw validationError();
   const hasIds = Object.hasOwn(input, "vocabulary_ids");
   if ((input.mode === "SRS" && hasIds) || (input.mode !== "SRS" && !hasIds)) throw validationError();
   if (hasIds) {
@@ -474,7 +482,7 @@ function validateCreateInput(input) {
     input.vocabulary_ids.forEach(validateUuid);
     if (new Set(input.vocabulary_ids).size !== input.vocabulary_ids.length) throw validationError();
   }
-  return { ...input, vocabulary_ids: hasIds ? [...input.vocabulary_ids] : undefined };
+  return { ...input, session_intent: sessionIntent, vocabulary_ids: hasIds ? [...input.vocabulary_ids] : undefined };
 }
 
 function validateOperationInput(input) {

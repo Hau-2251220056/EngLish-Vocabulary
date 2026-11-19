@@ -73,7 +73,7 @@ test("progress and navigation expose accessible names without color-only meaning
   assert.match(page, /role="progressbar" aria-label="Tiến độ luyện nói" aria-valuemin=\{0\} aria-valuemax=\{totalTargets\} aria-valuenow=\{currentPosition\}/);
   assert.match(page, /<nav[^>]*aria-label="Điều hướng luyện nói"/);
   assert.match(page, /<ChevronLeft aria-hidden="true" \/><span>\{presentation\.actions\.previous\.label\}/);
-  assert.match(page, /<SkipForward aria-hidden="true" \/><span>\{presentation\.actions\.skip\.label\}/);
+  assert.doesNotMatch(page, /SkipForward|presentation\.actions\.skip\.label/);
   assert.match(page, /<ChevronRight aria-hidden="true" \/><span>\{presentation\.actions\.next\.label\}/);
 });
 

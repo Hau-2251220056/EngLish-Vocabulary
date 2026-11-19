@@ -1,8 +1,9 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw, SkipForward, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LoadingIndicator } from "../components/loading-indicator.jsx";
+import { FocusModeHeader } from "../components/focus-mode-header.jsx";
 import { getSpeakingPracticePresentation } from "./speaking-practice-presentation.js";
 import { SPEAKING_PRACTICE_PHASES } from "./speaking-practice-state.js";
 import { bindSpeakingPracticeVisibility, createSpeakingPracticePageSession, resolveSpeakingPracticeReturnTo } from "./speaking-practice-page-session.js";
@@ -11,8 +12,7 @@ const PRIMARY_BUTTON_CLASSES = "inline-flex min-h-11 cursor-pointer items-center
 const SECONDARY_BUTTON_CLASSES = "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 font-bold text-slate-700 transition-[border-color,background-color,color,transform] duration-150 hover:not-disabled:-translate-y-px hover:not-disabled:border-[#83B4E8] hover:not-disabled:bg-[#f2f8fd] hover:not-disabled:text-[#356faa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none";
 const QUIET_BUTTON_CLASSES = "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border-0 bg-transparent px-3 font-bold text-slate-600 transition-colors hover:not-disabled:bg-slate-100 hover:not-disabled:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none";
 const NAVIGATION_BUTTON_CLASSES = "inline-flex min-h-[4.5rem] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 px-3 py-2 text-sm font-bold whitespace-nowrap transition-[border-color,background-color,color,transform,box-shadow] duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none [&_svg]:size-5";
-const PREVIOUS_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-[#C4B5FD] bg-white text-[#6D4BC3] hover:not-disabled:border-[#A78BFA] hover:not-disabled:bg-[#F7F4FF] focus-visible:ring-[#DDD6FE]`;
-const SKIP_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-[#F4C56A] bg-white text-[#B56808] hover:not-disabled:border-[#E8A62A] hover:not-disabled:bg-[#FFF9EB] focus-visible:ring-[#FDE68A]`;
+const PREVIOUS_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-sky-200 bg-white text-sky-700 hover:not-disabled:border-sky-400 hover:not-disabled:bg-sky-50 focus-visible:ring-sky-200`;
 const NEXT_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-[#63A0E0] bg-[#63A0E0] text-white shadow-[0_5px_14px_rgb(99_160_224/22%)] hover:not-disabled:border-[#4f8fce] hover:not-disabled:bg-[#4f8fce] hover:not-disabled:shadow-[0_7px_18px_rgb(99_160_224/28%)] focus-visible:ring-[#a8cff4]`;
 const BRIEF_DISCLOSURE = "Giọng nói của bạn có thể được xử lý bởi dịch vụ của trình duyệt để nhận diện từ bạn nói.";
 const FEEDBACK_STYLES = Object.freeze({
@@ -137,7 +137,7 @@ export function SpeakingPracticePage() {
     const fullRunCompleted = snapshot.session?.full_run_completed === true;
     const nextBatchSize = snapshot.session?.next_batch_size ?? 0;
     return (
-      <PageFrame>
+      <PageFrame header={<FocusModeHeader backLabel={snapshot.set?.name} titleBadge="Luyện nói" disabled={!snapshot.controls.canExit} onBack={exitPractice} />}>
         <section className="w-full max-w-[34rem] rounded-3xl border border-[#cfe3f6] bg-white p-[clamp(1.5rem,5vw,2.5rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)]" aria-labelledby="speaking-practice-complete-title" role="status">
           <RotateCcw className="mx-auto size-14 rounded-2xl bg-[#edf5fc] p-3 text-[#63A0E0]" aria-hidden="true" />
           <h1 ref={completionHeadingRef} tabIndex={-1} id="speaking-practice-complete-title" className="mb-0 mt-4 rounded-lg text-2xl font-black text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">{fullRunCompleted ? "Hoàn thành luyện nói" : "Hoàn thành nhóm luyện nói"}</h1>
@@ -168,12 +168,8 @@ export function SpeakingPracticePage() {
   return (
     <main className="speaking-practice-page min-h-full w-full min-w-0 overflow-x-clip text-[#172554]" aria-labelledby="speaking-practice-title">
       <div className="flex min-h-full flex-col">
-        <header className="w-full shrink-0 border-b border-slate-200 bg-white/90">
-          <div className="mx-auto flex min-h-14 w-full max-w-[64rem] items-center justify-between gap-4 px-[clamp(0.8rem,3vw,2rem)] py-1.5">
-            <button type="button" className="inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 font-extrabold text-slate-700 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4] disabled:cursor-not-allowed disabled:opacity-50" onClick={exitPractice} disabled={!snapshot.controls.canExit}><ArrowLeft aria-hidden="true" /><span className="max-w-56 truncate">{snapshot.set?.name}</span></button>
-            <span className="shrink-0 rounded-full bg-[#edf5fc] px-3 py-1.5 text-sm font-black text-[#3979b7]">Luyện nói</span>
-          </div>
-        </header>
+        <FocusModeHeader backLabel={snapshot.set?.name} titleBadge="Luyện nói"
+          disabled={!snapshot.controls.canExit} onBack={exitPractice} />
 
         <div className="mx-auto flex w-full max-w-[38rem] flex-1 flex-col px-[clamp(0.8rem,3vw,2rem)] py-[clamp(0.8rem,2vw,1.25rem)]">
           <section className="mb-3 shrink-0" aria-label="Tiến độ bộ từ">
@@ -204,10 +200,9 @@ export function SpeakingPracticePage() {
 
           </section>
 
-          <nav className="mt-3 grid w-full grid-cols-2 gap-2 min-[480px]:grid-cols-3" aria-label="Điều hướng luyện nói">
+          <nav className="mt-3 grid w-full grid-cols-2 gap-2" aria-label="Điều hướng luyện nói">
             <button type="button" className={PREVIOUS_BUTTON_CLASSES} disabled={!snapshot.controls.canChangeTarget || snapshot.targetIndex === 0} onClick={() => sessionRef.current?.previousTarget()}><ChevronLeft aria-hidden="true" /><span>{presentation.actions.previous.label}</span></button>
-            <button type="button" className={SKIP_BUTTON_CLASSES} disabled={!snapshot.controls.canChangeTarget} onClick={() => sessionRef.current?.skipTarget()}><SkipForward aria-hidden="true" /><span>{presentation.actions.skip.label}</span></button>
-            <button type="button" className={`${NEXT_BUTTON_CLASSES} col-span-2 min-[480px]:col-span-1`} disabled={!snapshot.controls.canChangeTarget} onClick={() => sessionRef.current?.nextTarget()}><ChevronRight aria-hidden="true" /><span>{presentation.actions.next.label}</span></button>
+            <button type="button" className={NEXT_BUTTON_CLASSES} disabled={!snapshot.controls.canChangeTarget} onClick={() => sessionRef.current?.nextTarget()}><ChevronRight aria-hidden="true" /><span>{presentation.actions.next.label}</span></button>
           </nav>
         </div>
       </div>
@@ -276,8 +271,8 @@ function FeedbackPanel({ announce, headingRef, presentation }) {
   );
 }
 
-function PageFrame({ children }) {
-  return <main className="mx-auto grid min-h-full w-full place-items-center px-4 py-8">{children}</main>;
+function PageFrame({ children, header = null }) {
+  return <main className="flex min-h-full w-full flex-col">{header}<div className="mx-auto grid w-full flex-1 place-items-center px-4 py-8">{children}</div></main>;
 }
 
 function PageState({ loading = false, presentation, onExit = null, onRetry = null }) {

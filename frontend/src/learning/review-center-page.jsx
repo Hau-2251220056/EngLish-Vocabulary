@@ -7,8 +7,11 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuthentication } from "../auth/use-authentication.js";
 import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { learningService } from "../services/learning-service.js";
+import { learningSessionService } from "../services/learning-session-service.js";
+import { listStoredStandardSrsSessionIdentities, loadLearningSessionState } from "../session-storage/learning-session-state.js";
 
 const ACTION_CLASSES =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 py-2 font-extrabold text-white no-underline transition-colors hover:bg-[var(--accent-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] motion-reduce:transition-none";
@@ -18,8 +21,10 @@ const RETRY_CLASSES =
   "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 font-extrabold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]";
 
 export function ReviewCenterPage() {
+  const { user } = useAuthentication();
   const [request, setRequest] = useState(0);
   const [state, setState] = useState({ status: "loading", summary: null });
+  const [continuations, setContinuations] = useState({ status: "loading", sessions: [] });
   const loadingFocusRef = useRef(null);
   const retryButtonRef = useRef(null);
   const retryRequestedRef = useRef(false);
@@ -41,6 +46,33 @@ export function ReviewCenterPage() {
   }, [request]);
 
   useEffect(() => {
+    let active = true;
+    let storage = null;
+    try { storage = window.sessionStorage; } catch { /* No same-tab session storage. */ }
+    const identities = listStoredStandardSrsSessionIdentities(storage, user.id);
+    if (identities.length === 0) {
+      void Promise.resolve().then(() => {
+        if (active) setContinuations({ status: "ready", sessions: [] });
+      });
+      return () => { active = false; };
+    }
+    void Promise.allSettled(identities.map(async (identity) => {
+      const stored = loadLearningSessionState(storage, identity);
+      if (!stored) throw new TypeError("Stored SRS session is unavailable.");
+      return { identity, session: await learningSessionService.readSession(stored.session_id) };
+    })).then((results) => {
+      if (!active) return;
+      const sessions = results.filter((result) => result.status === "fulfilled")
+        .map((result) => result.value)
+        .filter(({ identity, session }) => session.set_id === identity.setId
+          && session.mode === "SRS" && session.session_intent === "STANDARD"
+          && session.can_continue && typeof session.set_name === "string");
+      setContinuations({ status: results.some((result) => result.status === "rejected") ? "error" : "ready", sessions });
+    });
+    return () => { active = false; };
+  }, [request, user.id]);
+
+  useEffect(() => {
     if (!retryRequestedRef.current) return;
     if (state.status === "loading") {
       loadingFocusRef.current?.focus({ preventScroll: true });
@@ -54,6 +86,7 @@ export function ReviewCenterPage() {
   const retry = (event) => {
     retryRequestedRef.current = event.detail === 0;
     setState({ status: "loading", summary: null });
+    setContinuations({ status: "loading", sessions: [] });
     setRequest((value) => value + 1);
   };
 
@@ -67,6 +100,29 @@ export function ReviewCenterPage() {
       {state.status === "error" ? <ErrorState retry={retry} retryButtonRef={retryButtonRef} /> : null}
       {state.status === "success" ? (
         <ReviewSummary focusTargetRef={successFocusRef} summary={state.summary} />
+      ) : null}
+      {state.status === "success" && continuations.sessions.length > 0 ? (
+        <section className="mt-8" aria-labelledby="continue-srs-title">
+          <h2 id="continue-srs-title" className="text-xl font-extrabold">Phiên SRS chưa hoàn thành</h2>
+          <ul className="list-none space-y-3 p-0">{continuations.sessions.map(({ identity, session }) => (
+            <li key={session.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="mt-0 font-bold">{session.set_name}</p>
+              <Link className={SECONDARY_ACTION_CLASSES} to={`/learn/vocabulary-sets/${identity.setId}`}
+                state={{ learningIntent: "CONTINUE_SRS", returnTo: "/review" }}>
+                Tiếp tục phiên SRS
+              </Link>
+            </li>
+          ))}</ul>
+        </section>
+      ) : null}
+      {state.status === "success" && continuations.status === "loading" ? (
+        <p role="status" className="mt-4 text-sm text-slate-600">Đang kiểm tra phiên SRS chưa hoàn thành…</p>
+      ) : null}
+      {state.status === "success" && continuations.status === "error" ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3" role="alert">
+          <p className="m-0 text-sm text-red-800">Không thể kiểm tra tất cả phiên SRS chưa hoàn thành.</p>
+          <button className={RETRY_CLASSES} type="button" onClick={retry}>Thử lại</button>
+        </div>
       ) : null}
     </section>
   );
@@ -150,7 +206,7 @@ function DueSetList({ focusTargetRef, sets }) {
           Ôn theo bộ từ
         </h2>
         <p className="mb-0 mt-1 text-sm leading-5 text-slate-600">
-          Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục.
+          Mỗi phiên chỉ gồm tối đa 10 từ đã học và đang đến hạn. Sau khi hoàn thành, bạn có thể ôn tiếp các từ còn đến hạn.
         </p>
       </div>
       <ul
@@ -189,9 +245,10 @@ function DueSetCard({ set }) {
       <Link
         className={`${ACTION_CLASSES} mt-5 w-full sm:w-auto sm:self-start`}
         to={`/review/sets/${set.set_id}`}
-        aria-label={`Ôn tập ngay ${set.name} — ${scopeLabel}`}
+        state={{ learningIntent: "FRESH_DUE_ONLY" }}
+        aria-label={`Ôn tập từ đến hạn ${set.name} — ${scopeLabel}`}
       >
-        Ôn tập ngay <ArrowRight className="size-4" aria-hidden="true" />
+        Ôn tập từ đến hạn <ArrowRight className="size-4" aria-hidden="true" />
       </Link>
     </li>
   );

@@ -1,7 +1,6 @@
-import { ArrowLeft, LoaderCircle, RotateCcw, Volume2 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { LoaderCircle, RotateCcw, Volume2 } from "lucide-react";
+import { FocusModeHeader } from "../components/focus-mode-header.jsx";
 
-const TOOLBAR_BUTTON_CLASSES = "inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 font-extrabold text-slate-700 no-underline focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60";
 const AUDIO_BUTTON_CLASSES = "inline-flex size-11 min-h-11 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-[var(--accent-primary-soft)] p-0 text-[var(--accent-primary-pressed)] transition-[transform,background-color,color,box-shadow] duration-150 hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#dceffd] focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transform-none motion-reduce:transition-none [&_svg]:size-[1.3rem]";
 const RATING_BUTTON_BASE = "inline-flex min-h-11 cursor-pointer items-center justify-center border-2 font-[inherit] focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-[0.58]";
 const RATING_BUTTON_CLASSES = {
@@ -22,25 +21,18 @@ export function FlashcardToolbar({
   onRestart,
   restartLabel = "Bắt đầu lại",
 }) {
-  const backContent = <><ArrowLeft className="shrink-0" aria-hidden="true" /><span className="max-w-52 truncate">{backLabel}</span></>;
+  const restartAction = onRestart ? (
+    <div className="group relative">
+      <button type="button" className="inline-flex size-11 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-slate-600 shadow-none transition-colors hover:not-disabled:text-[var(--accent-primary-pressed)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-[1.15rem]" onClick={onRestart} disabled={disabled} aria-label={restartLabel} aria-describedby="learning-restart-tooltip"><RotateCcw aria-hidden="true" /></button>
+      <span id="learning-restart-tooltip" role="tooltip" className="learning-restart-tooltip pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none">{restartLabel}</span>
+    </div>
+  ) : null;
   return (
-    <header className="learning-toolbar w-full shrink-0 border-b border-slate-200">
-      <div className={`learning-toolbar-inner mx-auto w-full max-w-[75rem] ${innerClassName} items-center gap-x-4 gap-y-1.5 px-[clamp(0.8rem,3vw,2rem)] py-1.5 max-[700px]:py-1`}>
-        <div className="flex min-w-0 items-center gap-2">
-          {backHref
-            ? <Link className={TOOLBAR_BUTTON_CLASSES} to={backHref}>{backContent}</Link>
-            : <button type="button" className={TOOLBAR_BUTTON_CLASSES} onClick={onBack} disabled={disabled}>{backContent}</button>}
-          {badge ? <span className="learning-review-context-badge inline-flex shrink-0 rounded-full border border-[#cfe8f8] bg-[var(--accent-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--accent-primary-pressed)]">{badge}</span> : null}
-        </div>
-        {children}
-        {onRestart ? (
-          <div className="group relative ml-auto">
-            <button type="button" className="inline-flex size-11 cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white p-0 text-slate-700 transition-colors hover:not-disabled:border-[var(--accent-primary)] hover:not-disabled:bg-[var(--accent-primary-soft)] hover:not-disabled:text-[var(--accent-primary-pressed)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-[1.15rem]" onClick={onRestart} disabled={disabled} aria-label={restartLabel} aria-describedby="learning-restart-tooltip"><RotateCcw aria-hidden="true" /></button>
-            <span id="learning-restart-tooltip" role="tooltip" className="learning-restart-tooltip pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none">{restartLabel}</span>
-          </div>
-        ) : null}
-      </div>
-    </header>
+    <FocusModeHeader actions={restartAction} backHref={backHref} backLabel={backLabel}
+      className="learning-toolbar" disabled={disabled}
+      innerClassName={innerClassName} onBack={onBack} titleBadge={badge}>
+      {children}
+    </FocusModeHeader>
   );
 }
 

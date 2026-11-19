@@ -17,6 +17,7 @@ import {
   createUnexpectedErrorMiddleware,
 } from "./middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
+import { createLoginAbuseRepository } from "./repositories/login-abuse-repository.js";
 import { createTopicRepository } from "./repositories/topic-repository.js";
 import { createUserRepository } from "./repositories/user-repository.js";
 import { createVocabularyRepository } from "./repositories/vocabulary-repository.js";
@@ -60,18 +61,37 @@ import {
 import { createVocabularySetCoverStorage } from "./storage/vocabulary-set-cover-storage.js";
 import { createVocabularySetCoverImageProcessor } from "./images/vocabulary-set-cover-image-processor.js";
 import * as passwordSecurity from "./utils/password-security.js";
+import { createLoginAbuseKeyFactory } from "./security/login-abuse-keys.js";
 
-export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor, diagnosticLogger }) {
+const TEST_LOGIN_ABUSE_SECRET = "test-only-login-abuse-secret-32-characters";
+
+export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor, diagnosticLogger, loginAbuseSecret, loginAbuseProxyMode } = {}) {
   if (!prisma) {
     throw new TypeError("A Prisma client is required to create the application.");
   }
 
   const userRepository = createUserRepository(prisma);
   const authSessionRepository = createAuthSessionRepository(prisma);
+  const configuredProxyMode = loginAbuseProxyMode ?? process.env.LOGIN_ABUSE_PROXY_MODE;
+  if (process.env.NODE_ENV === "production" && !configuredProxyMode) {
+    throw new TypeError("LOGIN_ABUSE_PROXY_MODE must be explicitly configured in production.");
+  }
+  const loginAbuseKeys = createLoginAbuseKeyFactory({
+    secret: loginAbuseSecret ?? process.env.LOGIN_ABUSE_HMAC_SECRET
+      ?? (process.env.NODE_ENV === "test" ? TEST_LOGIN_ABUSE_SECRET : undefined),
+    proxyMode: configuredProxyMode ?? "direct",
+  });
+  const withLoginTransaction = (callback) => prisma.$transaction((transaction) => callback({
+    userRepository: createUserRepository(transaction),
+    authSessionRepository: createAuthSessionRepository(transaction),
+    loginAbuseRepository: createLoginAbuseRepository(transaction),
+  }));
   const authenticationService = createAuthenticationService({
     userRepository,
     authSessionRepository,
     passwordSecurity,
+    loginAbuseKeys,
+    withLoginTransaction,
   });
   const authenticationMiddleware = createAuthenticationMiddleware({
     authenticationService,

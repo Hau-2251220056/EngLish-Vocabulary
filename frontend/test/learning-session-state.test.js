@@ -6,6 +6,7 @@ import {
   clearPendingLearningSessionCreation,
   createLearningSessionWithPendingReplay,
   loadLearningSessionState,
+  listStoredStandardSrsSessionIdentities,
   loadPendingLearningSessionCreation,
   prepareLearningSessionCreation,
   reconcileLearningSessionState,
@@ -17,6 +18,22 @@ const IDENTITY = Object.freeze({ userId: "user", setId: "22222222-2222-4222-8222
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const FIRST = "44444444-4444-4444-8444-444444444444";
 const SECOND = "55555555-5555-4555-8555-555555555555";
+
+test("standard SRS continuation discovery excludes due-only and NORMAL records", () => {
+  const storage = memoryStorage();
+  const ordinary = { ...IDENTITY, mode: "SRS" };
+  const dueOnly = { ...ordinary, sessionIntent: "DUE_ONLY" };
+  const ordinarySession = { ...session(), mode: "SRS" };
+  assert.equal(saveLearningSessionState(storage,
+    reconcileLearningSessionState(null, ordinary, ordinarySession)), true);
+  assert.equal(saveLearningSessionState(storage,
+    reconcileLearningSessionState(null, dueOnly,
+      { ...ordinarySession, session_intent: "DUE_ONLY" })), true);
+  assert.equal(saveLearningSessionState(storage,
+    reconcileLearningSessionState(null, IDENTITY, session())), true);
+  assert.deepEqual(listStoredStandardSrsSessionIdentities(storage, IDENTITY.userId), [ordinary]);
+  assert.deepEqual(listStoredStandardSrsSessionIdentities(storage, "other-user"), []);
+});
 
 test("storage persists only Backend identity, expiry and presentation cursor/state", () => {
   const storage = memoryStorage();

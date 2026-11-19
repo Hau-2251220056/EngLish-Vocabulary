@@ -20,16 +20,16 @@ const MODE_TO_STORAGE = Object.freeze({
 const VIEW_STATES = new Set(["ACTIVE", "EXPIRED", "INACCESSIBLE", "COMPLETED"]);
 
 export function reconcileLearningSessionState(
-  stored, { userId, setId, mode, passId = null }, backendValue,
+  stored, { userId, setId, mode, passId = null, sessionIntent = "STANDARD" }, backendValue,
 ) {
   const session = requireSessionProjection(backendValue, {
     allowAccessState: Object.hasOwn(backendValue, "can_continue"),
   });
-  requireIdentity(userId, setId, mode, passId);
-  if (session.set_id !== setId || session.mode !== mode) {
+  requireIdentity(userId, setId, mode, passId, sessionIntent);
+  if (session.set_id !== setId || session.mode !== mode || session.session_intent !== sessionIntent) {
     throw new TypeError("Backend Learning Session does not match the requested identity.");
   }
-  const matchingStored = isStoredRecord(stored, userId, setId, mode, passId)
+  const matchingStored = isStoredRecord(stored, userId, setId, mode, passId, sessionIntent)
     && stored.session_id === session.id ? stored : null;
   const itemIds = session.items.map(({ vocabulary_id: id }) => id);
   const cursor = itemIds.includes(matchingStored?.cursor_vocabulary_id)
@@ -42,6 +42,7 @@ export function reconcileLearningSessionState(
     user_id: userId,
     set_id: setId,
     mode,
+    session_intent: sessionIntent,
     pass_id: passId,
     session_id: session.id,
     creation_operation_id: matchingStored?.creation_operation_id ?? null,
@@ -68,10 +69,29 @@ export function loadLearningSessionState(storage, identity) {
   const key = storageKey(identity);
   const stored = readSessionValue(storage, key, (value) => isStoredRecord(
     value, identity.userId, identity.setId, identity.mode, identity.passId ?? null,
+    identity.sessionIntent ?? "STANDARD",
   ));
   return stored ? {
     ...stored, item_ids: [], acknowledged_ids: [], needs_reconciliation: true,
   } : null;
+}
+
+export function listStoredStandardSrsSessionIdentities(storage, userId) {
+  const identities = [];
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const parts = storage.key(index)?.split(":");
+      if (parts?.length !== 5 || parts[0] !== `${NAMESPACE}.ordinary`
+        || parts[1] !== `v${VERSION}` || parts[2] !== encodeURIComponent(userId)
+        || parts[4] !== MODE_TO_STORAGE.SRS) continue;
+      const setId = decodeURIComponent(parts[3]);
+      const identity = { userId, setId, mode: "SRS" };
+      if (loadLearningSessionState(storage, identity)) identities.push(identity);
+    }
+  } catch {
+    return [];
+  }
+  return identities;
 }
 
 export function saveLearningSessionState(storage, state) {
@@ -81,6 +101,7 @@ export function saveLearningSessionState(storage, state) {
     user_id: state.user_id,
     set_id: state.set_id,
     mode: state.mode,
+    ...(state.session_intent === "DUE_ONLY" ? { session_intent: "DUE_ONLY" } : {}),
     pass_id: state.pass_id,
     session_id: state.session_id,
     creation_operation_id: state.creation_operation_id,
@@ -90,6 +111,7 @@ export function saveLearningSessionState(storage, state) {
   };
   return writeSessionValue(storage, storageKey({
     userId: state.user_id, setId: state.set_id, mode: state.mode, passId: state.pass_id,
+    sessionIntent: state.session_intent ?? "STANDARD",
   }), stored);
 }
 
@@ -119,6 +141,7 @@ export async function createLearningSessionWithPendingReplay({
     operation_id: pending.creation_operation_id,
     set_id: identity.setId,
     mode: identity.mode,
+    ...(identity.sessionIntent === "DUE_ONLY" ? { session_intent: "DUE_ONLY" } : {}),
     ...(identity.mode === "SRS" ? {} : { vocabulary_ids: vocabularyIds }),
   };
   const result = await createSession(request);
@@ -143,10 +166,11 @@ export function prepareLearningSessionCreation(storage, identity, operationId) {
     user_id: identity.userId,
     set_id: identity.setId,
     mode: identity.mode,
+    ...(identity.sessionIntent === "DUE_ONLY" ? { session_intent: "DUE_ONLY" } : {}),
     pass_id: identity.passId ?? null,
     creation_operation_id: operationId,
   });
-  requireIdentity(identity.userId, identity.setId, identity.mode, identity.passId ?? null);
+  requireIdentity(identity.userId, identity.setId, identity.mode, identity.passId ?? null, identity.sessionIntent ?? "STANDARD");
   const key = pendingStorageKey(identity);
   if (!writeSessionValue(storage, key, pending)) {
     removeSessionValue(storage, key);
@@ -159,6 +183,7 @@ export function loadPendingLearningSessionCreation(storage, identity) {
   const key = pendingStorageKey(identity);
   return readSessionValue(storage, key, (value) => isPendingCreationRecord(
     value, identity.userId, identity.setId, identity.mode, identity.passId ?? null,
+    identity.sessionIntent ?? "STANDARD",
   ));
 }
 
@@ -185,9 +210,9 @@ export function clearPendingLearningSessionCreation(storage, identity, operation
   return removeSessionValue(storage, pendingStorageKey(identity));
 }
 
-function storageKey({ userId, setId, mode, passId = null }) {
-  requireIdentity(userId, setId, mode, passId);
-  return createSessionStorageKey(`${NAMESPACE}.${passId ?? "ordinary"}`, createSessionIdentity({
+function storageKey({ userId, setId, mode, passId = null, sessionIntent = "STANDARD" }) {
+  requireIdentity(userId, setId, mode, passId, sessionIntent);
+  return createSessionStorageKey(`${NAMESPACE}.${passId ?? "ordinary"}${sessionIntent === "DUE_ONLY" ? ".due-only" : ""}`, createSessionIdentity({
     version: VERSION,
     userId,
     setId,
@@ -195,9 +220,9 @@ function storageKey({ userId, setId, mode, passId = null }) {
   }));
 }
 
-function pendingStorageKey({ userId, setId, mode, passId = null }) {
-  requireIdentity(userId, setId, mode, passId);
-  return createSessionStorageKey(`${PENDING_NAMESPACE}.${passId ?? "ordinary"}`, createSessionIdentity({
+function pendingStorageKey({ userId, setId, mode, passId = null, sessionIntent = "STANDARD" }) {
+  requireIdentity(userId, setId, mode, passId, sessionIntent);
+  return createSessionStorageKey(`${PENDING_NAMESPACE}.${passId ?? "ordinary"}${sessionIntent === "DUE_ONLY" ? ".due-only" : ""}`, createSessionIdentity({
     version: VERSION,
     userId,
     setId,
@@ -205,17 +230,20 @@ function pendingStorageKey({ userId, setId, mode, passId = null }) {
   }));
 }
 
-function requireIdentity(userId, setId, mode, passId = null) {
+function requireIdentity(userId, setId, mode, passId = null, sessionIntent = "STANDARD") {
   if (typeof userId !== "string" || userId.length === 0
     || typeof setId !== "string" || setId.length === 0
     || !Object.hasOwn(MODE_TO_STORAGE, mode)
-    || !(passId === null || UUID_PATTERN.test(passId))) throw new TypeError("Learning Session identity is invalid.");
+    || !(passId === null || UUID_PATTERN.test(passId))
+    || !["STANDARD", "DUE_ONLY"].includes(sessionIntent)
+    || (sessionIntent === "DUE_ONLY" && (mode !== "SRS" || passId !== null))) throw new TypeError("Learning Session identity is invalid.");
 }
 
-function isStoredRecord(value, userId, setId, mode, passId = null) {
+function isStoredRecord(value, userId, setId, mode, passId = null, sessionIntent = "STANDARD") {
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
     && value.version === VERSION && value.user_id === userId && value.set_id === setId
-    && value.mode === mode && value.pass_id === passId && UUID_PATTERN.test(value.session_id)
+    && value.mode === mode && value.pass_id === passId
+    && (value.session_intent ?? "STANDARD") === sessionIntent && UUID_PATTERN.test(value.session_id)
     && (value.creation_operation_id === null || UUID_PATTERN.test(value.creation_operation_id))
     && typeof value.expires_at === "string" && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.expires_at)
     && !Number.isNaN(Date.parse(value.expires_at))
@@ -224,17 +252,18 @@ function isStoredRecord(value, userId, setId, mode, passId = null) {
 }
 
 function isRuntimeState(value) {
-  return isStoredRecord(value, value?.user_id, value?.set_id, value?.mode, value?.pass_id ?? null)
+  return isStoredRecord(value, value?.user_id, value?.set_id, value?.mode, value?.pass_id ?? null, value?.session_intent ?? "STANDARD")
     && Array.isArray(value.acknowledged_ids)
     && Array.isArray(value.item_ids)
     && typeof value.needs_reconciliation === "boolean";
 }
 
-function isPendingCreationRecord(value, userId, setId, mode, passId = null) {
+function isPendingCreationRecord(value, userId, setId, mode, passId = null, sessionIntent = "STANDARD") {
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === 6
+    && Object.keys(value).length === (sessionIntent === "DUE_ONLY" ? 7 : 6)
     && value.version === VERSION && value.user_id === userId && value.set_id === setId
     && value.mode === mode && value.pass_id === passId
+    && (value.session_intent ?? "STANDARD") === sessionIntent
     && UUID_PATTERN.test(value.creation_operation_id));
 }
 

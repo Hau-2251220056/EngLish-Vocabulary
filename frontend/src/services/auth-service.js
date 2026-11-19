@@ -8,12 +8,14 @@ const AUTH_ENDPOINTS = Object.freeze({
 });
 
 export class AuthenticationApiError extends Error {
-  constructor({ kind, code, message, status }) {
+  constructor({ kind, code, message, status, attemptsRemaining = null, retryAfterSeconds = null }) {
     super(message);
     this.name = "AuthenticationApiError";
     this.kind = kind;
     this.code = code;
     this.status = status;
+    this.attemptsRemaining = attemptsRemaining;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -100,6 +102,12 @@ function mapAuthenticationError(error) {
         ? "Authentication service is unavailable."
         : "Authentication request failed."),
     status,
+    attemptsRemaining: Number.isInteger(responseError?.attempts_remaining)
+      ? responseError.attempts_remaining
+      : null,
+    retryAfterSeconds: Number.isInteger(responseError?.retry_after_seconds)
+      ? responseError.retry_after_seconds
+      : null,
   });
 }
 

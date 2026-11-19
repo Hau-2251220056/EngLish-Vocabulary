@@ -233,17 +233,17 @@ export function currentSrsVocabularyId(state) {
   return state?.srs.queue[0] ?? null;
 }
 
-export function loadLearningRunState(storage, userId, setId) {
+export function loadLearningRunState(storage, userId, setId, sessionIntent = "STANDARD") {
   return readSessionValue(
     storage,
-    storageKey(userId, setId),
+    storageKey(userId, setId, sessionIntent),
     (value) => isStoredState(value, userId, setId),
   );
 }
 
-export function saveLearningRunState(storage, state) {
+export function saveLearningRunState(storage, state, sessionIntent = "STANDARD") {
   if (!isStoredState(state, state?.user_id, state?.set_id)) return false;
-  return writeSessionValue(storage, storageKey(state.user_id, state.set_id), state);
+  return writeSessionValue(storage, storageKey(state.user_id, state.set_id, sessionIntent), state);
 }
 
 export function clearLearningRunState(storage, userId, setId) {
@@ -254,8 +254,9 @@ export function clearLearningRunStateNamespace(storage) {
   clearSessionNamespace(storage, STORAGE_PREFIX);
 }
 
-function storageKey(userId, setId) {
-  return `${STORAGE_PREFIX}${encodeURIComponent(userId)}:${encodeURIComponent(setId)}`;
+function storageKey(userId, setId, sessionIntent = "STANDARD") {
+  if (!["STANDARD", "DUE_ONLY"].includes(sessionIntent)) throw new TypeError("Learning run intent is invalid.");
+  return `${STORAGE_PREFIX}${encodeURIComponent(userId)}:${encodeURIComponent(setId)}${sessionIntent === "DUE_ONLY" ? ":due-only" : ""}`;
 }
 
 function uniqueIds(cards) { return uniqueStrings(cards.map((card) => card.id)); }

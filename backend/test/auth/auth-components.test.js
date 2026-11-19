@@ -9,7 +9,7 @@ import {
   logUnexpectedRequestError,
 } from "../../src/middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "../../src/repositories/auth-session-repository.js";
-import { createAuthenticationService } from "../../src/services/authentication-service.js";
+import { createAuthenticationService as createAuthenticationServiceFactory } from "../../src/services/authentication-service.js";
 
 const PUBLIC_USER = Object.freeze({
   id: "user-id",
@@ -348,6 +348,28 @@ test("controllers forward unexpected errors and logout clears its cookie first",
   ]);
 });
 
+test("login controller returns bounded lockout metadata and Retry-After", async () => {
+  const controller = createAuthenticationController({
+    authenticationService: {
+      login: async () => {
+        throw Object.assign(new Error("Login attempts are temporarily blocked. Try again later."), {
+          code: "AUTHENTICATION_LOCKED",
+          details: { retry_after_seconds: 300 },
+        });
+      },
+    },
+  });
+  const res = createResponseSpy();
+  await controller.login({ body: {}, socket: { remoteAddress: "127.0.0.1" } }, res, (error) => { throw error; });
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.headers["Retry-After"], "300");
+  assert.deepEqual(res.body.error, {
+    code: "AUTHENTICATION_LOCKED",
+    message: "Login attempts are temporarily blocked. Try again later.",
+    retry_after_seconds: 300,
+  });
+});
+
 test("secure requests set the approved Secure session cookie", async () => {
   const controller = createAuthenticationController({
     authenticationService: {
@@ -526,6 +548,7 @@ function createResponseSpy() {
     body: undefined,
     cookies: [],
     clearedCookies: [],
+    headers: {},
     status(code) {
       this.statusCode = code;
       return this;
@@ -546,5 +569,37 @@ function createResponseSpy() {
       this.clearedCookies.push({ name, options });
       return this;
     },
+    set(name, value) {
+      this.headers[name] = value;
+      return this;
+    },
   };
+}
+
+function createAuthenticationService(options) {
+  const states = new Map();
+  const loginAbuseRepository = {
+    async lock() {},
+    async find(identifierKey, sourceKey) { return states.get(`${identifierKey}:${sourceKey}`) ?? null; },
+    async save(value) {
+      states.set(`${value.identifierKey}:${value.sourceKey}`, {
+        failure_count: value.failureCount,
+        last_failed_at: value.lastFailedAt,
+        blocked_until: value.blockedUntil,
+      });
+    },
+    async delete(identifierKey, sourceKey) { states.delete(`${identifierKey}:${sourceKey}`); },
+    async deleteForIdentifier(identifierKey) {
+      for (const key of states.keys()) if (key.startsWith(`${identifierKey}:`)) states.delete(key);
+    },
+  };
+  return createAuthenticationServiceFactory({
+    ...options,
+    loginAbuseKeys: { identifier: (value) => value, source: () => "unit-source" },
+    withLoginTransaction: (callback) => callback({
+      userRepository: options.userRepository,
+      authSessionRepository: options.authSessionRepository,
+      loginAbuseRepository,
+    }),
+  });
 }

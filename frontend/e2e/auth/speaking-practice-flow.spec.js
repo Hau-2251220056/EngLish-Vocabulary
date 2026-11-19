@@ -7,12 +7,20 @@ for (const viewport of [
   { name: "mobile-320", width: 320, height: 720, direction: "column" },
   { name: "mobile-375", width: 375, height: 812, direction: "column" },
   { name: "mobile-390", width: 390, height: 844, direction: "column" },
+  { name: "tablet-768", width: 768, height: 1024, direction: "row" },
   { name: "desktop-1024", width: 1024, height: 768, direction: "row" },
+  { name: "desktop-1440", width: 1440, height: 900, direction: "row" },
 ]) {
   test(`practice actions keep a stable ${viewport.name} layout`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await installSpeakingBrowserMocks(page);
     await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
+    await expect(page.locator(".focus-mode-header")).toHaveCSS("border-bottom-width", "1px");
+    await expectCenteredFocusHeader(page, viewport.width);
+    const speakingBadge = page.locator(".focus-mode-title-badge");
+    await expect(speakingBadge).toHaveText("Luyện nói");
+    expect(await speakingBadge.evaluate((badge) => badge.previousElementSibling?.tagName)).toBe("BUTTON");
+    await expect(speakingBadge.locator("xpath=..")).toHaveCSS("column-gap", "12px");
 
     const actions = page.getByTestId("speaking-actions");
     const listen = page.getByRole("button", { name: "Nghe từ mẫu" });
@@ -45,6 +53,16 @@ for (const viewport of [
     else expect(listeningBoxes[0].x).toBeLessThan(listeningBoxes[1].x);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   });
+}
+
+async function expectCenteredFocusHeader(page, viewportWidth) {
+  const inner = page.locator(".focus-mode-header-inner");
+  await expect(inner).toBeVisible();
+  const box = await inner.boundingBox();
+  const expectedWidth = Math.min(viewportWidth, 1152);
+  expect(box.width).toBe(expectedWidth);
+  expect(box.x).toBe((viewportWidth - expectedWidth) / 2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }
 
 test("USER enters from public Set Detail and completes a read-only mocked speaking journey", async ({ page }) => {
@@ -107,7 +125,8 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   await expect(page.getByRole("heading", { name: "travel" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Đã nhận diện từ mục tiêu" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Bỏ qua từ này" }).click();
+  await expect(page.getByRole("button", { name: "Bỏ qua từ này" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Từ tiếp theo" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành luyện nói" })).toBeVisible();
   await page.getByRole("button", { name: "Học lại từ đầu" }).click();
   await expect(page.getByRole("heading", { name: "book" })).toBeVisible();

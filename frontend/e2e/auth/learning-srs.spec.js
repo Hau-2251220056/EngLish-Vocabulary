@@ -58,6 +58,7 @@ test("CEFR SRS credits AGAIN once and preserves exact resume without a transitio
   });
 
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await expect(page.locator(".focus-mode-title-badge")).toHaveText("Lượt học CEFR");
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
   await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
@@ -129,21 +130,27 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
 });
 
 test("dedicated Set review route forces durable SRS context without erasing stored Normal state", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   const calls = await installLearningMock(page);
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.locator(".learning-focus-shell")).toHaveCount(1);
   await expect(page.locator("header.authenticated-header, aside.authenticated-sidebar")).toHaveCount(0);
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".learning-review-context-badge")).toHaveCount(0);
+  await expect(page.locator(".focus-mode-title-badge")).toHaveCount(0);
 
   await page.goto(`/review/sets/${SET_ID}`);
   await expect(page.locator(".learning-focus-shell")).toHaveCount(1);
   await expect(page.locator("header.authenticated-header, aside.authenticated-sidebar")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toHaveCount(0);
-  await expect(page.locator(".learning-review-context-badge")).toHaveText("Ôn tập");
+  await expect(page.getByLabel("Phím tắt học")).toBeHidden();
+  const reviewBadge = page.locator(".focus-mode-title-badge");
+  await expect(reviewBadge).toHaveText("Ôn tập");
+  expect(await reviewBadge.evaluate((badge) => badge.previousElementSibling?.tagName)).toBe("BUTTON");
+  await expect(reviewBadge.locator("xpath=..")).toHaveCSS("column-gap", "12px");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBeGreaterThan(0);
+  expect(calls.sessions.filter(({ method, body }) => method === "POST" && body.mode === "SRS").at(-1)?.body.session_intent).toBe("DUE_ONLY");
   await expect(page.getByRole("link", { name: "Trung tâm ôn tập" })).toHaveCount(0);
 
   await page.reload();
@@ -152,9 +159,98 @@ test("dedicated Set review route forces durable SRS context without erasing stor
 
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toBeVisible();
-  await expect(page.locator(".learning-review-context-badge")).toHaveCount(0);
+  await expect(page.locator(".focus-mode-title-badge")).toHaveCount(0);
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByRole("button", { name: "Ôn tập thường" })).toHaveAttribute("aria-pressed", "true");
+});
+
+for (const [dueCount, newCount] of [[1, 9], [2, 5]]) {
+  test(`${dueCount} due and ${newCount} NEW renders only the authoritative due-only snapshot`, async ({ page }) => {
+    const calls = await installLearningMock(page, { cardCount: dueCount + newCount, dueOnlyCount: dueCount });
+    await page.goto(`/review/sets/${SET_ID}`);
+    await expect(page.getByText(`Đã hoàn thành 0 / ${dueCount}`)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+    expect(calls.sessions.filter(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toHaveLength(1);
+    await page.reload();
+    await expect(page.getByText(`Đã hoàn thành 0 / ${dueCount}`)).toBeVisible();
+    expect(calls.sessions.filter(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toHaveLength(1);
+  });
+}
+
+test("Review Center refreshes an unanswered stale due-only snapshot once, then reload resumes it", async ({ page }) => {
+  const initialSession = {
+    ...learningSessionProjection("SRS", [vocabularyId(1), vocabularyId(2), vocabularyId(3)]),
+    session_intent: "DUE_ONLY",
+  };
+  const calls = await installLearningMock(page, {
+    initialSession, cardCount: 12, dueOnlyCount: 5,
+  });
+  await preloadDueOnlySession(page, initialSession);
+  await routeReviewCenterSet(page, 5);
+
+  await page.goto("/review");
+  await page.locator(`a[href="/review/sets/${SET_ID}"]`).click();
+  await expect(page.getByText("0 / 5", { exact: false })).toBeVisible();
+  expect(calls.sessions.filter(({ method, body }) => method === "POST"
+    && body.session_intent === "DUE_ONLY")).toHaveLength(1);
+
+  await page.reload();
+  await expect(page.getByText("0 / 5", { exact: false })).toBeVisible();
+  expect(calls.sessions.filter(({ method, body }) => method === "POST"
+    && body.session_intent === "DUE_ONLY")).toHaveLength(1);
+});
+
+test("Review Center resumes a partially answered due-only snapshot without replacement", async ({ page }) => {
+  const initialSession = {
+    ...learningSessionProjection("SRS", [vocabularyId(1), vocabularyId(2), vocabularyId(3)]),
+    session_intent: "DUE_ONLY",
+    completed_items: 1,
+    items: [
+      { vocabulary_id: vocabularyId(1), position: 0, evidence: "SRS_GOOD" },
+      { vocabulary_id: vocabularyId(2), position: 1, evidence: null },
+      { vocabulary_id: vocabularyId(3), position: 2, evidence: null },
+    ],
+  };
+  const calls = await installLearningMock(page, { initialSession, dueOnlyCount: 5 });
+  await preloadDueOnlySession(page, initialSession);
+  await routeReviewCenterSet(page, 5);
+
+  await page.goto("/review");
+  await page.locator(`a[href="/review/sets/${SET_ID}"]`).click();
+  await expect(page.getByText("1 / 3", { exact: false })).toBeVisible();
+  expect(calls.sessions.filter(({ method }) => method === "POST")).toHaveLength(0);
+});
+
+test("due-only review with no eligible studied card shows an up-to-date state", async ({ page }) => {
+  const calls = await installLearningMock(page, { upToDate: true });
+  await page.goto(`/review/sets/${SET_ID}`);
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1" })).toHaveCount(0);
+  expect(calls.sessions.find(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toBeDefined();
+});
+
+test("Review Center continuation resumes an unfinished STANDARD SRS snapshot without creating a due-only session", async ({ page }) => {
+  const initialSession = { ...learningSessionProjection("SRS", [vocabularyId(1)]),
+    session_intent: "STANDARD", set_name: "Bộ ôn tập" };
+  const calls = await installLearningMock(page, { initialSession });
+  await page.addInitScript(({ setId, sessionId, vocabularyId: itemId }) => {
+    sessionStorage.setItem(`elvocab.backend-learning-session.ordinary:v3:user-1:${setId}:SRS_FLASHCARD`, JSON.stringify({
+      version: 3, user_id: "user-1", set_id: setId, mode: "SRS", pass_id: null,
+      session_id: sessionId, creation_operation_id: null,
+      expires_at: "2026-10-11T00:00:00.000Z", cursor_vocabulary_id: itemId,
+      view_state: "ACTIVE",
+    }));
+  }, { setId: SET_ID, sessionId: SESSION_ID, vocabularyId: vocabularyId(1) });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200, json: { success: true, data: {
+      evaluated_at: NOW, due_count: 0, has_due_items: false, nearest_future_review_at: null, sets: [],
+    } },
+  }));
+  await page.goto("/review");
+  await page.getByRole("link", { name: "Tiếp tục phiên SRS" }).click();
+  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  expect(calls.sessions.filter(({ method }) => method === "POST")).toHaveLength(0);
+  expect(calls.sessions.filter(({ method }) => method === "GET").length).toBeGreaterThanOrEqual(2);
 });
 
 test("focuses the initial SRS card only after the authoritative session becomes active", async ({ page }) => {
@@ -270,7 +366,7 @@ test("SET review reconciles an access change into an inaccessible recovery state
   const alert = page.getByRole("alert");
   await expect(alert).toContainText("Bộ từ không còn khả dụng cho phiên SRS này");
   await expect(alert.getByRole("button", { name: "Bắt đầu lại" })).toBeVisible();
-  await expect(page.locator(".learning-review-context-badge")).toHaveText("Ôn tập");
+  await expect(page.locator(".focus-mode-title-badge")).toHaveText("Ôn tập");
   expect(terminal.events).toHaveLength(1);
 });
 
@@ -315,7 +411,7 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
 
   for (let number = 1; number <= 4; number += 1) {
     await page.getByRole("heading", { name: `word-${number}` }).press("Space");
-    await expect(page.locator('.sr-only[role="status"]')).toContainText("Đã ghi nhận thẻ được lật");
+    await expect(page.locator('.sr-only[role="status"]:not([tabindex])')).toContainText("Đã ghi nhận thẻ được lật");
     if (number < 4) await page.getByRole("button", { name: "Thẻ sau" }).click();
   }
   const finish = page.getByRole("button", { name: "Hoàn thành phiên" });
@@ -414,10 +510,9 @@ test("learning header centers modes, uses a full-width divider and exposes resta
   expect(backBox.x).toBeLessThan(hintsBox.x);
   expect(hintsBox.x).toBeLessThan(modesBox.x);
   expect(modesBox.x).toBeLessThan(restartBox.x);
-  await expect(page.getByLabel("Phím tắt học")).toContainText("SpaceLật thẻ");
+  await expect(page.getByLabel("Phím tắt học")).toContainText("Space·Lật thẻ");
   await expect(page.getByLabel("Phím tắt học")).not.toContainText("Thẻ trước");
-  await expect(page.getByLabel("Phím tắt học").getByText("Lật thẻ", { exact: true })).toHaveCSS("font-size", "15px");
-  await expect(page.getByLabel("Phím tắt học").getByText("Lật thẻ", { exact: true })).toHaveCSS("font-weight", "500");
+  await expect(page.getByLabel("Phím tắt học").getByText("Lật thẻ", { exact: true })).toHaveCSS("font-size", "12px");
   for (const name of ["Ôn tập SRS", "Ôn tập thường"]) {
     await expect(page.getByRole("button", { name })).toHaveCSS("cursor", "pointer");
   }
@@ -426,6 +521,8 @@ test("learning header centers modes, uses a full-width divider and exposes resta
   const tooltip = page.getByRole("tooltip", { name: "Bắt đầu lại" });
   await expect(restart).toHaveText("");
   await expect(restart).toHaveCSS("cursor", "pointer");
+  await expect(restart).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(restart).toHaveCSS("border-top-width", "0px");
   await expect(tooltip).toHaveCSS("opacity", "0");
   await restart.hover();
   await expect(tooltip).toHaveCSS("opacity", "1");
@@ -447,8 +544,7 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
 
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
-  await expect(page.getByLabel("Phím tắt học")).toContainText("←Thẻ trước");
-  await expect(page.getByLabel("Phím tắt học")).toContainText("→Thẻ sau");
+  await expect(page.getByLabel("Phím tắt học")).toContainText("← →·Chuyển thẻ");
   await expect.poll(() => calls.sessionResponses.filter(({ mode }) => mode === "NORMAL").length).toBe(1);
   await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
   await page.getByRole("heading", { name: "word-1" }).press("ArrowLeft");
@@ -458,8 +554,10 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
   await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
 
+  const cardTopBeforePending = (await page.locator(".learning-flip-stage").boundingBox()).y;
   await page.getByRole("heading", { name: "word-1" }).press("Space");
   await expect(page.getByText("Đang ghi nhận bằng chứng học tập…")).toBeFocused();
+  expect((await page.locator(".learning-flip-stage").boundingBox()).y).toBe(cardTopBeforePending);
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
   calls.resolveNormalReveal();
@@ -706,11 +804,14 @@ test("long back-face content grows the shared card and never creates internal sc
 });
 
 for (const viewport of [
+  { name: "desktop-1440", width: 1440, height: 900 },
   { name: "desktop-1366", width: 1366, height: 768 },
   { name: "desktop-1536", width: 1536, height: 864 },
+  { name: "desktop-1024", width: 1024, height: 768 },
   { name: "tablet-768", width: 768, height: 1024 },
   { name: "tablet-820", width: 820, height: 1180 },
   { name: "mobile-375", width: 375, height: 812 },
+  { name: "mobile-320", width: 320, height: 720 },
   { name: "mobile-390", width: 390, height: 844 },
 ]) {
   test(`segmented header and four ratings remain responsive on ${viewport.name}`, async ({ page }) => {
@@ -722,8 +823,19 @@ for (const viewport of [
     expect(headerBox.x).toBe(0);
     expect(headerBox.width).toBe(viewport.width);
     await expect(page.locator(".learning-toolbar")).toHaveCSS("border-bottom-width", "1px");
+    await expectCenteredFocusHeader(page, viewport.width);
     await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toBeVisible();
-    await expect(page.getByLabel("Phím tắt học")).toContainText("SpaceLật thẻ");
+    if (viewport.width <= 768) {
+      await expect(page.getByLabel("Phím tắt học")).toBeHidden();
+      const [titleBox, modeBox] = await Promise.all([
+        page.locator(".focus-mode-header-inner > div:first-child").boundingBox(),
+        page.getByRole("group", { name: "Chế độ ôn tập" }).boundingBox(),
+      ]);
+      expect(modeBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height);
+    } else {
+      await expect(page.getByLabel("Phím tắt học")).toContainText("Space·Lật thẻ");
+      await expect(page.getByLabel("Phím tắt học")).not.toContainText("Chuyển thẻ");
+    }
     const cardBox = await page.locator(".learning-flip-stage").boundingBox();
     expect(cardBox.width).toBeLessThanOrEqual(640);
     if (viewport.width >= 1024) expect(cardBox.height).toBe(384);
@@ -768,6 +880,38 @@ for (const viewport of [
   });
 }
 
+test.describe("touch-first Flashcard header", () => {
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } });
+
+  for (const viewport of [
+    { name: "mobile-320", width: 320, height: 720 },
+    { name: "tablet-768", width: 768, height: 1024 },
+    { name: "tablet-1024", width: 1024, height: 768 },
+    { name: "desktop-1440", width: 1440, height: 900 },
+  ]) {
+    test(`hides hints while preserving controls on ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await installLearningMock(page);
+      await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+      expect(await page.evaluate(() => matchMedia("(hover: none) and (pointer: coarse)").matches)).toBe(true);
+      await expect(page.getByLabel("Phím tắt học")).toBeHidden();
+      await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Bắt đầu lại" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+  }
+});
+
+async function expectCenteredFocusHeader(page, viewportWidth) {
+  const inner = page.locator(".focus-mode-header-inner");
+  await expect(inner).toBeVisible();
+  const box = await inner.boundingBox();
+  const expectedWidth = Math.min(viewportWidth, 1152);
+  expect(box.width).toBe(expectedWidth);
+  expect(box.x).toBe((viewportWidth - expectedWidth) / 2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+}
+
 async function expectEqualNavigationButtons(previous, next) {
   const [previousBox, nextBox] = await Promise.all([previous.boundingBox(), next.boundingBox()]);
   expect(previousBox.width).toBe(nextBox.width);
@@ -777,6 +921,31 @@ async function expectEqualNavigationButtons(previous, next) {
     const fontWeight = Number(await button.evaluate((element) => getComputedStyle(element).fontWeight));
     expect(fontWeight).toBeGreaterThanOrEqual(600);
   }
+}
+
+async function preloadDueOnlySession(page, session) {
+  await page.addInitScript(({ setId, sessionId, itemId }) => {
+    sessionStorage.setItem(
+      `elvocab.backend-learning-session.ordinary.due-only:v3:user-1:${setId}:SRS_FLASHCARD`,
+      JSON.stringify({
+        version: 3, user_id: "user-1", set_id: setId, mode: "SRS",
+        session_intent: "DUE_ONLY", pass_id: null, session_id: sessionId,
+        creation_operation_id: null, expires_at: "2026-10-11T00:00:00.000Z",
+        cursor_vocabulary_id: itemId, view_state: "ACTIVE",
+      }),
+    );
+  }, { setId: SET_ID, sessionId: session.id, itemId: session.items[0].vocabulary_id });
+}
+
+async function routeReviewCenterSet(page, dueCount) {
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      evaluated_at: NOW, due_count: dueCount, has_due_items: true,
+      nearest_future_review_at: null,
+      sets: [{ set_id: SET_ID, name: "Review Set", due_count: dueCount, set_scope: "PUBLIC" }],
+    } },
+  }));
 }
 
 async function installLearningMock(page, options = {}) {
@@ -817,9 +986,11 @@ async function installLearningMock(page, options = {}) {
         return;
       }
       const ids = body.mode === "SRS"
-        ? Array.from({ length: options.cardCount ?? 4 }, (_, index) => vocabularyId(index + 1))
+        ? Array.from({ length: body.session_intent === "DUE_ONLY" && Number.isInteger(options.dueOnlyCount)
+          ? options.dueOnlyCount : options.cardCount ?? 4 }, (_, index) => vocabularyId(index + 1))
         : body.vocabulary_ids;
-      session = learningSessionProjection(body.mode, ids);
+      session = { ...learningSessionProjection(body.mode, ids),
+        session_intent: body.session_intent ?? "STANDARD" };
       if (body.mode === "SRS" && srsSessionReady) await srsSessionReady;
       await route.fulfill({ status: 201, json: { success: true, data: { session, replayed: false } } });
       calls.sessionResponses.push({ mode: body.mode });
@@ -828,6 +999,10 @@ async function installLearningMock(page, options = {}) {
     if (request.method() === "GET") {
       await route.fulfill({ status: 200, json: { success: true, data: {
         ...session, can_continue: session.state === "ACTIVE" && session.restart_reason === undefined,
+        ...(session.session_intent === "DUE_ONLY" ? {
+          cards: cards(options.longContent, session.snapshot_size, options.ratingPreviews ?? ratingPreviews(1, 3, 7)),
+          evaluated_at: NOW, set_name: "Bộ ôn tập",
+        } : {}),
       } } });
       return;
     }

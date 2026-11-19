@@ -150,6 +150,30 @@ test("Login and Register API failures show only approved safe errors", async ({ 
   await expect(page.getByText("raw registration detail")).toHaveCount(0);
 });
 
+test("SEC-01 warning and lockout remain accessible and fit a narrow login form", async ({ page }) => {
+  let attempt = 0;
+  await installAuthApiMock(page, {
+    "/api/auth/login": () => {
+      attempt += 1;
+      return attempt === 1
+        ? responses.error(401, "AUTHENTICATION_WARNING", "safe", "private", { attempts_remaining: 1 })
+        : responses.error(429, "AUTHENTICATION_LOCKED", "safe", "private", { retry_after_seconds: 300 });
+    },
+  });
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("learner@example.com");
+  await page.getByLabel("Mật khẩu", { exact: true }).fill("wrong-password");
+
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("1 lần thử");
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("5 phút");
+  await expect(page.getByText("private")).toHaveCount(0);
+  await expect(page.getByLabel("Email")).toHaveValue("learner@example.com");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test("backend validation and generic API failures use safe fallback messages", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/login": responses.error(

@@ -210,6 +210,27 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
     await installQuizApiMock(page, { questions: [question("long", 1, "an-extraordinarily-long-english-expression-that-wraps", long)] });
     for (const viewport of [{ width: 320, height: 700 }, { width: 375, height: 812 }, { width: 844, height: 390 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
       await page.setViewportSize(viewport); await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
+      await expect(page.locator(".focus-mode-header")).toHaveCSS("border-bottom-width", "1px");
+      await expectCenteredFocusHeader(page, viewport.width);
+      await expect(page.getByText("Quiz · Anh → Việt", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Anh → Việt", { exact: true })).toHaveCount(0);
+      const quizBadge = page.locator(".focus-mode-title-badge");
+      await expect(quizBadge).toHaveText("Quiz");
+      expect(await quizBadge.evaluate((badge) => badge.previousElementSibling?.tagName)).toBe("BUTTON");
+      await expect(quizBadge.locator("xpath=..")).toHaveCSS("column-gap", "12px");
+      const restart = page.getByRole("button", { name: "Học lại từ đầu" });
+      await expect(restart).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(restart).toHaveCSS("border-top-width", "0px");
+      if (viewport.width === 320) {
+        const title = page.locator(".focus-mode-header-inner > div:first-child button span");
+        await title.evaluate((node) => { node.textContent = "Bộ từ vựng có tên rất dài cần được rút gọn an toàn trên màn hình nhỏ"; });
+        expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+        const [titleGroupBox, actionBox] = await Promise.all([
+          quizBadge.locator("xpath=..").boundingBox(),
+          restart.locator("xpath=..").boundingBox(),
+        ]);
+        expect(titleGroupBox.x + titleGroupBox.width).toBeLessThanOrEqual(actionBox.x);
+      }
       const radios = page.getByRole("radio"); await expect(radios).toHaveCount(4);
       const radio = radios.first(); const label = radio.locator("xpath=..");
       const boxes = await radios.evaluateAll((nodes) => nodes.map((node) => { const box = node.parentElement.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }; }));
@@ -240,3 +261,13 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
     for (const options of [{ guest: true }, { user: publicAdmin }]) { const context = await browser.newContext(); const page = await context.newPage(); const calls = await installQuizApiMock(page, options); await page.goto(`/quiz/vocabulary-sets/${quizSetId}`); await expect(page).toHaveURL(options.guest ? /\/login$/ : /\/dashboard$/); expect(calls.questions).toHaveLength(0); await context.close(); }
   });
 });
+
+async function expectCenteredFocusHeader(page, viewportWidth) {
+  const inner = page.locator(".focus-mode-header-inner");
+  await expect(inner).toBeVisible();
+  const box = await inner.boundingBox();
+  const expectedWidth = Math.min(viewportWidth, 1152);
+  expect(box.width).toBe(expectedWidth);
+  expect(box.x).toBe((viewportWidth - expectedWidth) / 2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+}

@@ -30,6 +30,7 @@ export function createAuthenticationController({ authenticationService }) {
         const { user, sessionToken } = await authenticationService.login({
           email,
           password,
+          source: req,
         });
 
         res.cookie(SESSION_COOKIE_NAME, sessionToken, {
@@ -100,6 +101,8 @@ function handleKnownServiceError(error, res, next) {
     VALIDATION_ERROR: 400,
     EMAIL_ALREADY_EXISTS: 409,
     AUTHENTICATION_FAILED: 401,
+    AUTHENTICATION_WARNING: 401,
+    AUTHENTICATION_LOCKED: 429,
   };
   const status = statusByCode[error?.code];
 
@@ -108,11 +111,15 @@ function handleKnownServiceError(error, res, next) {
     return;
   }
 
+  if (error.code === "AUTHENTICATION_LOCKED") {
+    res.set("Retry-After", String(error.details.retry_after_seconds));
+  }
   res.status(status).json({
     success: false,
     error: {
       code: error.code,
       message: error.message,
+      ...error.details,
     },
   });
 }

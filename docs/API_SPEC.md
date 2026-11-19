@@ -190,6 +190,18 @@ Success
 
 Authentication mechanism cụ thể được quyết định trong ARCHITECTURE.md và PLAN.
 
+### 6.1 Login abuse protection (SEC-01)
+
+The Backend tracks consecutive failed login attempts per normalized identifier and trusted network source in shared PostgreSQL state. Existing and nonexistent identifiers follow the same public failure progression.
+
+- Failures 1-2 return `401 AUTHENTICATION_FAILED`.
+- Failures 3-4 return `401 AUTHENTICATION_WARNING` with bounded `attempts_remaining` (`2` then `1`).
+- Failure 5 establishes a five-minute block and returns `429 AUTHENTICATION_LOCKED` with `retry_after_seconds` between `1` and `300`, plus the matching `Retry-After` header.
+- Attempts during the block return the same bounded `429` response without password verification.
+- Expiry permits a fresh sequence. Successful authentication removes failure state for the normalized identifier before committing the new session.
+
+Messages never disclose whether an account exists. Responses never contain passwords, raw identifiers, raw client addresses, HMAC keys or password hashes. Registration, session cookies, `/api/auth/me`, logout and USER/ADMIN authorization contracts remain unchanged.
+
 7. Current User
 7.1 Get Current User
 GET /api/auth/me
@@ -1210,9 +1222,13 @@ All contracts in this section require the existing authentication and USER-role 
 
 Request fields are strictly allowlisted. `operation_id`, `set_id` and `mode` are always required; `mode` is `NORMAL`, `SRS` or `QUIZ`. NORMAL/Quiz require `vocabulary_ids` (normally an ordered 1–10-item current group; an empty array is accepted only for an actually empty Set result). SRS forbids the field and Backend selects at most ten eligible items. Unknown fields, invalid UUIDs, duplicates, order/membership mismatch or an invalid mode return `400 LEARNING_SESSION_VALIDATION_ERROR`.
 
+The optional `session_intent` is `STANDARD` by default. `DUE_ONLY` is accepted only for SET/SRS creation. It selects at most ten deterministic, currently due Vocabulary identities with persisted USER Learning Progress; NEW and future-due items are excluded. The server persists the intent on the session and checks it during operation replay. Existing sessions receive `STANDARD` from the forward-only migration. A due-only session remains a fixed snapshot after creation; finishing one batch and creating another reevaluates current eligibility.
+
 New session success is `201`. Exact `(USER, operation_id)` replay is `200` with `replayed: true`; incompatible reuse conflicts. Empty Set or no eligible SRS item returns `200` with `session: null` and `reason: "EMPTY_SET"` or `"SRS_UP_TO_DATE"`.
 
 The session projection contains `id`, `set_id`, `mode`, effective `state`, Backend timestamps, snapshot/completed counts and ordered item evidence. Backend authors creation and expiry; an ACTIVE session accepts operations only while acceptance time is strictly earlier than `expires_at`.
+
+Session projections also include `session_intent`. Owner-scoped SET reads may include the authorized `set_name`. Due-only SET/SRS reads include the authoritative snapshot `cards` and `evaluated_at` so clients need no separate Set-data request to recover a selected card. The client must reject a read whose intent differs from the requested same-tab session identity.
 
 Across these endpoints, `400 LEARNING_SESSION_VALIDATION_ERROR` covers invalid fields/identities, `404 LEARNING_SESSION_NOT_FOUND` conceals missing or foreign ownership, and `409` uses the precise `LEARNING_SESSION_OPERATION_CONFLICT`, `LEARNING_SESSION_EVENT_CONFLICT`, `LEARNING_SESSION_INACCESSIBLE` or `LEARNING_SESSION_EXPIRED` code. Existing Authentication/authorization errors remain unchanged.
 
@@ -2096,7 +2112,7 @@ Allowed values are:
 
 The Backend derives this value from authoritative Set data and existing access checks. It does not return `owner_id`, claim copied-from ancestry or introduce client-side entitlement rules. The endpoint uses the section 75 authenticated USER boundary and standard success/error envelopes. It returns only positive-due Set entries; zero due returns `due_count: 0`, `has_due_items: false`, `sets: []`, and the applicable nullable future-review timestamp.
 
-Due counts represent persisted studied vocabulary currently due at the response's single backend-owned `evaluated_at`. Unstarted `NEW` vocabulary is excluded from Review Center counts, although a subsequent SET SRS session may include eligible `NEW` cards. Global `due_count` deduplicates by `vocabulary_id`; each Set count deduplicates by `(set_id, vocabulary_id)`. A shared vocabulary identity may contribute to every accessible containing Set, so per-Set counts are not necessarily additive and clients must not sum them to reconstruct the global value.
+Due counts represent persisted studied vocabulary currently due at the response's single backend-owned `evaluated_at`. Unstarted `NEW` vocabulary is excluded. The dedicated `/review/sets/:setId` action creates or resumes a `DUE_ONLY` SET/SRS session, while ordinary SET/SRS remains `STANDARD` and may include NEW. Global `due_count` deduplicates by `vocabulary_id`; each Set count deduplicates by `(set_id, vocabulary_id)`. A shared vocabulary identity may contribute to every accessible containing Set, so per-Set counts are not necessarily additive and clients must not sum them to reconstruct the global value.
 
 The endpoint is read-only and does not create a review session or mutate learning progress. Its accepted verification limitations remain explicit: Preview TEST historical rows were not reconciled for TASK-RE-A02, database-backed/real-stack E2E remains `NOT RUN`, historical count-to-UUID assignments and overlap were not verified, and cross-statement repeatable-read isolation is not claimed. These limitations do not change the active response contract and are not represented as resolved runtime evidence.
 

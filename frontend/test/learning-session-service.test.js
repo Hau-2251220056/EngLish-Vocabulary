@@ -43,6 +43,27 @@ test("create validation keeps mode-specific payloads bounded and rejects unknown
   assert.equal(calls, 0);
 });
 
+test("due-only intent is sent only for SRS and mismatched replay/read intent is rejected", async () => {
+  const request = { operation_id: IDS.operation, set_id: IDS.set, mode: "SRS", session_intent: "DUE_ONLY" };
+  let body = null;
+  const service = createLearningSessionService({
+    async post(_url, input) {
+      body = input;
+      return envelope({ session: { ...srsSessionWithCards(), session_intent: "DUE_ONLY" }, replayed: false });
+    },
+    async get() { return envelope({ ...srsSessionWithCards(), session_intent: "DUE_ONLY", set_name: "Authorized Set" }); },
+  });
+  assert.equal((await service.createSession(request)).session.session_intent, "DUE_ONLY");
+  assert.deepEqual(body, request);
+  assert.equal((await service.readSession(IDS.session)).set_name, "Authorized Set");
+  await assert.rejects(createLearningSessionService({ async post() {
+    return envelope({ session: srsSessionWithCards(), replayed: true });
+  } }).createSession(request), { code: "INVALID_LEARNING_SESSION_RESPONSE" });
+  await assert.rejects(createLearningSessionService({ async post() { throw new Error("must not send"); } })
+    .createSession({ ...request, mode: "NORMAL", vocabulary_ids: [IDS.vocabulary] }),
+  { code: "INVALID_LEARNING_SESSION_REQUEST" });
+});
+
 test("an empty NORMAL proposal reaches the Backend so it can authoritatively report EMPTY_SET", async () => {
   const service = createLearningSessionService({
     async post(_url, body) {

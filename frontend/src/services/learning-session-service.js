@@ -102,8 +102,11 @@ export function createLearningSessionService(client = httpClient) {
 
 export function requireSessionProjection(value, { allowAccessState = false } = {}) {
   const scope = value?.scope ?? "SET";
+  const sessionIntent = value?.session_intent ?? "STANDARD";
   if (!isRecord(value) || !isUuid(value.id)
     || !["SET", "GLOBAL"].includes(scope)
+    || !["STANDARD", "DUE_ONLY"].includes(sessionIntent)
+    || (sessionIntent === "DUE_ONLY" && (scope !== "SET" || value.mode !== "SRS"))
     || (scope === "SET" ? !isUuid(value.set_id) : value.set_id !== null)
     || !MODES.has(value.mode) || !STATES.has(value.state)
     || !isInstant(value.created_at) || !isInstant(value.expires_at)
@@ -137,7 +140,9 @@ export function requireSessionProjection(value, { allowAccessState = false } = {
       throw invalidResponse();
     }
   }
-  return { ...value, scope };
+  if (Object.hasOwn(value, "set_name")
+    && (typeof value.set_name !== "string" || value.set_name.length === 0)) throw invalidResponse();
+  return { ...value, scope, session_intent: sessionIntent };
 }
 
 export function requireStreakProjection(value) {
@@ -194,10 +199,12 @@ function isRatingPreviews(value) {
 
 function serializeCreate(input) {
   if (!isRecord(input)) throw validationError();
-  const allowed = new Set(["operation_id", "set_id", "mode", "vocabulary_ids"]);
+  const allowed = new Set(["operation_id", "set_id", "mode", "vocabulary_ids", "session_intent"]);
   if (Object.keys(input).some((field) => !allowed.has(field))) throw validationError();
   requireUuid(input.operation_id); requireUuid(input.set_id);
   if (!MODES.has(input.mode)) throw validationError();
+  if (input.session_intent !== undefined && !["STANDARD", "DUE_ONLY"].includes(input.session_intent)) throw validationError();
+  if (input.session_intent === "DUE_ONLY" && input.mode !== "SRS") throw validationError();
   const hasIds = Object.hasOwn(input, "vocabulary_ids");
   if ((input.mode === "SRS" && hasIds) || (input.mode !== "SRS" && !hasIds)) throw validationError();
   if (hasIds && (!Array.isArray(input.vocabulary_ids)
@@ -207,7 +214,8 @@ function serializeCreate(input) {
 }
 
 function requireCreateResponseIdentity(session, request) {
-  if (session.set_id !== request.set_id || session.mode !== request.mode) throw invalidResponse();
+  if (session.set_id !== request.set_id || session.mode !== request.mode
+    || session.session_intent !== (request.session_intent ?? "STANDARD")) throw invalidResponse();
   if (request.mode !== "SRS") {
     const responseIds = session.items.map(({ vocabulary_id: vocabularyId }) => vocabularyId);
     if (responseIds.length !== request.vocabulary_ids.length

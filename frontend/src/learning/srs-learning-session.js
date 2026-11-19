@@ -1,4 +1,5 @@
 import {
+  clearLearningSessionState,
   createLearningSessionWithPendingReplay,
   loadLearningSessionState,
   reconcileLearningSessionState,
@@ -7,11 +8,21 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function openSrsLearningSession({ storage, identity, service, randomUuid }) {
+export async function openSrsLearningSession({
+  storage, identity, service, randomUuid, refreshUnanswered = false,
+}) {
   requireDependencies(identity, service, randomUuid);
   const stored = loadLearningSessionState(storage, identity);
   if (stored) {
-    return persistProjection(storage, identity, stored, await service.readSession(stored.session_id));
+    const projection = await service.readSession(stored.session_id);
+    if (shouldRefreshUnansweredDueOnly(identity, projection, refreshUnanswered)) {
+      clearLearningSessionState(storage, identity);
+    } else {
+      const state = persistProjection(storage, identity, stored, projection);
+      return identity.sessionIntent === "DUE_ONLY"
+        ? { session_state: state, cards: projection.cards, evaluated_at: projection.evaluated_at, set_name: projection.set_name }
+        : state;
+    }
   }
   const result = await createLearningSessionWithPendingReplay({
     storage,
@@ -19,7 +30,17 @@ export async function openSrsLearningSession({ storage, identity, service, rando
     operationId: randomUuid(),
     createSession: (request) => service.createSession(request),
   });
-  return result.session_state;
+  if (identity.sessionIntent !== "DUE_ONLY") return result.session_state;
+  if (!result.session_state) return { session_state: null, cards: [], evaluated_at: null };
+  const projection = await service.readSession(result.session_state.session_id);
+  const state = persistProjection(storage, identity, result.session_state, projection);
+  return { session_state: state, cards: projection.cards, evaluated_at: projection.evaluated_at, set_name: projection.set_name };
+}
+
+function shouldRefreshUnansweredDueOnly(identity, projection, requested) {
+  return requested && identity.sessionIntent === "DUE_ONLY"
+    && projection.state === "ACTIVE"
+    && projection.items.every(({ evidence }) => evidence === null);
 }
 
 export async function openPassLinkedSrsSession({

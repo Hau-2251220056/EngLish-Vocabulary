@@ -68,6 +68,7 @@ test("first-use state offers the existing create behavior and Topics route", asy
   await openMySets(page, []);
 
   await expect(page.getByRole("heading", { name: "Bạn chưa có bộ từ nào" })).toBeVisible();
+  await expect(page.locator(".my-vocabulary-sets-header").getByRole("button", { name: "Tạo bộ từ" })).toBeVisible();
   const createButton = page.getByRole("button", { name: "Tạo bộ từ đầu tiên" });
   const discoveryLink = page.getByRole("main").getByRole("link", { name: "Khám phá bộ từ" });
   await expect(discoveryLink).toHaveAttribute("href", "/topics");
@@ -78,6 +79,44 @@ test("first-use state offers the existing create behavior and Topics route", asy
   await createButton.click();
   await expect(page.getByRole("dialog", { name: "Tạo bộ từ" })).toBeVisible();
 });
+
+for (const viewport of [
+  { name: "mobile-320", width: 320, height: 720, stacked: true },
+  { name: "mobile-375", width: 375, height: 812, stacked: true },
+  { name: "tablet-768", width: 768, height: 1024, stacked: false },
+  { name: "desktop-1024", width: 1024, height: 768, stacked: false },
+  { name: "desktop-1440", width: 1440, height: 900, stacked: false },
+]) {
+  test(`first-use actions stay equal and centered on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openMySets(page, []);
+    const state = page.locator(".my-vocabulary-set-state.is-visual");
+    const actions = state.locator(".my-vocabulary-set-state-actions");
+    const create = state.getByRole("button", { name: "Tạo bộ từ đầu tiên" });
+    const explore = state.getByRole("link", { name: "Khám phá bộ từ" });
+    const [stateBox, actionsBox, createBox, exploreBox] = await Promise.all([
+      state.boundingBox(), actions.boundingBox(), create.boundingBox(), explore.boundingBox(),
+    ]);
+    expect(createBox.width).toBe(exploreBox.width);
+    expect(createBox.height).toBe(exploreBox.height);
+    expect(createBox.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(
+      (actionsBox.x + actionsBox.width / 2) - (stateBox.x + stateBox.width / 2),
+    )).toBeLessThanOrEqual(1);
+    if (viewport.stacked) {
+      expect(createBox.x).toBe(exploreBox.x);
+      expect(exploreBox.y).toBeGreaterThanOrEqual(createBox.y + createBox.height);
+    } else {
+      expect(createBox.y).toBe(exploreBox.y);
+      expect(exploreBox.x).toBeGreaterThanOrEqual(createBox.x + createBox.width);
+    }
+    await create.focus();
+    await expect(create).toBeFocused();
+    await explore.focus();
+    await expect(explore).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
 
 test("load error remains distinct and keyboard retry restores the list", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });

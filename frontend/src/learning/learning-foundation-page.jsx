@@ -74,14 +74,20 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const { user } = useAuthentication();
   const location = useLocation();
   const navigate = useNavigate();
+  const sessionIntent = reviewContext ? "DUE_ONLY" : "STANDARD";
+  const freshDueOnlyRequestRef = useRef(
+    reviewContext && location.state?.learningIntent === "FRESH_DUE_ONLY",
+  );
   const storedAtEntry = useMemo(
-    () => loadLearningRunState(browserSessionStorage(), user.id, setId),
-    [setId, user.id],
+    () => loadLearningRunState(browserSessionStorage(), user.id, setId, sessionIntent),
+    [setId, sessionIntent, user.id],
   );
   const freshNormalIntent = !reviewContext && location.state?.learningIntent === "FRESH_NORMAL";
+  const continueOrdinarySrs = !reviewContext && location.state?.learningIntent === "CONTINUE_SRS";
   const [mode, setMode] = useState(reviewContext
     ? "SRS"
-    : location.state?.learningPathAction || freshNormalIntent
+    : continueOrdinarySrs ? "SRS"
+      : location.state?.learningPathAction || freshNormalIntent
       ? "NORMAL"
       : storedAtEntry?.version === 3 ? storedAtEntry.active_mode : "SRS");
   const [pendingMode, setPendingMode] = useState(null);
@@ -96,7 +102,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const [normalSessionStatus, setNormalSessionStatus] = useState("idle");
   const [normalRetryVocabularyId, setNormalRetryVocabularyId] = useState(null);
   const [pathPass, setPathPass] = useState(null);
-  const [pathPassStatus, setPathPassStatus] = useState(freshNormalIntent ? "loading" : "idle");
+  const [pathPassStatus, setPathPassStatus] = useState(continueOrdinarySrs ? "legacy" : freshNormalIntent ? "loading" : "idle");
   const [pathCompletion, setPathCompletion] = useState(null);
   const [srsSession, setSrsSession] = useState(null);
   const [srsSessionStatus, setSrsSessionStatus] = useState("idle");
@@ -105,6 +111,11 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const [focusTarget, setFocusTarget] = useState(null);
   const restartSrsRef = useRef(false);
   const modeTransitionRef = useRef(false);
+
+  useEffect(() => {
+    if (!freshDueOnlyRequestRef.current) return;
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, navigate]);
   const shownXpRewardEventsRef = useRef(new Set());
   const cardHeadingRef = useRef(null);
   const answerHeadingRef = useRef(null);
@@ -127,14 +138,14 @@ export function LearningFoundationPage({ reviewContext = false }) {
     void learningService.getLearningSet(setId, { mode: requestedMode }).then(
       (freshPayload) => {
         if (!active) return;
-        const stored = loadLearningRunState(browserSessionStorage(), user.id, setId);
+        const stored = loadLearningRunState(browserSessionStorage(), user.id, setId, sessionIntent);
         let nextState = reconcileLearningRunState(stored, user.id, setId, freshPayload);
         nextState = selectLearningMode(nextState, requestedMode);
         if (requestedMode === "SRS" && restartSrsRef.current) {
           nextState = restartSrsRun(nextState, freshPayload);
           restartSrsRef.current = false;
         }
-        saveLearningRunState(browserSessionStorage(), nextState);
+        saveLearningRunState(browserSessionStorage(), nextState, sessionIntent);
         setPayload(freshPayload);
         setRunState(nextState);
         setMode(requestedMode);
@@ -173,10 +184,10 @@ export function LearningFoundationPage({ reviewContext = false }) {
       audioRef.current = null;
       if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
     };
-  }, [reloadToken, requestedMode, setId, supportsSpeechSynthesis, user.id]);
+  }, [reloadToken, requestedMode, sessionIntent, setId, supportsSpeechSynthesis, user.id]);
 
   useEffect(() => {
-    if (status !== "ready" || !payload || reviewContext) return undefined;
+    if (status !== "ready" || !payload || reviewContext || continueOrdinarySrs) return undefined;
     if (pathPass?.set_id === setId) return undefined;
     let active = true;
     void runPathOperation({
@@ -198,7 +209,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
           setNormalSessionStatus("idle");
           setRunState((current) => {
             const freshRun = startIndependentNormalRun(current, payload.cards);
-            saveLearningRunState(browserSessionStorage(), freshRun);
+            saveLearningRunState(browserSessionStorage(), freshRun, sessionIntent);
             return freshRun;
           });
         }
@@ -236,7 +247,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       setEventError("Chưa thể chuẩn bị lượt học CEFR. Vui lòng thử lại.");
     });
     return () => { active = false; };
-  }, [freshNormalIntent, location.state?.passId, pathPass?.id, pathPass?.set_id, pathPass?.state, payload, reviewContext, setId, status, user.id]);
+  }, [continueOrdinarySrs, freshNormalIntent, location.state?.passId, pathPass?.id, pathPass?.set_id, pathPass?.state, payload, reviewContext, sessionIntent, setId, status, user.id]);
 
   const allCards = useMemo(() => payload?.cards ?? [], [payload]);
   const proposedCards = useMemo(
@@ -338,7 +349,8 @@ export function LearningFoundationPage({ reviewContext = false }) {
       ? pathPass.active_sessions.SRS.filter(({ exact_resume_available: exact }) => exact).at(-1)?.id ?? null
       : null;
     const identity = {
-      userId: user.id, setId, mode: "SRS", ...(managed ? { passId: pathPass.id } : {}),
+      userId: user.id, setId, mode: "SRS", sessionIntent,
+      ...(managed ? { passId: pathPass.id } : {}),
     };
     const opening = managed
       ? openPassLinkedSrsSession({
@@ -350,18 +362,22 @@ export function LearningFoundationPage({ reviewContext = false }) {
       : openSrsLearningSession({
         storage: browserSessionStorage(), identity,
         service: learningSessionService, randomUuid: () => window.crypto.randomUUID(),
-      }).then((sessionState) => ({ session_state: sessionState, cards: null, evaluated_at: null }));
+        refreshUnanswered: freshDueOnlyRequestRef.current,
+      }).then((result) => reviewContext ? result
+        : { session_state: result, cards: null, evaluated_at: null });
+    freshDueOnlyRequestRef.current = false;
     void opening.then((opened) => {
       if (!active) return;
       const sessionState = opened.session_state;
       let activeRun = runState;
-      if (managed && opened.cards) {
+      if ((managed || reviewContext) && opened.cards) {
         const authoritativePayload = {
           ...payload,
+          ...(opened.set_name ? { name: opened.set_name } : {}),
           mode: "SRS",
           cards: opened.cards,
           eligible_count: opened.cards.length,
-          evaluated_at: opened.evaluated_at,
+          evaluated_at: opened.evaluated_at ?? payload.evaluated_at,
           next_review_at: null,
         };
         activeRun = reconcileLearningRunState(runState, user.id, setId, authoritativePayload);
@@ -371,6 +387,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       setSrsSessionStatus(sessionState?.view_state ?? (opened.reason === "PASS_READY_TO_COMPLETE"
         ? "PASS_READY_TO_COMPLETE" : "UP_TO_DATE"));
       if (!sessionState) {
+        if (reviewContext) persist(restartSrsRun(activeRun, { cards: [], evaluated_at: payload.evaluated_at }));
         if (opened.reason === "PASS_READY_TO_COMPLETE") requestFocus("summary");
         return;
       }
@@ -395,7 +412,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     return () => { active = false; };
   // The Backend session owns the immutable SRS queue for this Set.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, pathPass?.id, pathPassStatus, reviewContext, status, setId, user.id]);
+  }, [mode, pathPass?.id, pathPassStatus, reviewContext, sessionIntent, status, setId, user.id]);
 
   useEffect(() => {
     if (!focusTarget) return;
@@ -450,7 +467,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
 
   function persist(nextState) {
     setRunState(nextState);
-    saveLearningRunState(browserSessionStorage(), nextState);
+    saveLearningRunState(browserSessionStorage(), nextState, sessionIntent);
   }
 
   function requestFocus(kind) { setFocusTarget({ kind, nonce: Date.now() }); }
@@ -705,7 +722,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       vocabulary_id: currentCard.id, expected_revision: currentCard.progress.revision, rating,
     };
     let pendingState = setSrsRetryContext(runState, nextAttempt);
-    if (!saveLearningRunState(browserSessionStorage(), pendingState)) {
+    if (!saveLearningRunState(browserSessionStorage(), pendingState, sessionIntent)) {
       setEventState("error");
       setEventError("Chưa thể lưu thao tác đánh giá để thử lại an toàn. Vui lòng tải lại trang.");
       return;
@@ -736,7 +753,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       }));
       const nextState = applySrsRating(pendingState, currentCard.id, rating, progress);
       const nextSummary = summarizeLearningRun(nextState);
-      if (!saveLearningRunState(browserSessionStorage(), nextState)) {
+      if (!saveLearningRunState(browserSessionStorage(), nextState, sessionIntent)) {
         setRunState(pendingState);
         throw new TypeError("Accepted SRS result could not be persisted.");
       }
@@ -843,6 +860,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       userId: user.id,
       setId,
       mode: sessionMode,
+      ...(sessionMode === "SRS" ? { sessionIntent } : {}),
       ...(pathPassStatus === "managed" && pathPass ? { passId: pathPass.id } : {}),
     };
   }
@@ -906,6 +924,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
       : status;
     return <LearningPageState mode={mode} status={presentationStatus} onRetry={retryLoad} returnTo={returnTo} />;
   }
+
 
   const isSrsFinished = mode === "SRS" && summary.completed;
   const isUpToDate = mode === "SRS" && summary.up_to_date;
@@ -990,13 +1009,13 @@ export function LearningFoundationPage({ reviewContext = false }) {
           onRestart={restartRun}
           restartLabel={mode === "NORMAL" ? "Học lại từ đầu" : "Bắt đầu lại"}
         >
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-600 max-[900px]:col-start-1 max-[900px]:row-start-2 max-[900px]:justify-self-start max-[520px]:col-span-2 max-[520px]:justify-self-center" aria-label="Phím tắt học">
-              <LearningKeyHint keyLabel="Space" label="Lật thẻ" />
-              {mode === "NORMAL" ? <><LearningKeyHint keyLabel="←" label="Thẻ trước" /><LearningKeyHint keyLabel="→" label="Thẻ sau" /></> : null}
+            <div className="learning-key-hints flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-600 max-[900px]:col-start-1 max-[900px]:row-start-2 max-[900px]:justify-self-start max-[520px]:col-span-2 max-[520px]:justify-self-center" aria-label="Phím tắt học">
+              <LearningKeyHint keys="Space" label="Lật thẻ" />
+              {mode === "NORMAL" ? <LearningKeyHint keys="← →" label="Chuyển thẻ" /> : null}
             </div>
-            {!reviewContext ? <div className="inline-flex min-h-11 justify-self-center rounded-xl border border-slate-300 bg-slate-100 p-1 max-[900px]:col-start-2 max-[900px]:row-start-2 max-[520px]:col-span-2 max-[520px]:col-start-1 max-[520px]:row-start-3" role="group" aria-label="Chế độ ôn tập">
-              {[['SRS', 'Ôn tập SRS'], ['NORMAL', 'Ôn tập thường']].map(([value, label]) => (
-                <button key={value} type="button" className={`min-h-11 cursor-pointer rounded-lg px-3 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed ${requestedMode === value ? "bg-white text-[var(--accent-primary-pressed)] shadow-sm" : "bg-transparent text-slate-600"}`} aria-pressed={requestedMode === value} onClick={() => switchMode(value)} disabled={eventState === "pending" || Boolean(pendingMode)}>{label}</button>
+            {!reviewContext ? <div className="learning-mode-selector inline-flex min-h-11 justify-self-center rounded-xl border border-sky-200 bg-sky-50 p-1 max-[900px]:col-start-2 max-[900px]:row-start-2 max-[520px]:col-span-2 max-[520px]:col-start-1 max-[520px]:row-start-3" role="group" aria-label="Chế độ ôn tập">
+              {[['SRS', 'SRS', 'Ôn tập SRS'], ['NORMAL', 'Thường', 'Ôn tập thường']].map(([value, visibleLabel, accessibleLabel]) => (
+                <button key={value} type="button" className={`min-h-11 cursor-pointer rounded-lg px-3 text-sm font-extrabold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed motion-reduce:transition-none ${requestedMode === value ? "bg-white text-sky-800 shadow-sm" : "bg-transparent text-slate-600 hover:bg-white/70 hover:text-sky-800"}`} aria-label={accessibleLabel} aria-pressed={requestedMode === value} onClick={() => switchMode(value)} disabled={eventState === "pending" || Boolean(pendingMode)}>{visibleLabel}</button>
               ))}
             </div> : null}
         </FlashcardToolbar>
@@ -1010,7 +1029,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
         />
         <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
         {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" ref={normalRetryButtonRef} onClick={(event) => void revealNormalAnswer(true, event.detail === 0)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
-        {mode === "NORMAL" && eventState === "pending" ? <p className="mb-2 mt-0 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)]" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={-1}>Đang ghi nhận bằng chứng học tập…</p> : null}
+        {mode === "NORMAL" && eventState === "pending" ? <p className="sr-only" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={-1}>Đang ghi nhận bằng chứng học tập…</p> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <FlashcardCard
           key={`${mode}:${currentCard.id}`}
@@ -1052,8 +1071,8 @@ export function SetReviewPage() {
   return <LearningFoundationPage reviewContext />;
 }
 
-function LearningKeyHint({ keyLabel, label }) {
-  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><kbd className="min-w-6 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-center font-mono text-[0.68rem] font-bold leading-4 text-slate-700 shadow-sm">{keyLabel}</kbd><span className="text-[15px] font-medium">{label}</span></span>;
+function LearningKeyHint({ keys, label }) {
+  return <span className="inline-flex items-center whitespace-nowrap rounded-full border border-sky-100 bg-sky-50/70 px-2 py-1 text-xs text-slate-600"><kbd className="font-sans font-extrabold text-sky-800">{keys}</kbd><span className="px-1 text-slate-400" aria-hidden="true">·</span><span>{label}</span></span>;
 }
 
 function browserSessionStorage() {

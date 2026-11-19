@@ -2333,6 +2333,29 @@ html:has(.authenticated-user-app)::-webkit-scrollbar-thumb:hover { background: #
   .learning-flip-stage { min-height: 20rem; }
 }
 
+@media (max-width: 768px) {
+  .learning-toolbar .learning-key-hints { display: none; }
+  .learning-toolbar .focus-mode-header-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .learning-toolbar .learning-mode-selector {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+  }
+}
+
+@media (min-width: 769px) and (hover: none) and (pointer: coarse) {
+  .learning-toolbar .learning-key-hints { display: none; }
+  .learning-toolbar .focus-mode-header-inner:has(.learning-mode-selector) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .learning-toolbar .learning-mode-selector {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -13,7 +13,9 @@ test("Review Center prioritizes Set review without a visible large page heading 
   assert.match(source, /to=\{`\/review\/sets\/\$\{set\.set_id\}`\}/);
   assert.match(source, /\{set\.name\}/);
   assert.match(source, /\{set\.due_count\} từ đến hạn/);
-  assert.match(source, /Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục\./);
+  assert.match(source, /Mỗi phiên chỉ gồm tối đa 10 từ đã học và đang đến hạn/);
+  assert.match(source, /Ôn tập từ đến hạn/);
+  assert.match(source, /Tiếp tục phiên SRS/);
   assert.match(source, /Bộ từ công khai/);
   assert.match(source, /Bộ từ cá nhân/);
   assert.match(source, /set\.set_scope === "PUBLIC"/);

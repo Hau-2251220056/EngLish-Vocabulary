@@ -4,6 +4,8 @@ import { deferredResponse, installAuthApiMock, publicAdmin, publicUser, response
 
 const SET_ALPHA = "10000000-0000-4000-8000-000000000001";
 const SET_BETA = "10000000-0000-4000-8000-000000000002";
+const CONTINUE_SESSION = "20000000-0000-4000-8000-000000000001";
+const CONTINUE_VOCAB = "30000000-0000-4000-8000-000000000001";
 
 function centerSummary(overrides = {}) {
   return {
@@ -45,8 +47,8 @@ test("Review Center renders authoritative due-only data without creating a sessi
   await expect(setList).toContainText("Bộ từ công khai");
   await expect(setList).toContainText("Bộ từ cá nhân");
   await expect(setList).toContainText("2 từ đến hạn");
-  await expect(page.getByRole("region", { name: "Ôn theo bộ từ" })).toContainText("Phiên SRS có thể gồm thêm từ mới hoặc thẻ từ phiên đang tiếp tục.");
-  await expect(setList.getByRole("link", { name: "Ôn tập ngay Bộ từ Beta" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
+  await expect(page.getByRole("region", { name: "Ôn theo bộ từ" })).toContainText("Mỗi phiên chỉ gồm tối đa 10 từ đã học và đang đến hạn.");
+  await expect(setList.getByRole("link", { name: "Ôn tập từ đến hạn Bộ từ Beta" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
   expect(sessionCreates).toBe(0);
 });
 
@@ -66,8 +68,40 @@ test("same-name Sets keep distinct identities, scope labels and destinations", a
   }));
 
   await page.goto("/review");
-  await expect(page.getByRole("link", { name: "Ôn tập ngay Thói quen hằng ngày — Bộ từ công khai" })).toHaveAttribute("href", `/review/sets/${SET_ALPHA}`);
-  await expect(page.getByRole("link", { name: "Ôn tập ngay Thói quen hằng ngày — Bộ từ cá nhân" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
+  await expect(page.getByRole("link", { name: "Ôn tập từ đến hạn Thói quen hằng ngày — Bộ từ công khai" })).toHaveAttribute("href", `/review/sets/${SET_ALPHA}`);
+  await expect(page.getByRole("link", { name: "Ôn tập từ đến hạn Thói quen hằng ngày — Bộ từ cá nhân" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
+});
+
+test("zero-due Review Center offers only a backend-verified unfinished ordinary SRS continuation", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.addInitScript(({ setId, sessionId, vocabularyId }) => {
+    sessionStorage.setItem(`elvocab.backend-learning-session.ordinary:v3:user-1:${setId}:SRS_FLASHCARD`, JSON.stringify({
+      version: 3, user_id: "user-1", set_id: setId, mode: "SRS", pass_id: null,
+      session_id: sessionId, creation_operation_id: null,
+      expires_at: "2026-11-26T00:00:00.000Z", cursor_vocabulary_id: vocabularyId,
+      view_state: "ACTIVE",
+    }));
+  }, { setId: SET_ALPHA, sessionId: CONTINUE_SESSION, vocabularyId: CONTINUE_VOCAB });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200, json: { success: true, data: centerSummary({ due_count: 0, has_due_items: false, sets: [] }) },
+  }));
+  await page.route(`**/api/learning-sessions/${CONTINUE_SESSION}`, (route) => route.fulfill({
+    status: 200, json: { success: true, data: {
+      id: CONTINUE_SESSION, set_id: SET_ALPHA, scope: "SET", session_intent: "STANDARD", mode: "SRS",
+      state: "ACTIVE", created_at: "2026-11-19T00:00:00.000Z",
+      expires_at: "2026-11-26T00:00:00.000Z", completed_at: null,
+      snapshot_size: 1, completed_items: 0,
+      items: [{ vocabulary_id: CONTINUE_VOCAB, position: 0, evidence: null }],
+      can_continue: true, set_name: "Bộ từ đang học",
+    } },
+  }));
+  await page.goto("/review");
+  const action = page.getByRole("link", { name: "Tiếp tục phiên SRS" });
+  await expect(action).toBeVisible();
+  await expect(page.getByText("Bộ từ đang học")).toBeVisible();
+  await expect(action).toHaveAttribute("href", `/learn/vocabulary-sets/${SET_ALPHA}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("keyboard retry keeps stable loading focus and focuses restored zero-due content", async ({ page }) => {

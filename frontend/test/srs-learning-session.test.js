@@ -20,6 +20,8 @@ const SESSION = "33333333-3333-4333-8333-333333333333";
 const ITEM = "44444444-4444-4444-8444-444444444444";
 const OPERATION = "55555555-5555-4555-8555-555555555555";
 const PASS = "66666666-6666-4666-8666-666666666666";
+const FRESH_SESSION = "77777777-7777-4777-8777-777777777777";
+const FRESH_OPERATION = "88888888-8888-4888-8888-888888888888";
 
 test("SRS create persists pending identity, accepts backend snapshot and resumes by read", async () => {
   const storage = memoryStorage();
@@ -46,6 +48,113 @@ test("SRS create persists pending identity, accepts backend snapshot and resumes
   });
   assert.equal(resumed.session_id, SESSION);
   assert.deepEqual(calls[1], ["read", SESSION]);
+});
+
+test("due-only review creates a distinct persisted snapshot and resumes exact cards", async () => {
+  const storage = memoryStorage();
+  const dueIdentity = { ...IDENTITY, sessionIntent: "DUE_ONLY" };
+  const standardBefore = loadLearningSessionState(storage, IDENTITY);
+  let creates = 0;
+  let reads = 0;
+  const service = {
+    async createSession(request) {
+      creates += 1;
+      assert.equal(request.session_intent, "DUE_ONLY");
+      return { session: projection({ session_intent: "DUE_ONLY" }), replayed: false };
+    },
+    async readSession() {
+      reads += 1;
+      return { ...projection({ session_intent: "DUE_ONLY", can_continue: true }),
+        cards: [card()], evaluated_at: "2026-10-18T00:00:00.000Z", set_name: "Authorized Set" };
+    },
+  };
+  const first = await openSrsLearningSession({ storage, identity: dueIdentity, service, randomUuid: () => OPERATION });
+  assert.equal(first.cards[0].id, ITEM);
+  assert.equal(first.set_name, "Authorized Set");
+  assert.deepEqual(loadLearningSessionState(storage, IDENTITY), standardBefore);
+  assert.equal(loadLearningSessionState(storage, dueIdentity).session_id, SESSION);
+  const second = await openSrsLearningSession({ storage, identity: dueIdentity, service, randomUuid: () => "unused" });
+  assert.equal(second.session_state.session_id, SESSION);
+  assert.equal(creates, 1);
+  assert.equal(reads, 2);
+  await assert.rejects(openSrsLearningSession({ storage, identity: dueIdentity,
+    service: { ...service, readSession: async () => projection({ can_continue: true }) },
+    randomUuid: () => OPERATION }), /does not match/);
+});
+
+test("explicit Review Center entry refreshes only an active zero-evidence due-only snapshot", async () => {
+  const storage = memoryStorage();
+  const identity = { ...IDENTITY, sessionIntent: "DUE_ONLY" };
+  const standardBefore = loadLearningSessionState(storage, IDENTITY);
+  const oldItems = sessionItems(3);
+  const freshItems = sessionItems(5);
+  let createCalls = 0;
+  const readSession = async (id) => id === SESSION
+    ? { ...projection({ session_intent: "DUE_ONLY", snapshot_size: 3, items: oldItems }),
+      cards: sessionCards(3), evaluated_at: "2026-10-18T00:00:00.000Z" }
+    : { ...projection({ id: FRESH_SESSION, session_intent: "DUE_ONLY", snapshot_size: 5, items: freshItems }),
+      cards: sessionCards(5), evaluated_at: "2026-10-18T01:00:00.000Z" };
+
+  await openSrsLearningSession({
+    storage, identity,
+    service: {
+      createSession: async () => ({
+        session: projection({ session_intent: "DUE_ONLY", snapshot_size: 3, items: oldItems }),
+        replayed: false,
+      }),
+      readSession,
+    },
+    randomUuid: () => OPERATION,
+  });
+  const refreshed = await openSrsLearningSession({
+    storage, identity,
+    service: {
+      async createSession(request) {
+        createCalls += 1;
+        assert.equal(request.session_intent, "DUE_ONLY");
+        return { session: projection({
+          id: FRESH_SESSION, session_intent: "DUE_ONLY", snapshot_size: 5, items: freshItems,
+        }), replayed: false };
+      },
+      readSession,
+    },
+    randomUuid: () => FRESH_OPERATION,
+    refreshUnanswered: true,
+  });
+  assert.equal(createCalls, 1);
+  assert.equal(refreshed.session_state.session_id, FRESH_SESSION);
+  assert.equal(refreshed.cards.length, 5);
+  assert.equal(loadLearningSessionState(storage, identity).session_id, FRESH_SESSION);
+  assert.deepEqual(loadLearningSessionState(storage, IDENTITY), standardBefore);
+});
+
+test("explicit refresh preserves partially answered, completed and expired due-only snapshots", async () => {
+  for (const overrides of [
+    { completed_items: 1, items: [item("SRS_GOOD")] },
+    { state: "COMPLETED", completed_at: "2026-10-18T00:02:00.000Z", completed_items: 1, items: [item("SRS_GOOD")] },
+    { state: "EXPIRED" },
+  ]) {
+    const storage = memoryStorage();
+    const identity = { ...IDENTITY, sessionIntent: "DUE_ONLY" };
+    const backend = {
+      ...projection({ session_intent: "DUE_ONLY", ...overrides }),
+      cards: [card()], evaluated_at: "2026-10-18T00:00:00.000Z",
+    };
+    await openSrsLearningSession({
+      storage, identity,
+      service: { createSession: async () => ({ session: backend, replayed: false }), readSession: async () => backend },
+      randomUuid: () => OPERATION,
+    });
+    let creates = 0;
+    const resumed = await openSrsLearningSession({
+      storage, identity,
+      service: { createSession: async () => { creates += 1; }, readSession: async () => backend },
+      randomUuid: () => FRESH_OPERATION,
+      refreshUnanswered: true,
+    });
+    assert.equal(creates, 0);
+    assert.equal(resumed.session_state.session_id, SESSION);
+  }
 });
 
 test("rating and terminal reconciliation persist only authoritative backend projection", async () => {
@@ -142,6 +251,18 @@ function projection(overrides = {}) {
 
 function item(evidence) {
   return { vocabulary_id: ITEM, position: 0, evidence };
+}
+
+function sessionItems(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    vocabulary_id: `${String(index + 4).padStart(8, "0")}-4444-4444-8444-444444444444`,
+    position: index,
+    evidence: null,
+  }));
+}
+
+function sessionCards(count) {
+  return sessionItems(count).map(({ vocabulary_id: id, position }) => ({ ...card(), id, position }));
 }
 
 function card() {

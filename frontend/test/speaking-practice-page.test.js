@@ -466,7 +466,8 @@ test("React page creates the session in an effect, wires accepted commands and c
   assert.match(page, /bindSpeakingPracticeVisibility\([\s\S]*ownedSession\.cancel\("PAGE_HIDDEN"\)/);
   assert.match(page, /removeVisibilityListener\(\)/);
   assert.match(page, /ownedSession\.exit\(\)[\s\S]*navigate\(returnTo, \{ replace: true \}\)/);
-  assert.match(page, /previousTarget\(\)|nextTarget\(\)|skipTarget\(\)/);
+  assert.match(page, /previousTarget\(\)|nextTarget\(\)/);
+  assert.doesNotMatch(page, /sessionRef\.current\?\.skipTarget\(\)/);
   assert.match(page, /sessionRef\.current\?\.listen\(\)/);
   assert.match(page, /sessionRef\.current\?\.requestSpeak\(\)/);
   assert.match(page, /sessionRef\.current\?\.confirmDisclosureAndStart\(\)/);
@@ -493,9 +494,9 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.match(page, /aria-label=\{presentation\.actions\.stop\.label\}[\s\S]*<ListeningWaveform \/>\{presentation\.actions\.stop\.label\}/);
   assert.match(page, /disabled=\{!controls\.canConfirmDisclosure\}/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canChangeTarget/);
-  assert.match(page, /grid-cols-2[^"]*min-\[480px\]:grid-cols-3/);
+  assert.match(page, /grid-cols-2/);
   assert.match(page, /PREVIOUS_BUTTON_CLASSES[\s\S]*previousTarget/);
-  assert.match(page, /SKIP_BUTTON_CLASSES[\s\S]*skipTarget/);
+  assert.doesNotMatch(page, /SKIP_BUTTON_CLASSES|SkipForward/);
   assert.match(page, /NEXT_BUTTON_CLASSES[\s\S]*nextTarget/);
   assert.match(page, /continueAfterCompletion\(\)/);
   assert.match(page, /restartAfterCompletion\(\)/);
@@ -558,12 +559,10 @@ test("Speaking progress and navigation stay separate from the compact vocabulary
   assert.equal(navigationStart > cardClose, true);
   assert.doesNotMatch(page.slice(navigationStart, page.indexOf("</nav>", navigationStart)), /rounded-2xl border border-slate-200 bg-slate-50\/80 p-3/);
   assert.match(page, /NAVIGATION_BUTTON_CLASSES = "[^"]*min-h-\[4\.5rem\][^"]*flex-col[^"]*whitespace-nowrap/);
-  assert.match(page, /PREVIOUS_BUTTON_CLASSES[\s\S]*border-\[#C4B5FD\][\s\S]*text-\[#6D4BC3\]/);
-  assert.match(page, /SKIP_BUTTON_CLASSES[\s\S]*border-\[#F4C56A\][\s\S]*text-\[#B56808\]/);
+  assert.match(page, /PREVIOUS_BUTTON_CLASSES[\s\S]*border-sky-200[\s\S]*text-sky-700/);
   assert.match(page, /NEXT_BUTTON_CLASSES[\s\S]*border-\[#63A0E0\][\s\S]*bg-\[#63A0E0\][\s\S]*text-white/);
-  assert.match(page, /NEXT_BUTTON_CLASSES\} col-span-2 min-\[480px\]:col-span-1/);
-  assert.match(page, /<ChevronLeft[^>]*>[\s\S]*presentation\.actions\.previous\.label[\s\S]*<SkipForward[^>]*>[\s\S]*presentation\.actions\.skip\.label[\s\S]*<ChevronRight[^>]*>[\s\S]*presentation\.actions\.next\.label/);
-  assert.match(page.slice(navigationStart), /previousTarget\(\)[\s\S]*skipTarget\(\)[\s\S]*nextTarget\(\)/);
+  assert.match(page, /<ChevronLeft[^>]*>[\s\S]*presentation\.actions\.previous\.label[\s\S]*<ChevronRight[^>]*>[\s\S]*presentation\.actions\.next\.label/);
+  assert.match(page.slice(navigationStart), /previousTarget\(\)[\s\S]*nextTarget\(\)/);
 });
 
 test("page session delegates UI commands to the accepted integrated controller", async () => {

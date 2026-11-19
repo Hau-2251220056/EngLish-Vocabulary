@@ -85,7 +85,7 @@ test("CEFR transition notice is absent while shared mode, progress and learning 
   const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /Phiên SRS này vẫn còn thẻ cần xử lý/);
   assert.doesNotMatch(source, /Tiếp tục lượt học CEFR|Tiếp tục phiên SRS này|Tiếp tục phần CEFR còn lại/);
-  assert.match(source, /\[\['SRS', 'Ôn tập SRS'\], \['NORMAL', 'Ôn tập thường'\]\]/);
+  assert.match(source, /\['SRS', 'SRS', 'Ôn tập SRS'\], \['NORMAL', 'Thường', 'Ôn tập thường'\]/);
   assert.match(source, /<FlashcardProgress/);
   assert.match(source, /<SrsRatingControls/);
 });
