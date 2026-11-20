@@ -52,7 +52,8 @@ test("Flashcard headers keep compact mode-specific controls and a stable pending
   assert.match(learning, /mode === "NORMAL" \? <LearningKeyHint keys="← →" label="Chuyển thẻ"/);
   assert.match(learning, /\['SRS', 'SRS', 'Ôn tập SRS'\], \['NORMAL', 'Thường', 'Ôn tập thường'\]/);
   assert.match(learning, /badge=\{reviewContext \? "Ôn tập" : pathPassStatus === "managed" \? "Lượt học CEFR" : null\}/);
-  assert.match(learning, /className="sr-only"[^>]*ref=\{normalPendingStatusRef\}[^>]*>Đang ghi nhận bằng chứng học tập…<\/p>/);
+  assert.match(learning, /className="sr-only"[^>]*ref=\{normalPendingStatusRef\}[^>]*role="status"[^>]*tabIndex=\{mode === "NORMAL" && eventState === "pending" \? -1 : undefined\}>\{announcement\}<\/div>/);
+  assert.doesNotMatch(learning, /<p className="sr-only"[^>]*role="status"/);
   assert.match(learning, /mode === "SRS" \? <SrsRatingControls/);
   assert.match(styles, /@media \(max-width: 768px\)[\s\S]*\.learning-toolbar \.learning-key-hints \{ display: none; \}/);
   assert.match(styles, /@media \(min-width: 769px\) and \(hover: none\) and \(pointer: coarse\)/);

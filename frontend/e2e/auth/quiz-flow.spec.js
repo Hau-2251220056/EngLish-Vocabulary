@@ -265,9 +265,10 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
 async function expectCenteredFocusHeader(page, viewportWidth) {
   const inner = page.locator(".focus-mode-header-inner");
   await expect(inner).toBeVisible();
-  const box = await inner.boundingBox();
   const expectedWidth = Math.min(viewportWidth, 1152);
-  expect(box.width).toBe(expectedWidth);
-  expect(box.x).toBe((viewportWidth - expectedWidth) / 2);
+  await expect.poll(async () => {
+    const box = await inner.boundingBox();
+    return box ? { width: box.width, x: box.x } : null;
+  }).toEqual({ width: expectedWidth, x: (viewportWidth - expectedWidth) / 2 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }

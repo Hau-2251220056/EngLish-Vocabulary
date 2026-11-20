@@ -533,6 +533,7 @@ test("learning header centers modes, uses a full-width divider and exposes resta
 });
 
 test("NORMAL arrow shortcuts respect boundaries and editable/native controls while SRS arrows never skip", async ({ page }) => {
+  await installSuccessfulSpeechSynthesis(page);
   const calls = await installLearningMock(page, { deferNormalReveal: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
@@ -910,6 +911,22 @@ async function expectCenteredFocusHeader(page, viewportWidth) {
   expect(box.width).toBe(expectedWidth);
   expect(box.x).toBe((viewportWidth - expectedWidth) / 2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+}
+
+async function installSuccessfulSpeechSynthesis(page) {
+  await page.addInitScript(() => {
+    class MockSpeechSynthesisUtterance {
+      constructor(text) { this.text = text; }
+    }
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { cancel() {}, getVoices() { return []; }, speak() {} },
+    });
+  });
 }
 
 async function expectEqualNavigationButtons(previous, next) {

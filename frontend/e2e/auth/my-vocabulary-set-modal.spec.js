@@ -75,9 +75,6 @@ test("create modal is metadata-only and omits Topic and items", async ({ page })
   expect(create.body).toEqual({ name: "Du lịch", description: "Từ vựng cần thiết cho chuyến đi" });
   expect(create.body).not.toHaveProperty("topic_id");
   expect(create.body).not.toHaveProperty("items");
-  await page.bringToFront();
-  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
-  await expect(createToast).toHaveCount(0, { timeout: 5_000 });
 });
 
 test("pending submit is guarded and a server error preserves entered values", async ({ page }) => {

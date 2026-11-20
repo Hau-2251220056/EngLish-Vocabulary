@@ -399,6 +399,7 @@ for (const viewport of viewports) {
 
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
     await expect(page).toHaveURL(/\/login$/);
+    await waitForAuthAnimations(page);
     await expectAuthFormToFit(page, "login");
     await page.getByLabel("Email").fill("learner@example.com");
     await page.getByLabel("Mật khẩu", { exact: true }).fill("password");

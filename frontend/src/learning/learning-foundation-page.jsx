@@ -505,7 +505,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
     setEventState("pending");
     setEventError(null);
     setNormalRetryVocabularyId(currentCard.id);
-    setAnnouncement("Đang ghi nhận bằng chứng học tập.");
+    setAnnouncement("Đang ghi nhận bằng chứng học tập…");
     try {
       const accepted = await acknowledgeNormalReveal({
         storage: browserSessionStorage(),
@@ -1027,9 +1027,8 @@ export function LearningFoundationPage({ reviewContext = false }) {
           value={mode === "SRS" ? summary.completed_count : currentIndex + 1}
           valueLabel={mode === "SRS" ? `Đã hoàn thành ${summary.completed_count} / ${summary.total}` : `Thẻ ${currentIndex + 1} / ${cards.length}`}
         />
-        <div className="sr-only" aria-atomic="true" aria-live="polite" role="status">{announcement}</div>
+        <div className="sr-only" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={mode === "NORMAL" && eventState === "pending" ? -1 : undefined}>{announcement}</div>
         {eventError ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800" role="alert"><span>{eventError}</span>{mode === "NORMAL" && normalRetryVocabularyId === currentCard?.id ? <button className={SECONDARY_BUTTON_CLASSES} type="button" ref={normalRetryButtonRef} onClick={(event) => void revealNormalAnswer(true, event.detail === 0)}>Thử lại ghi nhận</button> : mode === "NORMAL" && ["EXPIRED", "INACCESSIBLE"].includes(normalSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : mode === "NORMAL" && normalSessionStatus === "error" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Thử lại phiên học</button> : mode === "SRS" && ["EXPIRED", "INACCESSIBLE"].includes(srsSessionStatus) ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={restartRun}>Bắt đầu lại</button> : eventState === "conflict" ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={retryLoad}>Làm mới phiên SRS</button> : retryEvent ? <button className={SECONDARY_BUTTON_CLASSES} type="button" onClick={() => void submitRating(retryEvent.rating, retryEvent)}>Thử lại</button> : null}</div> : null}
-        {mode === "NORMAL" && eventState === "pending" ? <p className="sr-only" aria-atomic="true" aria-live="polite" ref={normalPendingStatusRef} role="status" tabIndex={-1}>Đang ghi nhận bằng chứng học tập…</p> : null}
         {audioError ? <p className="m-0 mb-2 text-sm text-amber-700" role="status">{audioError}</p> : null}
         <FlashcardCard
           key={`${mode}:${currentCard.id}`}
