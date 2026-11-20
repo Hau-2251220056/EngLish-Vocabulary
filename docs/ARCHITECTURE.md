@@ -1210,46 +1210,33 @@ TEST uses only `TEST_SUPABASE_URL`, `TEST_SUPABASE_SERVICE_ROLE_KEY`, `TEST_SUPA
 
 21. Deployment Architecture
 
-Production deployment dự kiến:
+Production deployment uses two Vercel projects from the same Git repository:
 
-                    Internet
-
-                       │
-
-             ┌─────────▼─────────┐
-             │      Vercel       │
-             │  React + Vite FE  │
-             └─────────┬─────────┘
-                       │
-                     HTTPS
-                       │
-             ┌─────────▼─────────┐
-             │      Render       │
-             │ Node + Express BE │
-             └─────────┬─────────┘
-                       │
-                     HTTPS
-                       │
-             ┌─────────▼─────────┐
-             │     Supabase      │
-             │   PostgreSQL DB   │
-             └───────────────────┘
+                         Internet
+                            │
+               Vercel Frontend project
+                    React + Vite
+                            │
+             same-origin `/api/**` rewrite
+                            │
+                Vercel Backend project
+                    Node + Express
+                            │
+                          HTTPS
+                            │
+                   Supabase PostgreSQL
 
 Deployment responsibilities:
 
 Vercel
 
-Frontend hosting.
-
-Render
-
-Backend API hosting.
+Frontend hosting and same-origin `/api/**` edge routing; Backend Express Function hosting in a separate project.
 
 Supabase
 
 Managed PostgreSQL database.
 
-SEC-01 login abuse protection uses PostgreSQL shared state and transaction-scoped advisory locking, so thresholds remain consistent across Backend instances and concurrent requests. Identifier and source keys are HMAC-SHA-256 values produced with the backend-only `LOGIN_ABUSE_HMAC_SECRET` (minimum 32 characters). `LOGIN_ABUSE_PROXY_MODE=direct` ignores forwarding headers and uses the socket peer. The documented Render deployment uses `render`, accepting the validated first address from Render's `X-Forwarded-For` contract. The separately recorded two-project Vercel topology uses `vercel`, accepting one validated `X-Vercel-Forwarded-For` address from Vercel's overwrite-protected platform contract. Production must explicitly select its actual topology; other proxy chains require a separately validated trust boundary.
+SEC-01 login abuse protection uses PostgreSQL shared state and transaction-scoped advisory locking, so thresholds remain consistent across Backend instances and concurrent requests. Identifier and source keys are HMAC-SHA-256 values produced with the backend-only `LOGIN_ABUSE_HMAC_SECRET` (minimum 32 characters). `LOGIN_ABUSE_PROXY_MODE=direct` ignores forwarding headers and uses the socket peer. The selected two-project Vercel topology uses `vercel`, accepting one validated `X-Vercel-Forwarded-For` address from Vercel's overwrite-protected platform contract. A future proxy topology change requires a separately validated trust boundary and the matching explicit proxy mode.
 
 GitHub / GitHub Actions
 
@@ -1258,6 +1245,14 @@ Source code repository và CI/CD automation.
 Deployment configuration MUST sử dụng environment variables.
 
 Production secrets MUST NOT được lưu trong source code.
+
+The Frontend uses relative `/api/**` URLs. Its programmatic Vercel configuration reads the non-secret `API_PROXY_TARGET` build-time variable, validates an absolute HTTPS origin and emits the API rewrite before the SPA fallback. There is no committed Backend hostname and no implicit dev or Production fallback. A missing, blank or invalid target fails the Frontend deployment configuration.
+
+`API_PROXY_TARGET` is environment-scoped in the Frontend Vercel project. Production points to the approved stable Production Backend origin. Preview values are Git-branch-specific and point only to a matching Backend branch alias; a generic Preview value is prohibited because it would allow unknown feature branches to route to another environment. Branch-to-Backend authorization remains a deployment-setting invariant and must be verified before redeployment.
+
+The browser remains on the Frontend origin, so host-only `HttpOnly`, `Secure` and `SameSite=Lax` session-cookie behavior is preserved and credentialed application CORS is not required. Direct browser calls to the Backend project are unsupported. Vercel Deployment Protection remains enabled for Preview deployments; protected runtime verification requires an authorized same-team Vercel session or a separately approved automation mechanism.
+
+Local Vite development remains independent: `/api/**` is proxied to `API_PROXY_TARGET` when explicitly supplied, otherwise to `http://localhost:5000`. Local development does not require Production credentials or a deployed Backend.
 
 Deployment architecture được xem là baseline và không được tự ý thay đổi.
 
