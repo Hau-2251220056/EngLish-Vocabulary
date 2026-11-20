@@ -59,15 +59,15 @@ test("CEFR SRS credits AGAIN once and preserves exact resume without a transitio
 
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.locator(".focus-mode-title-badge")).toHaveText("Lượt học CEFR");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
   await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
   expect(exactReads).toBeGreaterThan(0);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
   expect(ratingCount).toBe(2);
   await expect(page.getByText("Tiến độ CEFR đã được lưu độc lập")).toHaveCount(0);
@@ -80,7 +80,7 @@ test("CEFR transition notice stays absent in SRS and NORMAL while learning contr
 
   await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
   await expect(page.getByText("Tiến độ SRS", { exact: true })).toBeVisible();
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await expect(page.getByRole("region", { name: "Đánh giá SRS" })).toBeVisible();
 
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
@@ -99,8 +99,8 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   await expect(page.getByText("Tiến độ SRS", { exact: true })).toBeVisible();
   await expect(page.locator("progress")).toHaveAttribute("value", "0");
   await expect(page.getByRole("button", { name: "Thẻ trước" })).toHaveCount(0);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeFocused();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeFocused();
   const ratings = page.getByRole("region", { name: "Đánh giá SRS" });
   await expect(ratings.getByRole("button")).toHaveText([
     "LạiTrong phiên này", "KhóNgày mai", "Tốt1–3 ngày", "Dễ1 tuần+",
@@ -109,7 +109,7 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
     await expect(button).toHaveAttribute("aria-label", /.+, .+/);
   }
   await ratings.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
   await expect(page.getByText("Đã hoàn thành 0 / 4")).toBeVisible();
   const afterAgain = await page.evaluate((setId) => JSON.parse(
     sessionStorage.getItem(`elvocab.learning.run.v1:user-1:${setId}`),
@@ -119,10 +119,10 @@ test("defaults to SRS, reveals four ratings, focuses deterministically and reque
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 
   for (const word of ["word-2", "word-3", "word-4"]) {
-    await page.getByRole("heading", { name: word }).press("Space");
+    await page.getByRole("heading", { name: word, exact: true }).press("Space");
     await page.getByRole("button", { name: "Tốt" }).click();
   }
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeFocused();
   await expect(page.getByText("Đã hoàn thành 3 / 4")).toBeVisible();
   expect(calls.events.map(({ vocabulary_id }) => vocabulary_id)).toEqual([
     vocabularyId(1), vocabularyId(2), vocabularyId(3), vocabularyId(4),
@@ -148,14 +148,14 @@ test("dedicated Set review route forces durable SRS context without erasing stor
   await expect(reviewBadge).toHaveText("Ôn tập");
   expect(await reviewBadge.evaluate((badge) => badge.previousElementSibling?.tagName)).toBe("BUTTON");
   await expect(reviewBadge.locator("xpath=..")).toHaveCSS("column-gap", "12px");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBeGreaterThan(0);
   expect(calls.sessions.filter(({ method, body }) => method === "POST" && body.mode === "SRS").at(-1)?.body.session_intent).toBe("DUE_ONLY");
   await expect(page.getByRole("link", { name: "Trung tâm ôn tập" })).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
 
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.getByRole("group", { name: "Chế độ ôn tập" })).toBeVisible();
@@ -169,7 +169,7 @@ for (const [dueCount, newCount] of [[1, 9], [2, 5]]) {
     const calls = await installLearningMock(page, { cardCount: dueCount + newCount, dueOnlyCount: dueCount });
     await page.goto(`/review/sets/${SET_ID}`);
     await expect(page.getByText(`Đã hoàn thành 0 / ${dueCount}`)).toBeVisible();
-    await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
     expect(calls.sessions.filter(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toHaveLength(1);
     await page.reload();
     await expect(page.getByText(`Đã hoàn thành 0 / ${dueCount}`)).toBeVisible();
@@ -225,7 +225,7 @@ test("due-only review with no eligible studied card shows an up-to-date state", 
   const calls = await installLearningMock(page, { upToDate: true });
   await page.goto(`/review/sets/${SET_ID}`);
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "word-1" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toHaveCount(0);
   expect(calls.sessions.find(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toBeDefined();
 });
 
@@ -248,7 +248,7 @@ test("Review Center continuation resumes an unfinished STANDARD SRS snapshot wit
   }));
   await page.goto("/review");
   await page.getByRole("link", { name: "Tiếp tục phiên SRS" }).click();
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
   expect(calls.sessions.filter(({ method }) => method === "POST")).toHaveLength(0);
   expect(calls.sessions.filter(({ method }) => method === "GET").length).toBeGreaterThanOrEqual(2);
 });
@@ -266,7 +266,7 @@ test("focuses the initial SRS card only after the authoritative session becomes 
   await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
   await expect(page.getByRole("link", { name: "Quay lại bộ từ" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Không thể mở phiên ôn tập" })).toHaveCount(0);
-  const cardHeading = page.getByRole("heading", { name: "word-1" });
+  const cardHeading = page.getByRole("heading", { name: "word-1", exact: true });
   await expect(cardHeading).toHaveCount(0);
 
   calls.resolveSrsSession();
@@ -276,14 +276,14 @@ test("focuses the initial SRS card only after the authoritative session becomes 
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toHaveCount(0);
 
   await page.keyboard.press("Space");
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeFocused();
 });
 
 test("new SRS XP uses one Toast without persistence and reload stays silent", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await installLearningMock(page, { cardCount: 2 });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
 
   const xpToast = page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" });
@@ -307,7 +307,7 @@ test("new SRS XP uses one Toast without persistence and reload stays silent", as
   });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeVisible();
   await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
 });
@@ -321,11 +321,11 @@ test("zero and replayed SRS responses never announce XP", async ({ page }) => {
     },
   });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
   await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
-  await page.getByRole("heading", { name: "word-2" }).press("Space");
+  await page.getByRole("heading", { name: "word-2", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).press("Enter");
   await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/\+\d+ XP/);
@@ -334,7 +334,7 @@ test("zero and replayed SRS responses never announce XP", async ({ page }) => {
 test("SRS lost response retry preserves the exact event and session identity", async ({ page }) => {
   const calls = await installLearningMock(page, { failEventOnce: true });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("alert")).toContainText("thử lại");
   const original = { ...calls.events[0] };
@@ -349,7 +349,7 @@ test("SRS lost response retry preserves the exact event and session identity", a
 test("SRS terminal mutation rejection reconciles authoritative expiry", async ({ page }) => {
   const terminal = await installLearningMock(page, { eventTerminalCode: "LEARNING_SESSION_EXPIRED" });
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã hết hạn");
   expect(terminal.events).toHaveLength(1);
@@ -360,7 +360,7 @@ test("SET review reconciles an access change into an inaccessible recovery state
     eventTerminalCode: "LEARNING_SESSION_INACCESSIBLE",
   });
   await page.goto(`/review/sets/${SET_ID}`);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
 
   const alert = page.getByRole("alert");
@@ -386,7 +386,7 @@ test("NORMAL preserves browsing and never submits a rating", async ({ page }) =>
   await expect(next).toHaveCSS("cursor", "pointer");
   await expectEqualNavigationButtons(previous, next);
   await page.getByRole("button", { name: "Thẻ sau" }).click();
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
   await page.mouse.move(0, 0);
   await expect(previous).toHaveCSS("cursor", "pointer");
   await expect(previous).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -397,7 +397,7 @@ test("NORMAL preserves browsing and never submits a rating", async ({ page }) =>
   await expect(next).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(previous).toContainText("Key: ←");
   await expect(next).toContainText("Key: →");
-  await page.getByRole("heading", { name: "word-2" }).press("Space");
+  await page.getByRole("heading", { name: "word-2", exact: true }).press("Space");
   await expect(page.getByRole("button", { name: "Thẻ trước" })).toBeVisible();
   await expectEqualNavigationButtons(previous, next);
   expect(calls.events).toHaveLength(0);
@@ -410,7 +410,7 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
 
   for (let number = 1; number <= 4; number += 1) {
-    await page.getByRole("heading", { name: `word-${number}` }).press("Space");
+    await page.getByRole("heading", { name: `word-${number}`, exact: true }).press("Space");
     await expect(page.locator('.sr-only[role="status"]:not([tabindex])')).toContainText("Đã ghi nhận thẻ được lật");
     if (number < 4) await page.getByRole("button", { name: "Thẻ sau" }).click();
   }
@@ -446,7 +446,7 @@ test("NORMAL retries a lost reveal with the same operation and resumes its persi
   await expect(nextCard).toBeVisible();
   await expect(nextCard).toBeEnabled();
   await expect(page.getByRole("button", { name: /^(Lại|Khó|Tốt|Dễ),/ })).toHaveCount(0);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await page.getByRole("alert").getByRole("button").click();
   const revealCalls = calls.sessions.filter(({ method }) => method === "PUT");
@@ -457,9 +457,9 @@ test("NORMAL retries a lost reveal with the same operation and resumes its persi
   expect(calls.sessions.filter(({ method }) => method === "PUT")).toHaveLength(2);
 
   await page.getByRole("navigation").getByRole("button").nth(1).click();
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeVisible();
   await expect(page.locator('.sr-only[role="status"]')).not.toContainText(/XP/);
   expect(calls.events).toHaveLength(0);
 });
@@ -470,7 +470,7 @@ test("NORMAL reveal expiry reconciles terminal state and preserves keyboard focu
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBe(1);
   await page.getByRole("group").first().getByRole("button").nth(1).click();
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
   expect(calls.events).toHaveLength(0);
@@ -482,7 +482,7 @@ test("NORMAL completion access revocation reconciles inaccessible without eviden
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "SRS").length).toBe(1);
   await page.getByRole("group").first().getByRole("button").nth(1).click();
   await expect.poll(() => calls.sessions.filter(({ body }) => body.mode === "NORMAL").length).toBe(1);
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("navigation").getByRole("button").nth(1).click();
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await page.reload();
@@ -537,37 +537,37 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   const calls = await installLearningMock(page, { deferNormalReveal: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
-  await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeFocused();
-  await page.getByRole("heading", { name: "nghĩa word-1" }).press("ArrowLeft");
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeFocused();
+  await page.getByRole("heading", { name: "nghĩa word-1", exact: true }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Ôn tập thường" }).click();
   await expect(page.getByLabel("Phím tắt học")).toContainText("← →·Chuyển thẻ");
   await expect.poll(() => calls.sessionResponses.filter(({ mode }) => mode === "NORMAL").length).toBe(1);
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
-  await page.getByRole("heading", { name: "word-1" }).press("ArrowLeft");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
-  await page.getByRole("heading", { name: "word-1" }).press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
-  await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeFocused();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("ArrowRight");
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
+  await page.getByRole("heading", { name: "word-2", exact: true }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeFocused();
 
   const cardTopBeforePending = (await page.locator(".learning-flip-stage").boundingBox()).y;
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await expect(page.getByText("Đang ghi nhận bằng chứng học tập…")).toBeFocused();
   expect((await page.locator(".learning-flip-stage").boundingBox()).y).toBe(cardTopBeforePending);
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeVisible();
   calls.resolveNormalReveal();
   const next = page.getByRole("navigation", { name: "Điều hướng thẻ" }).getByRole("button", { name: /Thẻ sau/ });
   await expect(next).toBeFocused();
   await next.press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeFocused();
-  await page.getByRole("heading", { name: "word-2" }).press("ArrowLeft");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
+  await page.getByRole("heading", { name: "word-2", exact: true }).press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeFocused();
 
   await page.evaluate(() => {
     const input = document.createElement("input");
@@ -577,11 +577,11 @@ test("NORMAL arrow shortcuts respect boundaries and editable/native controls whi
   const input = page.getByLabel("Shortcut guard input");
   await input.focus();
   await input.press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Ôn tập SRS" }).focus();
   await page.getByRole("button", { name: "Ôn tập SRS" }).press("ArrowRight");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
 });
 
 test("mode switching keeps the learning shell visible and uses card-area loading", async ({ page }) => {
@@ -614,11 +614,12 @@ test("old two-outcome storage fails closed and accepted state resumes after relo
   });
   await installLearningMock(page);
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeVisible();
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeFocused();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "word-2" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "word-2", exact: true })).toBeVisible();
   const stored = await page.evaluate(() => JSON.parse(sessionStorage.getItem("elvocab.learning.run.v1:user-1:10000000-0000-4000-8000-000000000001")));
   expect(stored.version).toBe(3);
   expect(stored.srs.queue.filter((id) => id === vocabularyId(1))).toHaveLength(1);
@@ -646,10 +647,10 @@ test("a completed v3 review can explicitly continue into the up-to-date state", 
 test("AGAIN on the final card immediately presents that unresolved card again", async ({ page }) => {
   const calls = await installLearningMock(page, { cardCount: 1 });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).click();
 
-  await expect(page.getByRole("heading", { name: "word-1" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeFocused();
   await expect(page.getByText("Đã hoàn thành 0 / 1")).toBeVisible();
   await expect(page.getByRole("region", { name: "Đánh giá SRS" })).toHaveCount(0);
   const stored = await page.evaluate(() => JSON.parse(
@@ -658,7 +659,7 @@ test("AGAIN on the final card immediately presents that unresolved card again", 
   expect(stored.srs.queue).toEqual([vocabularyId(1)]);
   expect(stored.srs.passed_ids).toEqual([]);
 
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   expect(calls.events.map(({ rating }) => rating)).toEqual(["AGAIN", "GOOD"]);
@@ -670,7 +671,7 @@ test("completed session route re-entry preserves completion until explicit conti
     upToDate: ({ events }) => events.length > 0,
   });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Dễ" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
@@ -687,7 +688,7 @@ test("completed session continuation fetches fresh eligibility and becomes up-to
     upToDate: ({ events }) => events.length > 0,
   });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
@@ -703,7 +704,7 @@ test("pending and conflict states never advance optimistically", async ({ page }
   const pending = new Promise((resolve) => { resolveEvent = resolve; });
   await installLearningMock(page, { onEvent: () => pending });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   const ratingButton = page.getByRole("button", { name: "Tốt" });
   await expect(ratingButton).toBeVisible();
   const buttonBefore = await ratingButton.boundingBox();
@@ -741,11 +742,11 @@ test("pending and conflict states never advance optimistically", async ({ page }
   expect(buttonPending.width).toBeCloseTo(buttonBefore.width, 1);
   expect(buttonPending.height).toBeCloseTo(buttonBefore.height, 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeVisible();
   resolveEvent({ status: 409, json: failure("LEARNING_PROGRESS_CHANGED") });
   await expect(page.getByRole("alert")).toContainText("Phiên SRS đã thay đổi");
   await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "nghĩa word-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "nghĩa word-1", exact: true })).toBeVisible();
 });
 
 test("up-to-date SRS offers Normal review and return action", async ({ page }) => {
@@ -763,7 +764,7 @@ test("rating sub-labels render backend-provided intervals without frontend deriv
     ratingPreviews: ratingPreviews(3, 7, 14),
   });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
 
   for (const accessibleName of [
     "Lại, Trong phiên này", "Khó, 1–3 ngày", "Tốt, 1 tuần+", "Dễ, 2 tuần",
@@ -777,7 +778,7 @@ test("rating sub-labels render exact 14-day and capped 30-day previews", async (
     ratingPreviews: ratingPreviews(14, 30, 30),
   });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
 
   await expect(page.getByRole("button", { name: "Khó, 2 tuần", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Tốt, 30 ngày", exact: true })).toBeVisible();
@@ -788,7 +789,7 @@ test("long back-face content grows the shared card and never creates internal sc
   await page.setViewportSize({ width: 1366, height: 768 });
   await installLearningMock(page, { longContent: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
-  await page.getByRole("heading", { name: "word-1" }).press("Space");
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
 
   await expect(page.getByText("Long example ending marker.")).toBeVisible();
   const measurements = await page.locator(".learning-card").evaluateAll((faces) => faces.map((face) => ({
@@ -841,7 +842,7 @@ for (const viewport of [
     expect(cardBox.width).toBeLessThanOrEqual(640);
     if (viewport.width >= 1024) expect(cardBox.height).toBe(384);
     await expect(page.locator("progress")).toBeVisible();
-    await page.getByRole("heading", { name: "word-1" }).press("Space");
+    await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
     for (const overflowY of await page.locator(".learning-card").evaluateAll((faces) =>
       faces.map((face) => getComputedStyle(face).overflowY))) {
       expect(overflowY).not.toMatch(/auto|scroll/);
