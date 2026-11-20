@@ -1,0 +1,94 @@
+// @ts-nocheck
+export function createLearningController({ learningService }) {
+  return {
+    async getProgress(req, res, next) {
+      try {
+        const progress = await learningService.getLearningProgress(
+          req.user.id,
+          req.query,
+        );
+        res.status(200).json({ success: true, data: progress });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async getSet(req, res, next) {
+      try {
+        const learningSet = await learningService.getLearningSet(
+          req.user.id,
+          req.params.setId,
+          req.query,
+        );
+        res.status(200).json({ success: true, data: learningSet });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async recordEvent(req, res, next) {
+      try {
+        const progress = await learningService.recordMeaningfulEvent(
+          req.user.id,
+          req.body,
+        );
+        res.status(200).json({ success: true, data: progress });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async getReviewSummary(req, res, next) {
+      try {
+        const summary = await learningService.getGlobalReviewSummary(req.user.id);
+        res.status(200).json({ success: true, data: summary });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async getReviewCenterSummary(req, res, next) {
+      try {
+        const summary = await learningService.getReviewCenterSummary(req.user.id);
+        res.status(200).json({ success: true, data: summary });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+
+    async createReviewSession(req, res, next) {
+      try {
+        const result = await learningService.createGlobalReviewSession(req.user.id, req.body);
+        res.status(result.replayed ? 200 : result.session ? 201 : 200)
+          .json({ success: true, data: result });
+      } catch (error) {
+        handleKnownLearningError(error, res, next);
+      }
+    },
+  };
+}
+
+function handleKnownLearningError(error, res, next) {
+  const statusByCode = {
+    VALIDATION_ERROR: 400,
+    LEARNING_SET_NOT_FOUND: 404,
+    LEARNING_SET_EMPTY: 409,
+    LEARNING_SET_ITEM_CHANGED: 409,
+    LEARNING_PROGRESS_CHANGED: 409,
+    LEARNING_SESSION_NOT_FOUND: 404,
+    LEARNING_SESSION_INACCESSIBLE: 409,
+    LEARNING_SESSION_EXPIRED: 409,
+    LEARNING_SESSION_EVENT_CONFLICT: 409,
+    GLOBAL_REVIEW_OPERATION_CONFLICT: 409,
+  };
+  const status = statusByCode[error?.code];
+  if (!status) {
+    next(error);
+    return;
+  }
+
+  res.status(status).json({
+    success: false,
+    error: { code: error.code, message: error.message },
+  });
+}

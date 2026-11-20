@@ -1,0 +1,345 @@
+// @ts-nocheck
+import { createXpRewardRepository } from "./xp-reward-repository.js";
+
+export function createLearningRepository(prisma) {
+  return {
+    ...createXpRewardRepository(prisma),
+
+    findAccessibleSetForUser(setId, userId) {
+      return prisma.vOCABULARY_SET.findFirst({
+        relationLoadStrategy: "join",
+        where: {
+          id: setId,
+          OR: [
+            { is_public: true },
+            { is_public: false, owner_id: userId },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          topic: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          items: {
+            orderBy: { position: "asc" },
+            select: {
+              position: true,
+              vocabulary: {
+                select: {
+                  id: true,
+                  word: true,
+                  phonetic: true,
+                  pronunciation_url: true,
+                  meanings: {
+                    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                    select: {
+                      id: true,
+                      part_of_speech: true,
+                      meaning_vi: true,
+                      context: true,
+                      cefr_level: true,
+                      examples: {
+                        orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                        select: {
+                          id: true,
+                          example_en: true,
+                          example_vi: true,
+                        },
+                      },
+                    },
+                  },
+                  learning_progress: {
+                    where: { user_id: userId },
+                    select: {
+                      status: true,
+                      review_count: true,
+                      revision: true,
+                      last_reviewed_at: true,
+                      last_event_id: true,
+                      interval_days: true,
+                      next_review_at: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+
+    async lockAccessibleSetForUser(setId, userId) {
+      const rows = await prisma.$queryRaw`
+        SELECT "id"
+        FROM "VOCABULARY_SET"
+        WHERE "id" = ${setId}::uuid
+          AND ("is_public" = TRUE OR ("is_public" = FALSE AND "owner_id" = ${userId}::uuid))
+        FOR SHARE
+      `;
+      return rows[0] ?? null;
+    },
+
+    async lockAccessibleSetForSessionSnapshot(setId, userId) {
+      const rows = await prisma.$queryRaw`
+        SELECT "id"
+        FROM "VOCABULARY_SET"
+        WHERE "id" = ${setId}::uuid
+          AND ("is_public" = TRUE OR ("is_public" = FALSE AND "owner_id" = ${userId}::uuid))
+        FOR UPDATE
+      `;
+      return rows[0] ?? null;
+    },
+
+    async lockSetItem(setId, vocabularyId) {
+      const rows = await prisma.$queryRaw`
+        SELECT "id"
+        FROM "VOCABULARY_SET_ITEM"
+        WHERE "vocabulary_set_id" = ${setId}::uuid
+          AND "vocabulary_id" = ${vocabularyId}::uuid
+        FOR SHARE
+      `;
+      return rows[0] ?? null;
+    },
+
+    async lockProgressIdentity(userId, vocabularyId) {
+      const rows = await prisma.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${userId}::text || ':' || ${vocabularyId}::text, 0)
+        )::text AS "lock_result"
+      `;
+      return rows[0] ?? null;
+    },
+
+    findProgress(userId, vocabularyId) {
+      return prisma.lEARNING_PROGRESS.findUnique({
+        where: {
+          user_id_vocabulary_id: {
+            user_id: userId,
+            vocabulary_id: vocabularyId,
+          },
+        },
+        select: progressSelect(),
+      });
+    },
+
+    listProgressForSummary(userId) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: { user_id: userId },
+        select: {
+          status: true,
+          interval_days: true,
+          next_review_at: true,
+        },
+      });
+    },
+
+    listReachableReviewCandidates(userId, unlockedLevels) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: {
+          user_id: userId,
+          vocabulary: {
+            vocabulary_items: {
+              some: {
+                vocabulary_set: accessibleReviewSetWhere(userId, unlockedLevels),
+              },
+            },
+          },
+        },
+        orderBy: [{ vocabulary_id: "asc" }],
+        select: {
+          ...progressSelect(),
+          vocabulary: {
+            select: {
+              id: true, word: true, phonetic: true, pronunciation_url: true,
+              meanings: {
+                orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                select: {
+                  id: true, part_of_speech: true, meaning_vi: true, context: true, cefr_level: true,
+                  examples: {
+                    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+                    select: { id: true, example_en: true, example_vi: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+
+    listReviewCenterCandidates(userId, unlockedLevels) {
+      const accessibleSetWhere = accessibleReviewSetWhere(userId, unlockedLevels);
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: {
+          user_id: userId,
+          vocabulary: {
+            vocabulary_items: {
+              some: { vocabulary_set: accessibleSetWhere },
+            },
+          },
+        },
+        orderBy: [{ vocabulary_id: "asc" }],
+        select: {
+          ...progressSelect(),
+          vocabulary: {
+            select: {
+              id: true,
+              vocabulary_items: {
+                where: { vocabulary_set: accessibleSetWhere },
+                orderBy: [{ vocabulary_set_id: "asc" }],
+                select: {
+                  vocabulary_set: {
+                    select: { id: true, name: true, is_public: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+
+    isReviewVocabularyReachable(userId, vocabularyId, unlockedLevels) {
+      return prisma.vOCABULARY.findFirst({
+        where: {
+          id: vocabularyId,
+          vocabulary_items: {
+            some: {
+              vocabulary_set: {
+                OR: [
+                  { is_public: true, cefr_level: { in: unlockedLevels } },
+                  { is_public: false, owner_id: userId },
+                ],
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+    },
+
+    countProgress(userId, status, evaluatedAt) {
+      return prisma.lEARNING_PROGRESS.count({
+        where: effectiveProgressWhere(userId, status, evaluatedAt),
+      });
+    },
+
+    listProgress(userId, { status, skip, take, evaluatedAt }) {
+      return prisma.lEARNING_PROGRESS.findMany({
+        where: effectiveProgressWhere(userId, status, evaluatedAt),
+        orderBy: [
+          { last_reviewed_at: { sort: "desc", nulls: "last" } },
+          { created_at: "desc" },
+          { id: "asc" },
+        ],
+        skip,
+        take,
+        select: {
+          status: true,
+          review_count: true,
+          last_reviewed_at: true,
+          interval_days: true,
+          next_review_at: true,
+          vocabulary: {
+            select: {
+              id: true,
+              word: true,
+              phonetic: true,
+            },
+          },
+        },
+      });
+    },
+
+    createProgress(data) {
+      return prisma.lEARNING_PROGRESS.create({
+        data,
+        select: progressSelect(),
+      });
+    },
+
+    updateProgressAtRevision(id, expectedRevision, data) {
+      return prisma.lEARNING_PROGRESS.updateMany({
+        where: { id, revision: expectedRevision },
+        data,
+      });
+    },
+
+    withTransaction(callback) {
+      return prisma.$transaction(
+        async (transaction) => callback(createLearningRepository(transaction), transaction),
+        { maxWait: 10_000, timeout: 30_000 },
+      );
+    },
+
+    withConsistentRead(callback) {
+      return prisma.$transaction(
+        async (transaction) => callback(createLearningRepository(transaction), transaction),
+        {
+          isolationLevel: "RepeatableRead",
+          maxWait: 10_000,
+          timeout: 30_000,
+        },
+      );
+    },
+  };
+}
+
+function progressSelect() {
+  return {
+    id: true,
+    user_id: true,
+    vocabulary_id: true,
+    status: true,
+    review_count: true,
+    revision: true,
+    last_reviewed_at: true,
+    last_event_id: true,
+    interval_days: true,
+    next_review_at: true,
+  };
+}
+
+function accessibleReviewSetWhere(userId, unlockedLevels) {
+  return {
+    OR: [
+      { is_public: true, cefr_level: { in: unlockedLevels } },
+      { is_public: false, owner_id: userId },
+    ],
+  };
+}
+
+const LADDER_INTERVALS = [1, 3, 7, 14, 30];
+
+function effectiveProgressWhere(userId, status, evaluatedAt) {
+  const base = { user_id: userId };
+  if (!status) return base;
+  if (status === "LEARNING") return { ...base, status: "LEARNING" };
+  if (status === "NEEDS_REVIEW") {
+    return {
+      ...base,
+      OR: [
+        { status: "NEEDS_REVIEW" },
+        {
+          status: "LEARNED",
+          interval_days: { in: LADDER_INTERVALS },
+          next_review_at: { lte: evaluatedAt },
+        },
+      ],
+    };
+  }
+  return {
+    ...base,
+    status: "LEARNED",
+    OR: [
+      { interval_days: null },
+      { interval_days: { notIn: LADDER_INTERVALS } },
+      { next_review_at: null },
+      { next_review_at: { gt: evaluatedAt } },
+    ],
+  };
+}

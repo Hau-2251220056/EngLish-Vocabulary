@@ -1,0 +1,82 @@
+const CEFR_ORDER = new Map([
+  ["A1", 0],
+  ["A2", 1],
+  ["B1", 2],
+  ["B2", 3],
+  ["C1", 4],
+  ["C2", 5],
+]);
+
+export const SRS_RATING_LABELS = Object.freeze({
+  AGAIN: "Lại",
+  HARD: "Khó",
+  GOOD: "Tốt",
+  EASY: "Dễ",
+});
+
+export const SRS_INTERVAL_LABELS = Object.freeze({
+  1: "Ngày mai",
+  3: "1–3 ngày",
+  7: "1 tuần+",
+  14: "2 tuần",
+  30: "30 ngày",
+});
+
+export function selectPrimaryMeaning(meanings = []) {
+  let selected = null;
+  let selectedRank = Number.POSITIVE_INFINITY;
+
+  for (const meaning of meanings) {
+    const rank = CEFR_ORDER.get(meaning.cefr_level) ?? Number.POSITIVE_INFINITY;
+    if (selected === null || rank < selectedRank) {
+      selected = meaning;
+      selectedRank = rank;
+    }
+  }
+
+  return selected;
+}
+
+export function isKeyboardShortcutSafe(target) {
+  if (typeof Element === "undefined") return true;
+  if (!(target instanceof Element)) return true;
+  return !target.closest(
+    "button, a, input, select, textarea, summary, [contenteditable='true'], [role='button']",
+  );
+}
+
+export function selectEnglishSpeechVoice(voices = []) {
+  const englishVoices = voices.filter((voice) =>
+    voice?.lang?.toLowerCase().startsWith("en"),
+  );
+  return englishVoices.find((voice) => voice.default) ?? englishVoices[0] ?? null;
+}
+
+export function resolveFlashcardInteraction(revealed, trigger) {
+  if (trigger === "speaker") {
+    return { shouldFlip: false, nextRevealed: revealed, shouldPlayPronunciation: true };
+  }
+  return {
+    shouldFlip: true,
+    nextRevealed: !revealed,
+    shouldPlayPronunciation: !revealed && ["card", "space"].includes(trigger),
+  };
+}
+
+export function revealWithPronunciation(reveal, playPronunciation) {
+  reveal();
+  try {
+    const playback = playPronunciation();
+    if (playback?.catch) void playback.catch(() => {});
+  } catch {
+    // Playback is enhancement-only; revealing the answer must always succeed.
+  }
+}
+
+export function pendingLearningRating(eventState, attempt) {
+  return eventState === "pending" ? attempt?.rating ?? null : null;
+}
+
+export function isLearningRatingPending(eventState, attempt, rating) {
+  return pendingLearningRating(eventState, attempt) === rating;
+}

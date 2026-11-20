@@ -160,13 +160,15 @@ All features are initially marked TODO.
 
 4.1 Authentication & User Management
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-User Registration	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Login	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Authentication	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Authorization	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Profile Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Daily Goal Settings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Admin Access	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Registration	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Login	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Authentication	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Authorization	DONE	✓	✓	✓	IN_PROGRESS	—	—
+User Profile Management	TODO	—	—	—	—	—	—
+Daily Goal Settings	TODO	—	—	—	—	—	—
+Admin Access	TODO	—	—	—	—	—	—
+
+Stage markers: `✓` = completed at feature level; `IN_PROGRESS` = partial implementation is in progress; `—` = not started or not determinable at feature level.
 
 The system has two authenticated roles:
 
@@ -174,6 +176,174 @@ USER
 ADMIN
 
 Guest users are unauthenticated visitors and are not treated as an authenticated role.
+
+## Authentication Backend Foundation and Routes
+
+Status: DONE
+
+### Description
+
+Backend authentication foundation, HTTP route integration and the persistent backend Authentication/security test suite are complete through TASK-010. Together with completed frontend and integration work through TASK-015, the approved Authentication workflow is complete.
+
+### Related Documentation
+
+- SPEC: `docs/specs/AUTHENTICATION_SPEC.md`
+- PLAN: `docs/plans/AUTHENTICATION_ROUTES_PLAN.md`
+- TASK: `docs/tasks/AUTHENTICATION_ROUTES_TASK.md`
+- TEST SPEC: `docs/specs/BACKEND_AUTHENTICATION_TESTS_SPEC.md`
+- TEST PLAN: `docs/plans/BACKEND_AUTHENTICATION_TESTS_PLAN.md`
+- TEST TASK: TASK-010 in `docs/tasks/AUTHENTICATION_TASK.md`
+
+### TASK-010 Workflow Status
+
+- TASK-010 status: DONE.
+- SPEC-010: APPROVED.
+- PLAN-010: APPROVED.
+- TASK-010: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-010: PASS.
+- REVIEW-010: APPROVED.
+- Quality gate: PASSED.
+
+### Backend
+
+- `backend/src/services/authentication-service.js`
+- `backend/src/middleware/authentication-middleware.js`
+- `backend/src/middleware/role-authorization-middleware.js`
+- `backend/src/controllers/auth-controller.js`
+- `backend/src/repositories/user-repository.js`
+- `backend/src/repositories/auth-session-repository.js`
+- `backend/src/utils/password-security.js`
+- `backend/src/routes/auth-routes.js`
+- `backend/src/app.js`
+- `backend/src/main.js`
+
+### API
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+
+### Database
+
+- `USER` and `AUTH_SESSION` are materialized in the existing Prisma schema.
+- No new database change was introduced by TASK-009.
+
+### Tests
+
+- TASK-005: inline Node assertions passed, 13/13.
+- TASK-006: inline middleware tests passed, 12/12.
+- TASK-007: inline middleware tests passed, 16/16.
+- TASK-008: inline controller behavior tests passed, 15 behavior groups.
+- TASK-009: route integration tests passed, 16/16, covering route registration, middleware ordering, public/protected flows, unauthorized `/me`, invalid method and health route.
+- TASK-010: formal backend Authentication/security suite passed with 27 runnable tests, 0 failures, 6 approved deferred TODOs and 0 skipped tests in two consecutive Authentication runs and the full backend suite; dedicated test database cleanup left 0 `USER` and 0 `AUTH_SESSION` rows.
+
+### Review
+
+- TASK-005: approved with no findings.
+- TASK-006: approved with no findings.
+- TASK-007: approved with no findings.
+- TASK-009: approved with no findings.
+- TASK-010: REVIEW-010 approved; quality gate passed.
+
+## Frontend Authentication Service, State, and Login/Register UI
+
+Status: DONE
+
+### Description
+
+TASK-011 frontend Authentication infrastructure, TASK-012 ELVocab Login/Register experience, TASK-013 protected navigation/authenticated shell, TASK-014 frontend Authentication test suite and both phases of TASK-015 integration/security verification have completed IMPLEMENT, TEST and REVIEW quality gates. TASK-001 through TASK-015 are complete and the approved Authentication feature is DONE.
+
+### TASK-011 Workflow Status
+
+- TASK-011 status: DONE.
+- TASK-011: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-011: PASS — 14/14 acceptance criteria.
+- REVIEW-011: APPROVED.
+- Quality gate: PASSED.
+
+### TASK-012 Workflow Status
+
+- TASK-012 status: DONE.
+- TASK-012: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-012: PASS — all targeted corrections and regressions verified.
+- REVIEW-012: APPROVED.
+- `REVIEW012-01`, `TEST012-RESP-01`, `REVIEW012-02` and `REVIEW012-03`: RESOLVED.
+- Human Visual Check: PASSED.
+- Quality gate: PASSED.
+
+### TASK-013 Workflow Status
+
+- TASK-013 status: DONE.
+- TASK-013: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-013: PASS — responsive runtime matrix and Authentication-state regressions verified.
+- REVIEW-013: APPROVED.
+- `TEST013-RESP-01`: RESOLVED.
+- Quality gate: PASSED.
+
+### TASK-014 Workflow Status
+
+- TASK-014 status: DONE.
+- TASK-014: APPROVED.
+- IMPLEMENT: COMPLETE.
+- TEST-014: PASS — 20 `node:test` tests and 18 Playwright Chromium tests; aggregate 38/38.
+- REVIEW-014: APPROVED after corrective re-review.
+- `REVIEW014-01` and `REVIEW014-02`: RESOLVED.
+- Responsive Chromium matrix: PASSED at 375×812, 768×1024 and 1366×768.
+- Quality gate: PASSED.
+
+### TASK-015 Workflow Status
+
+- TASK-015 deterministic contract: APPROVED.
+- TASK-015 overall status: DONE.
+- Phase A status: COMPLETE.
+- Phase A IMPLEMENT: COMPLETE.
+- Phase A TEST: PASS — real Browser → Vite → Express → Prisma → dedicated Supabase TEST DB flow and regressions passed.
+- Phase A REVIEW: APPROVED after the AC-015-11 finding was resolved and verified.
+- Phase A open findings: 0.
+- Phase B Preview database adjustment: APPROVED — the existing dedicated non-production TEST database may be reused temporarily through Preview-scoped `DATABASE_URL`; production/main data is prohibited and destructive/reset tests may not run concurrently.
+- Phase B final Human Gate: APPROVED — same-team protected Vercel Previews, backend branch-specific upstream rewrite and interactive real-stack verification are authorized.
+- Phase B prerequisite IMPLEMENT: COMPLETE.
+- Phase B TEST: PASS — AC-015-01 through AC-015-18 passed; `TEST015-PB-01` through `TEST015-PB-05` are closed.
+- Phase B REVIEW: APPROVED — REVIEW-015 reported no findings or blockers.
+- Phase B Preview USER, ADMIN and owned-session fixtures: CLEANED UP from the dedicated TEST DB; unrelated TEST data was preserved.
+- Approved deferred TODOs: 3, preserved as deferred and not counted as TASK-015 failures.
+- TASK-001 through TASK-015: COMPLETE.
+- Authentication quality gate: PASSED.
+
+### Frontend
+
+- Reusable Axios client and Authentication service use relative `/api/auth/**` endpoints.
+- Shared Authentication state owns bootstrap, register, login, logout and current-user refresh transitions.
+- Browser-managed `HttpOnly` session-cookie architecture remains authoritative; frontend does not read or persist the raw session token.
+- Vite proxies development `/api/**` requests to the local Express backend.
+- ELVocab Login/Register routes use one persistent responsive Auth experience with accessible validation, loading, safe error and registration-success states.
+- Registration does not auto-login; successful registration hands off to Login, while successful Login navigates to the minimum `/dashboard` destination.
+- `/dashboard` is protected by the shared Authentication state; Guest and authenticated Guest-route redirects follow the approved route contract.
+- The responsive authenticated shell provides ELVocab branding, Dashboard navigation, backend-provided account identity, conditional non-interactive Admin context and Logout/session-expiration UX.
+
+### Tests
+
+- TASK-011 automated Authentication suite passed with 12 tests and 0 failures.
+- Frontend production build and lint passed during formal TEST-011.
+- TASK-012 targeted verification passed after pronunciation semantics, tablet responsiveness and diff-hygiene corrections; the existing Auth suite remained at 12 passing tests with 0 failures.
+- TASK-012 frontend production build, lint and responsive runtime checks passed; breakpoint boundaries at 899/900/901 pixels were verified.
+- TASK-013 formal test re-run passed after closing `TEST013-RESP-01`; the required 375/768/900/1024/1366/1536 viewport matrix, routing/Auth states, USER/ADMIN presentation, Logout states and accessibility interactions were verified.
+- TASK-013 retained the existing Authentication regression suite at 12 passing tests with 0 failures; frontend lint, production build and diff checks passed.
+- TASK-014 added the approved two-layer frontend Authentication suite: 20 focused `node:test` tests and 18 isolated Playwright Chromium tests, all passing.
+- TASK-014 aggregate Authentication tests, responsive viewport matrix, frontend lint, production build and diff checks passed.
+- TASK-015 Phase A local real-stack integration passed 2/2; backend Authentication regression passed 29 runnable tests with 0 failures and 3 approved deferred TODOs.
+- TASK-015 Phase B Vercel Preview verified the real USER and ADMIN flows, host-only secure cookie contract, same-origin rewrite, no-store Auth responses, leakage controls and exact TEST DB fixture cleanup.
+
+### Pending Follow-ups
+
+- `docs/ARCHITECTURE.md` deployment baseline synchronization with the selected two-project Vercel topology remains pending.
+- Historical stale TASK-011 approval wording in the corrective Authentication PLAN footer remains pending documentation synchronization.
+- Production deployment remains outside TASK-015 and was not performed.
 
 4.2 Topics
 
@@ -187,34 +357,90 @@ Vocabulary Set
   ↓
 Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic Listing	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic-based Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Topic Management	DONE	✓	✓	✓	✓	✓	✓
+Topic Listing	DONE	✓	✓	✓	✓	✓	✓
+Topic-based Vocabulary Set Discovery	TESTED	✓	✓	✓	✓	✓	✓
 
 Topic behavior and data rules are defined in the project documentation.
 
+## Topic V1 Metadata, Public Reads and ADMIN Management
+
+Status: DONE
+
+### Description
+
+Topic V1 is complete for the approved isolated Topic metadata model, public Topic list/detail and backend-authorized ADMIN CRUD. Vocabulary Set V1 separately materializes Topic-based Set discovery and the Topic `RESTRICT` relation; neither is retroactively included in Topic V1's DONE evidence.
+
+### Workflow Status
+
+- TASK-019 through TASK-020 and TASK-022 through TASK-023: COMPLETE.
+- TASK-021 backend/database/API/security verification: PASS — 16 Topic tests; Authentication regression 29 passed, 0 failed, 3 approved existing TODOs.
+- TASK-024 frontend/browser verification: PASS — 9 Topic browser tests, 25 Auth browser tests, 7 App Layout tests and 20 frontend unit tests; responsive/accessibility/lint/build gates passed.
+- TASK-025 formal TEST: PASS — 15 applicable acceptance criteria passed; AC-13 remains explicitly deferred; 0 failed.
+- TASK-025 formal REVIEW: APPROVE — no findings or blockers.
+- Dedicated TEST DB fixture cleanup: PASS — 0 Topic fixtures and 0 Topic E2E account fixtures remained.
+- Topic V1 quality gate: PASSED.
+
+### Implemented Boundary
+
+- Isolated five-field `TOPIC` model with UUID identifier, timestamps, nullable description and PostgreSQL functional uniqueness on `LOWER(name)`.
+- Public `GET /api/topics` and `GET /api/topics/:topicId` metadata APIs and explicit public frontend routes.
+- Backend-authorized ADMIN create/update/delete APIs and ADMIN management UI in the existing authenticated App Layout.
+- Client-side Topic search, required safe UI states, responsive behavior and accessible forms/delete confirmation.
+
+### Deferred / Unchanged
+
+- AC-13 was completed separately by Vocabulary Set V1: Topic V1 itself created no relation/FK, RESTRICT state or relation-state test.
+- Topic-based Vocabulary Set Discovery is `TESTED` through the Vocabulary Set V1 workflow.
+- No Vocabulary Set model/data/count/mock, Vocabulary direct-topic field, pagination, server-side search, XP, streak, progress or learning behavior was added.
+- Authentication and Authenticated App Layout `DONE` statuses remain unchanged.
+
 4.3 Vocabulary
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Multiple Meanings	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Context / Example	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Search	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Pronunciation Information	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Multiple Meanings	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Context / Example	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Search	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Pronunciation Information	DONE	✓	✓	✓	✓	✓	✓
+Personal Vocabulary V1	DONE — HUMAN APPROVED	HUMAN APPROVED	HUMAN APPROVED	HUMAN APPROVED	COMPLETE	PASS	APPROVED
 
 Vocabulary may have multiple meanings depending on context.
 
 Vocabulary pronunciation information may include model pronunciation information such as phonetic information and pronunciation audio.
 
+## Vocabulary V1 ADMIN Catalog
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-026 through TASK-032: COMPLETE.
+- TASK-033 formal TEST: PASS.
+- TASK-033 formal REVIEW: APPROVE.
+- TASK-033 closure: HUMAN AUTHORIZED; no blocker remains.
+- Dedicated TEST DB fixture cleanup, diff, secret and scope checks: PASS.
+
+### Implemented Boundary
+
+- ADMIN-only `VOCABULARY → VOCABULARY_MEANING → VOCABULARY_EXAMPLE` aggregate with UUID identifiers, Meaning-only nullable CEFR metadata, owned-child deletion and case-insensitive word uniqueness.
+- ADMIN aggregate list/detail/create/PATCH/delete API and management UI with client-side search, complete-aggregate editing, nested Meaning/Example replacement, accessible states and delete confirmation.
+
+### Deferred / Unchanged
+
+- No public or USER Vocabulary catalog, direct Topic relation, Vocabulary Set/Set Item, learning, SRS, Quiz, XP/Streak, pronunciation practice or AI functionality was introduced by Vocabulary V1.
+- Vocabulary Set V1 separately materializes the first external Vocabulary reference and its `RESTRICT` policy; its scoped picker is editor-only and not a Vocabulary catalog.
+
 4.4 Vocabulary Sets
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-System Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User-Created Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Ownership	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Visibility	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Edit Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Delete Own Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Copy Vocabulary Set	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Discovery	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+System Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+User-Created Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Ownership	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Visibility	DONE	✓	✓	✓	✓	✓	✓
+Edit Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Delete Own Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Copy Vocabulary Set	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Discovery	DONE	✓	✓	✓	✓	✓	✓
+Public Word to Personal Set	IN_PROGRESS	✓	✓	✓	✓	⏳	⏳
 
 System vocabulary sets are created and managed by Admin.
 
@@ -226,15 +452,211 @@ Users can share their own vocabulary sets through Community.
 
 A copied vocabulary set becomes a new private set owned by the user who copied it.
 
+## Personal Vocabulary Set Topic Decoupling V1
+
+Status: DONE — implementation, TEST and REVIEW complete; HUMAN-approved for closure.
+
+- Public ADMIN-managed System Sets retain one required Topic, enforced by service validation and the database check `NOT is_public OR topic_id IS NOT NULL`.
+- USER Personal Set writes reject `topic_id`; new and copied Personal Sets are topicless, while existing categorized Personal Sets remain readable and preserve their reference on supported updates.
+- Topic deletion remains `RESTRICT`; referenced deletion returns `409 TOPIC_IN_USE` without cascade.
+- Learning exposes `topic: TopicSummary | null`; Quiz, ordered exact-ID membership, ownership, visibility and public Topic discovery remain unchanged.
+- Approved source: `docs/specs/PERSONAL_VOCABULARY_SET_TOPIC_DECOUPLING_V1_SPEC.md`; formal REVIEW result: APPROVE.
+
+## Discovery V1 — Khám phá bộ từ
+
+Status: DONE — TASK-141 formal TEST PASS, REVIEW APPROVE and HUMAN closure approval complete.
+
+### Implemented Boundary
+
+- `/topics` is the Set-first public System Set catalog. The frontend composes existing Topic and Topic-scoped Set APIs with concurrent requests (`1 + T`), publishes atomically, and performs client-side name/description search plus exact single-Topic filtering only after complete readiness.
+- Authenticated USER remains inside the App Shell, Guest browsing remains public, and ADMIN remains browse-only. Public Set Detail is read-only, visually aligned with Personal Set Detail, and lets USER enter Flashcard or Quiz without copying; Save remains optional.
+- The compact catalog provides a production-visible **Bộ từ nổi bật** section using the first 3 complete-catalog Sets in deterministic source order, a wider filter rail, responsive three-column cards where space permits, and nine normal Sets per client-side page. Featured selection remains independent of filters and does not consume page slots; filter changes reset to page 1 and page changes make no request.
+- Cards provide deterministic cover visuals, overlaid Topic labels, aligned title/count, two-line descriptions, accessible Lucide actions and best-effort current-session saved feedback. Copy still creates a fresh independent private Set and repeated copies remain allowed.
+- TASK-129 composition evidence was HUMAN accepted. Final evidence includes Discovery/Vocabulary Set unit and service `12/12`, Discovery/Auth/App Shell mocked browser `35/35`, Learning/Quiz/Personal Set Detail regression `51/51`, guarded real-stack `14/14`, all approved responsive widths, full frontend lint, production build and diff checks.
+- TASK-141 formal TEST result is **PASS** and formal REVIEW verdict is **APPROVE**, with no remaining CRITICAL, HIGH, MEDIUM or LOW findings. Guarded TEST DB isolation preserved unrelated users/sessions at `5 → 5` / `8 → 8` and left no run-owned `E2E-` Topic, Set or user fixture.
+
+### Deferred / Non-blocking
+
+- Community-shared USER Sets, creator/social attribution, sorting, server-side global search/pagination, authoritative featured/curated ranking, and account-level saved-source recognition are not implemented.
+- Discovery V1 originally shipped without per-Set CEFR/cover persistence; the separately completed Vocabulary Set Metadata Refactor below now supplies those capabilities.
+- Discovery V1 itself introduced no backend, API, schema, migration, dependency, ownership, visibility, Learning, Quiz or copy semantic change.
+
+## Vocabulary Set Metadata Refactor
+
+Status: DONE — TASK-165 formal TEST PASS and HUMAN approved; TASK-166 formal REVIEW APPROVE. Pending separate HUMAN authorization for commit/push/integration.
+
+- Added the forward-only nullable Set metadata migration: `cefr_level` (`A1`–`C1`), `cover_image_url`, and internal `cover_storage_key`, with no inference, default, historical backfill, blob/`bytea`, or rewrite of legacy null rows.
+- Extended existing System/Personal Set contracts and forms. ADMIN System Sets require Set CEFR; USER Personal CEFR remains optional. External covers accept HTTPS only. API responses expose safe Set CEFR/display URL and never expose managed keys or credentials.
+- Uploaded JPEG/PNG/WebP covers use bounded backend validation and Sharp optimization to WebP quality 82, longest edge at most 1600 px. One public-read Supabase bucket is backend-write/delete-only; lifecycle compensation, exact cleanup retry, managed copy and Set-owned key enforcement are implemented.
+- TEST Storage fails closed on dedicated `TEST_SUPABASE_*` configuration and never falls back to ordinary Storage identity. Real-provider verification uses only exact run-owned TEST objects and no bucket-wide cleanup.
+- My Sets/Discovery cards render persisted covers with deterministic broken/missing fallback. Detail headers intentionally omit cover duplication. Discovery provides client-side Set CEFR filtering and retains nine normal Sets per page plus the independent first-three Featured section.
+- TASK-163 visual corrections are HUMAN approved. TASK-164 documentation reconciliation, TASK-165 formal TEST, and TASK-166 formal REVIEW are complete with no BLOCKER, MUST FIX, or SHOULD FIX findings.
+- Approved deferred items are account-level saved-source recognition, authoritative Featured ranking, real-cover curation/content-policy improvements, broader ADMIN redesign/polish, and select/dropdown UI polish. Automatic Set CEFR inference, Set-level C2/ranges, image crop/editor/generation, remote-image proxying, Community/recommendations/ranking, and bulk import remain outside the approved V1 scope.
+
+## Set Detail V1
+
+Status: DONE — implementation, cumulative TEST, and REVIEW complete; ready for HUMAN commit approval.
+
+- Personal Set Detail is implemented as the owner-scoped learning and vocabulary-management hub, including add/search/create/edit/remove Vocabulary flows with exact identity and ownership boundaries preserved.
+- Populated Personal Sets enter Flashcard and Quiz through the approved focus-mode flows; empty Sets remain manageable without starting an invalid run.
+- Authenticated USER mobile/tablet/desktop presentation includes the responsive ELVocab header branding and approved App Shell behavior.
+- Relevant Set Detail, Learning Progress, Quiz, Dashboard, and shared USER presentation styles completed the approved CSS-to-Tailwind migration while retaining required global primitives.
+- Focused and cumulative regression verification passed, including the guarded dedicated-TEST-database real-stack suites and reconciled accessible workflow assertions.
+- SRS scheduling and Flashcard self-rating remain explicitly deferred to a separate future feature/branch; they are not part of Set Detail V1.
+- Approved sources: `docs/specs/SET_DETAIL_V1_SPEC.md`, `docs/plans/SET_DETAIL_V1_PLAN.md`, and `docs/tasks/SET_DETAIL_V1_TASK.md`.
+
+## Vocabulary Set V1 Closure Preparation
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-034 through TASK-044: COMPLETE.
+- TASK-044 formal TEST: PASS — AC-01 through AC-14 passed.
+- TASK-044 formal REVIEW: APPROVE — no findings or blockers.
+- TASK-044 closure: HUMAN AUTHORIZED; no blocker remains.
+- Dedicated TEST DB fixture cleanup, lint, production build, diff, secret and scope checks: PASS.
+
+### Verified Evidence
+
+- Vocabulary Set database/backend/API/security: 8/8 PASS; Authentication, Topic and Vocabulary backend regressions: 58 PASS with 3 existing approved TODOs.
+- Frontend unit: 24/24 PASS; Auth/App Layout browser: 25/25 PASS.
+- Vocabulary Set browser: public 3/3, USER 2/2 and ADMIN 3/3 PASS.
+- Cross-feature real-stack: Authentication 2/2, Topic 9/9 and Vocabulary 5/5 PASS.
+
+### Implemented Boundary
+
+- Public ADMIN-managed System Sets, private owner-scoped USER Sets, independent System-to-private copy, ordered aggregate Items and Topic-based public discovery.
+- Set Items reference Vocabulary only; complete Item replacement/reordering, reference validation and transactions remain backend-authoritative.
+- The authenticated bounded Vocabulary picker is available only inside Set editors and returns minimal selection metadata.
+
+### Deferred / Unchanged
+
+- No standalone USER Vocabulary catalog, public User Sets, Community sharing, Flashcard, Learning Progress, SRS, Quiz, XP/Streak, pronunciation practice or AI behavior was introduced.
+- Vocabulary Set V1 closure is complete; deferred features remain outside this DONE boundary.
+
 4.5 Learning
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vocabulary Learning Session	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Flashcard Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Spaced Repetition	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Words to Review	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Learning Session	DONE	✓	✓	✓	✓	✓	✓
+Learning Session V1 Enhancement	DONE	✓	✓	✓	✓	✓	✓
+Flashcard Learning	DONE	✓	✓	✓	✓	✓	✓
+Learning Progress	DONE	✓	✓	✓	✓	✓	✓
+Learning Progress View V1	DONE	✓	✓	✓	✓	✓	✓
+Spaced Repetition	DONE	✓	✓	✓	✓	✓	✓
+Words to Review	DONE	✓	✓	✓	✓	PASS	APPROVE
 Topic Learning Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Continue Learning	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Continue Learning	DONE	✓	✓	✓	✓	PASS	APPROVE
+
+Review Experience V1	DONE	✓	✓	✓	✓	PASS	APPROVE
+
+## Review Experience V1 Closure
+
+Functional status: **HUMAN CLOSED WITH DOCUMENTED LIMITATIONS**
+
+Closure date: 2026-11-09.
+
+### Accepted Functional Scope
+
+- Authenticated USER Review Center at `/review` remains non-mutating and presents backend-authoritative unique global due counts plus positive-due PUBLIC/PERSONAL Set entries.
+- `/review/global` and `/review/sets/:setId` use focused review layouts while preserving separate GLOBAL and SET session controllers, storage identities, scheduler behavior and rating semantics.
+- Review-context SET learning is URL-derived, SRS-only and returns to Review Center; standard learning preserves its existing Normal/SRS behavior.
+- SET Review, GLOBAL Review and standard learning reuse the accepted shared Flashcard presentation without merging their authoritative controllers.
+- Dashboard **Xem ôn tập**, USER learning navigation, loading/error/empty/retry behavior, responsive/accessibility behavior and the final compact Review Center UI are included in the accepted scope.
+
+### Documented Limitations
+
+- Database-backed and real-stack E2E were **NOT RUN** for Review Experience V1 closure.
+- Preview TEST runtime verification gaps accepted for TASK-RE-A02 and TASK-RE-A07 remain; the historical global 12-to-zero transition and exact Set overlap/count assignment were not independently reconstructed.
+- Strict cross-statement snapshot isolation was not established.
+- The intermittent login HTTP 500 root cause remains unresolved.
+- SET SRS initialization latency above ten seconds is deferred to Performance V3.
+
+### Integration Status
+
+- Functional closure does not imply production readiness. At closure, the Review Experience implementation remains uncommitted/untracked and is not integrated into `dev` or `main`.
+- Commit, push, merge, deployment and post-deployment verification remain separate pending HUMAN gates.
+
+## CEFR Learning Path V1 Closure
+
+Status: DONE — HUMAN FINAL ACCEPTED on 2026-11-05; documentation publication is verified, while merge and deployment were not performed.
+
+### Accepted Evidence
+
+- Final Gate 2 run `41974809164` passed `149/149` executed assertions with `0 FAIL` and `0 SKIP` against tested source `309d46179ec05d4af429c27107080a4cedb1304a` using workflow `c3ec2b02f82e8cb50539c7b6c23f11f24aa2dac7`.
+- TASK-014 documentation corrections were published at `2f82e0d22ba79c084dff40dcbfc4a28dbc56b3be`; MEDIUM-01 and MEDIUM-02 are resolved, TASK-014 acceptance criteria passed read-only re-review, and the prior HUMAN UI/UX approval is preserved.
+- HUMAN final acceptance explicitly accepts the disclosed verification limitations and authorizes this separate DONE status record without authorizing merge or deployment.
+
+### Accepted Limitations
+
+- Actual Chrome browser-level 200% zoom remains unverified and is not claimed as PASS.
+- Final Gate 2 did not select the dedicated Quiz/Speaking locked-state UI E2E specs. Earlier focused evidence covers those corrections with `62/62` offline PASS and `26/26` mocked Chromium PASS; it is not represented as final Gate 2 execution.
+
+### Integration Status
+
+- Verification publication is complete. Merge, deployment, Production verification and post-deployment smoke testing were not performed and remain separate from feature acceptance.
+
+## CEFR Learning Progress V2
+
+Status: IN_PROGRESS — ACCEPTANCE EVIDENCE PASS
+
+### Scope and source
+
+- Approved feature source: `7a212108c7ae63294ce43c97dffe6bb1270a7a84`.
+- Approved SPEC: `docs/specs/CEFR_LEARNING_PROGRESS_V2_SPEC.md`.
+- Approved PLAN: `docs/plans/CEFR_LEARNING_PROGRESS_V2_PLAN.md`.
+- Approved TASK: `docs/tasks/CEFR_LEARNING_PROGRESS_V2_TASK.md`; TASK-010 documentation sync is implemented in this worktree.
+- V2 combines immediate durable first credit from pass-linked NORMAL reveals and CEFR-scoped SRS ratings, including `AGAIN`, while preserving explicit final completion, bounded sessions, SRS scheduling, monotonic entitlement, and independent Quiz/Speaking/ordinary SRS boundaries.
+
+### Verified CI evidence
+
+- [PostgreSQL Integration run 43402432992](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992): `SUCCESS`, attempt 1; 7/7 offline guards and 6/6 ephemeral PostgreSQL integration tests.
+- [Browser run 43553259145](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145): `SUCCESS`, attempt 1; 16/16 selected browser tests comprising 13 CEFR real-stack cases, two mocked SRS cases, and one global SRS non-credit regression.
+- [Acceptance-gap run 43678604817](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817): `SUCCESS`, attempt 1, job `132704119326`, artifact `14146963833`; workflow registration merge `2a282f119a05aa94501a9b61efdf12c0772d0986` checked out pinned feature source `7a212108c7ae63294ce43c97dffe6bb1270a7a84` and enforced three selected mocked browser outcomes plus one guarded PostgreSQL Quiz non-credit outcome.
+- The initial TASK-010 audit recorded 28/30 acceptance criteria as PASS. Run `43678604817` supplies the previously missing runtime evidence for AC-V2-019 and AC-V2-024; it is not used as a substitute for the other 28 criteria.
+
+### Acceptance matrix
+
+Evidence abbreviations: `PG` = run `43402432992`; `BR` = run `43553259145`; `AG` = run `43678604817`; `AUDIT` = initial TASK-010 source/test traceability audit at the approved feature source.
+
+| AC | Result | Evidence | Limitation / boundary |
+|---|---|---|---|
+| AC-V2-001 | PASS | AUDIT, PG, BR | NORMAL evidence is Backend-accepted; explicit completion remains separate. |
+| AC-V2-002 | PASS | AUDIT, PG, BR | CEFR-scoped SRS only; ordinary/GLOBAL SRS does not credit. |
+| AC-V2-003 | PASS | AUDIT, PG, BR | Mixed-mode first credit is deduplicated by exact pass item. |
+| AC-V2-004 | PASS | AUDIT, PG, BR | `AGAIN` credits CEFR but remains unresolved in SRS. |
+| AC-V2-005 | PASS | AUDIT, PG | Replays/repeated ratings do not increase unique credited count. |
+| AC-V2-006 | PASS | AUDIT, PG, BR | Every immutable Learning Session batch remains at most ten items. |
+| AC-V2-007 | PASS | AUDIT, PG, BR | Eleven-item boundary requires the final item. |
+| AC-V2-008 | PASS | AUDIT, PG, BR | Replacement/next batches contain only uncredited items in pass order. |
+| AC-V2-009 | PASS | AUDIT, PG, BR | Accepted evidence persists across recovery and later expiry. |
+| AC-V2-010 | PASS | AUDIT, PG | Expired-session mutations are rejected. |
+| AC-V2-011 | PASS | AUDIT, PG, BR | Ready state still requires explicit USER confirmation. |
+| AC-V2-012 | PASS | AUDIT, PG, BR | Completion is idempotent and entitlement remains Backend-owned. |
+| AC-V2-013 | PASS | AUDIT, PG, BR | A2 unlock is demonstrated only after required A1 completion. |
+| AC-V2-014 | PASS | AUDIT, PG, BR | Earned/terminal entitlement remains monotonic after curriculum change. |
+| AC-V2-015 | PASS | AUDIT, PG, BR | Restart preserves the invalidated attempt and does not transfer credit. |
+| AC-V2-016 | PASS | AUDIT, PG, BR | Ordinary SET, Review Center, and GLOBAL SRS retain non-credit behavior. |
+| AC-V2-017 | PASS | AUDIT, PG, BR | Existing SRS transitions, Progress, XP, and Streak remain authoritative. |
+| AC-V2-018 | PASS | AUDIT, BR | Completed-Set relearning is fresh independent NORMAL, not a new pass. |
+| AC-V2-019 | PASS | AG | Quiz frontend and Speaking frontend are mocked; Quiz backend non-credit uses PostgreSQL. No full real-stack Speaking backend claim. |
+| AC-V2-020 | PASS | AUDIT, PG, BR | Only the exact active pass is resumable. |
+| AC-V2-021 | PASS | AUDIT, BR | Next Suggestion remains independent and excludes the active Set. |
+| AC-V2-022 | PASS | AUDIT, PG, BR | Foreign, locked, private, and malformed attempts do not credit. |
+| AC-V2-023 | PASS | AUDIT, PG | Guarded concurrent NORMAL/SRS acceptance permits at most one first credit. |
+| AC-V2-024 | PASS | AG | Focused mocked browser evidence verifies accessible pending/retry behavior; it is not a latency benchmark. |
+| AC-V2-025 | PASS | AUDIT, PG | Guarded migration accepts only exact V1 pass-linked NORMAL evidence. |
+| AC-V2-026 | PASS | AUDIT, PG, BR | First `AGAIN` credits once while ordinary requeue remains active. |
+| AC-V2-027 | PASS | AUDIT, BR | Exact SRS resume and remaining-CEFR continuation remain distinct. |
+| AC-V2-028 | PASS | AUDIT, PG, BR | Unresolved SRS remains resumable until completion/expiry; prior credit survives expiry. |
+| AC-V2-029 | PASS | AUDIT, PG | Backfill can make a pass ready but cannot complete or unlock it. |
+| AC-V2-030 | PASS | AUDIT, PG | Migration preserves completion/entitlement and fails closed on invalid evidence. |
+
+### Verification limitations and status gate
+
+- The acceptance matrix records acceptance evidence, not deployment. No Main, Preview, or Production migration/deployment is claimed.
+- Acceptance-gap frontend coverage is intentionally mocked and selected; it does not expand into live Speaking recognition, device audio, or full Speaking backend real-stack coverage.
+- Workflow runtime evidence passed, but formal HUMAN acceptance of TASK-010 and the CEFR V2 `DONE` transition has not occurred.
+- Proposed final status remains `IN_PROGRESS — ACCEPTANCE EVIDENCE PASS` until HUMAN reviews this documentation, formal TEST/REVIEW results, and explicitly authorizes `DONE`.
 
 Learning Progress represents the current learning state of a user for individual vocabulary.
 
@@ -248,48 +670,161 @@ LEARNED
 ↓
 NEEDS_REVIEW
 
-The exact Spaced Repetition algorithm will be determined during PLAN and must not be invented during implementation.
+Flashcard / Learning with SRS V1 originally shipped with transient client run state and backend-authoritative per-`(user_id, vocabulary_id)` progress but no persistent Learning Session. Streak V1 later supersedes that historical session boundary for qualifying NORMAL/SRS/Quiz groups with Backend-owned sessions, item evidence and daily qualification; it does not introduce a general learning-history/analytics product.
+
+Learning Session V1 is `DONE` and HUMAN approved. NORMAL Flashcard, SRS Flashcard, Quiz and Speaking Practice use resilient USER/Set/mode-isolated same-tab sessions, stable ordered batches of at most 10 distinct Vocabulary IDs, safe Set reconciliation and explicit continuation/restart. Quiz bounded-read authorization remains backend-authoritative, SRS scheduling and mutation integrity are preserved, and Speaking recognition data remains transient. Formal TEST, focused UI/UX review, guarded Backend DB Integration and Real Stack Browser CI, and final REVIEW passed. Live Chrome microphone/vendor-recognition behavior and device-specific audio routing remain deferred manual verification because guarded mocked/browser CI does not establish those device-dependent paths.
+
+## Flashcard / Learning V1 Closure
+
+Status: DONE
+
+### Workflow Status
+
+- TASK-045 through TASK-054: COMPLETE and HUMAN APPROVED.
+- TASK-054 formal TEST: PASS — AC-01 through AC-15 passed.
+- TASK-054 formal REVIEW: APPROVE — no findings or blockers.
+- Flashcard / Learning V1 closure: HUMAN AUTHORIZED.
+- Guarded TEST fixtures and dedicated processes/listeners were cleaned; lint, production build, diff, secret and scope checks passed.
+
+### Verified Evidence
+
+- Learning database/backend/API/security: 9/9 PASS; required Authentication, Vocabulary and Vocabulary Set backend regressions passed.
+- Frontend unit: 39/39 PASS; Auth/App Layout browser: 25/25 PASS.
+- Dedicated Learning browser: 4/4 PASS.
+- Combined real-stack: 28/28 PASS — Authentication 2, Learning 4, Topic 9, Vocabulary 5 and Vocabulary Set 8.
+
+### Implemented Boundary
+
+- Authenticated USER learning from a public System Set or owned private Set in explicit Item order.
+- Durable backend-authoritative progress remains unique per `(user_id, vocabulary_id)`, with transactional meaningful events, revision protection and immediate-current-event retry behavior.
+- At this historical Flashcard V1 closure, same-tab run state was Learning-owned and transient and no persistent Learning Session/history existed. Streak V1 later adds its narrowly scoped authoritative qualifying-session records while frontend recovery state remains transient.
+- The HUMAN-approved Focus Mode Flashcard experience includes deterministic primary-Meaning presentation, accessible interaction, optional stored-audio/native-TTS pronunciation and responsive/reduced-motion behavior.
+
+### Deferred / Non-blocking
+
+- Spaced Repetition was delivered as the separately approved SRS V1 extension described below. At this historical Flashcard V1 closure, Words to Review, Topic Learning Progress and Continue Learning remained `TODO`; CEFR Learning Path V1 now implements Words to Review and Continue Learning, while Topic Learning Progress remains `TODO`.
+- Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community and AI remain outside this DONE boundary.
+- Guarded remote TEST DB latency was separately diagnosed as database/network round-trip dominated. It is a non-blocking performance observation and no optimization was included in this closure.
+
+## SRS V1 Closure
+
+Status: DONE
+
+### Workflow Status
+
+- Approved SPEC, PLAN and TASK are synchronized with the final 1/3/7-day NEW timing revision.
+- TASK-090 through TASK-106 and revision tasks TASK-105A through TASK-105D are complete; all mandatory HUMAN checkpoints through TASK-106 were approved.
+- Formal TEST: PASS. Formal REVIEW: APPROVE. No blocking findings remain.
+- This SRS V1 milestone itself added no Prisma schema/migration, package dependency or persistent Learning Session/history. The separately approved later Streak V1 migrations supersede only that historical persistence statement.
+
+### Verified Scope
+
+- Default fixed-snapshot SRS sessions include eligible NEW, LEARNING, legacy-compatible and due items; NORMAL returns all Set items and never mutates scheduling/progress.
+- The backend-authoritative deterministic ladder is stage 0 then 1/3/7/14/30 days. NEW `HARD`/`GOOD`/`EASY` schedule 1/3/7 days; `AGAIN` resets to immediately-due stage 0 and remains unresolved in-session.
+- Backend-provided rating previews map to **Trong phiên này**, **Ngày mai**, **1–3 ngày**, **1 tuần+**, **2 tuần**, and **30 ngày** without frontend scheduler duplication.
+- Duplicate/retried events cannot advance scheduling twice. Exact-ID queue state preserves at most one pending occurrence; `AGAIN` reappears after three other presentations when possible, otherwise at queue end.
+- Existing Flashcard 3D/pronunciation/focus shell, NORMAL Previous/Next, responsive/accessibility behavior, derived Learning Progress due state, Set access and USER-only authorization are preserved.
+
+### Formal Evidence
+
+- Pure scheduler: 5/5 PASS; guarded backend Learning integration: 20/20 PASS; focused frontend Learning unit tests: 20/20 PASS; mocked Flashcard Playwright: 22/22 PASS.
+- Dedicated real stack: Learning 10/10, Learning Progress 5/5, Authentication/Quiz 5/5, Dashboard 2/2, public Set Detail 3/3 and USER Set Detail 2/2 PASS.
+- Production build, full/touched-file ESLint and `git diff --check` PASS. TEST cleanup preserved unrelated/manual users and sessions.
+
+### Deferred / Non-blocking
+
+- At this historical SRS V1 closure, Words-to-Review/Dashboard review summaries, Topic progress and Continue Learning remained outside SRS V1. CEFR Learning Path V1 now implements the bounded global review, Dashboard review summary and next-learning recommendation without changing the SRS scheduler; Topic progress, persistent history/session analytics, FSRS/SM-2, gamification and pronunciation expansion remain deferred.
+- `ease_factor` remains unused. The 30-day interval cap remains intentional.
+- Configured development database migration parity remains `NOT VERIFIED — Supabase/Prisma schema-engine error`; dedicated `.env.test` migration parity passed with 7 migrations and none pending. No main database mutation was performed.
+
+## Learning Progress View V1
+
+Status: DONE
+
+### Closure Preparation
+
+- The existing Learning Progress persistence/mutation engine and Flashcard / Learning V1 closure remain `DONE`.
+- The approved extension adds only a USER-facing read API and `/my/learning-progress` view over persisted current state.
+- TASK-064 through TASK-072 are complete and HUMAN approved. TASK-072 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
+- HUMAN final closure is approved; Learning Progress View V1 is `DONE` while the existing Learning Progress engine remains a separate completed capability.
+- Summary covers persisted `LEARNING`, `LEARNED` and compatibility-only `NEEDS_REVIEW`; conceptual `NEW` is excluded.
+- Status filtering and bounded pagination are included; search is deferred.
+- This historical Learning Progress View V1 boundary authorized no schema migration, SRS/review queue, Topic/Set progress, Continue Learning, history, accuracy, Quiz/Pronunciation result, XP/gamification, Dashboard or Flashcard redesign. CEFR Learning Path V1 later authorizes and implements only its approved additive schema, bounded global review and next-learning recommendation; the other exclusions remain unchanged.
+
+### Formal Evidence
+
+- Guarded backend Learning coverage: 12/12 PASS, including USER-only authorization, current-user isolation, query validation, deterministic pagination/filter ordering, minimal projection, compatible `NEEDS_REVIEW`, consistent reads and repeated-read invariance.
+- Focused frontend evidence: Learning service 4/4 PASS; mocked Learning Progress states and accessibility 6/6 PASS; scoped Auth/App Layout responsive regressions 16/16 PASS; ESLint and production build PASS.
+- Guarded Learning Progress real-stack: 5/5 PASS. Complete sequential real-stack regression: 33/33 PASS — Auth 2, Learning Progress 5, Learning 4, Topic 9, Vocabulary 5 and Vocabulary Set 8.
+- Final mocked Auth/App Layout/Progress browser regression: 32/32 PASS. Controlled TEST fixtures and scoped processes/listeners were cleaned; diff, secret and scope checks passed.
+
+### Deferred / Non-blocking
+
+- Word search and client-selectable sorting remain deferred.
+- At this historical Learning Progress View V1 closure, conceptual `NEW` global counting, automatic `NEEDS_REVIEW` transitions, SRS scheduling, review queue/Words to Review, review actions, Topic/Set progress and Continue Learning remained deferred. CEFR Learning Path V1 now implements the bounded review queue/actions and next-learning recommendation; conceptual `NEW` global counting, automatic transitions and Topic/Set progress remain deferred.
+- History/activity timeline, accuracy, Quiz/Pronunciation results, XP/gamification, Dashboard implementation, Flashcard redesign and a standalone USER Vocabulary catalog remain outside this extension.
 
 4.6 Dashboard
 
 The Dashboard provides a summary of the user's current learning state and activity.
 
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-User Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-XP Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Level Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Streak Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+User Dashboard	DONE	✓	✓	✓	✓	✓	✓
+XP Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
+Level Summary	IN_PROGRESS	✓	✓	✓	✓	IN_PROGRESS	—
+Streak Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal Progress	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Topic Progress Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Words to Review Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Continue Learning Summary	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Words to Review Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
+Continue Learning Summary	DONE	✓	✓	✓	✓	PASS	APPROVE
 
-Dashboard data should be derived from the user's actual learning and gamification state.
+Dashboard V1 composes actual current-session data from the completed Authentication context, read-only Learning Progress summary and owner-scoped My Vocabulary Sets list. It adds no Dashboard endpoint, schema or migration.
 
 The Dashboard must not become a separate source of truth for business data.
 
+### Dashboard V1 Closure
+
+- Related SPEC: `docs/specs/DASHBOARD_V1_SPEC.md` — HUMAN APPROVED.
+- Related PLAN: `docs/plans/DASHBOARD_V1_PLAN.md` — HUMAN APPROVED.
+- Related TASK: `docs/tasks/DASHBOARD_V1_TASK.md` — HUMAN APPROVED.
+- TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
+- USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
+- Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
+- The original Dashboard V1 closure excluded XP/Level, Streak, Words to Review and Continue Learning. The later XP & Level V1 and Streak V1 workstreams are `DONE`, and CEFR Learning Path V1 now implements the bounded Words to Review summary and authoritative next-learning recommendation. Daily Goal, Topic/Set percentages, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
+- HUMAN final closure is approved; User Dashboard V1 is `DONE`.
+
+### Dashboard V1 Formal Evidence
+
+- Greeting boundary: 1/1 PASS; mocked Dashboard states/accessibility/responsive coverage: 9/9 PASS; scoped Auth routing: 5/5 PASS.
+- Guarded Dashboard real-stack: 2/2 PASS, including current-USER isolation, exact persisted summary, bounded owned-Set preview, valid Learn navigation, ADMIN zero-call and read-only snapshot invariance.
+- Scoped regressions: Auth real-stack 2/2, Learning Progress 5/5, USER Vocabulary Set 2/2, Learning route 4/4 and App Layout 8/8 PASS.
+- ESLint, production build, targeted TEST fixture cleanup, listener cleanup, diff, secret and scope checks PASS.
+- No Dashboard endpoint, backend source change, schema, migration, dependency, fake data or deferred Dashboard/gamification capability was added.
+
 4.7 Quiz
 
-The system currently supports exactly two quiz types:
-
-1. Vietnamese → English
-2. Missing Letter
+The sole active Quiz mode is Multiple Choice (English → Vietnamese). The replacement is currently `IN_PROGRESS` pending safe verification, guarded CI, formal review and HUMAN approval.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Vietnamese → English Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Missing Letter Quiz	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Per-Character Feedback	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Quiz Result	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Multiple Choice Quiz	IN_PROGRESS	✅	✅	✅	✅	⏳	⏳
+Transient Quiz Result	IN_PROGRESS	✅	✅	✅	✅	⏳	⏳
 
-For typing-based quizzes, per-character feedback may indicate:
-
-Correct position → Green
-Incorrect position → Red
+Accepted feedback identifies the selected and correct opaque choice IDs after Backend grading and uses visible text plus non-color semantics.
 
 Quiz correctness must be determined by the Backend.
 
-Only the approved quiz types should be implemented.
+Only the approved `MULTIPLE_CHOICE` type should be implemented.
 
 Do not add additional quiz types without explicit scope approval.
+
+Quiz V1 is an authenticated USER-only, Vocabulary-Set-scoped workflow over every ordered Set Item once per run. The active contract is defined by `docs/specs/QUIZ_V1_SPEC.md`, `docs/plans/QUIZ_V1_PLAN.md` and `docs/tasks/QUIZ_V1_TASK.md`.
+
+Current workflow evidence:
+
+- The Multiple Choice Quiz SPEC, PLAN and TASK decomposition are HUMAN APPROVED.
+- Backend, Frontend and documentation implementation is complete, including the HUMAN-approved compact single-column answer presentation and restart behavior.
+- Formal offline TEST and REVIEW are in progress. Database-backed authorization, Progress, idempotency and concurrency verification remains reserved for guarded CI.
+- Quiz runs/results remain transient and add no schema/migration or Quiz Session/Attempt/history persistence.
+- At the Quiz V1 milestone, SRS/review queue, XP/Level/Streak/Daily Goal/Achievement, Pronunciation Practice, additional Quiz types and analytics were outside its scope. Later approved XP/Level and Streak workstreams supersede only those corresponding historical status statements.
 
 4.8 Pronunciation
 
@@ -329,9 +864,9 @@ Pronunciation must not automatically become a third quiz type.
 
 4.9 Gamification
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-XP	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Level	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Streak	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+XP	DONE	✓	✓	✓	✓	PASS	APPROVE
+Level	DONE	✓	✓	✓	✓	PASS	APPROVE
+Streak	DONE	✓	✓	✓	✓	PASS	APPROVE
 Daily Goal	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 Achievement	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 XP Rules
@@ -344,7 +879,7 @@ Quiz correct              → +3 XP
 Incorrect quiz            → +0 XP
 Repeated meaningless use → +0 XP
 
-XP rules are universal for all users.
+XP & Level V1 applies only to authenticated `USER` accounts. Initial SRS pass and first-correct Quiz each award +3 once per exact USER/Vocabulary UUID; a genuinely due scheduled SRS cycle awards +1 once per pre-event Progress revision, including due `AGAIN`. Initial `AGAIN`, immediate requeues, incorrect/later-correct Quiz, NORMAL and Speaking award zero. Backend owns eligibility, atomic persistence, replay and Level projections.
 
 Level Rules
 
@@ -366,25 +901,46 @@ At Level 15:
 
 Level 15 — MAX
 
-The exact level threshold table must follow the approved business rules and must not be invented during implementation.
+The Backend threshold table is implemented for Levels 1–15 using `25 × L × (L − 1)`; Level 15 starts at 5,250 XP and remains MAX while XP continues increasing.
 
-Streak Rules
+### XP & Level V1 — Closure Evidence
 
-Streak is based on qualifying learning activity, not login.
+- Related SPEC: `docs/specs/XP_LEVEL_V1_SPEC.md` — HUMAN APPROVED.
+- Related PLAN: `docs/plans/XP_LEVEL_V1_PLAN.md` — HUMAN APPROVED.
+- Related TASK: `docs/tasks/XP_LEVEL_V1_TASK.md` — TASK-231 through TASK-234 completed and HUMAN accepted.
+- TASK-231 and Gate 5 are HUMAN accepted. GitHub Actions Run #58 at verified commit `648960a48c779286c0e11e7e2bd8679be55ef43b` passed Trust Gate, Backend DB Integration, Real Stack Browser and Summary.
+- TASK-232 documentation synchronization is HUMAN accepted. TASK-233 formal TEST passed all 26/26 acceptance criteria and is HUMAN accepted. TASK-234 formal REVIEW returned `APPROVE` with no BLOCKER or MAJOR findings; its MINOR-01 stale-status finding is resolved by this synchronization.
+- HUMAN Gate 6 final TEST/REVIEW acceptance is recorded as `ACCEPTED`. XP & Level V1 is `DONE` according to the project workflow.
+- Verified implementation includes USER-only SRS initial/due-review and first-correct Quiz rewards, durable `XP_REWARD` deduplication, no-backfill migration, atomic Progress/reward/XP writes, immediate replay projections, Learning Progress `xp_level`, Dashboard Level/XP/MAX display and transient non-replay feedback.
+- NORMAL Flashcard and Speaking remain zero-XP. At this XP & Level V1 closure, Daily Goal bonus, Streak, Achievement, leaderboard and XP-history product surfaces were outside that workstream; the later Streak V1 workstream supersedes only the Streak status.
+- Evidence references: TASK-233 report `docs/testing/XP_LEVEL_V1_TEST_REPORT.md`; TASK-234 report `docs/reviews/XP_LEVEL_V1_REVIEW_REPORT.md`; GitHub Actions Run #58 for accepted backend DB/real-stack verification; Run #53 for guarded XP migration verification and cleanup.
+- Closure records feature implementation acceptance only. The XP migration has **not** been applied to the Preview TEST DB, and the feature branch has **not** been merged into `dev`; those deployment/integration actions require their own authorization and release controls.
 
-Qualifying activities may include:
+### Streak V1 — Closure Evidence
 
-Vocabulary learning
-Flashcard learning
-Quiz
-Pronunciation practice
-Review
+- Exactly NORMAL, SRS and Multiple Choice Quiz can qualify through a completed Backend-owned snapshot. Speaking, login, browsing, opening, abandoning, failing or expiring a session do not qualify.
+- Accepted zero-correct Quiz completion qualifies without invented Quiz XP. Sessionless SRS/Quiz callers retain their approved Progress/XP behavior and never qualify.
+- `STREAK_DAY` deduplicates one USER/application day using authoritative Backend completion time in `Asia/Ho_Chi_Minh`; current Streak is projected rather than stored on USER.
+- V1 has no Daily Goal integration, Streak Freeze, longest Streak, weekly calendar or history/analytics UI. No historical backfill or scheduled retention cleanup was introduced.
 
-Multiple qualifying activities on the same calendar day count as one streak day.
+#### Workflow and evidence status
 
-Skipping one or more days resets the streak to 1 when the user returns to a qualifying learning activity.
+- Gate ST-5: **HUMAN ACCEPTED**.
+- Gate ST-6: **HUMAN ACCEPTED** with its recorded Chromium/mocked-API/manual-screen-reader limitations.
+- TASK-249: **HUMAN ACCEPTED — PASS** at commit `189e1da9934758a87d88f19faa97db715376c0b1`; GitHub Actions Run `39394932196`, attempt `1`, passed Trust Gate, Foundation PostgreSQL `27/27` and focused real-stack Playwright `1/1`. Eleven migrations applied successfully to each isolated run-owned schema.
+- Fixture cleanup was verified at fixture level. Foundation marker-validated cleanup and the integrated marker-validated cleanup routine were verified. Independent post-drop PostgreSQL catalog verification of integrated-schema absence was **NOT PERFORMED** and must not be inferred.
+- TASK-250 documentation synchronization: **HUMAN ACCEPTED — Published** at commit `1df63db3674dd1cdf10f06da27f900809c1b7ad5`.
+- TASK-251 formal TEST: **HUMAN ACCEPTED — Published** at commit `d1e04081dec59c43d04ec2fa35513275ea322ba3`. TASK-252 formal REVIEW: **HUMAN ACCEPTED — Published** at commit `94d4ee5e01207c820726addb269e132f3e6f056d`. Gate ST-7: **HUMAN ACCEPTED** for the reviewed implementation at `d1e04081dec59c43d04ec2fa35513275ea322ba3`.
+- TASK-253 Preview TEST verification: **HUMAN ACCEPTED**. Gate ST-8: **HUMAN ACCEPTED**.
+- Preview TEST migration verification passed with all `11/11` Prisma migrations applied. Both approved Streak migrations, four Streak tables and three enum types were verified with no historical Streak backfill. Migration-time aggregate counts were preserved for `USER` (`2 → 2`), `LEARNING_PROGRESS` (`14 → 14`) and `XP_REWARD` (`13 → 13`); this is aggregate preservation evidence, not row-by-row equality.
+- Frontend and Backend Vercel Preview deployments completed at accepted revision `91b4ec4d27240e009a8e8f44108037c44d0a1803`. An authenticated Streak read returned HTTP `200`; one HUMAN-authorized 10-question Quiz smoke completed with 8 correct and 2 incorrect answers. API and Dashboard Streak changed from `0` to `1` day on `2026-10-21` in `Asia/Ho_Chi_Minh`.
+- Streak V1 is **DONE** for its approved scope after formal TEST, formal REVIEW, Gate ST-7, TASK-253 and Gate ST-8 HUMAN acceptance.
+- Preview acceptance does not imply Production deployment or merge into `dev`; neither occurred. The committed feature-specific Frontend API rewrite is temporary and must be restored to the Dev Backend destination, independently reviewed and separately authorized before any future merge into `dev`.
+- Accepted limitations remain: no isolated backup restore rehearsal; the `pg_dump` numeric exit code was not captured; the PostgreSQL archive excludes external service resources; HUMAN accepted that recovery risk with archive retention for at least 30 days after Gate ST-8; no manual screen-reader verification; Chromium-focused browser evidence; equivalent viewport checks were not manual 200% browser zoom; independent integrated-schema post-drop catalog absence remains not verified; the XP migration had an LF/CRLF checksum provenance difference with normalized SQL equivalent and no dedicated Prisma LF/CRLF rehearsal; and the single Quiz smoke is not exhaustive activity coverage.
 
-No Streak Freeze is required in v1.
+#### Documentation traceability
+
+AC-ST-01–04 / BR-ST-001–008 cover role/mode/exclusion boundaries; AC-ST-05–15 / BR-ST-009–029 cover NORMAL/SRS/Quiz evidence; AC-ST-16–24 / BR-ST-030–038 cover daily projection; AC-ST-25–31 / BR-ST-039–046 cover lifecycle, expiry, concurrency and migration; AC-ST-32 covers the authoritative Streak read; AC-ST-33–34 cover Dashboard accessibility; AC-ST-35–36 preserve exclusions and sessionless compatibility.
 
 Daily Goal Rules
 
@@ -412,7 +968,7 @@ Daily progress is stored per calendar day.
 
 The system must not require a global cron job to reset all users' daily XP.
 
-Do not add leaderboard, ranking system, or XP transaction/history tables unless explicitly approved.
+Do not add leaderboard, ranking system, or an XP transaction/history product table. Internal `XP_REWARD` is the approved positive-reward deduplication boundary, not user-facing history.
 
 4.10 Achievements
 
@@ -466,9 +1022,9 @@ They require explicit scope approval before implementation.
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
 Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Vocabulary Set Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-Topic Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
+Vocabulary Set Management	DONE	✓	✓	✓	✓	✓	✓
+Topic Management	DONE	✓	✓	⏳	⏳	⏳	⏳
 Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
@@ -487,6 +1043,144 @@ AI-Assisted Learning Support	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 AI features must not become mandatory project dependencies without explicit approval.
 
 If AI is not required by the final approved scope, these features may remain TODO.
+
+4.14 Frontend Application Foundation
+
+Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
+Authenticated App Layout Foundation	DONE	✓	✓	✓	✓	✓	✓
+
+The approved App Layout foundation extends the existing Authentication `AuthenticatedShell` with a shared authenticated Header, primary Sidebar/navigation, route-rendered Main Content and minimal Footer.
+
+This foundation is separate from User Dashboard business content, Topic and the public Landing Page. It is complete through TASK-018 closure.
+
+Related SPEC: `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`
+
+## Authenticated App Layout Foundation
+
+Status: DONE
+
+### Related Documentation
+
+- SPEC: `docs/specs/AUTHENTICATED_APP_LAYOUT_FOUNDATION_SPEC.md`
+- PLAN: `docs/plans/AUTHENTICATED_APP_LAYOUT_FOUNDATION_PLAN.md`
+- TASK: `docs/tasks/AUTHENTICATED_APP_LAYOUT_FOUNDATION_TASK.md`
+
+### Workflow Status
+
+- TASK-016: COMPLETE — shared responsive authenticated shell implemented.
+- TASK-017: PASS — focused App Layout browser coverage, full frontend Authentication regression, lint and production build passed.
+- TASK-018: COMPLETE — final review approved; AC-01 through AC-17 passed with no findings or blockers.
+
+### Frontend
+
+- `frontend/src/auth/ui/authenticated-shell.jsx`
+- `frontend/src/index.css`
+- `frontend/e2e/auth/app-layout.spec.js`
+
+### Scope
+
+- No backend, API, database, route, dependency or Authentication architecture change.
+- User Dashboard remains a separate completed feature; the App Layout contract itself is unchanged.
+
+## USER UI Polish Corrective Workstream
+
+Status: DONE
+
+### Workflow Status
+
+- HUMAN-approved SPEC, PLAN and TASK are complete through TASK-182.
+- Formal TEST: PASS. Formal REVIEW: APPROVE. HUMAN closure approval: APPROVED on 2026-10-09.
+- TASK-183 is authorized only for the final commit, push and fast-forward-only `dev` integration recorded in the closure report.
+
+### Verified Boundary
+
+- Quiz uses one route-scoped outer vertical scroll owner while preserving backend-authoritative behavior. The former two-mode statement is historical; the active mode is `MULTIPLE_CHOICE`.
+- Register error states remain content-safe; field errors stay inline and global failures use one responsive, non-focus-stealing Auth notification with keyboard-accessible dismissal and no hidden tab stop.
+- Exactly the five approved USER-facing native selects share the presentation-only native-select primitive; ADMIN controls and native semantics remain unchanged.
+- No backend, API, schema, migration, route, role, dependency, Storage or database behavior changed.
+
+### Verification
+
+- Frontend unit suite: 99/99 PASS; authoritative serial mocked browser matrix: 118/118 PASS.
+- Corrective AuthNotification keyboard regressions: 2/2 PASS; focused Auth forms: 8/8 PASS.
+- Production build, frontend ESLint, `git diff --check`, scope, secret and transient-artifact checks: PASS.
+
+### Deferred / Non-blocking
+
+- This completed workstream did not include notification-system replacement; the separately scoped UI Consistency V1 workstream below now owns React-Toastify integration.
+
+## UI Consistency V1
+
+Status: IN_PROGRESS
+
+- HUMAN approved shared React-Toastify notifications, Public-consistent client-side pagination for Personal Set Detail, the compact two-column Personal mobile learning-card layout, and the teal Speaking-card accent.
+- SPEC: `docs/specs/UI_CONSISTENCY_V1_SPEC.md`
+- PLAN: `docs/plans/UI_CONSISTENCY_V1_PLAN.md`
+- TASK: `docs/tasks/UI_CONSISTENCY_V1_TASK.md`
+- No backend, API, schema, migration or database change is included.
+- Status remains `IN_PROGRESS` until formal verification, HUMAN visual approval and guarded CI are complete.
+
+4.15 Engineering Foundation
+
+| Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
+|---|---|---|---|---|---|---|---|
+| CI Foundation | DONE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+## CI Foundation
+
+Status: DONE
+
+### Related Documentation
+
+- SPEC: `docs/specs/CI_FOUNDATION_SPEC.md`
+- PLAN: `docs/plans/CI_FOUNDATION_PLAN.md`
+- TASK: `docs/tasks/CI_FOUNDATION_TASK.md`
+- Operations: `docs/CI.md`
+
+### Current Boundary
+
+- TASK-055 through TASK-063 are complete with formal TEST `PASS` and formal REVIEW `APPROVE`.
+- Secret-free and guarded GitHub Actions checks have authoritative same-repository PR evidence.
+- The HUMAN-confirmed CI-exclusive PostgreSQL database and repository secret are configured without recording their values.
+- HUMAN final closure approval is recorded and CI Foundation is `DONE`.
+- CD, deployment, Main/Preview/Production migrations, Docker, coverage thresholds and unrelated automation remain deferred.
+
+4.16 Performance
+
+| Feature | Status | SPEC | PLAN | TASK | IMPLEMENT | TEST | REVIEW |
+|---|---|---|---|---|---|---|---|
+| App Loading & Runtime Baseline V1 | DONE | ✅ HUMAN APPROVED | ✅ HUMAN APPROVED | ✅ HUMAN APPROVED | COMPLETE | PASS | APPROVE |
+
+## Performance V1 — App Loading & Runtime Baseline
+
+Status: DONE — IMPLEMENTATION, TEST, AND FORMAL REVIEW COMPLETE; READY FOR HUMAN CLOSURE/COMMIT APPROVAL
+
+### Scope Boundary
+
+- Performance V1 is an audit-first, targeted-optimization workflow over representative existing ELVocab flows.
+- A reproducible BEFORE baseline and HUMAN checkpoint are required before selecting or implementing optimizations.
+- The existing production bundle-size advisory and remote TEST DB/Supabase latency observations are investigation signals, not proof of an application defect.
+- No schema/index, API behavior, dependency, cache, broad refactor, product redesign, or deferred feature is authorized at this stage.
+- TASK-109 through TASK-113 implemented a test/dev-only measurement harness on dedicated ports `4186`/`5012`. Production application behavior and dependencies are unchanged.
+- Harness smoke verification passed against the guarded `.env.test` path with 7 migrations current, read-only query observation, scrubbed ignored artifacts, and unchanged unrelated TEST USER/session counts. These smoke values are not a Performance V1 baseline.
+- HUMAN approved the TASK-109–113 harness checkpoint and authorized TASK-114–120.
+- The earlier preflight blocker was diagnosed as an unsafe direct Prisma CLI env-loading path. HUMAN accepted the diagnosis; the authoritative run used only guarded TEST configuration.
+- TASK-114–120 passed on 2026-10-06: 7/7 serial scenarios, one excluded warm-up and five complete measured samples per condition, with unrelated TEST users/sessions preserved at `5→5` and `8→8`.
+- The authoritative measurements and ranked proposals are recorded in `docs/performance/PERFORMANCE_V1_BASELINE.md`. No optimization candidate is authorized until HUMAN baseline review selects an exact scope and target.
+- HUMAN approved the baseline and selected candidates 1–3. TASK-121 materially reduced Dashboard Progress query work and readiness without changing its contract; focused backend/browser verification passed.
+- TASK-122 uses the HUMAN-approved Prisma 6.19.3 PostgreSQL relation-join capability only on the Learning Set/SRS read. Six ordered relation queries became one joined query per read; BF-05 first-card/full-sequence medians improved from `2,998/8,505 ms` to `1,987/5,504 ms`, with required Learning/SRS regressions green.
+- TASK-123 conservatively consolidated authenticated identity validation from two sequential remote reads to one joined session/user query. TASK-125 restored the original post-read expiry boundary while keeping the one-query result. `/api/auth/me` remained one query; Auth unit, real-stack, and focused BF-02 checks passed without cookie/session/API changes.
+- HUMAN approved retaining the broader Prisma 6.19.3 generated relation-join behavior. The affected nested relation paths passed proportional real-stack ownership, ordering, visibility, mutation, SRS/NORMAL, Quiz, and Auth regression; no query required containment.
+- TASK-124 completed a fresh authoritative AFTER run after that approval. Dashboard, authenticated restore, Owned Set Detail, BF-05, and BF-06 retained material median improvements despite documented remote TEST variance. Full evidence is in `docs/performance/PERFORMANCE_V1_AFTER.md`.
+- TASK-125 formal review is APPROVE. The final focused Auth suite passed `16/16`, real-stack Auth `2/2`, and BF-02 retained one warm-up plus five measured samples per condition with cleanup preserving unrelated TEST users/sessions `5→5` / `8→8`.
+
+### Related Documentation
+
+- SPEC: `docs/specs/PERFORMANCE_V1_SPEC.md` — HUMAN APPROVED on 2026-10-05.
+- PLAN: `docs/plans/PERFORMANCE_V1_PLAN.md` — HUMAN APPROVED on 2026-10-05.
+- BASELINE: `docs/performance/PERFORMANCE_V1_BASELINE.md` — HUMAN APPROVED; candidates 1–3 selected, bundle work deferred.
+- AFTER: `docs/performance/PERFORMANCE_V1_AFTER.md` — authoritative TASK-124 comparison accepted; TASK-125 closure verification recorded.
+- TASK: `docs/tasks/PERFORMANCE_V1_TASK.md` — TASK-109–TASK-125 complete; formal TEST PASS and REVIEW APPROVE.
 
 5. Feature Detail Records
 

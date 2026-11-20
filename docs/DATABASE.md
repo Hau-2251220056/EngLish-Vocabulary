@@ -68,8 +68,11 @@ USER
 ├── Learning
 │   ├── LEARNING_PROGRESS
 │   ├── USER_DAILY_PROGRESS
-│   ├── QUIZ_ATTEMPT
-│   └── STREAK
+│   ├── QUIZ_ATTEMPT (future/deferred; not materialized in Quiz V1)
+│   ├── LEARNING_SESSION
+│   ├── LEARNING_SESSION_ITEM
+│   ├── LEARNING_SESSION_SRS_RECEIPT
+│   └── STREAK_DAY
 │
 ├── Gamification
 │   ├── ACHIEVEMENT
@@ -101,8 +104,11 @@ VOCABULARY_SET	Bộ từ vựng
 VOCABULARY_SET_ITEM	Liên kết Vocabulary và Vocabulary Set
 LEARNING_PROGRESS	Tiến độ học của user đối với từng từ
 USER_DAILY_PROGRESS	Tiến độ XP và Daily Goal theo từng ngày
-QUIZ_ATTEMPT	Lịch sử làm quiz
-STREAK	Theo dõi chuỗi ngày học
+QUIZ_ATTEMPT	Deferred legacy concept; not materialized by Quiz V1
+LEARNING_SESSION	Backend-owned qualifying session identity, snapshot and lifecycle
+LEARNING_SESSION_ITEM	Immutable session item and accepted completion evidence
+LEARNING_SESSION_SRS_RECEIPT	SRS session retry/idempotency receipt
+STREAK_DAY	Một qualifying application day của USER
 ACHIEVEMENT	Danh sách thành tích
 USER_ACHIEVEMENT	Thành tích user đã đạt
 COMMUNITY_POST	Bài đăng cộng đồng
@@ -137,6 +143,94 @@ USER
 - daily_xp_goal
 - created_at
 - updated_at
+
+### 5.2.1. USER Data Type & Constraint Contract
+
+Các field của `USER` phải được materialize theo contract sau:
+
+| Field           | Data Type    | Nullable | Default           | Constraint / Rule                |
+| --------------- | ------------ | -------- | ----------------- | -------------------------------- |
+| `id`            | UUID         | NOT NULL | Generated UUID    | Primary Key                      |
+| `email`         | VARCHAR(255) | NOT NULL | None              | UNIQUE                           |
+| `password_hash` | TEXT         | NOT NULL | None              | Không lưu plaintext password     |
+| `display_name`  | VARCHAR(100) | NOT NULL | None              | Tên hiển thị của User            |
+| `avatar_url`    | TEXT         | NULL     | NULL              | URL avatar, nếu có               |
+| `role`          | Enum         | NOT NULL | `USER`            | Chỉ `USER` hoặc `ADMIN`          |
+| `is_active`     | BOOLEAN      | NOT NULL | `true`            | Trạng thái tài khoản             |
+| `total_xp`      | INTEGER      | NOT NULL | `0`               | Không âm                         |
+| `daily_xp_goal` | INTEGER      | NOT NULL | `50`              | Giá trị hợp lệ từ `50` đến `200` |
+| `created_at`    | TIMESTAMP    | NOT NULL | Current timestamp | Thời điểm tạo User               |
+| `updated_at`    | TIMESTAMP    | NOT NULL | Current timestamp | Tự động cập nhật khi User thay đổi |
+
+#### USER Role
+
+Database chỉ cho phép hai authenticated role:
+
+* `USER`
+* `ADMIN`
+
+`Guest` không được lưu trong `USER.role` vì Guest là trạng thái chưa xác thực.
+
+#### USER ID
+
+`USER.id` sử dụng UUID và là Primary Key.
+
+Các Foreign Key tham chiếu tới `USER.id` phải sử dụng cùng kiểu dữ liệu UUID.
+
+#### USER Email
+
+`email` phải:
+
+* NOT NULL.
+* UNIQUE.
+* Được normalize ở Backend trước khi lưu.
+* Không phân biệt chữ hoa/chữ thường ở tầng business logic.
+
+Database unique constraint phải bảo vệ uniqueness ở tầng persistence.
+
+#### USER Password
+
+`password_hash` chỉ lưu password hash được tạo bởi Backend.
+
+Database không lưu plaintext password.
+
+Cách hash và verify password được quy định trong Authentication Specification/Plan, không thuộc Database logic.
+
+#### USER XP
+
+`total_xp`:
+
+* NOT NULL.
+* Default `0`.
+* INTEGER.
+* Không được âm.
+* Database constraint `USER_total_xp_non_negative` bảo vệ `total_xp >= 0`; migration chỉ thêm constraint sau read-only preflight và dừng mà không sửa dữ liệu nếu phát hiện balance âm.
+
+Level không được lưu trong bảng `USER`.
+
+Level được tính từ `total_xp` ở Backend Service.
+
+#### USER Daily XP Goal
+
+`daily_xp_goal`:
+
+* NOT NULL.
+* Default `50`.
+* Giá trị hợp lệ trong khoảng `50` đến `200`.
+* Việc thay đổi Daily XP Goal không reset `total_xp`.
+* Business validation được thực hiện ở Backend.
+
+#### USER Timestamps
+
+`created_at` mặc định là current timestamp.
+
+`updated_at` mặc định là current timestamp và tự động cập nhật khi record `USER` thay đổi.
+
+Database có thể sử dụng constraint để bảo vệ miền giá trị nếu implementation cần và không làm thay đổi business rule đã được phê duyệt.
+
+---
+
+
 5.3. Role
 USER
 ADMIN
@@ -198,6 +292,67 @@ Mỗi AUTH_SESSION thuộc về đúng một User thông qua `user_id`.
 - Không có logout-all-devices trong v1.
 - Không thêm `revoked_at`, `last_used_at`, `ip_address`, `user_agent` hoặc `device_name`.
 - Không triển khai session/device history.
+### 5.6.1. AUTH_SESSION Data Type & Constraint Contract
+
+Các field của `AUTH_SESSION` phải được materialize theo contract sau:
+
+| Field                     | Data Type   | Nullable | Default           | Constraint / Rule              |
+| ------------------------- | ----------- | -------- | ----------------- | ------------------------------ |
+| `id`                      | UUID        | NOT NULL | Generated UUID    | Primary Key                    |
+| `user_id`                 | UUID        | NOT NULL | None              | Foreign Key → `USER.id`        |
+| `session_identifier_hash` | VARCHAR(64) | NOT NULL | None              | UNIQUE                         |
+| `created_at`              | TIMESTAMP   | NOT NULL | Current timestamp | Thời điểm tạo session          |
+| `expires_at`              | TIMESTAMP   | NOT NULL | None              | Thời điểm session hết hiệu lực |
+
+#### AUTH_SESSION ID
+
+`AUTH_SESSION.id` sử dụng UUID và là Primary Key.
+
+`AUTH_SESSION.user_id` sử dụng UUID để reference `USER.id`.
+
+#### Session Identifier Hash
+
+`session_identifier_hash`:
+
+* NOT NULL.
+* UNIQUE.
+* Lưu SHA-256 hash dưới dạng hexadecimal representation.
+* Không lưu raw session token/identifier.
+* Không lưu thêm session metadata ngoài các field được định nghĩa trong `AUTH_SESSION`.
+
+Raw session token chỉ tồn tại trong runtime/cookie theo Authentication Specification.
+
+#### Session Expiration
+
+`expires_at` là thời điểm session hết hiệu lực.
+
+Session có lifetime 7 ngày theo Authentication Specification/Plan.
+
+Backend chịu trách nhiệm tạo giá trị `expires_at` phù hợp khi tạo session.
+
+Database không tự động xóa expired session bằng cron/job ở phiên bản đầu.
+
+#### AUTH_SESSION Relationship
+
+Relationship:
+
+`USER 1 ─── N AUTH_SESSION`
+
+Một User có thể có nhiều session đồng thời.
+
+Mỗi `AUTH_SESSION.user_id` phải reference tới một `USER.id`.
+
+Không sử dụng:
+
+* `revoked_at`
+* `last_used_at`
+* `ip_address`
+* `user_agent`
+* `device_name`
+
+trong phiên bản đầu.
+
+Không tạo bảng session/device history riêng.
 
 6. TOPIC
 6.1. Mục đích
@@ -212,14 +367,16 @@ Travel
 Food
 Work
 Technology
-6.2. Dữ liệu dự kiến
+6.2. Topic V1 approved data contract
 TOPIC
 
-- id
-- name
-- description
+- id: UUID
+- name: NOT NULL, maximum 100 characters
+- description: nullable, maximum 500 characters
 - created_at
 - updated_at
+
+`name` is trimmed/validated by the backend and has a PostgreSQL functional unique index on `LOWER(name)` for case-insensitive uniqueness. No additional normalized-name column or database extension is required.
 6.3. Relationship
 
 Topic được tổ chức theo:
@@ -230,122 +387,119 @@ VOCABULARY_SET
    ↓
 VOCABULARY
 
-Một Topic có thể có nhiều Vocabulary Set.
-
-Một Vocabulary Set thuộc về một Topic trong phạm vi hệ thống.
+Topic V1 itself did not materialize a Vocabulary Set relationship or foreign key. Vocabulary Set V1 is the approved feature that materializes the required `TOPIC 1:N VOCABULARY_SET` relationship.
 
 6.4. Quy tắc
 Topic hệ thống do Admin quản lý.
 User không tự ý tạo hoặc chỉnh sửa Topic hệ thống.
-Không lưu trực tiếp topic_id trong VOCABULARY ở phiên bản đầu.
-Một Vocabulary có thể xuất hiện trong nhiều Set thuộc các Topic khác nhau.
-7. VOCABULARY
-7.1. Mục đích
+Không lưu trực tiếp `topic_id` trong VOCABULARY ở Topic V1.
+Vocabulary Set V1 requires non-null `VOCABULARY_SET.topic_id` and `ON DELETE RESTRICT` / no cascade. Topic V1 must not be retroactively described as having created that relation, mock data or a relation-state test.
+7. Vocabulary V1 Approved Data Contract
 
-Lưu thông tin cơ bản của một từ tiếng Anh.
+Vocabulary V1 is an ADMIN-managed aggregate only. It materializes:
 
-Ví dụ:
-
-work
-dessert
-book
-7.2. Dữ liệu dự kiến
+```text
 VOCABULARY
+  -> VOCABULARY_MEANING
+      -> VOCABULARY_EXAMPLE
+```
 
-- id
-- word
-- phonetic
-- pronunciation_url
-- difficulty_level
-- created_at
-- updated_at
-7.3. Giải thích
-word
+`VOCABULARY.id`, `VOCABULARY_MEANING.id` and `VOCABULARY_EXAMPLE.id` are UUID primary keys. There is no direct Topic relationship and no Vocabulary Set/Set Item relation in V1.
 
-Từ tiếng Anh.
+### 7.1 VOCABULARY
 
-Ví dụ:
+- `word`: required, trimmed, non-empty `VARCHAR(100)`; display casing is preserved.
+- `phonetic`: optional `VARCHAR(100)`.
+- `pronunciation_url`: optional `VARCHAR(2048)` stored as model-pronunciation metadata only.
+- `created_at`, `updated_at`.
 
-work
-phonetic
+The migration must create a PostgreSQL functional unique index on `LOWER(word)`. No normalized-word column, `difficulty_level`, CEFR field, part of speech or direct Topic foreign key belongs on `VOCABULARY`.
 
-Phiên âm của từ.
+### 7.2 VOCABULARY_MEANING
 
-Ví dụ:
+- `vocabulary_id`: required UUID foreign key to `VOCABULARY.id`.
+- `part_of_speech`: required trimmed non-empty `VARCHAR(50)` free-form string.
+- `meaning_vi`: required trimmed non-empty `VARCHAR(500)`.
+- `context`: optional `VARCHAR(500)`.
+- `cefr_level`: nullable string/text, restricted by an explicit PostgreSQL `CHECK` to `A1`, `A2`, `B1`, `B2`, `C1`, `C2` or `NULL`.
+- `created_at`, `updated_at`.
 
-/wɜːrk/
-pronunciation_url
+V1 must not introduce a PostgreSQL or Prisma CEFR enum. CEFR belongs only to Meaning.
 
-Đường dẫn tới audio phát âm mẫu nếu hệ thống sử dụng file audio bên ngoài.
+### 7.3 VOCABULARY_EXAMPLE
 
-difficulty_level
+- `meaning_id`: required UUID foreign key to `VOCABULARY_MEANING.id`.
+- `example_en`: required trimmed non-empty `VARCHAR(1000)`.
+- `example_vi`: optional `VARCHAR(1000)`.
+- `created_at`.
 
-Mức độ khó của từ.
+`VOCABULARY 1:N VOCABULARY_MEANING` and `VOCABULARY_MEANING 1:N VOCABULARY_EXAMPLE`. Every Vocabulary has one or more Meanings; each Meaning has zero or more Examples. An Example belongs to Meaning, never directly to Vocabulary.
 
-Có thể sử dụng:
+### 7.4 Aggregate Integrity and Deletion
 
-BEGINNER
-INTERMEDIATE
-ADVANCED
+Vocabulary is the V1 aggregate root. Create and nested update writes are atomic. A supplied Meaning collection is complete replacement data; stable child IDs must belong to the addressed aggregate, and omission from a supplied replacement collection intentionally deletes the omitted owned Meaning/Example.
 
-part_of_speech không được lưu trực tiếp trong VOCABULARY vì một từ có thể có nhiều Meaning và mỗi Meaning có thể có Part of Speech khác nhau.
+Database cascade deletion is permitted only for owned Meaning/Example children when their Vocabulary aggregate is deleted. Vocabulary Set V1 materializes the first external Vocabulary reference: `VOCABULARY_SET_ITEM.vocabulary_id` uses `ON DELETE RESTRICT` / no cascade. Any later progress, quiz or other external reference must define its own approved foreign-key and delete policy.
 
-8. VOCABULARY_MEANING
-8.1. Mục đích
+### 7.5 Personal Vocabulary V1 — Implemented Data Contract
 
-Một từ tiếng Anh có thể có nhiều nghĩa.
+#### Status Boundary
 
-Ví dụ:
+TASK-PV-02 implemented the approved data/schema foundation, and TASK-PV-03 through TASK-PV-11 completed and verified its repository, service, API, UI and cross-feature use. Personal Vocabulary V1 is `DONE — HUMAN APPROVED`; integration into `dev` has not yet occurred.
 
-book
+The new forward migration `20260928000000_add_personal_vocabulary_foundation` adds ownership and the scoped operation record, and replaces global word uniqueness. Every historical migration remains immutable.
 
-có thể là:
+#### Vocabulary Ownership Foundation
 
-quyển sách
-đặt trước
+- Nullable `VOCABULARY.owner_id -> USER.id` is present in Prisma and PostgreSQL.
+- `owner_id IS NULL` identifies canonical Vocabulary.
+- Non-null `owner_id` identifies private Vocabulary owned by exactly that USER.
+- The owner foreign key uses `ON DELETE RESTRICT`; user removal must not cascade private learning identities, Set Items or Progress.
+- All Vocabulary rows existing when the migration is introduced are interpreted as canonical because the current application has no USER-private Vocabulary creation path.
 
-Do đó không nên lưu duy nhất một trường meaning trong VOCABULARY.
+No separate scope enum is approved. Clients never choose authoritative owner or scope.
 
-8.2. Dữ liệu dự kiến
-VOCABULARY_MEANING
+#### Word Indexes
 
-- id
-- vocabulary_id
-- part_of_speech
-- meaning_vi
-- context
-- created_at
-- updated_at
-8.3. Relationship
-VOCABULARY 1 ─── N VOCABULARY_MEANING
+- The former global functional uniqueness is replaced by `VOCABULARY_canonical_word_lower_key`, a unique partial functional index on `LOWER(word)` where `owner_id IS NULL`.
+- This retains case-insensitive canonical uniqueness only.
+- `VOCABULARY_private_owner_word_lower_idx` is a non-unique owner/private word-search index for future picker discovery.
+- Do not create `UNIQUE(owner_id, normalized_word)`, an equivalent private uniqueness rule, or canonical/private collision blocking.
+- Canonical and multiple same-owner/different-owner private rows may share spelling as independent IDs.
 
-Một Vocabulary có thể có nhiều Meaning.
+Word normalization/search supports discovery only. Exact `VOCABULARY.id` remains identity.
 
-Một Meaning chỉ thuộc về một Vocabulary.
+#### Create-Operation Persistence Foundation
 
-9. VOCABULARY_EXAMPLE
-9.1. Mục đích
+`PRIVATE_VOCABULARY_CREATE_OPERATION` persists the narrow result of the implemented atomic “create private Vocabulary + add it to the current owned private Set” command. Its fields and relations provide:
 
-Lưu các câu ví dụ giúp người học hiểu cách sử dụng từ trong ngữ cảnh.
+- opaque client-generated UUID `operation_id` for one intentional action;
+- server-derived owner and target private Set;
+- resulting exact Vocabulary identity;
+- server-computed request fingerprint over a deterministic canonicalized representation of authoritative target Set plus accepted normalized create payload;
+- creation timestamp and approved owner/Set/Vocabulary relations.
 
-9.2. Dữ liệu dự kiến
-VOCABULARY_EXAMPLE
+The client cannot supply or control the authoritative fingerprint. Equivalent retry with the same operation ID returns the original result; materially different reuse conflicts; a different operation ID permits intentional identical/same-headword creation. No headword-based idempotency, generic event ledger or audit system is approved.
 
-- id
-- meaning_id
-- example_en
-- example_vi
-- created_at
-9.3. Relationship
-VOCABULARY
-    │
-    └── VOCABULARY_MEANING
-            │
-            └── VOCABULARY_EXAMPLE
+Prisma models ownership, operation fields, relations and ordinary indexes. Prisma schema syntax does not represent the required partial functional canonical uniqueness or functional private search index; the reviewed PostgreSQL migration SQL is authoritative for both invariants.
 
-Một Meaning có thể có nhiều Example.
+#### Preserved Exact-ID Constraints
 
-10. VOCABULARY_SET
+- `UNIQUE(vocabulary_set_id, vocabulary_id)` continues to prevent only duplicate exact membership. Different same-spelling IDs may coexist in a private Set.
+- `UNIQUE(vocabulary_set_id, position)` and positive contiguous ordering remain.
+- `UNIQUE(user_id, vocabulary_id)` continues to define Learning Progress identity.
+- System Sets may reference canonical Vocabulary only.
+- Private Sets may reference canonical or private Vocabulary owned by that Set's owner.
+- Cross-table Set/scope ownership is enforced by backend service/repository authorization; existing exact-ID FKs remain authoritative for referential integrity.
+
+#### Migration and Rollback Safety
+
+- The new forward migration adds ownership/operation structures and replaces the global word index without editing historical migrations.
+- The existing global unique index guarantees pre-migration canonical rows are non-conflicting for creation of the canonical partial index.
+- Migration verification is permitted only through the guarded dedicated TEST DB workflow. Main, Preview and Production databases are prohibited for tests; raw Prisma CLI bypass is prohibited.
+- Rollback to the former global `LOWER(word)` uniqueness is unsafe after any duplicate-spelling private rows exist. Deployment planning must use backup/restore readiness and forward-fix/data-remediation rather than a blind down migration.
+
+10. VOCABULARY_SET — Legacy Draft (superseded for V1)
 10.1. Mục đích
 
 Vocabulary Set là một tập hợp các từ vựng được sử dụng để tổ chức nội dung học tập.
@@ -360,7 +514,7 @@ Do User tạo.
 VOCABULARY_SET
 
 - id
-- topic_id
+- topic_id (future/deferred; nullability not decided)
 - owner_id
 - name
 - description
@@ -368,7 +522,7 @@ VOCABULARY_SET
 - created_at
 - updated_at
 
-topic_id tham chiếu tới TOPIC.
+Khi được phê duyệt trong future Vocabulary Set feature, `topic_id` sẽ tham chiếu tới TOPIC; Topic V1 không materialize field/FK này.
 
 owner_id tham chiếu tới USER.
 
@@ -456,7 +610,7 @@ Không có quyền xóa Set gốc.
 
 Việc chỉnh sửa bản sao không ảnh hưởng tới Set gốc.
 
-11. VOCABULARY_SET_ITEM
+11. VOCABULARY_SET_ITEM — Legacy Draft (superseded for V1)
 11.1. Mục đích
 
 Bảng trung gian kết nối Vocabulary và Vocabulary Set.
@@ -473,6 +627,47 @@ VOCABULARY_SET_ITEM
 Không cho phép một Vocabulary xuất hiện nhiều lần trong cùng một Set.
 
 UNIQUE(vocabulary_set_id, vocabulary_id)
+### 11.4 Vocabulary Set V1 Approved Data Contract
+
+Vocabulary Set V1 materializes only this Set aggregate:
+
+```text
+TOPIC --RESTRICT--> VOCABULARY_SET --CASCADE--> VOCABULARY_SET_ITEM --RESTRICT--> VOCABULARY
+```
+
+#### VOCABULARY_SET
+
+- `id`: UUID primary key.
+- `topic_id`: nullable UUID foreign key to `TOPIC.id`. It is required when `is_public = true` and may be null when `is_public = false`.
+- `owner_id`: required UUID foreign key to `USER.id`; derived by Backend, never trusted from client input.
+- `name`: required trimmed non-empty `VARCHAR(100)`.
+- `description`: nullable `VARCHAR(500)`.
+- `cefr_level`: nullable `TEXT`, restricted by `VOCABULARY_SET_cefr_level_check` to `A1`, `A2`, `B1`, `B2`, `C1`, or `NULL`. This is Set-level metadata and is independent of Meaning CEFR (`A1`–`C2`).
+- `cover_image_url`: nullable `VARCHAR(2048)` public display URL.
+- `cover_storage_key`: nullable `VARCHAR(512)` backend-owned managed-object key. `VOCABULARY_SET_cover_pair_check` requires a non-null key to have a non-null URL.
+- `is_public`: required boolean. ADMIN-created System Sets are `true`; USER-created and copied User Sets are `false`.
+- `created_at`, `updated_at`.
+
+There is no Set-type enum. The service enforces that System Sets are ADMIN-created/public and User Sets are USER-owned/private. PostgreSQL enforces `CHECK (NOT is_public OR topic_id IS NOT NULL)`. Every non-null `TOPIC -> VOCABULARY_SET` reference uses `ON DELETE RESTRICT` / no cascade. Existing categorized Personal Sets remain valid legacy rows; new Personal Sets are topicless.
+
+The metadata migration is forward-only and performs no backfill or inference: historical rows with null CEFR and null cover fields remain valid and readable. PostgreSQL stores no uploaded image bytes and has no cover blob/`bytea` column. Managed optimized objects live in Supabase Storage; only their public URL and server-owned key are persisted here. An external HTTPS cover has a URL and null key. API projections never expose `cover_storage_key`.
+
+#### VOCABULARY_SET_ITEM
+
+- `id`: UUID primary key.
+- `vocabulary_set_id`: required UUID foreign key to `VOCABULARY_SET.id`.
+- `vocabulary_id`: required UUID foreign key to `VOCABULARY.id`.
+- `position`: required positive integer, persisted as contiguous one-based order within a Set.
+- `created_at`.
+
+The migration must enforce `UNIQUE(vocabulary_set_id, vocabulary_id)`, `UNIQUE(vocabulary_set_id, position)` and `CHECK (position > 0)`. Set deletion cascades only to its owned Items. Vocabulary deletion is `RESTRICT` while any Item references it. An Item references Vocabulary only, never a Meaning or Example; CEFR remains only on `VOCABULARY_MEANING`.
+
+#### V1 Aggregate, Copy and Deferred Boundaries
+
+System Sets require one-or-more Items. Private User Sets may be empty drafts. A supplied aggregate `items` collection is the complete desired ordered collection; Backend validates each Vocabulary ID and atomically replaces/reorders owned Items. There is no granular Set Item API.
+
+Copying a System Set creates an independent topicless private User Set with fresh Set/Item IDs, copied name/description and preserved exact Vocabulary IDs/order. No source-link or synchronization is created. Existing categorized rows are not rewritten; restoring `NOT NULL` requires an approved remediation if topicless rows exist.
+
 12. LEARNING_PROGRESS
 12.1. Mục đích
 
@@ -488,10 +683,10 @@ LEARNING_PROGRESS
 - user_id
 - vocabulary_id
 - status
-- correct_count
-- incorrect_count
 - review_count
+- revision
 - last_reviewed_at
+- last_event_id
 - next_review_at
 - interval_days
 - ease_factor
@@ -505,6 +700,10 @@ NEW
 LEARNING
 LEARNED
 NEEDS_REVIEW
+
+SRS V1 persists only `LEARNING`, `LEARNED` and the legacy-compatible `NEEDS_REVIEW` value. `NEW` is conceptual and is represented by the absence of a `LEARNING_PROGRESS` row. `AGAIN` writes `LEARNING` with `interval_days = null` and `next_review_at = last_reviewed_at` so it is due immediately. `HARD`, `GOOD` and `EASY` write `LEARNED` with exact integer-day schedules on the 1/3/7/14/30-day ladder. Effective due state is derived at read time using `next_review_at <= evaluated_at`; reads do not rewrite stored status.
+
+`review_count` is the count of accepted meaningful ratings for the Vocabulary, not an SRS-only history ledger. Every newly accepted rating increments it once. `revision` is a non-negative optimistic concurrency value. `last_event_id` stores only the current accepted event ID so an immediate retry is idempotent; delayed or reordered older events are rejected through revision protection. The original SRS V1 added no event history or session table and left `ease_factor` unused. Streak V1 later supersedes only that historical persistence boundary with the qualifying-session models in section 17; it does not turn Progress into an analytics ledger.
 NEW
 
 User chưa có hoạt động học đối với Vocabulary.
@@ -531,7 +730,21 @@ UNIQUE(user_id, vocabulary_id)
 
 Tiến độ học của User không phụ thuộc vào việc Vocabulary nằm trong Set nào.
 
+Flashcard / Learning V1 uses UUID identifiers and requires:
+
+- Foreign Key `user_id -> USER.id` with an explicit non-cascade/restrict policy.
+- Foreign Key `vocabulary_id -> VOCABULARY.id` with `ON DELETE RESTRICT`.
+- `status` CHECK allowing `LEARNING`, `LEARNED` or `NEEDS_REVIEW`.
+- `review_count >= 0` and `revision >= 0`, both defaulting to `0`.
+- nullable `last_event_id`, `last_reviewed_at`, `next_review_at`, `interval_days` and `ease_factor`.
+- nullable `interval_days` must be positive when present.
+- `created_at` and `updated_at` timestamps.
+
+There is no Topic, Vocabulary Set, Set Item or Meaning foreign key on `LEARNING_PROGRESS`. Deleting a Set or Set Item therefore does not delete progress.
+
 13. Spaced Repetition
+
+For Flashcard / Learning V1, Spaced Repetition, Words to Review and due-date calculation are explicitly deferred. `next_review_at`, `interval_days` and `ease_factor` remain nullable and unchanged by V1 learning events. No SRS service, algorithm, queue, index or additional table is introduced by this feature. The conceptual future direction below does not define V1 behavior.
 
 Spaced Repetition không cần tạo một bảng riêng.
 
@@ -566,6 +779,9 @@ Thuật toán Spaced Repetition cụ thể chưa được cố định trong Dat
 AI Agent không được tự ý thêm entity hoặc bảng riêng chỉ để phục vụ thuật toán Spaced Repetition.
 
 14. USER_DAILY_PROGRESS
+
+> **Deferred model:** `USER_DAILY_PROGRESS` is not created or used by XP & Level V1. Section 14 remains future Daily Goal design direction; the active XP persistence contract is `USER.total_xp` plus internal `XP_REWARD` in section 21.3.
+
 14.1. Mục đích
 
 Lưu tiến độ XP của User theo từng ngày để phục vụ:
@@ -642,81 +858,33 @@ activity_xp >= user's daily_xp_goal
 
 Bonus không được tính vào điều kiện hoàn thành Daily Goal.
 
-15. QUIZ_ATTEMPT
-15.1. Mục đích
+15. Quiz V1 Persistence Boundary
 
-Lưu lịch sử User thực hiện các câu hỏi luyện tập.
+15.1. Active V1 storage
 
-Hệ thống hiện tại chỉ hỗ trợ 2 Quiz Type:
+Quiz V1 supports only `MULTIPLE_CHOICE`, but introduces no Quiz table, enum, session, attempt, question, choice, answer, result, score or accuracy persistence. The historical typed-answer and Unscramble contracts are inactive.
 
-VI_TO_ENGLISH
+Quiz runs are transient. Stable choice ordering/identity and opaque `question_revision` values are derived at runtime and require no stored server session. Outside-Set canonical Vocabulary is used only as distractor material and never as a Progress target.
 
-MISSING_LETTER
+15.2. Existing data reused
 
-AI Agent không được tự ý thêm Quiz Type mới nếu chưa được người phát triển phê duyệt.
+An accepted Quiz answer transactionally updates the existing `LEARNING_PROGRESS` row for `(user_id, vocabulary_id)` and, when first-correct reward eligibility exists, creates `QUIZ_FIRST_CORRECT` plus increments `USER.total_xp` in that same transaction:
 
-15.2. Dữ liệu dự kiến
-QUIZ_ATTEMPT
+- correct → `LEARNED`;
+- incorrect → `LEARNING`;
+- both increment `review_count` and `revision` exactly once;
+- `last_reviewed_at` and `last_event_id` are updated;
+- nullable future SRS fields remain unchanged/null.
 
-- id
-- user_id
-- vocabulary_id
-- quiz_type
-- user_answer
-- correct_answer
-- is_correct
-- score
-- response_time_ms
-- created_at
-15.3. Quiz Type
-VI_TO_ENGLISH
-MISSING_LETTER
-VI_TO_ENGLISH
+The current `last_event_id`/`revision` fields provide immediate-current-event mutation idempotency and stale-event protection. `XP_REWARD` retains only positive reward deduplication evidence needed to recover original positive `xp_earned`; it is not a Quiz attempt/history ledger and does not persist an exact historical response.
 
-User nhìn thấy nghĩa tiếng Việt hoặc thông tin ngữ cảnh và nhập từ tiếng Anh.
+15.3. Runtime-only feedback
 
-MISSING_LETTER
+Answer normalization, correctness and per-character Unicode-code-point feedback are computed by the Backend at request time and returned transiently. They are not stored.
 
-User hoàn thành từ tiếng Anh bị thiếu một hoặc nhiều ký tự.
+15.4. Legacy/future references
 
-15.4. Character-level Feedback
-
-Đối với Quiz yêu cầu nhập câu trả lời, hệ thống có thể so sánh từng ký tự giữa:
-
-user_answer
-correct_answer
-
-để tạo feedback theo từng vị trí.
-
-Ví dụ:
-
-User answer:
-
-deserst
-
-Correct answer:
-
-dessert
-
-Backend có thể xác định:
-
-Ký tự đúng.
-Ký tự sai.
-Vị trí tương ứng.
-
-Không tạo bảng riêng để lưu kết quả từng ký tự nếu không thực sự cần thiết.
-
-15.5. XP Rule
-
-Quiz trả lời đúng:
-
-+3 XP
-
-Quiz trả lời sai:
-
-+0 XP
-
-Một Quiz attempt hợp lệ không được làm phát sinh XP lần thứ hai do Frontend gọi lại API hoặc do retry request.
+Any later generic diagram, index, foreign-key list, transaction example or implementation-order list that mentions `QUIZ_ATTEMPT` or Quiz history describes a legacy/future product direction only. The active XP exception is the internal `XP_REWARD` deduplication contract in section 21.3; it is not Quiz history.
 
 16. Pronunciation Data Principle
 
@@ -745,77 +913,97 @@ Không bắt buộc lưu audio của User vào Database.
 Không bắt buộc tạo PRONUNCIATION_ATTEMPT.
 Không tạo các bảng pronunciation riêng nếu chưa có nhu cầu thực tế.
 
-Nếu pronunciation practice được xác định là một qualifying learning activity, Backend có thể cập nhật LEARNING_PROGRESS, XP và Streak theo business rules đã được phê duyệt.
+Speaking Practice V1 đã được phê duyệt với boundary read-only rõ ràng: không lưu audio, transcript, classification result hoặc attempt; không tạo `PRONUNCIATION_ATTEMPT`; và không ghi Learning Progress, SRS, XP, Level, Streak hay Achievement. Activity chỉ đọc Vocabulary/Set identity đã được authorize qua Learning `NORMAL`. Mọi persistence hoặc pronunciation scoring sau V1 cần SPEC/PLAN, schema và migration approval riêng.
+
+Speaking Practice is explicitly non-qualifying in Streak V1. Any future change to that boundary requires a separately approved SPEC/PLAN and cannot be inferred from the active schema.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, phải thiết kế migration và cập nhật tài liệu Database trước khi triển khai.
 
-17. STREAK
-17.1. Mục đích
+17. STREAK V1 PERSISTENCE
 
-Theo dõi chuỗi ngày học liên tiếp của User.
+17.1. Mục đích và authority
 
-17.2. Dữ liệu dự kiến
-STREAK
+Backend-owned Learning Sessions prove completion of an immutable NORMAL, SRS or Quiz snapshot. `STREAK_DAY` records at most one qualifying application day per USER. `current_streak` is a read-time projection from retained day rows; it is not a column on `USER`, and V1 has no persisted `longest_streak`.
 
-- id
-- user_id
-- current_streak
-- longest_streak
-- last_activity_date
-- updated_at
+17.2. Enums
 
-Relationship:
+- `LEARNING_SESSION_MODE`: `NORMAL`, `SRS`, `QUIZ`.
+- `LEARNING_SESSION_STATUS`: `ACTIVE`, `COMPLETED`; effective `EXPIRED` is projected when an ACTIVE session reaches `expires_at`.
+- `SESSION_ITEM_EVIDENCE`: `NORMAL_REVEALED`, `SRS_HARD`, `SRS_GOOD`, `SRS_EASY`, `QUIZ_CORRECT`, `QUIZ_INCORRECT`. SRS `AGAIN` intentionally leaves evidence null.
 
-USER 1 ─── 1 STREAK
+17.3. `LEARNING_SESSION`
 
-Một User có một Streak record chính.
+Stores `id`, owner `user_id`, nullable current `vocabulary_set_id`, immutable `set_id_snapshot`, mode/status, idempotent `create_operation_id`, `snapshot_size`, Backend-authored timestamps, nullable completion identity and relations. Constraints enforce snapshot size `1..10`, exact `expires_at = created_at + 7 days`, and consistent ACTIVE versus COMPLETED fields. Unique `(user_id, create_operation_id)` and `(user_id, completion_event_id)` prevent duplicate creation/completion. USER deletion is `RESTRICT`; Set deletion uses `SET NULL` without changing the snapshot scalar.
 
-17.3. Qualifying Learning Activity
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `user_id` | `UUID` | NOT NULL; FK to `USER(id)` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`) |
+| `vocabulary_set_id` | `UUID` | NULL; FK to `VOCABULARY_SET(id)` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`) |
+| `set_id_snapshot` | `UUID` | NOT NULL |
+| `mode` | `LEARNING_SESSION_MODE` | NOT NULL |
+| `status` | `LEARNING_SESSION_STATUS` | NOT NULL; default `ACTIVE` |
+| `create_operation_id` | `UUID` | NOT NULL |
+| `snapshot_size` | `INTEGER` | NOT NULL |
+| `created_at` | `TIMESTAMP(3)` | NOT NULL; default `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')` |
+| `expires_at` | `TIMESTAMP(3)` | NOT NULL |
+| `completed_at` | `TIMESTAMP(3)` | NULL |
+| `completion_event_id` | `UUID` | NULL |
 
-Streak được tính dựa trên hoạt động học hợp lệ.
+Material non-unique indexes: `(user_id, status, expires_at)` and `(vocabulary_set_id)`. The two uniqueness constraints above also create their corresponding unique indexes.
 
-Ví dụ:
+17.4. `LEARNING_SESSION_ITEM`
 
-Học Vocabulary.
-Flashcard learning.
-Quiz.
-Pronunciation Practice.
-Review.
+Stores the immutable Vocabulary identity and position plus optional evidence triple. Positions are `0..9`; `(session_id, vocabulary_id)` and `(session_id, position)` are unique. Evidence, event ID and acceptance timestamp are either all null or all present, and `evidence_event_id` is globally unique. Session deletion cascades only to its owned items.
 
-Không tính:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `session_id` | `UUID` | NOT NULL; FK to `LEARNING_SESSION(id)` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`) |
+| `vocabulary_id` | `UUID` | NOT NULL; immutable snapshot identity (no FK) |
+| `position` | `INTEGER` | NOT NULL |
+| `evidence` | `SESSION_ITEM_EVIDENCE` | NULL |
+| `evidence_event_id` | `UUID` | NULL; unique when present |
+| `evidence_at` | `TIMESTAMP(3)` | NULL |
 
-Login.
-Mở Dashboard.
-Xem Profile.
-Xem Vocabulary Set.
-Chỉ điều hướng trong hệ thống mà không có learning activity.
-17.4. Quy tắc
+There is no additional material non-unique index. The unique constraints on `(session_id, vocabulary_id)`, `(session_id, position)` and `evidence_event_id` create unique indexes.
 
-Nếu User đã có learning activity hôm nay:
+17.5. `LEARNING_SESSION_SRS_RECEIPT`
 
-Không tăng streak thêm lần nữa.
+Stores globally unique `event_id`, exact `session_item_id`, rating, expected/accepted revisions and authoritative acceptance instant. Rating is constrained to `AGAIN`, `HARD`, `GOOD` or `EASY`; revisions are non-negative and `accepted_revision = expected_revision + 1`. The receipt provides session-aware SRS retry/idempotency metadata; it is not qualification evidence or an analytics history. Deleting an owned Session Item cascades to its receipts.
 
-Nếu hôm qua có activity và hôm nay có activity:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `event_id` | `UUID` | NOT NULL; PK; no database default |
+| `session_item_id` | `UUID` | NOT NULL; FK to `LEARNING_SESSION_ITEM(id)` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`) |
+| `rating` | `VARCHAR(5)` | NOT NULL |
+| `expected_revision` | `INTEGER` | NOT NULL |
+| `accepted_revision` | `INTEGER` | NOT NULL |
+| `accepted_at` | `TIMESTAMP(3)` | NOT NULL |
 
-current_streak + 1
+Material non-unique index: `(session_item_id, accepted_revision)`.
 
-Nếu có một hoặc nhiều ngày bị bỏ qua:
+17.6. `STREAK_DAY`
 
-current_streak = 1
+Stores `id`, `user_id`, application `activity_date`, nullable `first_session_id` and `created_at`. Unique `(user_id, activity_date)` is the same-day concurrency/deduplication boundary. USER deletion is `RESTRICT`; deleting a retained session sets `first_session_id` to null without deleting the qualifying day. Application dates come from Backend completion time converted to `Asia/Ho_Chi_Minh`.
 
-Nếu:
+| Column | PostgreSQL type | Nullability, default and key |
+| --- | --- | --- |
+| `id` | `UUID` | NOT NULL; PK; no database default (Prisma supplies the UUID) |
+| `user_id` | `UUID` | NOT NULL; FK to `USER(id)` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`) |
+| `activity_date` | `DATE` | NOT NULL |
+| `first_session_id` | `UUID` | NULL; FK to `LEARNING_SESSION(id)` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`) |
+| `created_at` | `TIMESTAMP(3)` | NOT NULL; default `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')` |
 
-current_streak > longest_streak
+There is no additional material non-unique index. Unique `(user_id, activity_date)` creates the deduplication index.
 
-thì cập nhật:
+17.7. Completion, retention and migration
 
-longest_streak = current_streak
+Terminal Progress/XP where applicable, item evidence, session completion and Streak-day insertion share the approved transaction boundary. NORMAL produces no Progress or XP mutation. Sessionless SRS/Quiz paths create no session evidence or Streak day.
 
-Streak không yêu cầu một mức XP tối thiểu.
+`STREAK_DAY` is durable account-lifetime product state. Sessions, items and receipts are retained in V1 for replay/recovery; no scheduled purge or cron exists. A future account-deletion/anonymization flow must explicitly handle dependent records in a separately approved transaction. The additive migrations created no historical sessions/items/receipts/days and did not reinterpret or modify existing USER, Progress or XP data.
 
-Một ngày chỉ cần có ít nhất một qualifying learning activity.
-
-Phiên bản đầu không có Streak Freeze.
+Speaking, login, browsing, opening or abandoning an activity do not create these records. V1 has no Streak Freeze, Daily Goal integration or longest-Streak aggregate.
 
 18. ACHIEVEMENT
 18.1. Mục đích
@@ -924,13 +1112,15 @@ Daily Goal
 Streak
 Achievement
 
+XP/Level and Streak now have separate active boundaries. Daily Goal and Achievement remain deferred; active Streak persistence is defined in section 17.
+
 Trong đó:
 
 XP được lưu trong USER.total_xp.
 Level được tính từ USER.total_xp.
 Daily Goal được lưu trong USER.daily_xp_goal.
 Daily XP được lưu trong USER_DAILY_PROGRESS.
-Streak được quản lý bởi STREAK.
+Streak days are persisted in `STREAK_DAY`; current Streak is projected by Backend business logic rather than stored as an aggregate row.
 Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 21.1. XP Rules
 
@@ -966,6 +1156,31 @@ XP
 Không được suy luận rằng:
 
 1 XP = 1 learned word
+
+### 21.3. XP & Level V1 Active Persistence Contract
+
+`USER.total_xp` là authoritative cumulative balance. Level được Backend derive từ balance này, không có cột `level` hoặc bảng `LEVEL`.
+
+`XP_REWARD` là bảng append-only lưu duy nhất positive reward deduplication evidence:
+
+| Field | Contract |
+|---|---|
+| `id` | UUID primary key, generated |
+| `user_id` | UUID NOT NULL, FK đến `USER.id`, `ON DELETE RESTRICT`, `ON UPDATE CASCADE` |
+| `vocabulary_id` | UUID NOT NULL, FK đến `VOCABULARY.id`, `ON DELETE RESTRICT`, `ON UPDATE CASCADE` |
+| `reward_type` | enum `SRS_INITIAL`, `QUIZ_FIRST_CORRECT`, `SRS_DUE_REVIEW` |
+| `reward_cycle` | integer NOT NULL; cycle `0` cho initial/Quiz, positive pre-event Progress revision cho due review |
+| `source_event_id` | UUID NOT NULL |
+| `xp_amount` | positive integer; `3` cho initial/Quiz, `1` cho due review |
+| `created_at` | immutable timestamp, default current time |
+
+Database enforce unique `(user_id, vocabulary_id, reward_type, reward_cycle)` và unique `(user_id, source_event_id)`, cùng checks cho positive amount, nonnegative cycle và exact type/cycle/amount combinations. Index `XP_REWARD_vocabulary_id_idx` hỗ trợ restrictive Vocabulary reference lookup. Application không cung cấp reward list/update/delete API.
+
+Progress mutation, positive reward insert và atomic `USER.total_xp` increment nằm trong cùng transaction. Zero-XP events không tạo reward row. Immediate current-event replay không mutate, lấy original positive amount từ reward row nếu có và trả current total/Level projection. Reward identity dùng exact USER/Vocabulary UUID; Set, run, spelling và frontend state không phải identity.
+
+Migration theo no-backfill Policy A: không tạo reward row, không cộng XP, không suy luận từ historical Progress/status/timestamp/`review_count`, và giữ nguyên mọi balance. Reward rows được giữ qua Set membership removal, Set deletion, reload, restart và session cleanup. Final Set membership removal vẫn chỉ xóa membership; future account/Vocabulary hard deletion hoặc retention khác cần contract riêng.
+
+`XP_REWARD` không phải XP transaction-history product surface; tổng reward rows không bắt buộc bằng `USER.total_xp` vì migration giữ nguyên legacy balances. Daily Goal/Daily Goal bonus, Streak và Achievement persistence không thuộc XP & Level V1.
 22. COMMUNITY_POST
 22.1. Mục đích
 
@@ -1033,7 +1248,7 @@ Mô hình quan hệ tổng quát:
               │                   │                    │
               ▼                   ▼                    ▼
      ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-     │ LEARNING_       │ │ USER_DAILY_     │ │     STREAK      │
+     │ LEARNING_       │ │ USER_DAILY_     │ │   STREAK_DAY    │
      │ PROGRESS        │ │ PROGRESS        │ └─────────────────┘
      └────────┬────────┘ └─────────────────┘
               │
@@ -1059,7 +1274,7 @@ Mô hình quan hệ tổng quát:
                                   TOPIC
 
 USER
- ├── QUIZ_ATTEMPT
+ ├── LEARNING_SESSION
  ├── VOCABULARY_SET
  ├── COMMUNITY_POST
  ├── COMMUNITY_COMMENT
@@ -1078,9 +1293,14 @@ USER → AUTH_SESSION	1:N
 USER → LEARNING_PROGRESS	1:N
 VOCABULARY → LEARNING_PROGRESS	1:N
 USER → USER_DAILY_PROGRESS	1:N
-USER → QUIZ_ATTEMPT	1:N
-VOCABULARY → QUIZ_ATTEMPT	1:N
-USER → STREAK	1:1
+USER → QUIZ_ATTEMPT	1:N (future/deferred; not materialized)
+VOCABULARY → QUIZ_ATTEMPT	1:N (future/deferred; not materialized)
+USER → LEARNING_SESSION	1:N
+VOCABULARY_SET → LEARNING_SESSION	1:N through the nullable current relation
+LEARNING_SESSION → LEARNING_SESSION_ITEM	1:N
+LEARNING_SESSION_ITEM → LEARNING_SESSION_SRS_RECEIPT	1:N
+USER → STREAK_DAY	1:N
+LEARNING_SESSION → STREAK_DAY	1:N through nullable `first_session_id`
 TOPIC → VOCABULARY_SET	1:N
 VOCABULARY → VOCABULARY_MEANING	1:N
 VOCABULARY_MEANING → VOCABULARY_EXAMPLE	1:N
@@ -1113,12 +1333,7 @@ Nếu Topic được tìm kiếm thường xuyên.
 
 VOCABULARY
 
-Có thể index:
-
-word
-difficulty_level
-
-Nếu word được tìm kiếm thường xuyên, word nên có unique/index phù hợp theo business rule.
+`UNIQUE INDEX` on `LOWER(word)` is required by Vocabulary V1 for case-insensitive uniqueness. No `difficulty_level` index exists in V1.
 
 VOCABULARY_MEANING
 vocabulary_id
@@ -1148,8 +1363,20 @@ QUIZ_ATTEMPT
 user_id
 vocabulary_id
 created_at
-STREAK
-UNIQUE(user_id)
+LEARNING_SESSION
+UNIQUE(user_id, create_operation_id)
+UNIQUE(user_id, completion_event_id)
+
+LEARNING_SESSION_ITEM
+UNIQUE(session_id, vocabulary_id)
+UNIQUE(session_id, position)
+UNIQUE(evidence_event_id)
+
+LEARNING_SESSION_SRS_RECEIPT
+PRIMARY KEY(event_id)
+
+STREAK_DAY
+UNIQUE(user_id, activity_date)
 ACHIEVEMENT
 
 Có thể index:
@@ -1350,10 +1577,10 @@ Level được tính từ USER.total_xp.
 Level tối đa là 15 ở phiên bản đầu.
 Daily Goal được lưu trong USER.daily_xp_goal.
 Daily XP được lưu trong USER_DAILY_PROGRESS.
-Streak được quản lý bởi STREAK.
+Streak days được lưu trong `STREAK_DAY`; current Streak được Backend project khi đọc.
 Achievement được quản lý bởi ACHIEVEMENT + USER_ACHIEVEMENT.
 
-Không tạo thêm bảng riêng cho từng loại XP event nếu chưa có nhu cầu audit XP chi tiết.
+Không tạo bảng XP history/audit cho từng event. `XP_REWARD` là ngoại lệ active tối thiểu để deduplicate các positive reward đã duyệt, không phải transaction-history UI hay general event ledger.
 
 Nếu sau này cần lịch sử XP, có thể bổ sung:
 
@@ -1538,7 +1765,9 @@ Nếu một bước thất bại, toàn bộ operation phải được rollback 
 
 Không tự động sử dụng transaction cho mọi query đơn giản.
 
-38. Initial Database Scope
+38. Initial Database Scope — Historical Conceptual Draft
+
+The list below records the original project draft and is not the current physical schema inventory. In particular, `QUIZ_ATTEMPT`, `USER_DAILY_PROGRESS`, `STREAK`, Achievement and Community entities may remain deferred, while the active Streak V1 physical models are documented in section 17.
 
 Phiên bản đầu tiên của Database dự kiến gồm:
 
@@ -1553,7 +1782,7 @@ Phiên bản đầu tiên của Database dự kiến gồm:
 9. LEARNING_PROGRESS
 10. USER_DAILY_PROGRESS
 11. QUIZ_ATTEMPT
-12. STREAK
+12. STREAK (superseded by active `LEARNING_SESSION`, `LEARNING_SESSION_ITEM`, `LEARNING_SESSION_SRS_RECEIPT` and `STREAK_DAY`)
 13. ACHIEVEMENT
 14. USER_ACHIEVEMENT
 15. COMMUNITY_POST
@@ -1562,6 +1791,8 @@ Phiên bản đầu tiên của Database dự kiến gồm:
 Tổng cộng:
 
 16 tables
+
+Database application schema trên Supabase hiện đang empty và chưa có migration application trước đó. Vì vậy, TASK-001 có thể tạo migration đầu tiên để materialize `USER` và `AUTH_SESSION` cùng relationship và constraints đã được phê duyệt.
 
 Đây là phạm vi Database dự kiến, không phải yêu cầu bắt buộc phải giữ nguyên đúng 16 bảng trong mọi trường hợp.
 
@@ -1686,4 +1917,52 @@ Dễ sử dụng với Prisma.
 Dễ test.
 Dễ mở rộng khi feature thực sự cần.
 Phù hợp với kiến trúc Backend REST API.
+
+43. CEFR Learning Progress V2 Active Data Contract
+
+V2 builds on `backend/prisma/migrations/20261103000000_add_cefr_learning_path_v1/migration.sql` through the additive forward migration `backend/prisma/migrations/20261112000000_add_cefr_learning_progress_v2/migration.sql`. The approved feature source is `7a212108c7ae63294ce43c97dffe6bb1270a7a84`.
+
+### 43.1 Enums
+
+- `CEFR_LEARNING_PASS_STATUS`: `ACTIVE`, `INVALIDATED`, `COMPLETED`.
+- `LEARNING_SESSION_SCOPE`: `SET`, `GLOBAL`; existing and ordinary sessions default to `SET`.
+- `CEFR_LEARNING_EVIDENCE_SOURCE`: `NORMAL_REVEALED`, `SRS_AGAIN`, `SRS_HARD`, `SRS_GOOD`, `SRS_EASY`.
+
+### 43.2 CEFR_LEARNING_PASS
+
+One row represents one backend-owned full pass attempt for one USER and exact Set identity. It has a UUID primary key, required `user_id`, nullable current `vocabulary_set_id` using `ON DELETE SET NULL`, immutable `set_id_snapshot`, required `create_operation_id`, positive `snapshot_size`, lifecycle status/timestamps, and nullable terminal `completion_event_id`. Lifecycle checks enforce compatible ACTIVE, INVALIDATED, and COMPLETED timestamps.
+
+USER-scoped unique creation/completion operation identities provide replay boundaries. Partial unique indexes allow at most one ACTIVE and one COMPLETED pass for `(user_id, set_id_snapshot)`; invalidated attempts may remain as narrowly scoped retry history. Historical scalar Set identity survives deletion without making inaccessible content readable.
+
+### 43.3 CEFR_LEARNING_PASS_ITEM
+
+Each row stores an immutable Vocabulary UUID and zero-based position for the ordered full-pass snapshot. There is deliberately no Vocabulary foreign key. Unique `(pass_id, vocabulary_id)` and `(pass_id, position)` constraints enforce exact coverage and order.
+
+V2 adds the canonical nullable first-credit tuple: `first_credit_source`, unique `first_credit_event_id`, `first_credit_session_id`, and `first_credit_accepted_at`. A check requires all four values to be null or all four to be present. The source session foreign key uses `ON DELETE RESTRICT`; the event UUID is unique across pass items and the session identity is indexed. Application writes never replace an existing tuple. Session event/receipt rows remain the source event record, while this tuple answers whether the exact pass item is credited.
+
+### 43.4 CEFR_LEARNING_PATH_STATE
+
+One optional row per USER stores `highest_unlocked_level` (`A1`–`C1`) and nullable `path_completed_at`. Absence means initial A1 entitlement and no terminal completion; reads do not create a row. Updates only advance entitlement. Current required/completed counts are projections, not stored percentages.
+
+### 43.5 LEARNING_SESSION extension
+
+`LEARNING_SESSION.scope` is required and defaults to `SET`; `cefr_learning_pass_id` is nullable; `set_id_snapshot` is nullable only for a valid global session.
+
+- `SET` requires a non-null Set snapshot.
+- `GLOBAL` requires mode `SRS`, null current/snapshot Set identities, and no pass relation.
+- A pass relation requires `SET` scope and mode `NORMAL` or `SRS`.
+- Existing 1–10 snapshot size, evidence, lifecycle, expiry, operation identity, receipt/revision, XP, and Streak constraints remain active.
+- The optional pass foreign key uses `ON DELETE RESTRICT` and is indexed.
+
+### 43.6 Migration and compatibility boundary
+
+The V2 migration validates the complete USER/pass/Set/session/Vocabulary identity chain, then backfills only exact accepted V1 pass-linked `NORMAL_REVEALED` evidence. Multiple valid candidates use earliest acceptance time and event UUID as the deterministic tie-break. Missing, foreign, malformed, ambiguous, or temporally invalid evidence aborts instead of fabricating credit.
+
+The migration does not infer evidence from Learning Progress, ordinary/GLOBAL SRS, Quiz, Speaking, XP, Streak, Daily Goal, or client storage. It does not change pass status, completion events/timestamps, `highest_unlocked_level`, or `path_completed_at`; a fully backfilled active pass may become ready but still requires explicit USER confirmation.
+
+Ephemeral PostgreSQL run [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) passed 7/7 fail-closed offline guards and 6/6 PostgreSQL integration tests, including migration, constraints, lifecycle, first-credit concurrency, boundary sizes, and cleanup. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) additionally passed one focused Quiz non-credit integration test against guarded ephemeral PostgreSQL. These runs do not represent a Main, Preview, or Production migration or deployment.
+
+## 44. LOGIN_ABUSE_STATE (SEC-01)
+
+`LOGIN_ABUSE_STATE` is bounded shared security state keyed by the composite HMAC-SHA-256 pair `(identifier_key, source_key)`. It stores `failure_count` (constrained to 1-5), `last_failed_at`, nullable `blocked_until`, and `updated_at`; it has no USER foreign key so unknown and existing identifiers receive equivalent handling. Raw email, client address and password values are never persisted. The composite primary key supports one serialized state per identifier/source pair, and `updated_at` is indexed for bounded maintenance. The forward-only migration creates only this table, check constraint and index; it does not rewrite existing data.
 ```

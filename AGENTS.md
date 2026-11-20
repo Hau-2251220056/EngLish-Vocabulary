@@ -341,6 +341,13 @@ test
 review
 → Review implementation against requirements and project rules
 
+ui-ux-review
+→ Review changed UI flows for interaction, responsive, accessibility and visual-consistency regressions before HUMAN visual approval
+
+UI-changing implementations should run `ui-ux-review` in Focused mode before HUMAN visual approval. Backend-only and documentation-only changes do not require UI/UX Review. Full UI/UX Review requires an explicit HUMAN request.
+
+When a feature or contract is replaced, removed or significantly changed, TEST and REVIEW must complete their Legacy/Regression Impact Scan. UI/UX Review, TEST and REVIEW remain separate workflow stages with separate evidence and verdicts.
+
 AGENTS.md định nghĩa:
 
 Global Rules
@@ -855,22 +862,13 @@ không phải security boundary.
 
 Project hiện tại gồm:
 
-VI_TO_ENGLISH
-MISSING_LETTER
+MULTIPLE_CHOICE
 
 AI Agent không được tự ý thêm quiz type mới nếu chưa được approve.
 
-Per-character feedback:
+Multiple Choice hiển thị từ tiếng Anh và bốn lựa chọn nghĩa tiếng Việt. Backend tạo lựa chọn, giữ kín đáp án trước submission và chấm điểm authoritative theo approved behavior.
 
-Correct character
-→ correct
-
-Incorrect character
-→ incorrect
-
-được tính runtime theo approved behavior.
-
-Không tạo database table riêng chỉ để lưu character feedback nếu không có approved requirement.
+Không tạo database table riêng chỉ để lưu Quiz Session, Quiz Attempt hoặc answer history nếu không có approved requirement.
 
 20. Pronunciation Rules
 
@@ -1034,6 +1032,17 @@ Pronunciation Evaluation
 AI-assisted Learning
 
 External service phải được gọi từ Backend.
+
+Quy tắc Backend-only ở trên tiếp tục áp dụng cho mọi tích hợp third-party do application quản lý.
+
+Ngoại lệ hẹp đã được HUMAN phê duyệt cho Speaking Practice V1:
+
+- Speaking Practice V1 có thể gọi trực tiếp browser-native `window.SpeechRecognition` hoặc `window.webkitSpeechRecognition` từ Frontend, đúng theo SPEC/PLAN/TASK đã được phê duyệt của feature này.
+- Speech recognition có thể liên quan đến việc browser vendor xử lý audio từ xa. Không được tuyên bố hoặc ngụ ý rằng audio được bảo đảm chỉ xử lý trên thiết bị.
+- Ngoại lệ này không cho phép ELVocab thêm direct provider HTTP call, provider API key, audio upload, Backend speech processing, audio persistence hoặc pronunciation scoring.
+- Browser compatibility check, microphone permission handling, truthful privacy disclosure, failure recovery và safe cancellation vẫn là yêu cầu bắt buộc.
+- Ngoại lệ này không cho phép external service khác và không mở rộng scope của Speaking Practice V1.
+- Mọi thay đổi architecture sau này vẫn cần HUMAN approval riêng.
 
 Secret keys:
 

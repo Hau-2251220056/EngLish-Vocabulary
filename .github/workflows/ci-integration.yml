@@ -1,53 +1,816 @@
-name: Migration Dispatch Bootstrap
+name: CI Guarded Integration
 
-# Temporary default-branch registration only. Reviewed migration verification
-# workflows live on their feature refs and must be selected explicitly.
 on:
+  pull_request:
+    branches:
+      - dev
+  push:
+    branches:
+      - dev
   workflow_dispatch:
     inputs:
       run_xp_migration_harness:
-        description: Run the reviewed XP migration harness workflow
+        description: Run only the isolated XP migration harness and cleanup
         required: true
         default: false
         type: boolean
       run_streak_migration_harness:
-        description: Run the reviewed Streak migration verification workflow
+        description: Run only the isolated Streak migration verification harness
+        required: true
+        default: false
+        type: boolean
+      run_streak_migration_cleanup:
+        description: Recover schemas from one separately authorized historical Streak verification run
         required: true
         default: false
         type: boolean
       run_streak_foundation_harness:
-        description: Run the reviewed Streak Backend foundation integration harness
+        description: Run only the isolated Streak Backend foundation integration harness
         required: true
         default: false
         type: boolean
-      run_daily_goal_migration_observation:
-        description: Registration only; feature-ref Phase B requires separate HUMAN authorization
+      run_streak_integrated_verification:
+        description: Run only TASK-249 guarded Backend and real-stack Streak verification
         required: true
         default: false
         type: boolean
-      run_daily_goal_migration_verification:
-        description: Reserved Daily Goal Phase D migration verification (live execution disabled)
-        required: true
-        default: false
-        type: boolean
-      daily_goal_approved_target_identity:
-        description: "HUMAN-approved CI-exclusive database target identity for Daily Goal"
-        required: false
-        type: string
       streak_approved_target_identity:
         description: HUMAN-approved non-secret CI TEST identity (hostname:port/database)
+        required: false
+        type: string
+      streak_cleanup_target_run_id:
+        description: Historical GitHub run ID for recovery cleanup only
+        required: false
+        type: string
+      streak_cleanup_target_run_attempt:
+        description: Historical GitHub run attempt for recovery cleanup only
         required: false
         type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: elvocab-ci-test-db
+  cancel-in-progress: false
+
 jobs:
-  registration-only:
-    name: Refuse bootstrap execution
+  trust-gate:
+    name: Trust Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      trusted: ${{ steps.classify.outputs.trusted }}
+      classification: ${{ steps.classify.outputs.classification }}
+
     steps:
-      - name: Stop on the bootstrap workflow
+      - name: Classify workflow event
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
         run: |
-          echo "This bootstrap only registers manual dispatch. Select the reviewed migration feature ref."
-          exit 1
+          if [[ "$EVENT_NAME" != "pull_request" || "$HEAD_REPOSITORY" == "$CURRENT_REPOSITORY" ]]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+            echo "classification=TRUSTED" >> "$GITHUB_OUTPUT"
+            echo "Trusted repository event: guarded jobs are eligible to run."
+          else
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            echo "classification=SKIPPED_FORK" >> "$GITHUB_OUTPUT"
+            echo "Fork pull request: guarded jobs will not receive secrets or run."
+          fi
+
+  backend-db-integration:
+    name: Backend DB Integration
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      !(github.event_name == 'workflow_dispatch' &&
+        (inputs.run_xp_migration_harness == true ||
+         inputs.run_streak_migration_harness == true ||
+         inputs.run_streak_migration_cleanup == true ||
+         inputs.run_streak_foundation_harness == true ||
+         inputs.run_streak_integrated_verification == true))
+    outputs:
+      configured: ${{ steps.configuration.outputs.configured }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+
+    steps:
+      - name: Check CI TEST database configuration
+        id: configuration
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "CI TEST database is not provisioned; guarded database commands will be skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out repository
+        if: steps.configuration.outputs.configured == 'true'
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        if: steps.configuration.outputs.configured == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        if: steps.configuration.outputs.configured == 'true'
+        id: install
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Apply committed migrations through guarded preparation
+        if: steps.configuration.outputs.configured == 'true'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:db:prepare:ci
+
+      - name: Run complete sequential backend integration
+        if: steps.configuration.outputs.configured == 'true'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:integration:ci
+
+      - name: Clean controlled TEST database fixtures
+        if: always() && steps.configuration.outputs.configured == 'true' && steps.install.outcome == 'success'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: >-
+          node --input-type=module -e "const { createTestDatabase } = await import('./test/helpers/test-database.js');
+          const database = await createTestDatabase();
+          try { await database.reset(); } finally { await database.disconnect(); }"
+
+  real-stack-browser:
+    name: Real Stack Browser
+    needs:
+      - trust-gate
+      - backend-db-integration
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      !(github.event_name == 'workflow_dispatch' &&
+        (inputs.run_xp_migration_harness == true ||
+         inputs.run_streak_migration_harness == true ||
+         inputs.run_streak_migration_cleanup == true ||
+         inputs.run_streak_foundation_harness == true ||
+         inputs.run_streak_integrated_verification == true)) &&
+      needs.backend-db-integration.result == 'success' &&
+      needs.backend-db-integration.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Require configured CI TEST database
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing guarded execution."
+            exit 1
+          fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        id: backend-install
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Install frontend dependencies
+        id: frontend-install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run combined guarded real-stack browser suite
+        working-directory: frontend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:integration:ci
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-stack-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Clean controlled TEST database fixtures
+        if: always() && steps.backend-install.outcome == 'success'
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: >-
+          node --input-type=module -e "const { createTestDatabase } = await import('./test/helpers/test-database.js');
+          const database = await createTestDatabase();
+          try { await database.reset(); } finally { await database.disconnect(); }"
+
+  xp-migration-verification:
+    name: XP Migration Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == true &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      XP_MIGRATION_HARNESS_ALLOW: "true"
+
+    steps:
+      - name: Require configured CI TEST database
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing XP migration verification."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Run isolated XP migration verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-migration:ci
+
+      - name: Run isolated XP repository verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-repository:ci
+
+      - name: Run isolated SRS XP Learning verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-learning:ci
+
+      - name: Run isolated Quiz XP verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-quiz:ci
+
+  xp-migration-cleanup:
+    name: XP Migration Cleanup
+    needs:
+      - trust-gate
+      - xp-migration-verification
+    if: >-
+      always() &&
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == true &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      XP_MIGRATION_HARNESS_ALLOW: "true"
+
+    steps:
+      - name: Require configured CI TEST database
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" ]]; then
+            echo "CI TEST database configuration is unavailable; refusing XP migration cleanup."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Remove only owned XP migration schemas for this run
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:xp-migration:cleanup:ci
+
+  streak-migration-verification:
+    name: Streak Migration Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == true &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false &&
+      inputs.streak_cleanup_target_run_id == '' &&
+      inputs.streak_cleanup_target_run_attempt == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+
+    steps:
+      - name: Require authorized Streak CI TEST configuration
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" || -z "$CI_TEST_DATABASE_IDENTITY" || -z "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Streak CI TEST configuration or target approval is unavailable; refusing verification."
+            exit 1
+          fi
+          if [[ "$CI_TEST_DATABASE_IDENTITY" != "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Configured and HUMAN-approved Streak CI TEST identities differ; refusing verification."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Run isolated Streak migration verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-migration:ci
+
+  streak-migration-recovery-cleanup:
+    name: Streak Migration Recovery Cleanup
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == true &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_MIGRATION_CLEANUP_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+      STREAK_CLEANUP_TARGET_RUN_ID: ${{ inputs.streak_cleanup_target_run_id }}
+      STREAK_CLEANUP_TARGET_RUN_ATTEMPT: ${{ inputs.streak_cleanup_target_run_attempt }}
+
+    steps:
+      - name: Require authorized historical Streak cleanup target
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          if [[ -z "$TEST_DATABASE_URL" || -z "$CI_TEST_DATABASE_IDENTITY" || -z "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Streak CI TEST configuration or target approval is unavailable; refusing recovery cleanup."
+            exit 1
+          fi
+          if [[ "$CI_TEST_DATABASE_IDENTITY" != "$STREAK_MIGRATION_APPROVED_TARGET_IDENTITY" ]]; then
+            echo "Configured and HUMAN-approved Streak CI TEST identities differ; refusing recovery cleanup."
+            exit 1
+          fi
+          if [[ ! "$STREAK_CLEANUP_TARGET_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$STREAK_CLEANUP_TARGET_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Historical Streak cleanup run ID and attempt must be positive decimal strings."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Remove only exactly owned historical Streak schemas
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-migration:cleanup:ci
+
+  streak-foundation-verification:
+    name: Streak Foundation Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == true &&
+      inputs.run_streak_integrated_verification == false &&
+      inputs.streak_cleanup_target_run_id == '' &&
+      inputs.streak_cleanup_target_run_attempt == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_FOUNDATION_HARNESS_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Require authorized Streak foundation CI TEST configuration
+        working-directory: .
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.CI, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.TEST_DATABASE_ALLOW_RESET, 'true');
+          assert.equal(environment.STREAK_MIGRATION_HARNESS_ALLOW, 'true');
+          assert.equal(environment.STREAK_FOUNDATION_HARNESS_ALLOW, 'true');
+          assert.match(environment.GITHUB_REPOSITORY ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+          assert.match(environment.GITHUB_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.GITHUB_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          const target = environment.CI_TEST_DATABASE_IDENTITY ?? '';
+          const approved = environment.STREAK_MIGRATION_APPROVED_TARGET_IDENTITY ?? '';
+          assert.match(target, /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$/);
+          assert.equal(target, approved);
+          const parsed = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(parsed.protocol.startsWith('postgres'), true);
+          assert.equal(`${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`, target);
+          NODE
+
+      - name: Install backend dependencies and generate Prisma Client
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Run isolated Streak foundation verification
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-foundation:ci
+
+  streak-integrated-verification:
+    name: TASK-249 Streak Integrated Verification
+    needs: trust-gate
+    if: >-
+      needs.trust-gate.outputs.trusted == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_xp_migration_harness == false &&
+      inputs.run_streak_migration_harness == false &&
+      inputs.run_streak_migration_cleanup == false &&
+      inputs.run_streak_foundation_harness == false &&
+      inputs.run_streak_integrated_verification == true &&
+      inputs.streak_cleanup_target_run_id == '' &&
+      inputs.streak_cleanup_target_run_attempt == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      NODE_ENV: test
+      TEST_DATABASE_ALLOW_RESET: "true"
+      STREAK_MIGRATION_HARNESS_ALLOW: "true"
+      STREAK_FOUNDATION_HARNESS_ALLOW: "true"
+      STREAK_INTEGRATED_HARNESS_ALLOW: "true"
+      CI_TEST_DATABASE_IDENTITY: ${{ vars.CI_TEST_DATABASE_IDENTITY }}
+      STREAK_MIGRATION_APPROVED_TARGET_IDENTITY: ${{ inputs.streak_approved_target_identity }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Require authorized TASK-249 CI TEST configuration
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: |
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const environment = process.env;
+          assert.equal(environment.CI, 'true');
+          assert.equal(environment.GITHUB_ACTIONS, 'true');
+          assert.equal(environment.NODE_ENV, 'test');
+          assert.equal(environment.TEST_DATABASE_ALLOW_RESET, 'true');
+          assert.equal(environment.STREAK_INTEGRATED_HARNESS_ALLOW, 'true');
+          assert.match(environment.GITHUB_REPOSITORY ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+          assert.match(environment.GITHUB_RUN_ID ?? '', /^[0-9]+$/);
+          assert.match(environment.GITHUB_RUN_ATTEMPT ?? '', /^[0-9]+$/);
+          const target = environment.CI_TEST_DATABASE_IDENTITY ?? '';
+          const approved = environment.STREAK_MIGRATION_APPROVED_TARGET_IDENTITY ?? '';
+          assert.match(target, /^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$/);
+          assert.equal(target, approved);
+          const parsed = new URL(environment.TEST_DATABASE_URL ?? '');
+          assert.equal(parsed.protocol.startsWith('postgres'), true);
+          assert.equal(`${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`, target);
+          NODE
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies and generate Prisma Client
+        id: backend-install
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run accepted Streak PostgreSQL regression harness
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-foundation:ci
+
+      - name: Run TASK-249 real-stack Streak suite
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+        run: npm run test:streak-integrated:ci
+
+      - name: Upload TASK-249 failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: task-249-streak-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend/test-results/streak-integration/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  integration-summary:
+    name: Summary
+    if: always()
+    needs:
+      - trust-gate
+      - backend-db-integration
+      - real-stack-browser
+      - xp-migration-verification
+      - xp-migration-cleanup
+      - streak-migration-verification
+      - streak-migration-recovery-cleanup
+      - streak-foundation-verification
+      - streak-integrated-verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Report guarded integration result
+        env:
+          CLASSIFICATION: ${{ needs.trust-gate.outputs.classification }}
+          DATABASE_CONFIGURED: ${{ needs.backend-db-integration.outputs.configured }}
+          BACKEND_RESULT: ${{ needs.backend-db-integration.result }}
+          BROWSER_RESULT: ${{ needs.real-stack-browser.result }}
+          XP_HARNESS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_xp_migration_harness == true }}
+          XP_VERIFICATION_RESULT: ${{ needs.xp-migration-verification.result }}
+          XP_CLEANUP_RESULT: ${{ needs.xp-migration-cleanup.result }}
+          STREAK_VERIFICATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_harness == true }}
+          STREAK_CLEANUP_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_migration_cleanup == true }}
+          STREAK_FOUNDATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_foundation_harness == true }}
+          STREAK_INTEGRATED_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_streak_integrated_verification == true }}
+          STREAK_VERIFICATION_RESULT: ${{ needs.streak-migration-verification.result }}
+          STREAK_CLEANUP_RESULT: ${{ needs.streak-migration-recovery-cleanup.result }}
+          STREAK_FOUNDATION_RESULT: ${{ needs.streak-foundation-verification.result }}
+          STREAK_INTEGRATED_RESULT: ${{ needs.streak-integrated-verification.result }}
+        run: |
+          selected_modes=0
+          for mode in "$XP_HARNESS_MODE" "$STREAK_VERIFICATION_MODE" "$STREAK_CLEANUP_MODE" "$STREAK_FOUNDATION_MODE" "$STREAK_INTEGRATED_MODE"; do
+            if [[ "$mode" == "true" ]]; then
+              selected_modes=$((selected_modes + 1))
+            fi
+          done
+          if (( selected_modes > 1 )); then
+            echo "## Guarded Harness Dispatch: FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "Select exactly one isolated harness operation per dispatch." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if [[ "$STREAK_INTEGRATED_MODE" == "true" ]]; then
+            if [[ "$STREAK_INTEGRATED_RESULT" != "success" ]]; then
+              echo "## TASK-249 Streak Integrated Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $STREAK_INTEGRATED_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## TASK-249 Streak Integrated Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Guarded PostgreSQL regression and focused real-stack Streak verification completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$STREAK_FOUNDATION_MODE" == "true" ]]; then
+            if [[ "$STREAK_FOUNDATION_RESULT" != "success" ]]; then
+              echo "## Streak Foundation Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $STREAK_FOUNDATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Streak Foundation Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Owned-schema Backend foundation, authorization, lifecycle and concurrency verification completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$STREAK_VERIFICATION_MODE" == "true" ]]; then
+            if [[ "$STREAK_VERIFICATION_RESULT" != "success" ]]; then
+              echo "## Streak Migration Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $STREAK_VERIFICATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Streak Migration Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated Streak migration, constraint, no-backfill and rollback verification completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$STREAK_CLEANUP_MODE" == "true" ]]; then
+            if [[ "$STREAK_CLEANUP_RESULT" != "success" ]]; then
+              echo "## Streak Migration Recovery Cleanup: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Cleanup result: $STREAK_CLEANUP_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## Streak Migration Recovery Cleanup: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Exact historical Streak harness target contained no schemas or all exactly owned schemas were removed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$XP_HARNESS_MODE" == "true" ]]; then
+            if [[ "$XP_VERIFICATION_RESULT" != "success" || "$XP_CLEANUP_RESULT" != "success" ]]; then
+              echo "## XP Verification: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              echo "Verification result: $XP_VERIFICATION_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              echo "Cleanup result: $XP_CLEANUP_RESULT" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            echo "## XP Verification: PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "Isolated migration, repository, SRS XP Learning and Quiz XP verification plus independent cleanup completed successfully." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$CLASSIFICATION" == "SKIPPED_FORK" ]]; then
+            echo "## CI Guarded Integration: SKIPPED_FORK" >> "$GITHUB_STEP_SUMMARY"
+            echo "Database-backed and real-stack checks did not run and are not PASS evidence." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$DATABASE_CONFIGURED" != "true" ]]; then
+            echo "## CI Guarded Integration: SKIPPED_NOT_CONFIGURED" >> "$GITHUB_STEP_SUMMARY"
+            echo "CI TEST database is not provisioned; no database or real-stack command ran." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$BACKEND_RESULT" != "success" || "$BROWSER_RESULT" != "success" ]]; then
+            echo "## CI Guarded Integration: FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "Backend result: $BACKEND_RESULT" >> "$GITHUB_STEP_SUMMARY"
+            echo "Browser result: $BROWSER_RESULT" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "## CI Guarded Integration: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backend DB Integration and Real Stack Browser completed sequentially." >> "$GITHUB_STEP_SUMMARY"

@@ -88,7 +88,7 @@ Admin interface
 Hệ thống hiện tại chỉ có 2 quiz type:
 
 Vietnamese → English
-Missing Letter
+Unscramble Word
 
 Pronunciation là một learning module riêng, không được xem là quiz type thứ ba.
 
@@ -113,7 +113,7 @@ Business logic
 Request validation
 Vocabulary management
 Vocabulary meanings and examples
-Pronunciation-related processing
+Pronunciation metadata and authorized Learning reads; Speaking Practice V1 recognition remains inside the approved browser-native frontend exception
 Learning progress
 Quiz processing
 Spaced Repetition
@@ -143,7 +143,7 @@ Ví dụ:
 User
 
  ├── Learning Progress
- ├── Quiz Attempts
+ ├── Quiz Attempts (future/deferred; not materialized in Quiz V1)
  ├── Streak
  ├── Achievements
  └── Vocabulary Sets
@@ -209,11 +209,11 @@ Route MUST NOT chứa business logic phức tạp.
 
 Ví dụ:
 
-GET    /api/vocabulary
-GET    /api/vocabulary/:id
-POST   /api/vocabulary
-PUT    /api/vocabulary/:id
-DELETE /api/vocabulary/:id
+GET    /api/admin/vocabulary
+GET    /api/admin/vocabulary/:vocabularyId
+POST   /api/admin/vocabulary
+PATCH  /api/admin/vocabulary/:vocabularyId
+DELETE /api/admin/vocabulary/:vocabularyId
 3.2. Middleware Layer
 
 Middleware xử lý các concern dùng chung.
@@ -409,6 +409,8 @@ adminService
 
 API calls SHOULD NOT được viết trực tiếp trong các UI components nếu có thể tách thành service hoặc hook phù hợp.
 
+The service names above are architectural examples, not a statement that every service exists. Speaking Practice V1 does not create Backend `PronunciationService` or Frontend provider-API `pronunciationService`; it composes the existing Learning service with frontend-only recognition/playback modules.
+
 Frontend service không được chứa business rules quan trọng của hệ thống.
 
 Frontend chỉ thực hiện client-side logic phục vụ UI/UX.
@@ -474,12 +476,12 @@ Ví dụ:
 
 /api/auth
 /api/users
-/api/vocabulary
+/api/admin/vocabulary
 /api/vocabulary-sets
 /api/learning
 /api/quiz
 /api/progress
-/api/streak
+/api/users/me/streak
 /api/achievements
 /api/community
 /api/admin
@@ -520,7 +522,7 @@ Vocabulary Set Items
 
 Learning Progress
 
-Quiz Attempts
+Quiz Attempts (future/deferred; not materialized in Quiz V1)
 
 Streak
 
@@ -571,15 +573,15 @@ Check Answer
 
   ↓
 
-Calculate Result
+Validate question revision and expected Progress revision
 
   ↓
 
-Update Learning Progress
+Calculate transient result and Unicode code-point feedback
 
   ↓
 
-Update XP / Streak / Achievement
+Transactionally update current USER Learning Progress exactly once
 
   ↓
 
@@ -588,11 +590,19 @@ Response
 Hệ thống hiện tại chỉ hỗ trợ:
 
 1. Vietnamese → English
-2. Missing Letter
+2. Unscramble Word
 
 Đối với các quiz dạng nhập đáp án, per-character feedback có thể được tính toán bằng cách so sánh câu trả lời của người dùng với đáp án đúng.
 
 Thông tin feedback này không yêu cầu một database table riêng trong v1.
+
+Quiz V1 is exposed only to authenticated `USER` accounts through `GET /api/quiz/sets/:setId/questions` and `POST /api/quiz/answers`. The service reuses existing public-System/owned-private Set authorization, explicit Set Item ordering, deterministic Vocabulary content and per-USER/per-Vocabulary Learning Progress.
+
+Question loading is read-only and structurally excludes canonical-answer fields. The transient UUID `run_id` and opaque `question_revision` require no persistent Quiz Session. Answer submission is the sole Quiz mutation path; it re-authorizes access/membership and applies correctness plus the existing `event_id`/`expected_revision` concurrency contract in one transaction.
+
+For active Quiz V1, `MULTIPLE_CHOICE` replaces the historical typed-answer and Unscramble modes. The Backend selects deterministic primary Meanings, prefers Set-local distractors, uses canonical-only outside-Set fallback, excludes ambiguous labels and foreign-private data, derives opaque deterministic choice IDs, and reconstructs the question before grading. The Frontend owns only accessible single-choice interaction and transient run presentation; it does not select correct answers or grade authoritatively.
+
+No Quiz Session/Attempt/history table, XP/gamification service, SRS algorithm, Pronunciation integration or third Quiz type belongs to Quiz V1 architecture.
 
 Spaced Repetition
 Quiz / Learning Result
@@ -619,11 +629,11 @@ Business rules MUST NOT được duplicate giữa Frontend và Backend.
 
 Frontend có thể thực hiện validation phục vụ UX, nhưng Backend MUST luôn validate lại dữ liệu quan trọng.
 
-9. Pronunciation Architecture
+9. Speaking Practice V1 Architecture
 
 Pronunciation là một learning module riêng, không phải quiz type.
 
-Luồng cơ bản:
+Luồng V1:
 
 Vocabulary
 
@@ -637,40 +647,60 @@ User listens
 
     ↓
 
-User speaks / records
+Explicit USER Speak action and first-use disclosure
 
     ↓
 
-Pronunciation Evaluation
+Browser-native `SpeechRecognition` / `webkitSpeechRecognition` (`en-US`)
 
     ↓
 
-Pronunciation Result
+Conservative transcript classification and transient feedback
 
-Hệ thống có thể hỗ trợ:
+Frontend composition follows:
 
-Phát âm mẫu.
-Người dùng nghe phát âm mẫu.
-Người dùng tự phát âm.
-Speech recognition.
-Pronunciation evaluation.
+```text
+protected USER route
+  → page session and authorized `NORMAL` Learning GET
+  → integrated Speaking controller
+  → reference playback coordinator + recognition attempt controller
+  → browser adapter
+  → conservative classifier
+  → pure presentation mapping and React UI
+```
 
-Các công nghệ hoặc external providers cụ thể cho pronunciation chưa được cố định trong tài liệu này.
+The aggregate controller owns Set/Vocabulary identity, generation, target changes and mutual exclusion. Reference playback prefers `pronunciation_url`, falls back to English browser `speechSynthesis`, and is cancelled before recognition starts. Recognition cancellation/disposal detaches native handlers and rejects stale callbacks, timers and Promise continuations.
 
-Việc lựa chọn technology/provider phải được xác định trong PLAN và được phê duyệt khi cần thiết.
+`Stop` uses bounded finalization so a delayed final transcript may still settle. An explicitly stopped empty attempt returns to Ready without assessment. `Retry` always requires an explicit User action. Exit, target replacement, hidden-page handling and unmount dispose active recognition/playback; late native callbacks cannot revive a disposed or replaced session.
+
+The four terminal transcript classifications are `PRIMARY_MATCH`, uncertain `ALTERNATIVE_MATCH`, `NO_MATCH` and `INCONCLUSIVE`. They do not represent acoustic accuracy, pronunciation scores or pass/fail.
 
 Model pronunciation information được lưu trong VOCABULARY, ví dụ:
 
 phonetic
 pronunciation_url
 
-User pronunciation attempt không được lưu thành database entity riêng trong v1.
+User pronunciation attempt không được lưu thành database entity riêng trong V1. Audio/transcript/result không được gửi tới ELVocab Backend hoặc persistence; Speaking Practice creates no Learning event or Progress/SRS/XP/Streak/Achievement mutation.
 
 Nếu sau này cần lưu lịch sử pronunciation attempt, việc bổ sung entity/table phải được developer phê duyệt trước.
 
-Pronunciation functionality có thể sử dụng external services khi cần.
+The only V1 exception is direct browser-native recognition. Browser-vendor audio processing may be remote. V1 adds no provider HTTP integration, API key, Backend speech processing or audio upload.
+
+Local development uses the existing frontend/backend entry points and a localhost origin. After independently confirming the dedicated TEST database and its fail-closed guards, the guarded local review environment uses Backend port `5000` and Vite on `127.0.0.1:5173`:
+
+```powershell
+cd backend
+node --env-file=.env.test src/main.js
+
+cd ../frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Vite's relative `/api` proxy targets `http://localhost:5000` by default. Do not start the Backend command until `NODE_ENV=test`, required TEST safety flags and a dedicated non-shared TEST database are verified without printing secrets. Automated verification uses deterministic fakes and mocked Chromium; it must never request a real microphone. Real recognition requires deliberate HUMAN operation. Deployed HTTPS Gate R4 remains `PENDING` until the matching deployed Frontend/Backend revision is verified in a secure context.
 
 10. External Services
+
+For Speaking Practice V1, section 9 and the approved browser-native exception govern: Frontend may use `window.SpeechRecognition`/`window.webkitSpeechRecognition` and browser `speechSynthesis`; ELVocab adds no managed speech provider integration. The generic provider pattern below applies only to separately approved future integrations.
 
 Hệ thống có thể tích hợp external services cho các chức năng đã được phê duyệt, ví dụ:
 
@@ -701,6 +731,8 @@ AI là optional, không phải dependency bắt buộc của hệ thống.
 
 11. Spaced Repetition Architecture
 
+This section describes a future architecture direction. Flashcard / Learning V1 does not create `SpacedRepetitionService`, calculate a schedule, populate due-review fields or expose Words to Review. Any future SRS algorithm requires its own approved workflow.
+
 Spaced Repetition là một business feature quan trọng của hệ thống.
 
 Logic Spaced Repetition SHOULD được tách thành service riêng:
@@ -721,6 +753,55 @@ AI Agent MUST NOT tự ý thay đổi thuật toán hoặc thêm thuật toán m
 Không tạo thêm database table chỉ để lưu các thông số trung gian của thuật toán nếu DATABASE.md chưa yêu cầu.
 
 12. Learning Progress Architecture
+
+### 12.1 Flashcard / Learning V1 Active Architecture
+
+Flashcard / Learning V1 uses the existing layered REST composition:
+
+```text
+USER learning route
+  -> existing authentication and USER role authorization
+  -> learning controller
+  -> learning service
+  -> learning repository
+  -> Prisma -> PostgreSQL
+```
+
+The backend authorizes a public System Set or current-USER-owned private Set, returns Items in explicit position order with complete Vocabulary → Meaning → Example card content, and projects only that USER's progress. Every meaningful event revalidates current Set membership inside the transaction. The backend alone maps outcomes, owns timestamps/counters/revisions and enforces optimistic concurrency.
+
+`LEARNING_PROGRESS` remains identified by `(user_id, vocabulary_id)`, independent of Set, Set Item, Topic or Meaning. The original Flashcard/SRS architecture used only transient run state and `last_event_id` immediate retry. Streak V1 adds a narrower persistent Backend session boundary for qualifying NORMAL/SRS/Quiz groups: durable identity, immutable snapshot, evidence/receipt, lifecycle, expiry and completion. These records are qualification/replay proof, not a general activity-history or analytics ledger.
+
+The frontend route reuses `ProtectedRoute`, `UserRoute` and `AuthenticatedShell`. It owns a namespaced same-tab run state in `sessionStorage`, reconciles it with fresh server payloads and clears only that namespace on logout/session invalidation. Auth internals do not know Flashcard storage keys, and the frontend never becomes authoritative for durable progress.
+
+Frontend Learning Session V1 still standardizes transient same-tab recovery across `NORMAL_FLASHCARD`, `SRS_FLASHCARD`, `MULTIPLE_CHOICE_QUIZ` and `SPEAKING_PRACTICE`. Records are versioned and isolated by authenticated USER, Set and stable mode. The dependency-free adapter writes to `sessionStorage` with an in-memory fallback; malformed/wrong-identity state fails closed, and logout/session invalidation clears only ELVocab-owned namespaces. This state is never authoritative for Streak: NORMAL/SRS/Quiz reconcile with the Backend session, while Speaking remains entirely outside qualifying persistence.
+
+The active qualifying path follows the existing layered architecture:
+
+```text
+authenticated USER route
+  -> Learning/Quiz controller
+  -> service transaction
+  -> Learning Session + Progress/XP (when applicable) + Streak repositories
+  -> Prisma -> PostgreSQL
+```
+
+The Backend alone owns session timestamps, seven-day expiry, immutable 1–10-item snapshot, accepted evidence and completion. Terminal SRS/Quiz transactions atomically couple their existing Progress/XP effects with receipt/evidence, session completion and same-day Streak insertion; NORMAL couples reveal/completion evidence and Streak insertion but makes no Progress/XP mutation. `STREAK_DAY` stores qualifying `Asia/Ho_Chi_Minh` dates, while `current_streak` is projected on read. The unique USER/date boundary deduplicates concurrent same-day completions.
+
+NORMAL, Quiz and Speaking use immutable ordered exact-ID snapshots split into fixed batches of at most 10. Reconciliation intersects those original batches with fresh authorized membership, excludes additions and removes missing IDs without refill, substitution or reordering. SRS instead takes at most the first 10 distinct cards only after the existing Backend eligibility/order calculation. Client restoration and storage fallback never submit or replay a Quiz answer or SRS rating.
+
+Speaking session persistence is positional only. Transcript alternatives, confidence, recognition result, audio, attempt state and pronunciation score remain transient in memory and are never serialized. Quiz bounded reads reuse the authorized Learning `NORMAL` response as a membership manifest, but the Quiz Backend independently authorizes every submitted ID and constructs the requested batch atomically; the existing answer transaction remains authoritative.
+
+A mandatory HUMAN UI/UX checkpoint separates frontend service/route/run-state foundation from final Flashcard UI implementation. No SRS service/algorithm, Words to Review, Quiz, XP/gamification, Dashboard, Pronunciation Practice, Community or AI is part of this V1 architecture.
+
+### 12.2 Learning Progress View V1 Read Extension
+
+Learning Progress View V1 reuses the same authenticated USER Learning pipeline and existing `LEARNING_PROGRESS` → `VOCABULARY` relations. `GET /api/learning/progress` adds a read-only repository/service/controller route that constrains every summary, count and page query by the session-derived `user_id`.
+
+The backend returns an unfiltered persisted-state summary plus an optionally status-filtered, bounded page from one consistent read snapshot. It uses an explicit minimal Vocabulary/progress selection and deterministic ordering; it performs no progress write and creates no conceptual `NEW` row. Existing `NEEDS_REVIEW` is presentation compatibility only and does not introduce SRS or Words-to-Review architecture.
+
+The frontend adds `/my/learning-progress` beneath the existing `ProtectedRoute`, `AuthenticatedShell` and `UserRoute`, with a USER-only navigation entry. A HUMAN UI/UX checkpoint must be approved after service/route foundation and before production page implementation. Dashboard, Flashcard Focus Mode and existing Learning event/run-state architecture remain unchanged.
+
+No Prisma model, migration, cached aggregate, new role, external service or dependency is introduced by this read extension.
 
 Learning progress được quản lý theo từng user và vocabulary.
 
@@ -784,14 +865,14 @@ Trong v1:
 
 USER.total_xp lưu tổng XP.
 Level được xác định dựa trên USER.total_xp theo business rules của hệ thống.
-STREAK lưu trạng thái streak hiện tại và streak cao nhất.
+`STREAK_DAY` lưu một ngày qualifying bền vững cho mỗi USER/application day. Backend project current Streak từ các row này; V1 không lưu longest-Streak aggregate.
 USER_ACHIEVEMENT lưu achievement mà user đã đạt.
 
 V1 không yêu cầu XP transaction/history table.
 
 Không nên đặt toàn bộ logic XP, Level, Streak và Achievement vào một service duy nhất nếu làm tăng coupling.
 
-14. Vocabulary Set Architecture
+14. Vocabulary Set Architecture — Generic Future Draft (superseded for V1)
 
 Vocabulary Set là một domain riêng và có quan hệ với Vocabulary.
 
@@ -884,6 +965,53 @@ User B owns the new set
 Set gốc của User A không bị thay đổi.
 
 V1 không yêu cầu download/copy history table.
+
+### 14.0.1 Personal Vocabulary V1 — Implemented Architecture
+
+The completed Personal Vocabulary V1 implementation extends the existing aggregate and layers:
+
+- Nullable Vocabulary owner distinguishes canonical (`NULL`) from USER-private (session USER ID); no parallel Vocabulary aggregate is introduced.
+- ADMIN Vocabulary repository/service paths become canonical-scoped.
+- USER-private detail/update paths reuse aggregate validation/persistence but predicate by exact ID plus session owner.
+- Set service/repository remains authoritative for Set kind, ownership, exact-ID reference validation, ordering and copy.
+- The editor-contained picker returns canonical plus own-private data for USER and canonical-only data for ADMIN.
+- Learning, Quiz and Progress preserve exact-ID traversal and must not add word-based re-resolution.
+
+The implemented create-private-plus-add command follows Route -> Middleware -> Controller -> Service -> Repository -> Prisma. The service owns validation, ownership, server-authoritative fingerprint comparison and one transaction covering aggregate children, membership and scoped operation result. The repository locks the authorized private Set row before calculating the next append position, serializing concurrent appends without imposing headword uniqueness.
+
+An opaque client-generated `operation_id` identifies one intentional command. Backend canonicalizes accepted authoritative request data and computes the fingerprint. Equivalent retry returns the original result; different input under the same key conflicts; a new key permits intentional identical content. This is not an event-driven system, queue, cache or generic idempotency platform.
+
+Critical ownership, canonical-only System Set behavior and concealment remain backend-enforced. Frontend remains Page -> Component/State -> Service -> API. The service layer preserves picker identities/source context, exposes exact-ID private GET/PATCH and sanitizes create/update payloads. A small in-memory action coordinator generates one browser UUID per intentional create, retains it for retry and shares the in-flight Promise for rapid duplicate submission; it does not persist operation IDs or read the HttpOnly session cookie. The existing Set editor owns complete create/reuse/edit/remove orchestration; no standalone private Vocabulary application is introduced. No new role, framework, microservice or external service is introduced. Database-dependent verification remains limited to the guarded dedicated TEST DB path. Personal Vocabulary V1 is `DONE — HUMAN APPROVED`; integration into `dev` has not yet occurred.
+
+### 14.1 Vocabulary Set V1 Active Architecture
+
+Vocabulary Set V1 uses the existing REST composition without a new framework or role model:
+
+```text
+public/User/ADMIN Set route
+  -> existing authentication and ADMIN middleware where required
+  -> Set controller -> Set service -> Set repository -> Prisma -> PostgreSQL
+```
+
+The materialized data path is `TOPIC -> public VOCABULARY_SET -> VOCABULARY_SET_ITEM -> VOCABULARY`; private Personal Sets use the same aggregate but may have no Topic. `is_public`, not `owner_id`, is the existing Set-kind discriminator: the database and service require Topic for public System Sets, while USER writes reject Topic and create topicless private Sets. The Set service owns owner/private/System visibility checks, aggregate Item replacement/reordering, System copy and save-time Vocabulary validation. Set Items reference Vocabulary only; Meaning/Example/CEFR data is not selected for Set editor picker results.
+
+Public System discovery/detail routes are separate from completed Topic metadata responses. USER My Sets and ADMIN System management reuse the existing `ProtectedRoute`, `AdminRoute`, `AuthenticatedShell`, session state and role middleware. The only USER-facing Vocabulary access is the authenticated, bounded Set-editor picker; it is not a standalone catalog or detail module.
+
+Transactions are required for aggregate Item replacement/reorder and System copy. A System copy becomes an independent topicless Personal Set. Database cascade is limited to Set-owned Items; every non-null Topic-to-Set reference and Vocabulary-to-Item reference uses `RESTRICT`. Learning exposes a stable nullable Topic summary and Quiz remains Set/membership-scoped. Community sharing, SRS, XP, Streak, Pronunciation Practice and AI remained outside this historical Vocabulary Set contract revision; their later approved workstreams do not alter that milestone's scope.
+
+### 14.1.1 Set metadata and cover-storage boundary
+
+`VOCABULARY_SET` carries nullable Set-level CEFR and cover metadata. PostgreSQL stores only `cefr_level`, `cover_image_url`, and the internal `cover_storage_key`; uploaded image bytes live in one public-read Supabase Storage bucket. All writes, copies, exact deletes and Set-scoped cleanup are backend-only through the Set service and storage adapter. The frontend receives only the display URL and never receives Supabase credentials or managed keys.
+
+Managed keys are generated as `<environment-namespace>/vocabulary-sets/<set-id>/<unique-object>.webp` with `upsert: false`. The storage adapter rejects foreign namespaces and cross-Set keys. A bounded backend image processor validates JPEG/PNG/WebP signatures and dimensions before emitting the optimized WebP. Mutation orchestration owns compensation: a new uncommitted object is removed on database failure, replacement/removal exposes a scoped retry signal if stale-object cleanup fails, and Set deletion does not remove database state when managed cleanup fails.
+
+### 14.2 Discovery V1 Client Composition
+
+Discovery V1 keeps the existing backend/API/data architecture. The `/topics` frontend first reads `GET /api/topics`, then starts the required `GET /api/topics/:topicId/vocabulary-sets` reads concurrently and publishes only after every request succeeds. For `T` Topics the catalog request model remains `1 + T`; no sequential Topic waterfall, global catalog endpoint, schema change, server-side search or server-side pagination is introduced. The measured current-dataset composition was HUMAN accepted for V1.
+
+After complete readiness, frontend presentation state applies name/description search, exact single-Topic filtering and nine-item client-side pagination in that order. Featured visual previews are excluded from page size. Filter/page changes do not access the backend. The adaptive route boundary retains public Guest access and uses the existing `AuthenticatedShell` for USER/ADMIN; ADMIN remains browse-only. Copy, public visibility, Learning and Quiz authorization remain backend-authoritative.
+
+The visual featured section has no dedicated ranking contract and uses the first three complete-catalog Sets in source order. Discovery filters use persisted nullable Set CEFR, and cards render persisted cover URLs with deterministic fallbacks for absent or failed images. Current-session saved feedback is a best-effort frontend hint that may survive a same-tab reload; the API does not expose authoritative fresh-session/account source-copy recognition.
 
 15. Community Architecture
 
@@ -1074,6 +1202,12 @@ Repository SHOULD cung cấp:
 
 Production environment variables phải được cấu hình tại nền tảng deployment tương ứng.
 
+### Vocabulary Set cover environment contract
+
+Vocabulary Set managed covers require backend-only `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_VOCABULARY_SET_COVERS_BUCKET`, and `SUPABASE_STORAGE_NAMESPACE`. The bucket is public-read; write/delete remains service-role-only. There is no private/signed URL mode, frontend Supabase credential, or local-filesystem fallback.
+
+TEST uses only `TEST_SUPABASE_URL`, `TEST_SUPABASE_SERVICE_ROLE_KEY`, `TEST_SUPABASE_VOCABULARY_SET_COVERS_BUCKET`, and `TEST_SUPABASE_STORAGE_NAMESPACE`. All four are required, bucket and namespace must be TEST-identifiable, and the guard rejects missing/blank values or equality with ordinary Storage configuration before provider client creation. TEST never falls back to ordinary variables and cleanup is limited to exact run-owned keys/prefixes; no bucket-wide sweep is allowed.
+
 21. Deployment Architecture
 
 Production deployment dự kiến:
@@ -1115,6 +1249,8 @@ Supabase
 
 Managed PostgreSQL database.
 
+SEC-01 login abuse protection uses PostgreSQL shared state and transaction-scoped advisory locking, so thresholds remain consistent across Backend instances and concurrent requests. Identifier and source keys are HMAC-SHA-256 values produced with the backend-only `LOGIN_ABUSE_HMAC_SECRET` (minimum 32 characters). `LOGIN_ABUSE_PROXY_MODE=direct` ignores forwarding headers and uses the socket peer. The documented Render deployment uses `render`, accepting the validated first address from Render's `X-Forwarded-For` contract. The separately recorded two-project Vercel topology uses `vercel`, accepting one validated `X-Vercel-Forwarded-For` address from Vercel's overwrite-protected platform contract. Production must explicitly select its actual topology; other proxy chains require a separately validated trust boundary.
+
 GitHub / GitHub Actions
 
 Source code repository và CI/CD automation.
@@ -1124,6 +1260,18 @@ Deployment configuration MUST sử dụng environment variables.
 Production secrets MUST NOT được lưu trong source code.
 
 Deployment architecture được xem là baseline và không được tự ý thay đổi.
+
+### 21.1 CI Foundation Boundary
+
+CI Foundation V1 uses GitHub Actions only for repository verification. It targets pull requests to `dev`, pushes to `dev` and optional maintainer dispatch. Node.js 22 is the approved CI runtime baseline.
+
+Secret-free frontend quality, backend unit and mocked browser-smoke checks are separated from guarded database and real-stack integration checks. Database-dependent CI requires a human-confirmed PostgreSQL TEST database used exclusively by this repository's CI. It MUST NOT use Main, Preview, Production, development or developer-shared/manual TEST databases.
+
+All database-dependent automation MUST preserve `configureTestEnvironment()` as the fail-closed identity boundary. Committed migrations may be applied only through the guarded test preparation path. Destructive backend and browser verification sharing one database MUST run serially as one workflow lifecycle with cancellation disabled.
+
+Fork pull requests MUST NOT receive repository database secrets. Workflow failures, skipped secret-dependent checks and approved TODO evidence MUST remain distinguishable. Playwright failure artifacts MUST exclude environment files, credentials, database URLs, cookies and session values.
+
+CI Foundation V1 does not include CD, automatic deployment, production migrations, Docker/service containers or deployment-provider restructuring. The detailed operational contract is recorded in `docs/CI.md`.
 
 22. Development Environment
 
@@ -1344,4 +1492,18 @@ Refactor when necessary
 thay vì tạo một architecture mới cho từng feature.
 
 Build what the project needs, not what the technology makes possible.
+
+29. CEFR Learning Progress V2 Active Architecture
+
+CEFR Learning Progress V2 remains inside the existing monolith and adds no service, scheduler, role, or external dependency. The authenticated flow remains `UI -> frontend API service -> authenticated USER route -> controller -> service -> repository/Prisma transaction -> PostgreSQL`. The Backend is authoritative for pass selection, evidence, readiness, completion, entitlement, activity authorization, SRS transitions, XP, and Streak.
+
+The immutable ordered `CEFR_LEARNING_PASS_ITEM` snapshot is the canonical CEFR evidence projection. A first accepted qualifying event records one immutable credit tuple on the exact pass item. The two accepted paths are pass-linked `SET`/`NORMAL` `NORMAL_REVEALED` and pass-linked `SET`/`SRS` ratings (`AGAIN`, `HARD`, `GOOD`, or `EASY`). NORMAL reveal acceptance and SRS rating acceptance call the same internal learning-path credit operation inside their existing Prisma transaction. Conditional first-credit writes and event uniqueness deduplicate retries, repeated ratings, overlapping sessions, and cross-mode races.
+
+Learning Sessions remain immutable batches of one to ten items. Pass readiness depends on first-credit coverage of every pass item, not on bounded-session completion. Session resolution remains independent: `AGAIN` credits the pass item but keeps the SRS item unresolved and requeued; NORMAL session completion and SRS session completion retain their existing Streak boundaries. Exact unresolved SRS sessions remain resumable until completion or expiry, while pass-level continuation selects only uncredited items. Explicit pass completion rechecks all evidence and remains the only operation that creates historical completion or advances monotonic A1–C1 entitlement.
+
+Ordinary SET SRS, Review Center, GLOBAL SRS, Quiz, and Speaking do not have a CEFR pass association and cannot enter the credit path. Their existing batching, due eligibility, grading/recognition, Progress, XP, and Streak contracts remain separate. Completed Sets may start a fresh independent NORMAL study run without creating or mutating a CEFR pass. Private/copied Sets remain learnable under their existing ownership rules but never create CEFR progression evidence.
+
+The frontend reconciles pass and session projections from the Backend. It offers NORMAL or CEFR-scoped SRS for an active pass, separates **Continue this SRS review session** from **Continue remaining CEFR items**, and treats client storage as presentation/retry state only. Dashboard Current Learning preserves the exact active pass action without presenting the V1 numeric fraction/bar; Next Suggestion remains an independent Backend projection and excludes the active pass Set.
+
+The additive V2 migration extends pass items with the first-credit tuple, relaxes pass-linked sessions to `SET` plus `NORMAL`/`SRS`, and backfills only exact accepted V1 pass-linked NORMAL evidence. It cannot complete a pass or change entitlement. Guarded evidence is recorded in GitHub Actions runs [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) (ephemeral PostgreSQL, 7/7 offline guards and 6/6 integration tests), [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) (16/16 browser tests), and [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) (focused mocked/browser and PostgreSQL acceptance gaps). The last run does not establish full real-stack Speaking backend coverage.
 ```

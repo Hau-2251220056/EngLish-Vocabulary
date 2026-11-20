@@ -1,0 +1,167 @@
+import { expect, test } from "@playwright/test";
+import {
+  deferredResponse,
+  installAuthApiMock,
+  publicAdmin,
+  publicUser,
+  responses,
+} from "./fixtures/auth-api.js";
+
+test("initialization shows a neutral status without protected-content flash", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const pending = deferredResponse();
+  await installAuthApiMock(page, { "/api/auth/me": pending.response });
+
+  await page.goto("/dashboard");
+  const loadingStatus = page.getByRole("status");
+  await expect(loadingStatus).toContainText("Đang kiểm tra phiên đăng nhập…");
+  await expect(loadingStatus.locator("svg")).toHaveCSS("animation-name", "none");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toHaveCount(0);
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+
+  pending.resolve(responses.currentUser(publicUser));
+  await expect(page.getByRole("heading", {
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
+  })).toBeVisible();
+});
+
+test("protected route keeps transient auth failure recoverable and retry restores the route", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  let attempts = 0;
+  const api = await installAuthApiMock(page, {
+    "/api/auth/me": () => {
+      attempts += 1;
+      return attempts === 1
+        ? responses.error(500, "INTERNAL_SERVER_ERROR", "An unexpected error occurred.", "raw detail")
+        : responses.currentUser(publicUser);
+    },
+  });
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("alert")).toContainText("Không thể xác minh phiên đăng nhập lúc này.");
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const retry = page.getByRole("button", { name: "Thử lại" });
+  await expect(retry).toHaveCSS("cursor", "pointer");
+  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await retry.press("Enter");
+  await expect(page.getByRole("heading", {
+    name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
+  })).toBeVisible();
+  expect(api.callsFor("/api/auth/me")).toHaveLength(2);
+});
+
+test("protected route retry redirects only after confirmed authentication failure", async ({ page }) => {
+  let attempts = 0;
+  await installAuthApiMock(page, {
+    "/api/auth/me": () => {
+      attempts += 1;
+      return attempts === 1
+        ? responses.abort()
+        : responses.guest();
+    },
+  });
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test("Discovery uses the shared authentication bootstrap without public or protected flash", async ({ page }) => {
+  const pending = deferredResponse();
+  await installAuthApiMock(page, { "/api/auth/me": pending.response });
+
+  await page.goto("/topics");
+  await expect(page.getByRole("status")).toContainText("Đang kiểm tra phiên đăng nhập…");
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toHaveCount(0);
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+
+  pending.resolve(responses.currentUser(publicUser));
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Điều hướng ứng dụng" })).toBeVisible();
+});
+
+test("Guest route table redirects without an expiration warning", async ({ page }) => {
+  await installAuthApiMock(page);
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByText("Phiên đăng nhập đã hết hạn.")).toHaveCount(0);
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Làm chủ tiếng Anh từng từ một" })).toBeVisible();
+
+  await page.goto("/register");
+  await expect(page).toHaveURL(/\/register$/);
+});
+
+test("authenticated Guest routes redirect to Dashboard", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+
+  for (const path of ["/", "/login", "/register"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/dashboard$/);
+  }
+});
+
+test("USER receives USER navigation and no Admin indicator", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicUser),
+  });
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+  await page.goto("/dashboard");
+
+  await expect(page.locator(".authenticated-sidebar-name")).toHaveText(publicUser.display_name);
+  await expect(page.getByText("Quản trị viên")).toHaveCount(0);
+  const links = page.locator(".authenticated-navigation").getByRole("link");
+  await expect(links).toHaveCount(5);
+  await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
+  await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/vocabulary-sets"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/topics"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/review"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".authenticated-navigation").locator('a[href="/my/learning-progress"]'),
+    ).toHaveCount(1);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+
+  await page
+    .locator(".authenticated-navigation")
+    .locator('a[href="/topics"]')
+    .click();
+  await expect(page).toHaveURL(/\/topics$/);
+  await expect(page.getByRole("heading", { name: "Khám phá bộ từ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chưa có bộ từ để khám phá" })).toBeVisible();
+});
+
+test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
+  await installAuthApiMock(page, {
+    "/api/auth/me": responses.currentUser(publicAdmin),
+  });
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: `Mở menu tài khoản của ${publicAdmin.display_name}` }).click();
+  const indicator = page.locator(".authenticated-account-dropdown").getByText("Quản trị viên", { exact: true });
+  await expect(indicator).toBeVisible();
+  await expect(indicator).toHaveJSProperty("tagName", "SPAN");
+  await expect(indicator).not.toHaveAttribute("role", "button");
+  await expect(page.locator('a[href="/my/learning-progress"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+
+  await page.goto("/my/learning-progress");
+  await expect(page).toHaveURL(/\/dashboard$/);
+});

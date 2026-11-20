@@ -66,8 +66,9 @@ API base path:
 Ví dụ:
 
 /api/auth/login
-/api/vocabulary
+/api/admin/vocabulary
 /api/vocabulary-sets
+```
 
 API sử dụng JSON cho request/response nếu endpoint không quy định khác.
 
@@ -88,7 +89,7 @@ Guest không thể:
 
 Học và lưu Learning Progress.
 Thực hiện Quiz có lưu kết quả.
-Pronunciation Practice có lưu kết quả.
+Pronunciation Practice V1 không lưu kết quả và không có write API.
 Tạo Vocabulary Set.
 Copy Vocabulary Set.
 Tham gia Community.
@@ -189,6 +190,18 @@ Success
 
 Authentication mechanism cụ thể được quyết định trong ARCHITECTURE.md và PLAN.
 
+### 6.1 Login abuse protection (SEC-01)
+
+The Backend tracks consecutive failed login attempts per normalized identifier and trusted network source in shared PostgreSQL state. Existing and nonexistent identifiers follow the same public failure progression.
+
+- Failures 1-2 return `401 AUTHENTICATION_FAILED`.
+- Failures 3-4 return `401 AUTHENTICATION_WARNING` with bounded `attempts_remaining` (`2` then `1`).
+- Failure 5 establishes a five-minute block and returns `429 AUTHENTICATION_LOCKED` with `retry_after_seconds` between `1` and `300`, plus the matching `Retry-After` header.
+- Attempts during the block return the same bounded `429` response without password verification.
+- Expiry permits a fresh sequence. Successful authentication removes failure state for the normalized identifier before committing the new session.
+
+Messages never disclose whether an account exists. Responses never contain passwords, raw identifiers, raw client addresses, HMAC keys or password hashes. Registration, session cookies, `/api/auth/me`, logout and USER/ADMIN authorization contracts remain unchanged.
+
 7. Current User
 7.1 Get Current User
 GET /api/auth/me
@@ -225,8 +238,6 @@ Có thể bao gồm:
     "email": "hau@example.com",
     "total_xp": 320,
     "level": 3,
-    "streak": 7,
-    "longest_streak": 12,
     "daily_xp_goal": 50
   }
 }
@@ -292,17 +303,21 @@ XP đã có vẫn được giữ nguyên.
 Chỉ thay đổi target.
 11. Topic
 
-Topic dùng để phân loại Vocabulary Set.
+Topic V1 classifies Vocabulary Sets conceptually, but returns and manages Topic metadata only.
 
-Quan hệ:
+Shared Topic representation:
 
-Topic
-   ↓
-Vocabulary Set
-   ↓
-Vocabulary
+```json
+{
+  "id": "UUID string",
+  "name": "Daily Life",
+  "description": "Common vocabulary used in daily life",
+  "created_at": "ISO-8601 timestamp",
+  "updated_at": "ISO-8601 timestamp"
+}
+```
 
-Một Topic có thể có nhiều Vocabulary Set.
+`description` may be `null`.
 
 11.1 Get Topics
 GET /api/topics
@@ -310,26 +325,19 @@ Access
 
 Guest/User.
 
-Response
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "name": "Daily Life",
-      "description": "Common vocabulary used in daily life"
-    }
-  ]
-}
+Response: `200` with `{ "success": true, "data": Topic[] }`.
+
+Topic V1 returns an unpaginated metadata list. Search/filter is client-side; no server search/filter is added.
+
 11.2 Get Topic Detail
 GET /api/topics/:topicId
 Access
 
 Guest/User.
 
-Response
+`topicId` is a UUID string. Response: `200` with `{ "success": true, "data": Topic }`.
 
-Topic information và các Vocabulary Set thuộc Topic mà requester được phép xem.
+Topic V1 detail remains metadata-only. Vocabulary Set V1 adds discovery through dedicated Set routes; Topic responses do not embed Set counts, visibility data or Set collections.
 
 11.3 Admin Create Topic
 POST /api/admin/topics
@@ -337,11 +345,21 @@ Access
 
 Admin.
 
+Request: `{ "name": "Daily Life", "description": "Common vocabulary used in daily life" }`.
+
+`name` is required, trimmed, non-empty after trim, maximum 100 characters and unique case-insensitively. `description` is optional and maximum 500 characters.
+
+Success: `201` with `{ "success": true, "data": Topic }`.
+
 11.4 Admin Update Topic
 PATCH /api/admin/topics/:topicId
 Access
 
 Admin.
+
+`topicId` is a UUID string. Omitted editable field remains unchanged. A supplied `name` must be a string and is trimmed, validated and updated; `name: null` is `400 VALIDATION_ERROR`. A supplied string `description` is validated and updated; `description: null` clears it. Empty body or no supported editable field is `400 VALIDATION_ERROR`. No field other than `name` and `description` is editable in V1.
+
+Success: `200` with `{ "success": true, "data": Topic }`.
 
 11.5 Admin Delete Topic
 DELETE /api/admin/topics/:topicId
@@ -349,54 +367,81 @@ Access
 
 Admin.
 
-Deletion behavior đối với Vocabulary Set liên quan phải tuân theo Database/PLAN.
+`topicId` is a UUID string. Success: `204` with no response body.
 
-Không tự ý cascade delete nếu chưa được quyết định.
+Topic V1 itself created no Vocabulary Set relation. Vocabulary Set V1 materializes `ON DELETE RESTRICT` / no cascade. An ADMIN delete blocked by any System or legacy Personal Set reference returns `409 TOPIC_IN_USE`; topicless Personal Sets create no Topic dependency.
 
-12. Vocabulary
+Topic errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_FAILED`, `403 FORBIDDEN`, `404 TOPIC_NOT_FOUND`, `409 TOPIC_NAME_ALREADY_EXISTS`, `409 TOPIC_IN_USE`, and safe `500 INTERNAL_SERVER_ERROR` without internal details.
 
-Vocabulary bao gồm thông tin từ vựng và các dữ liệu liên quan.
+12. Vocabulary V1
 
-Một vocabulary có thể có:
+Vocabulary V1 is ADMIN-only and canonical-only (`VOCABULARY.owner_id IS NULL`). It provides no Guest/USER Vocabulary catalog, detail, search or discovery endpoint. ADMIN list/detail/create/update/delete never expose or mutate private Vocabulary; a private ID uses the same `VOCABULARY_NOT_FOUND` response as a nonexistent ID. Vocabulary Set V1 adds only an authenticated, bounded Set-editor picker with minimum selection metadata; it is not a catalog/detail exception. Every Vocabulary, Meaning and Example identifier is a UUID string.
 
-Word.
-Meaning.
-Part of Speech.
-Example.
-Context.
-Pronunciation information nếu hệ thống lưu trữ.
+12.1 Aggregate Representation
 
-Một từ có thể có nhiều meanings.
+A Vocabulary detail returns `{ success: true, data: Vocabulary }`, where `Vocabulary` contains `id`, `word`, nullable `phonetic`, nullable `pronunciation_url`, timestamps and a non-empty `meanings` array. Each Meaning contains its UUID, `part_of_speech`, `meaning_vi`, nullable `context`, nullable Meaning-only `cefr_level`, timestamps and an `examples` array. Each Example is nested under its owning Meaning and contains its UUID, `example_en`, nullable `example_vi` and `created_at`.
 
-12.1 Get Vocabulary
-GET /api/vocabulary/:vocabularyId
-Access
+12.2 ADMIN Vocabulary Routes
 
-Guest/User nếu vocabulary thuộc resource mà requester được phép xem.
+| Method / path | Success | Requirement |
+|---|---:|---|
+| `GET /api/admin/vocabulary` | `200` | Unpaginated canonical Vocabulary summaries; no server search/filter. |
+| `GET /api/admin/vocabulary/:vocabularyId` | `200` | Complete canonical nested aggregate. |
+| `POST /api/admin/vocabulary` | `201` | Create one canonical aggregate (`owner_id = NULL`) atomically with one or more Meanings. |
+| `PATCH /api/admin/vocabulary/:vocabularyId` | `200` | Update approved canonical fields and optional complete-replacement `meanings` collection atomically. |
+| `DELETE /api/admin/vocabulary/:vocabularyId` | `204` | Delete the canonical aggregate and its owned Meanings/Examples; no body. |
 
-Response
-{
-  "success": true,
-  "data": {
-    "id": 1,
-    "word": "work",
-    "meanings": [
-      {
-        "id": 1,
-        "meaning_vi": "công việc",
-        "part_of_speech": "noun",
-        "context": "daily life"
-      }
-    ],
-    "examples": [
-      {
-        "id": 1,
-        "sentence": "I go to work every day."
-      }
-    ]
-  }
-}
-13. Vocabulary Set
+All routes require existing backend authentication and `ADMIN` authorization. `PATCH` permits only `word`, `phonetic`, `pronunciation_url` and `meanings`; omitted top-level fields are unchanged. When `meanings` is supplied, it is the complete desired collection; each retained Meaning supplies its complete desired Examples. Stable IDs must be owned by the addressed aggregate, and omission from supplied replacement data intentionally deletes owned children. No granular Meaning or Example route exists.
+
+Known errors use `{ success: false, error: { code, message } }`: `400 VALIDATION_ERROR`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_WORD_ALREADY_EXISTS`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+### 12.1 Personal Vocabulary V1 — Implemented Contract
+
+#### Status Boundary
+
+PV-02 through PV-08 implement the data foundation, canonical-only ADMIN compatibility, owner-private detail/update, owner-aware picker/Set reuse, atomic private create-plus-add behavior, frontend operation lifecycle, and complete editor UX. PV-09 through PV-11 verify Learning, Progress, Quiz, TTS, privacy and cross-feature compatibility. Personal Vocabulary V1 is complete and HUMAN approved; integration into `dev` has not yet occurred.
+
+#### Owner-Aware Set-Editor Picker — Implemented in PV-05
+
+`GET /api/vocabulary-set-picker?query=<word>` behaves as follows:
+
+- USER results include canonical plus session-owner private Vocabulary, including zero-membership identities.
+- ADMIN results include canonical Vocabulary only for System Set editing.
+- Other USERs' private rows are filtered before limiting and never affect observable results.
+- Bounded results contain `id`, `word`, nullable `phonetic`, source (`CANONICAL` or `PRIVATE`) and deterministic primary-Meaning context with `part_of_speech` and `meaning_vi`.
+- Search is reuse-first discovery only; it never collapses or selects identities by spelling.
+
+#### Atomic Private Create Plus Membership — Implemented in PV-06
+
+USER-only command: `POST /api/my/vocabulary-sets/:setId/vocabulary`.
+
+Request contains required opaque UUID `operation_id` for one intentional action and `vocabulary` with the approved private create fields. It cannot set owner, scope/source/type/visibility, server IDs/timestamps, `pronunciation_url` or the authoritative fingerprint.
+
+The backend derives owner and target authorization from the session/path, computes a SHA-256 fingerprint from a fixed-key JSON projection of owner, target Set and accepted normalized create data, and atomically creates aggregate children, exact Set membership and operation result. The fixed projection is independent of incoming JSON property order. The transaction locks the owned private Set row before deriving the next append position.
+
+First completion returns `201`; an equivalent retry returns `200` with the original exact Vocabulary and membership. The success body is `{ success: true, data: { vocabulary, membership } }`. Materially different operation-ID reuse returns `409 PRIVATE_VOCABULARY_OPERATION_CONFLICT`. A different operation ID permits intentional identical/same-headword creation. Validation returns `400`; missing, public or inaccessible target Sets use concealed `404 VOCABULARY_SET_NOT_FOUND`. Failure leaves no partial aggregate, membership or successful operation record.
+
+#### Owner-Private Detail and Update — Implemented in PV-04
+
+Implemented USER-only endpoints:
+
+- `GET /api/my/vocabulary/:vocabularyId`
+- `PATCH /api/my/vocabulary/:vocabularyId`
+
+Both require authentication plus the `USER` role and predicate by exact ID plus session owner. Missing, canonical and other-owner IDs use the same concealed `404 VOCABULARY_NOT_FOUND`. GET returns `id`, `word`, nullable `phonetic` and nested Meanings/Examples; it omits owner and `pronunciation_url`. PATCH accepts only `word`, `phonetic` and a non-empty complete-replacement `meanings` collection with approved Meaning/Example fields. It permits same-spelling identities, preserves the exact Vocabulary ID, updates atomically, and rejects `pronunciation_url`, ownership, scope and server-managed fields. No private list, create or DELETE endpoint is implemented by PV-04.
+
+#### Existing API Compatibility Requirements
+
+- ADMIN Vocabulary list/detail/create/update/delete are canonical-only; duplicate-word behavior remains canonical-scoped.
+- System Set picker and writes accept canonical IDs only.
+- Private Set create/update accepts exact canonical or same-owner private IDs.
+- Same exact ID cannot repeat in a Set; distinct same-spelling IDs may coexist.
+- System Set copy continues to reuse canonical IDs.
+- Learning/Quiz continue through exact Set Item `vocabulary_id`; Progress remains `(user_id, vocabulary_id)`.
+- Existing envelopes, authentication and concealed-resource conventions remain; no new global error architecture is introduced.
+
+PV-05 also enforces exact-ID Set references: System Set create/update and copy are canonical-only; owned private Set create/update accepts canonical or session-owner private IDs and conceals foreign-private IDs as `VOCABULARY_NOT_FOUND`. Removing Set membership does not delete Vocabulary or Progress.
+
+13. Vocabulary Set — Legacy Draft (superseded for V1)
 
 Vocabulary Set là đơn vị nội dung chính để User học.
 
@@ -502,7 +547,7 @@ User là owner.
 Vocabulary tồn tại.
 Vocabulary chưa nằm trong Set.
 16.2 Remove Vocabulary from Set
-DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
+DELETE /api/vocabulary-sets/:setId/items/:vocabularyId — legacy, not a Vocabulary Set V1 endpoint
 Access
 
 Set owner.
@@ -536,6 +581,67 @@ Set mới không phụ thuộc ownership của Set cũ.
 Thay đổi Set mới không làm thay đổi Set gốc.
 Không được mutate Set gốc.
 Operation phải đảm bảo transaction integrity.
+### 17.1 Vocabulary Set V1 API Contract
+
+All Vocabulary Set identifiers are UUID strings. Success responses use `{ "success": true, "data": ... }`, except `204`; errors use `{ "success": false, "error": { "code": "...", "message": "safe message" } }`. Sections 13–17 above are legacy generic drafts and do not define V1 endpoints.
+
+#### Public System Set Routes
+
+| Method / path | Access | Success | Contract |
+|---|---|---:|---|
+| `GET /api/topics/:topicId/vocabulary-sets` | Guest/User/ADMIN | `200` | Unpaginated public System Set summaries for one Topic. |
+| `GET /api/vocabulary-sets/:setId` | Guest/User/ADMIN | `200` | Complete public System Set with ordered minimum Item metadata. |
+
+Set summaries/details include nullable Set-level `cefr_level` (`A1`–`C1`) and nullable `cover_image_url`. Public detail Items contain `id`, `vocabulary_id`, `word`, nullable `phonetic`, `position`, `created_at`, and the read-only display projection `primary_meaning: { part_of_speech, meaning_vi, example: { example_en, example_vi } | null } | null`. The projection deterministically selects the first Meaning and its first Example by `created_at ASC, id ASC`; it does not generate missing content. Set-level CEFR is not Vocabulary/Meaning CEFR. Responses never expose `cover_storage_key`, provider credentials, object-key ownership data, private User Set data, learning state or access to a Vocabulary catalog.
+
+#### Scoped Authenticated Vocabulary Picker
+
+`GET /api/vocabulary-set-picker?query=<word>` requires an authenticated USER or ADMIN and a non-empty trimmed query of at most 100 characters. USER results contain canonical plus session-owner private identities; ADMIN results are canonical-only. Results are bounded to 20 and contain `{ id, word, phonetic, source, primary_meaning }`, where `source` is `CANONICAL` or `PRIVATE` and `primary_meaning` is nullable `{ part_of_speech, meaning_vi }`. Same-spelling identities remain separate exact IDs, including zero-membership private Vocabulary. The picker is discovery only, not a standalone catalog.
+
+#### USER Private Set Routes
+
+| Method / path | Access | Success |
+|---|---|---:|
+| `GET /api/my/vocabulary-sets` | USER | `200` |
+| `POST /api/my/vocabulary-sets` | USER | `201` |
+| `GET /api/my/vocabulary-sets/:setId` | owner USER | `200` |
+| `PATCH /api/my/vocabulary-sets/:setId` | owner USER | `200` |
+| `DELETE /api/my/vocabulary-sets/:setId` | owner USER | `204` |
+| `POST /api/vocabulary-sets/:systemSetId/copy` | USER | `201` |
+| `POST /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
+| `DELETE /api/my/vocabulary-sets/:setId/cover` | owner USER | `200` |
+| `POST /api/my/vocabulary-sets/:setId/cover/cleanup` | owner USER | `200` |
+| `POST /api/my/vocabulary-sets/:setId/items` | owner USER | `201` |
+
+USER create/update accepts `name`, optional `description`, optional nullable Set `cefr_level`, optional nullable external HTTPS `cover_image_url`, and optional complete `items` collection. `topic_id`, `owner_id`, `is_public`, and client-supplied `cover_storage_key` are unsupported; supplying them returns `400 VALIDATION_ERROR`. New User Sets are private with `topic_id: null`, require no Topic lookup, and may be empty. Updating supported fields on a legacy categorized Personal Set preserves its Topic reference. USER list/detail retains `topic_id: uuid | null`. Copy accepts an accessible System Set only and creates an independent topicless private aggregate with fresh Set/Item IDs and preserved exact Vocabulary IDs/order; external covers copy the URL, while managed covers are copied to a new destination Set-owned object.
+
+Owned private Set detail Items additionally expose derived `source` (`CANONICAL` or `PRIVATE`) so Set Detail can authorize private editing without inferring identity from spelling. Private, public System and ADMIN Set detail responses expose the same read-only `primary_meaning` display projection described above. It does not CEFR-rank, fall back to another record, or generate missing data; `source` remains private-owner detail metadata only.
+
+Personal Set Detail membership management reuses the existing complete `items` PATCH contract. Adding an existing exact `vocabulary_id` submits the current authoritative order followed by that ID; removing submits the remaining IDs in their existing relative order. Removing membership never deletes Vocabulary or Learning Progress. V1 intentionally retains last-write-wins behavior across concurrent tabs and adds no granular membership or version endpoint.
+
+Public System Set Detail additionally supports an atomic single-item save through `POST /api/my/vocabulary-sets/:setId/items` with `{ source_set_id, vocabulary_id }`. The authenticated USER must own the private destination Set. The source must be a public System Set, and the exact Vocabulary must be canonical and currently belong to that source. The backend locks the destination, appends the original canonical identity at the next position, and never mutates the source Set, Vocabulary or Learning Progress. An exact duplicate returns `409 VOCABULARY_ALREADY_IN_SET`; inaccessible destinations and invalid source membership use safe not-found responses. This granular endpoint is limited to the public-detail save flow; complete Personal Set Detail replacement/reordering retains its existing contract.
+
+#### ADMIN System Set Routes
+
+| Method / path | Access | Success |
+|---|---|---:|
+| `GET /api/admin/vocabulary-sets` | ADMIN | `200` |
+| `POST /api/admin/vocabulary-sets` | ADMIN | `201` |
+| `GET /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
+| `PATCH /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
+| `DELETE /api/admin/vocabulary-sets/:setId` | ADMIN | `204` |
+| `POST /api/admin/vocabulary-sets/:setId/cover` | ADMIN | `200` |
+| `DELETE /api/admin/vocabulary-sets/:setId/cover` | ADMIN | `200` |
+| `POST /api/admin/vocabulary-sets/:setId/cover/cleanup` | ADMIN | `200` |
+
+ADMIN routes manage System Sets only. Create requires a valid non-null `topic_id`, `name`, Set `cefr_level` (`A1`–`C1`), and one-or-more valid Items; `cover_image_url` is optional. PATCH accepts Topic reassignment but rejects clearing Topic or CEFR; it also accepts supported metadata and optional complete `items`. If supplied, `items` is the complete desired order and atomically replaces/reorders owned Items. Omitted supported PATCH fields remain unchanged; `description: null` clears it. ADMIN System Set editing has no granular Set Item route.
+
+Cover upload uses single-file `multipart/form-data` field `cover`. JPEG, PNG and WebP input is signature-validated, limited to 5 MiB and 4096×4096, auto-oriented, resized without enlargement to a longest edge of at most 1600 px, stripped of unnecessary metadata, and stored as WebP quality 82. Processing is bounded to 2 concurrent jobs plus 8 queued jobs with a 15-second deadline. External cover URLs must be HTTPS and are rendered directly; the backend does not fetch or optimize them.
+
+Successful upload/remove/cleanup returns the current safe Set representation and `meta.storage_cleanup` (`complete` or `retry_required`). Metadata mutation remains authoritative if deletion of a superseded object fails; the exact Set-scoped cleanup route is the retry path. Create/upload/copy persistence failures compensate by removing only the exact newly created managed object. Delete fails safely before database deletion if managed-object cleanup cannot complete. Storage keys are server-generated, Set-scoped, never accepted from clients, and never serialized.
+
+Known errors are `400 VALIDATION_ERROR`, `404 VOCABULARY_SET_NOT_FOUND`, `404 TOPIC_NOT_FOUND`, `404 VOCABULARY_NOT_FOUND`, `409 VOCABULARY_ALREADY_IN_SET`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+
 18. Community
 
 Community V1 chỉ bao gồm:
@@ -621,11 +727,114 @@ Comment owner hoặc Admin.
 
 21. Learning / Flashcard
 
+### 21.0 Flashcard / Learning + SRS V1 Active Contract
+
+The active SRS V1 contract supersedes the original two-outcome Flashcard contract and the generic numeric-ID and review/gamification drafts later in sections 21–25. All identifiers are UUID strings. Both endpoints require an authenticated `USER`; Guest receives the existing `401 AUTHENTICATION_FAILED`, and authenticated `ADMIN` receives the existing `403 FORBIDDEN`.
+
+#### `GET /api/learning/sets/:setId`
+
+The requested Set must be either a public System Set or a private Set owned by the current USER. Inaccessible private Sets use the not-found boundary. An accessible empty Set returns `409 LEARNING_SET_EMPTY`. The optional exact `mode` query defaults to `SRS`; supported values are `SRS` and `NORMAL`.
+
+The response uses `{ "success": true, "data": ... }` and contains Set ID/name, a stable `topic` value (`TopicSummary | null`), `mode`, and mode-specific cards. `NORMAL` returns every Set Item in exact `position` order and is read-only. `SRS` returns a fixed snapshot of eligible NEW, LEARNING, legacy-compatible or due cards, evaluated at one backend-owned `evaluated_at`, together with total/eligible counts and nullable nearest future due time. Each card contains the approved Vocabulary aggregate and current USER progress projection; SRS cards additionally contain authoritative `rating_previews`.
+
+Learning Session V1 reuses the unchanged authorized `NORMAL` response as the current Set-membership manifest for NORMAL Flashcard, Quiz and Speaking reconciliation. The frontend may retain only the original ordered exact-ID snapshot for the current run: added IDs do not enter it, removed IDs are discarded without refill or reordering, and only an explicit full restart captures the latest membership/order. This client snapshot never grants access or establishes Backend membership.
+
+```json
+{
+  "status": "NEW",
+  "stored_status": null,
+  "stage": 0,
+  "interval_days": null,
+  "next_review_at": null,
+  "review_count": 0,
+  "revision": 0,
+  "last_reviewed_at": null
+}
+```
+
+`NEW` means no persisted progress row; reads never create or update one. Responses expose no private owner internals, `last_event_id`, XP or reward data.
+
+#### `POST /api/learning/events`
+
+The exact request body is:
+
+```json
+{
+  "event_id": "uuid",
+  "set_id": "uuid",
+  "vocabulary_id": "uuid",
+  "expected_revision": 0,
+  "rating": "GOOD"
+}
+```
+
+Only `AGAIN`, `HARD`, `GOOD` and `EASY` are allowed. Former `outcome`, `REMEMBERED` and `STUDY_AGAIN` payloads are rejected. The backend derives the USER, revalidates Set access/current exact membership, applies the authoritative deterministic scheduler, and atomically writes status, interval, due/review timestamps, `review_count`, `revision` and `last_event_id`. `AGAIN` resets to immediately-due stage 0/`LEARNING`; passing ratings persist `LEARNED` on the 1/3/7/14/30-day ladder. NORMAL mode never calls this endpoint.
+
+An immediate retry using the current `last_event_id` is idempotent and returns unchanged progress plus the original event's `xp_earned`, `replayed: true`, and current authoritative XP/Level projection without another increment. A delayed/reordered different event with a stale revision returns `409 LEARNING_PROGRESS_CHANGED`. V1 has no general event-history/ledger table and does not promise arbitrary historical replay idempotency.
+
+Every accepted SRS response adds a `reward` object with `source_event_id`, `xp_earned` (`0`, `1` or `3`), `replayed`, `total_xp`, `level`, `level_min_xp`, nullable `next_level_xp`, and `is_max_level`. First accepted `HARD`/`GOOD`/`EASY` earns 3 XP once; an eligible genuinely due review earns 1 XP once per pre-event Progress revision, including due `AGAIN`. Initial `AGAIN`, immediate requeue, future/incomplete schedule and all NORMAL activity earn zero. Progress, positive reward and XP increment are atomic; conflict/error responses contain no success reward projection.
+
+Known safe errors are `400 VALIDATION_ERROR`, `404 LEARNING_SET_NOT_FOUND`, `409 LEARNING_SET_EMPTY`, `409 LEARNING_SET_ITEM_CHANGED`, `409 LEARNING_PROGRESS_CHANGED`, existing `401 AUTHENTICATION_FAILED`, existing `403 FORBIDDEN`, and safe `500 INTERNAL_SERVER_ERROR`.
+
+Reveal, NORMAL navigation, audio playback, reload, restart and client-run completion are not meaningful backend events and must not create/update progress.
+
+### 21.0.1 Learning Progress View V1 Active Read Contract
+
+`GET /api/learning/progress` is an authenticated `USER`-only, read-only extension over the completed Learning Progress engine. Guest receives the existing `401 AUTHENTICATION_FAILED`; authenticated ADMIN receives the existing `403 FORBIDDEN`. The backend derives `user_id` from the session and accepts no user selector.
+
+Supported query parameters are optional scalar `page` (default `1`), `page_size` (default `20`, maximum `100`) and exact `status` (`LEARNING`, `LEARNED` or `NEEDS_REVIEW`). Unknown, repeated, malformed or unsupported query values return `400 VALIDATION_ERROR`. Search and client-selectable sorting are not part of V1.
+
+The success envelope contains an unfiltered current-USER summary (`total_started`, `learning`, `learned`, `needs_review`), an authoritative `xp_level` projection, the optionally status-filtered page, truthful filtered pagination (`page`, `page_size`, `total_items`, `total_pages`) and the applied nullable status filter. `xp_level` contains `total_xp`, `level`, `level_min_xp`, nullable `next_level_xp`, and `is_max_level`. Each item returns only Vocabulary `id`, `word`, nullable `phonetic`, plus progress `status`, `review_count` and nullable `last_reviewed_at`.
+
+The success data also contains additive `streak_activity_7d`, with `timezone: "Asia/Ho_Chi_Minh"` and exactly seven chronological `days` ending on the application date of `evaluated_at`. Each day has an application-local `date` (`YYYY-MM-DD`) and `status`: `ACTIVE` when `STREAK_DAY` confirms at least one qualifying completed NORMAL/SRS/Quiz session, `INACTIVE` when the date is on or after the USER's earliest persisted `STREAK_DAY` but has no row, or `UNAVAILABLE` when an absent date predates that confirmed per-USER coverage. With no persisted Streak day, all seven dates are `UNAVAILABLE`; missing rows are never treated as inactive without confirmed coverage. This read neither inserts nor updates Streak state.
+
+```json
+"streak_activity_7d": {
+  "timezone": "Asia/Ho_Chi_Minh",
+  "days": [
+    { "date": "2026-10-11", "status": "UNAVAILABLE" },
+    { "date": "2026-10-12", "status": "UNAVAILABLE" },
+    { "date": "2026-10-13", "status": "ACTIVE" },
+    { "date": "2026-10-14", "status": "INACTIVE" },
+    { "date": "2026-10-15", "status": "INACTIVE" },
+    { "date": "2026-10-16", "status": "ACTIVE" },
+    { "date": "2026-10-17", "status": "INACTIVE" }
+  ]
+}
+```
+
+Records are ordered by `last_reviewed_at` descending with nulls last, then progress `created_at` descending and progress `id` ascending. A positive out-of-range page succeeds with an empty item collection and truthful metadata.
+
+Conceptual `NEW` is excluded because it has no persisted row and V1 defines no global eligible Vocabulary universe. Summary, filters and items derive effective due state at one backend `evaluated_at`: learned schedules with `next_review_at <= evaluated_at` appear as `NEEDS_REVIEW`, future schedules remain `LEARNED`, and immediately-due stage-0 rows remain `LEARNING`. Reads never create or mutate progress and expose no Meaning/Example, Set/Topic membership, revision/event ID or other USER's data.
+
+Unexpected failures use the existing safe `500 INTERNAL_SERVER_ERROR` contract. This endpoint does not change `GET /api/learning/sets/:setId` or `POST /api/learning/events`.
+
+### 21.0.2 SRS V1 Rating Preview Extension
+
+This section gives the detailed rating-preview matrix for the active contract above. `GET /api/learning/sets/:setId?mode=SRS` evaluates eligibility and all rating previews at the response's single backend-owned `evaluated_at`. Each eligible card includes:
+
+```json
+{
+  "rating_previews": {
+    "AGAIN": { "kind": "SESSION_REQUEUE", "interval_days": null },
+    "HARD": { "kind": "SCHEDULED", "interval_days": 1 },
+    "GOOD": { "kind": "SCHEDULED", "interval_days": 3 },
+    "EASY": { "kind": "SCHEDULED", "interval_days": 7 }
+  }
+}
+```
+
+`HARD`, `GOOD` and `EASY` preview values are calculated by the same pure deterministic scheduler used by `POST /api/learning/events`; they are not frontend estimates. For stages `0` through `5`, the respective `(HARD, GOOD, EASY)` interval-day matrix is `(1,3,7)`, `(1,3,7)`, `(3,7,14)`, `(7,14,30)`, `(14,30,30)`, and `(30,30,30)`. The 30-day cap applies. `AGAIN` is an immediate unresolved same-session requeue and therefore intentionally has no future interval.
+
+`GET /api/learning/sets/:setId?mode=NORMAL` does not expose `rating_previews`. Rating mutation semantics, eligibility and idempotency remain unchanged; XP & Level V1 only adds the approved reward persistence and additive mutation projection.
+
 Flashcard là learning activity.
 
 Không phải Quiz.
 
 21.1 Start Learning Set
+
+This subsection is a legacy generic illustration. The active UUID response and authorization contract is defined in section 21.0 above.
 GET /api/learning/sets/:setId
 Access
 
@@ -649,6 +858,8 @@ Có thể bao gồm:
 Backend phải chỉ trả Vocabulary mà User được phép học.
 
 22. Learning Progress
+
+Sections 22–25 are retained as future conceptual background only. They do not define Flashcard / Learning V1 endpoints, gamification, SRS scheduling or a `POST /api/learning/review` route; section 21.0 is authoritative for V1.
 
 Learning Progress được lưu theo:
 
@@ -715,25 +926,11 @@ Frontend không được tự tính các giá trị này.
 
 23.1 Important Quiz Rule
 
-Nếu activity là Quiz:
+For Quiz V1, `POST /api/quiz/answers` is the only command that evaluates an answer and mutates the current USER's Learning Progress for that answer.
 
-POST /api/quiz/submit
+The Frontend must not also call `POST /api/learning/events` for the same Quiz answer. This prevents duplicate Progress mutation and duplicate `review_count`/`revision` increments.
 
-phải là endpoint chịu trách nhiệm xử lý learning progress/gamification của Quiz attempt.
-
-Frontend không được gọi đồng thời:
-
-POST /api/quiz/submit
-POST /api/learning/review
-
-cho cùng một Quiz attempt.
-
-Mục đích là tránh:
-
-Double XP.
-Double streak update.
-Double progress update.
-Double achievement evaluation.
+Quiz updates XP only through XP & Level V1 first-correct reward rules and does not update Daily Goal, Achievement or SRS scheduling state. A session-aware Quiz records accepted correct/incorrect evidence; its final accepted answer completes the Backend session and returns authoritative Streak state. The legacy sessionless path creates no Streak evidence or day.
 24. Spaced Repetition
 
 Spaced Repetition dùng để xác định Vocabulary cần review.
@@ -758,160 +955,117 @@ Authenticated User.
 
 Purpose
 
-Lấy các Vocabulary đang đến hạn review.
+Return the authoritative global-review summary for accessible studied Vocabulary.
 
 Response
 {
   "success": true,
   "data": {
-    "items": [],
-    "count": 0
+    "evaluated_at": "2026-11-03T00:00:00.000Z",
+    "due_count": 0,
+    "has_due_items": false,
+    "nearest_future_review_at": null
   }
 }
 
-Backend quyết định Vocabulary nào thuộc nhóm:
+Backend decides eligibility from current SRS state and reachability through an unlocked public A1–C1 Set or a USER-owned private Set. Session creation uses `POST /api/learning/review/sessions` as defined in section 75.3; this read creates no session and performs no mutation.
 
-NEEDS_REVIEW
+26. Quiz V1
 
-và đã đến thời điểm review.
+Quiz V1 supports exactly one type for an authenticated `USER`: `MULTIPLE_CHOICE` (English to Vietnamese). Earlier typed-answer and Unscramble contracts are historical and are not active API values.
 
-26. Quiz
+A run is scoped to one accessible, non-empty Vocabulary Set and traverses every eligible current Set Item once in explicit position order. Guest and ADMIN have no learner Quiz V1 API access. Missing or inaccessible Sets use the approved concealed not-found behavior.
 
-V1 chỉ có 2 loại Quiz.
+Quiz V1 is transient. It creates no Quiz Session, Quiz Attempt, answer history, durable score or accuracy record.
 
-VI_TO_ENGLISH
-MISSING_LETTER
+27. Quiz: Multiple Choice (English → Vietnamese)
 
-Không thêm Quiz type thứ ba trong V1 nếu chưa có approval.
+`MULTIPLE_CHOICE` presents the English word and the part of speech from its deterministic primary Vietnamese Meaning. Primary Meaning selection matches Flashcard/Learning: choose the lowest recognized CEFR (`A1` through `C2`), preserving deterministic `created_at → id` order for ties or missing CEFR.
 
-27. Quiz: Vietnamese → English
-VI_TO_ENGLISH
+Each question has exactly four distinct Vietnamese labels and opaque choice IDs. The Backend prefers other eligible Vocabulary in the Set, then fills any deficit from canonical (`owner_id = null`) Vocabulary outside the Set. Private Vocabulary owned by another USER is never a distractor. Duplicate normalized labels and ambiguous correct labels are excluded; failure to form four safe choices rejects the run.
 
-User nhận Vietnamese meaning/context và nhập English word.
+28. Deterministic Choice Generation
 
-Ví dụ:
+Choice selection and ordering are digest-derived from `run_id`, Set identity, question identity and authoritative content. Choice IDs are opaque and deterministic for the same run. Outside-Set candidates are distractors only: they never become questions and never receive Learning Progress writes.
 
-Công việc → ______
-28. Quiz: Missing Letter
-MISSING_LETTER
+29. Get Ordered Quiz Questions
 
-User nhận từ có một hoặc nhiều ký tự bị ẩn.
+`GET /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>[&vocabulary_ids=<uuid>,<uuid>,...]`
 
-Ví dụ:
+Access: authenticated `USER` only.
 
-w_rk
+Without `vocabulary_ids`, the response retains the existing compatibility behavior and returns every eligible current Set Item once in explicit position order. Learning Session V1 sends exactly one comma-separated `vocabulary_ids` scalar containing 1–10 unique UUIDs after fresh authorized manifest reconciliation. For a bounded read, the Backend authorizes the Set first, then atomically requires every requested ID to be a current Set Item and every requested question to be buildable. Success returns all and only those questions in submitted original-snapshot order. No ID is silently dropped or substituted, no partial question response is returned, and no membership/`removed_vocabulary_ids` metadata is exposed.
 
-User nhập:
+Malformed UUIDs, empty values/segments, duplicate IDs, repeated query keys, unsupported fields and lists over 10 return `400 QUIZ_VALIDATION_ERROR`. Missing/inaccessible Sets retain concealed `404 QUIZ_SET_NOT_FOUND`. A foreign, different-Set, removed, non-member or otherwise ineligible requested item returns a non-identifying `409 QUIZ_ITEM_CHANGED`; inability to construct four safe choices returns atomic `409 QUIZ_CHOICES_UNAVAILABLE`. These read changes do not alter `POST /api/quiz/answers`, authoritative grading, question/choice revision reconstruction, event idempotency or Learning Progress mutation.
 
-work
-29. Generate Quiz Question
-GET /api/quiz/questions
+Each safe question projection includes UUID identity, `MULTIPLE_CHOICE`, position, English prompt data, exactly four `{ choice_id, label }` choices and an opaque `question_revision`. It does not identify the correct choice.
 
-Hoặc endpoint tương đương được quyết định trong PLAN.
+`question_revision` is derived deterministically from authoritative fields relevant to the question, does not reveal the answer and is recomputed transactionally on answer submission. It is API-only and is not persisted.
 
-Access
+30. Submit Quiz Answer
 
-Authenticated User.
+`POST /api/quiz/answers`
 
-Backend responsibility
+Access: authenticated `USER` only.
 
-Backend quyết định:
+Request fields:
 
-Vocabulary được chọn.
-Quiz type.
-Question data.
-Correct answer.
-Context cần thiết.
-
-Frontend không được lấy correct_answer từ public response nếu điều đó cho phép user gian lận.
-
-30. Submit Quiz
-POST /api/quiz/submit
-Access
-
-Authenticated User.
-
-Request
-
-Conceptual:
-
+```json
 {
-  "quiz_type": "VI_TO_ENGLISH",
-  "vocabulary_id": 10,
-  "answer": "work"
+  "event_id": "uuid",
+  "set_id": "uuid",
+  "vocabulary_id": "uuid",
+  "run_id": "uuid",
+  "question_revision": "opaque-value",
+  "quiz_type": "MULTIPLE_CHOICE",
+  "expected_revision": 0,
+  "selected_choice_id": "opaque-choice-id"
 }
-Backend responsibilities
+```
 
-Backend xác định:
+The Backend transactionally re-authorizes Set access and current membership, reconstructs the deterministic choices, validates the question revision and selected opaque choice ID, evaluates correctness, and mutates only the requesting USER's Learning Progress:
 
-Correct answer.
-is_correct.
-Quiz result.
-Learning Progress.
-XP.
-Daily Goal progress.
-Streak.
-Achievement.
-Spaced Repetition state nếu applicable.
+- correct → `LEARNED`;
+- incorrect → `LEARNING`;
+- either accepted outcome increments `review_count` and `revision` exactly once and updates `last_reviewed_at`/`last_event_id`;
+- future SRS fields remain unchanged/null.
 
-Frontend không được tự quyết định:
+Vietnamese labels are compared for uniqueness by trimming, applying Unicode NFC, collapsing Unicode whitespace and applying locale-independent lowercase. Submission uses only the opaque `selected_choice_id`; typed answers, character alignment and tile input are not part of the active contract.
 
-is_correct
-xp_earned
-level
-streak
-achievement
-learning_status
-31. Quiz Character Feedback
+`expected_revision` protects concurrency. Immediate retry with the same current `event_id` and identical logical request does not mutate Progress or XP again; it returns original `xp_earned`, `replayed: true`, and current XP/Level. Incompatible retry state and stale/reordered events return safe conflict responses. Exact historical response replay and a general event ledger are outside V1.
 
-Quiz typing cần hỗ trợ feedback theo từng ký tự.
+Every accepted answer includes the same authoritative `reward` shape as SRS. The first correct answer for exact USER/Vocabulary earns 3 XP once, independent of SRS initial reward; incorrect and later-correct answers earn zero. Progress mutation, positive reward insert and atomic XP increment commit together. Request fields remain unchanged, and clients cannot supply reward owner/type/cycle/amount, total XP or Level.
 
-Ví dụ:
+Quiz V1 safe error contract:
 
-Expected:
-dessert
+| Condition | HTTP status | Error code |
+|---|---:|---|
+| Invalid UUID/type/body/query or unsupported extra input | `400` | `QUIZ_VALIDATION_ERROR` |
+| Missing authentication | `401` | existing authentication error |
+| Authenticated non-USER role | `403` | existing authorization error |
+| Missing/inaccessible Set | `404` | `QUIZ_SET_NOT_FOUND` |
+| Accessible empty Set | `409` | `QUIZ_SET_EMPTY` |
+| Four distinct safe choices cannot be generated | `409` | `QUIZ_CHOICES_UNAVAILABLE` |
+| Vocabulary is no longer a current Set Item | `409` | `QUIZ_ITEM_CHANGED` |
+| `question_revision` no longer matches authoritative content | `409` | `QUIZ_QUESTION_CHANGED` |
+| Submitted choice is no longer in the reconstructed question | `409` | `QUIZ_CHOICE_CHANGED` |
+| Stale revision, reordered event or incompatible immediate retry | `409` | `QUIZ_PROGRESS_CONFLICT` |
 
-User:
-deserst
+Errors expose no canonical answer, private Set existence, stack trace or database detail.
 
-UI có thể hiển thị:
+31. Quiz Choice Feedback
 
-Correct position → green.
-Incorrect position → red.
+An accepted response includes question identity, Quiz type, `is_correct`, `selected_choice_id`, `correct_choice_id` and resulting Progress `status`, `review_count`, `revision` and `last_reviewed_at`. Correctness is never exposed before an accepted submission.
 
-Character-level comparison là presentation/result logic.
+32. Transient Quiz Result
 
-Không cần V1 database table riêng để lưu từng ký tự.
-
-32. Quiz Result
-
-Quiz submit response có thể bao gồm:
-
-{
-  "success": true,
-  "data": {
-    "quiz_type": "VI_TO_ENGLISH",
-    "is_correct": true,
-    "correct_answer": "work",
-    "xp_earned": 3,
-    "total_xp": 323,
-    "level": 3,
-    "streak": 7,
-    "daily_goal": {
-      "today_xp": 33,
-      "goal_xp": 50,
-      "goal_completed": false
-    }
-  }
-}
-
-Frontend sử dụng dữ liệu này để render Result Screen.
+The Frontend derives only the transient current-run total/correct/incorrect completion summary. The immediate accepted response may also show concise positive non-replay `+N XP` feedback, but reward feedback is not persisted. A terminal session-aware answer additionally returns Backend-authored `session` and `streak` projections. No achievement, SRS schedule, durable Quiz result/history ID or accuracy record is returned or persisted.
 
 33. XP
 
 XP được backend quản lý.
 
-V1 không có XP transaction/history table.
+V1 không có public XP transaction/history API. Internal `XP_REWARD` chỉ là positive-reward deduplication evidence.
 
 Universal XP Rules
 
@@ -937,6 +1091,8 @@ submit/repeat meaningless activity.
 Backend phải xác định activity có thực sự tạo learning event hay không.
 
 34. Daily Goal XP
+
+> **Deferred contract:** Daily Goal and its bonus are not implemented by XP & Level V1. This section is future product direction and does not describe an active endpoint, persistence path or XP reward source.
 
 Daily Goal tính dựa trên:
 
@@ -1056,64 +1212,76 @@ total_xp >= 50
 
 Không hard-code threshold ở frontend.
 
-39. Streak
+39. Learning Session V1 API
 
-Streak đo tính liên tục của learning activity.
+All contracts in this section require the existing authentication and USER-role middleware. Guest requests use the existing `401` behavior; authenticated non-USER roles use the existing `403` behavior. Session lookups are scoped to the current USER, and foreign/missing identities return the same non-disclosing `404 LEARNING_SESSION_NOT_FOUND`.
 
-Không dựa vào login.
+### 39.1 Create session
 
-39.1 Qualifying Activities
+`POST /api/learning-sessions`
 
-Có thể bao gồm:
+Request fields are strictly allowlisted. `operation_id`, `set_id` and `mode` are always required; `mode` is `NORMAL`, `SRS` or `QUIZ`. NORMAL/Quiz require `vocabulary_ids` (normally an ordered 1–10-item current group; an empty array is accepted only for an actually empty Set result). SRS forbids the field and Backend selects at most ten eligible items. Unknown fields, invalid UUIDs, duplicates, order/membership mismatch or an invalid mode return `400 LEARNING_SESSION_VALIDATION_ERROR`.
 
-Vocabulary learning.
-Flashcard learning.
-Quiz.
-Pronunciation Practice.
-Review.
+The optional `session_intent` is `STANDARD` by default. `DUE_ONLY` is accepted only for SET/SRS creation. It selects at most ten deterministic, currently due Vocabulary identities with persisted USER Learning Progress; NEW and future-due items are excluded. The server persists the intent on the session and checks it during operation replay. Existing sessions receive `STANDARD` from the forward-only migration. A due-only session remains a fixed snapshot after creation; finishing one batch and creating another reevaluates current eligibility.
 
-Dashboard/login/profile/topic viewing không được tính streak.
+New session success is `201`. Exact `(USER, operation_id)` replay is `200` with `replayed: true`; incompatible reuse conflicts. Empty Set or no eligible SRS item returns `200` with `session: null` and `reason: "EMPTY_SET"` or `"SRS_UP_TO_DATE"`.
 
-39.2 Streak Rules
+The session projection contains `id`, `set_id`, `mode`, effective `state`, Backend timestamps, snapshot/completed counts and ordered item evidence. Backend authors creation and expiry; an ACTIVE session accepts operations only while acceptance time is strictly earlier than `expires_at`.
 
-Nếu User có learning activity:
+Session projections also include `session_intent`. Owner-scoped SET reads may include the authorized `set_name`. Due-only SET/SRS reads include the authoritative snapshot `cards` and `evaluated_at` so clients need no separate Set-data request to recover a selected card. The client must reject a read whose intent differs from the requested same-tab session identity.
 
-Yesterday + Today
-→ streak +1
+Across these endpoints, `400 LEARNING_SESSION_VALIDATION_ERROR` covers invalid fields/identities, `404 LEARNING_SESSION_NOT_FOUND` conceals missing or foreign ownership, and `409` uses the precise `LEARNING_SESSION_OPERATION_CONFLICT`, `LEARNING_SESSION_EVENT_CONFLICT`, `LEARNING_SESSION_INACCESSIBLE` or `LEARNING_SESSION_EXPIRED` code. Existing Authentication/authorization errors remain unchanged.
 
-Nếu User đã được tính streak trong hôm nay:
+### 39.2 Read/reconcile session
 
-No additional increment
+`GET /api/learning-sessions/:sessionId`
 
-Nếu User bỏ qua một hoặc nhiều ngày:
+Returns the owner-scoped authoritative projection with effective `ACTIVE`, `COMPLETED` or `EXPIRED` state. An inaccessible active snapshot returns `can_continue: false` and `restart_reason: "SESSION_INACCESSIBLE"` without protected card content. Reads do not extend expiry or write lifecycle state.
 
-Next qualifying activity
-→ streak = 1
+### 39.3 NORMAL reveal
 
-Multiple activities trong cùng một ngày chỉ tính:
+`PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal`
 
-1 learning day
+The body contains only `operation_id`. The Backend validates owner, NORMAL mode, active lifetime, current Set access and exact snapshot membership before storing `NORMAL_REVEALED`. Exact replay and already-acknowledged item behavior are successful idempotent responses; incompatible event reuse conflicts.
 
-V1 không có Streak Freeze.
+### 39.4 NORMAL completion
 
-Streak không yêu cầu minimum XP threshold.
+`POST /api/learning-sessions/:sessionId/complete`
+
+The body contains only `operation_id`. Only NORMAL may call this endpoint, and every snapshot item must already have accepted reveal evidence. Success/replay is `200` with authoritative `session`, `streak` and `replayed` fields. Incomplete, expired, inaccessible or mismatched operations fail without a Streak day.
+
+### 39.5 Session-aware SRS
+
+Existing `POST /api/learning/events` accepts optional `session_id`. With it, the Backend validates an unresolved item from the exact SRS session before applying existing Progress/schedule/XP rules. `AGAIN` remains unresolved; `HARD`, `GOOD` and `EASY` resolve the item. Nonterminal responses add `session`; terminal completion also adds `streak`. Omitting `session_id` selects the unchanged sessionless Progress/XP path and creates no session evidence or Streak day.
+
+### 39.6 Session-aware Quiz
+
+`GET /api/quiz/sets/:setId/questions?type=MULTIPLE_CHOICE&run_id=<session-uuid>&session_id=<same-session-uuid>` generates only the immutable session snapshot. `run_id` remains mandatory and both identifiers must be valid UUIDs that are exactly equal; a mismatch is rejected as `409 LEARNING_SESSION_EVENT_CONFLICT`. If optional `vocabulary_ids` is supplied on this session-aware path, it must exactly match the authoritative ordered Session Item snapshot. Legacy `run_id`/`vocabulary_ids` query behavior remains when `session_id` is absent.
+
+`POST /api/quiz/answers` accepts optional `session_id`; when present it must equal `run_id`. Accepted correct and incorrect answers both resolve their snapshot item. Nonterminal responses add `session`; the final distinct accepted answer also returns `streak`. Existing grading, Progress and XP fields remain authoritative. Sessionless questions/answers remain compatible and non-qualifying.
 
 40. Streak API
-40.1 Get Streak
-GET /api/users/me/streak
-Response
+
+### 40.1 Current Streak
+
+`GET /api/users/me/streak`
+
+```json
 {
   "success": true,
   "data": {
-    "current_streak": 7,
-    "longest_streak": 12,
-    "last_activity_date": "2026-09-15"
+    "current_streak": 4,
+    "completed_today": false,
+    "last_qualified_date": "2026-10-16",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "evaluated_at": "2026-10-17T02:00:00.000Z"
   }
 }
+```
 
-Streak được cập nhật bởi backend khi qualifying learning activity xảy ra.
+A USER with no qualifying day receives `current_streak: 0`, `completed_today: false` and `last_qualified_date: null`. The read is side-effect-free. Current Streak is projected from `STREAK_DAY`; the API does not expose `longest_streak` or accept client date/timezone values.
 
-Frontend không tự tăng streak.
+Exactly one daily row may result from any number of completed NORMAL/SRS/Quiz sessions on the same `Asia/Ho_Chi_Minh` application day. Speaking, login, browsing, unfinished/failed/expired sessions and merely opening an activity never qualify. V1 has no Streak Freeze, Daily Goal integration or weekly calendar.
 
 41. Achievement
 
@@ -1151,15 +1319,36 @@ Exact achievement list không được tự ý mở rộng trong IMPLEMENT nếu
 
 43. Dashboard
 
-Dashboard cần tổng hợp dữ liệu từ nhiều domain.
+### 43.0 Dashboard V1 Active Composition Contract
 
-Không nhất thiết phải tạo database table riêng cho Dashboard.
+Dashboard V1 is a read-only frontend composition for authenticated users at `/dashboard`. It does not add a Dashboard backend endpoint.
 
-43.1 Dashboard Summary
-GET /api/users/me/dashboard
+For `USER`, the frontend composes these independent sources:
+
+- the existing Authentication context for `display_name` and role;
+- `GET /api/learning/progress?page=1&page_size=1` for persisted `total_started`, `learning` and `learned` summary values;
+- `GET /api/my/vocabulary-sets` for the exact owned private Set count and a UI preview of at most the first three records in existing deterministic server order;
+- `GET /api/users/me/streak` for the independently loaded authoritative current-Streak projection;
+- `GET /api/learning-path` for current A1–C1 curriculum projection, monotonic entitlement and one primary recommendation;
+- `GET /api/learning/review` for the global due-review summary and action.
+
+The Dashboard sends no user selector. Existing session-derived USER authorization and ownership predicates remain authoritative. USER data sources load and retry independently; a failure in one source must not discard successful data from the others.
+
+Authenticated `ADMIN` retains `/dashboard` as a safe neutral landing and must not call any USER-only Dashboard data endpoint. Guest access remains protected by the existing Authentication route behavior.
+
+Dashboard reads create or update no Learning Progress, XP reward, Vocabulary Set, pass, unlock, review event, Streak day or Dashboard persistence. XP & Level V1 adds a compact USER XP/Level summary from the Progress response. Streak V1 adds a separate compact USER card from the Streak read. Daily Goal, achievement, history, weekly calendar, charts, Topic percentages and Admin Dashboard expansion remain deferred.
+
+### 43.1 Future Dashboard Aggregation — Deferred
+
+The following aggregate endpoint and fields are retained as future conceptual background only. They are not an active V1 API contract and must not be implemented without a separately approved SPEC/PLAN/TASK.
+
+Dashboard may eventually aggregate data from multiple domains. A separate Dashboard table is not necessarily required.
+
+Conceptual endpoint: `GET /api/users/me/dashboard`
+
 Access
 
-Authenticated User.
+Authenticated User (future scope).
 
 Response
 
@@ -1176,13 +1365,12 @@ Conceptual:
       "today_xp": 30,
       "goal_completed": false
     },
-    "continue_learning": [],
     "topic_progress": [],
-    "words_to_review": 5
+    "future_aggregate_fields": []
   }
 }
 
-Dashboard API có thể aggregate:
+Future Dashboard API may aggregate:
 
 Level.
 Total XP.
@@ -1190,10 +1378,9 @@ Streak.
 Daily Goal.
 Today's XP.
 Topic progress.
-Continue Learning.
-Words to Review.
+Any future fields not already supplied by the active Learning Path and global-review endpoints.
 
-Implementation cụ thể được quyết định trong PLAN.
+Implementation remains deferred to a future approved workflow.
 
 44. Topic Progress
 
@@ -1225,21 +1412,7 @@ Tránh duplicate derived data không cần thiết.
 
 45. Continue Learning
 
-Dashboard có thể trả các Set/Topic User đang học gần đây hoặc đang có progress.
-
-Ví dụ:
-
-{
-  "set_id": 1,
-  "set_name": "Daily Life",
-  "progress_percent": 65,
-  "learned_words": 130,
-  "total_words": 200
-}
-
-Tiêu chí lựa chọn cụ thể phải được quyết định trong PLAN.
-
-Không tự ý tạo thêm recommendation algorithm nếu chưa có requirement.
+The earlier conceptual recent-Set/Topic recommendation is superseded for CEFR Learning Path V1 by `GET /api/learning-path` in section 75.1. Dashboard displays at most one Backend-selected required public Set at the highest unlocked CEFR level, with active-pass resume priority and deterministic Set ordering. It does not infer a recommendation from Topic percentage, recency, private Sets, Featured content, Learning Progress, Quiz, or SRS.
 
 46. Pronunciation
 
@@ -1282,62 +1455,34 @@ Listen Model
     ↓
 Press Microphone
     ↓
-Record User Voice
+Browser captures audio only after explicit User permission/action
     ↓
 Processing
     ↓
-Evaluate
+Recognize transcript and classify conservatively
     ↓
 Result / Feedback
     ↓
 Retry
 49. Pronunciation API
 
-Conceptual endpoint:
+Speaking Practice V1 adds no pronunciation endpoint.
 
-POST /api/pronunciation/evaluate
-Access
+The authenticated USER reuses the existing authorized Learning read:
 
-Authenticated User.
+```http
+GET /api/learning/sets/:setId?mode=NORMAL
+```
 
-Request
+The Backend session identity and existing Set visibility/ownership predicate remain authoritative. `NORMAL` returns every accessible Set Item in server-authored `position` order with exact Vocabulary IDs and words. Public System Sets and owned private Sets are allowed; foreign-private and missing Sets remain concealed by the existing Learning contract.
 
-Có thể bao gồm:
+The frontend must not send an owner ID, audio, transcript, confidence or classification result. Speaking Practice must not call `POST /api/learning/events`.
 
-Vocabulary ID.
-Audio recording.
+50. Speaking Practice V1 Transcript Classification Boundary
 
-Ví dụ conceptual:
+Recognition and classification are transient frontend behavior under the approved browser-native exception. The browser may use remote vendor processing, but ELVocab has no provider HTTP request or provider secret.
 
-multipart/form-data
-
-Exact request/response contract phụ thuộc implementation được chọn trong PLAN.
-
-50. Pronunciation Evaluation
-
-Backend/system có thể trả:
-
-{
-  "success": true,
-  "data": {
-    "score": 82,
-    "is_acceptable": true,
-    "feedback": "Good pronunciation"
-  }
-}
-
-Các metric chính xác:
-
-Score.
-Threshold.
-Audio processing.
-Speech recognition.
-Pronunciation comparison.
-External service/API nếu có.
-
-được quyết định trong PLAN.
-
-Không được tự ý cam kết sử dụng AI hoặc external pronunciation service chỉ vì API tồn tại.
+V1 returns no Backend pronunciation score, threshold, `is_acceptable`, phoneme metric or acoustic comparison. The UI exposes only conservative transcript classifications: primary match, uncertain alternative match, no match and inconclusive.
 
 51. Pronunciation History
 
@@ -1407,32 +1552,8 @@ Hoặc disable mechanism tương đương nếu được quyết định trong a
 Behavior phải tuân Database/PLAN.
 
 54. Admin - Vocabulary
-54.1 Create Vocabulary
-POST /api/admin/vocabulary
-Access
 
-Admin.
-
-Có thể bao gồm:
-
-Word.
-Meaning.
-Part of Speech.
-Example.
-Context.
-54.2 Update Vocabulary
-PATCH /api/admin/vocabulary/:vocabularyId
-Access
-
-Admin.
-
-54.3 Delete Vocabulary
-DELETE /api/admin/vocabulary/:vocabularyId
-Access
-
-Admin.
-
-Deletion behavior với các Set/Progress liên quan phải tuân Database/PLAN.
+Vocabulary V1 ADMIN routes and aggregate semantics are defined in section 12. There is no public Vocabulary read, granular child endpoint, Vocabulary Set relation or external-reference delete policy in V1.
 
 55. Admin - Vocabulary Sets
 55.1 Create System Set
@@ -1789,36 +1910,38 @@ POST   /api/admin/topics
 PATCH  /api/admin/topics/:topicId
 DELETE /api/admin/topics/:topicId
 Vocabulary
-GET    /api/vocabulary/:vocabularyId
-
+GET    /api/admin/vocabulary
+GET    /api/admin/vocabulary/:vocabularyId
 POST   /api/admin/vocabulary
 PATCH  /api/admin/vocabulary/:vocabularyId
 DELETE /api/admin/vocabulary/:vocabularyId
 Vocabulary Set
-GET    /api/vocabulary-sets
+GET    /api/topics/:topicId/vocabulary-sets
 GET    /api/vocabulary-sets/:setId
+GET    /api/vocabulary-set-picker?query=<word>
 
-POST   /api/vocabulary-sets
-PATCH  /api/vocabulary-sets/:setId
-DELETE /api/vocabulary-sets/:setId
+GET    /api/my/vocabulary-sets
+POST   /api/my/vocabulary-sets
+GET    /api/my/vocabulary-sets/:setId
+PATCH  /api/my/vocabulary-sets/:setId
+DELETE /api/my/vocabulary-sets/:setId
 
-POST   /api/vocabulary-sets/:setId/items
-DELETE /api/vocabulary-sets/:setId/items/:vocabularyId
+POST   /api/vocabulary-sets/:systemSetId/copy
 
-POST   /api/vocabulary-sets/:setId/copy
-
+GET    /api/admin/vocabulary-sets
 POST   /api/admin/vocabulary-sets
+GET    /api/admin/vocabulary-sets/:setId
 PATCH  /api/admin/vocabulary-sets/:setId
 DELETE /api/admin/vocabulary-sets/:setId
 Learning
-GET    /api/learning/sets/:setId
-POST   /api/learning/review
+GET    /api/learning/sets/:setId?mode=<NORMAL|SRS>
 GET    /api/learning/review
+POST   /api/learning/review/sessions
 Quiz
-GET    /api/quiz/questions
-POST   /api/quiz/submit
+GET    /api/quiz/sets/:setId/questions?type=<quizType>&run_id=<uuid>
+POST   /api/quiz/answers
 Pronunciation
-POST   /api/pronunciation/evaluate
+No Speaking Practice V1 endpoint; reuse the authorized Learning `NORMAL` GET
 Achievement
 GET    /api/achievements
 
@@ -1920,3 +2043,81 @@ SPEC
 → REVIEW
 
 trước khi thay đổi implementation.
+
+75. CEFR Learning Progress V2 Active API Contract
+
+All endpoints below use the existing `/api` base, success envelope `{ "success": true, "data": ... }`, error envelope `{ "success": false, "error": { "code", "message" } }`, Authentication middleware, and USER-role authorization. USER identity comes from `req.user.id`; no endpoint accepts a user ID, unlocked level, count, or completion timestamp from the client.
+
+### 75.1 Learning Path read
+
+`GET /api/learning-path` is side-effect-free. Its data contains `evaluated_at`, `highest_unlocked_level`, nullable `path_completed_at`, `all_current_sets_complete`, exactly A1–C1 `levels`, nullable `recommendation`, nullable `next_suggestion`, and nullable `next_suggestion_reason`.
+
+Each level has `level`, `unlocked`, `required_count`, `completed_count`, `configuration` (`READY`, `NO_REQUIRED_SETS`, or `EMPTY_REQUIRED_SET`), `current_complete`, and ordered `incomplete_sets` summaries (`id`, `name`, `created_at`). A recommendation is `{ action: "START" | "RESUME", set_id, pass_id }`; START has null `pass_id`, while RESUME has an owned pass UUID. The highest unlocked level, active-pass priority, and `created_at` then Set ID order are Backend-owned.
+
+`recommendation` resumes the exact active compatible pass before recommending a new Set. Its active-pass projection is Backend-authored and never treats completed or invalidated passes as resumable. `next_suggestion` is either null or `{ action: "START", set_id, pass_id: null }` for the first ordered nonempty unfinished Set at the highest unlocked level that has no active CEFR pass and no unexpired active Set-scoped NORMAL/SRS session. It remains independent from Current Learning and never duplicates its active pass Set.
+
+### 75.2 Full-pass lifecycle
+
+Mutation bodies remain strict. Pass creation/restart/completion allow exactly `{ "operation_id": "<uuid>" }`; pass-session creation allows `{ "operation_id": "<uuid>", "mode"?: "NORMAL" | "SRS" }`, with omitted `mode` normalized to `NORMAL`.
+
+- `POST /api/learning-path/sets/:setId/passes`: `201` new; `200` exact replay or active-pass resume.
+- `GET /api/learning-path/passes/:passId`: owner-scoped, side-effect-free pass projection.
+- `POST /api/learning-path/passes/:passId/sessions`: `201` new linked bounded NORMAL/SRS session; `200` replay/resume or `{ session: null, reason: "PASS_READY_TO_COMPLETE", replayed: false }`. SRS results include exact `cards` and backend `evaluated_at`.
+- `POST /api/learning-path/passes/:passId/restart`: explicitly invalidates the active pass and returns a new snapshot (`201`) or exact replay (`200`).
+- `POST /api/learning-path/passes/:passId/complete`: explicit final Set completion, returning `{ pass, path, replayed }` with `200`.
+
+A pass projection has `id`, `set_id`, `state`, `snapshot_size`, canonical `studied_items`, `credited_items`, `remaining_items`, `evidence_counts`, `ready_to_complete`, `activity_state`, `active_sessions` grouped by mode, `created_at`, and nullable `completed_at`. Pass reads may additionally include `can_continue` and `restart_reason: "SNAPSHOT_CHANGED"`. Linked sessions are backend-created `SET`/`NORMAL` or `SET`/`SRS`; clients cannot submit pass-item identities, evidence sources/counts, or attach an ordinary session to a pass.
+
+`PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal` returns additive authoritative `cefr_pass` state for an accepted pass-linked NORMAL reveal. `GET /api/learning-sessions/:sessionId` returns validated cards and `evaluated_at` for a pass-linked SET/SRS exact-session resume. `POST /api/learning/events` retains its existing request, rating, revision, replay, scheduler, Progress, XP, and Streak contract and returns additive `cefr_pass` state only for an accepted pass-linked SET/SRS rating. `AGAIN` may win first CEFR credit while remaining unresolved in the SRS session.
+
+Ordinary SET SRS, Review Center, GLOBAL SRS, Quiz, and Speaking have no pass relation and return no CEFR credit. Quiz and Speaking retain existing ordered batches of at most ten. The focused acceptance-gap evidence for Quiz/Speaking is recorded in run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817): its Quiz and Speaking frontend cases are mocked browser evidence, while only the Quiz non-credit backend case used ephemeral PostgreSQL.
+
+Learning Path domain mappings are: `CEFR_PATH_VALIDATION_ERROR` -> `400`; `CEFR_PASS_NOT_FOUND` -> `404`; `CEFR_LEVEL_LOCKED` -> `403`; and `CEFR_CURRICULUM_NOT_CONFIGURED`, `CEFR_SET_ALREADY_COMPLETED`, `CEFR_PASS_RESTART_REQUIRED`, `CEFR_PASS_INCOMPLETE`, `CEFR_PASS_OPERATION_CONFLICT`, and `CEFR_PASS_TERMINAL` -> `409`. Missing and foreign passes share the concealed not-found response.
+
+### 75.3 Global review
+
+`GET /api/learning/review` is side-effect-free and returns `evaluated_at`, exact `due_count`, `has_due_items`, and nullable `nearest_future_review_at` for accessible studied candidates.
+
+`POST /api/learning/review/sessions` accepts exactly `{ "operation_id": "<uuid>" }`. It returns `201` for a new fixed `GLOBAL`/`SRS` session and `200` for replay or an empty result. A non-empty result contains `session`, `cards`, `evaluated_at`, and `replayed`. An empty result contains `session: null`, `cards: []`, `reason: "REVIEW_UP_TO_DATE" | "REVIEW_FUTURE_DUE"`, `evaluated_at`, nullable `nearest_future_review_at`, and `replayed: false`.
+
+Global cards reuse the existing SRS card/rating-preview projection. The session has `set_id: null`, `scope: "GLOBAL"`, and mode `SRS`. Existing `POST /api/learning/events` remains the rating boundary; a global event supplies the session UUID and `set_id: null`. The Backend revalidates all unresolved exact Vocabulary identities before accepting a rating. `GLOBAL_REVIEW_OPERATION_CONFLICT` maps to `409`; existing validation, session-not-found, inaccessible, expired, event-conflict, and progress-conflict codes remain active.
+
+#### 75.3.1 Review Center Set-scope response amendment
+
+> Contract status: **IMPLEMENTED / TASK-RE-A02 HUMAN ACCEPTED WITH EXPLICIT LIMITATIONS — 2026-11-09 / NOT INTEGRATED OR DEPLOYED**. The original amendment approval remains dated 2026-11-08. Acceptance is based on the recorded source audit and offline contract verification; database-backed/real-stack E2E was not run, the historical global 12-to-zero transition was not independently reconstructed, and strict transaction-wide repeatable-read snapshot isolation was not established.
+
+The implemented read-only `GET /api/learning/review/center` response includes `set_scope` in every entry in `sets`:
+
+```json
+{
+  "evaluated_at": "<timestamp>",
+  "due_count": 11,
+  "has_due_items": true,
+  "nearest_future_review_at": null,
+  "sets": [
+    {
+      "set_id": "<existing-uuid>",
+      "name": "Thói quen hằng ngày",
+      "due_count": 10,
+      "set_scope": "PERSONAL"
+    }
+  ]
+}
+```
+
+Allowed values are:
+
+- `PUBLIC`: the existing accessible Set has `is_public = true`;
+- `PERSONAL`: the existing Set has `is_public = false` and is owned by the authenticated USER.
+
+The Backend derives this value from authoritative Set data and existing access checks. It does not return `owner_id`, claim copied-from ancestry or introduce client-side entitlement rules. The endpoint uses the section 75 authenticated USER boundary and standard success/error envelopes. It returns only positive-due Set entries; zero due returns `due_count: 0`, `has_due_items: false`, `sets: []`, and the applicable nullable future-review timestamp.
+
+Due counts represent persisted studied vocabulary currently due at the response's single backend-owned `evaluated_at`. Unstarted `NEW` vocabulary is excluded. The dedicated `/review/sets/:setId` action creates or resumes a `DUE_ONLY` SET/SRS session, while ordinary SET/SRS remains `STANDARD` and may include NEW. Global `due_count` deduplicates by `vocabulary_id`; each Set count deduplicates by `(set_id, vocabulary_id)`. A shared vocabulary identity may contribute to every accessible containing Set, so per-Set counts are not necessarily additive and clients must not sum them to reconstruct the global value.
+
+The endpoint is read-only and does not create a review session or mutate learning progress. Its accepted verification limitations remain explicit: Preview TEST historical rows were not reconciled for TASK-RE-A02, database-backed/real-stack E2E remains `NOT RUN`, historical count-to-UUID assignments and overlap were not verified, and cross-statement repeatable-read isolation is not claimed. These limitations do not change the active response contract and are not represented as resolved runtime evidence.
+
+### 75.4 Locked activity and compatibility boundary
+
+Public discovery/detail/copy APIs remain unchanged. Backend service boundaries reject NORMAL, per-Set SRS, Quiz reads/answers, and the Speaking Learning dependency when a USER targets a locked public A1–C1 Set. Owned private/copied Sets retain existing activity authorization and never earn CEFR completion. Public null-CEFR Sets remain outside progression and retain existing access.
+
+Existing Learning Session endpoints remain active: `POST /api/learning-sessions`, `GET /api/learning-sessions/:sessionId`, `PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal`, `POST /api/learning-sessions/:sessionId/complete`, and `POST /api/learning/events`. Ordinary callers continue as `scope: "SET"`, including the projection compatibility default. Formal HTTP, real-stack, and database verification remains outside TASK-014.

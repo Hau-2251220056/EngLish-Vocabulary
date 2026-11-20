@@ -25,7 +25,7 @@ Hệ thống hỗ trợ:
 - Khám phá và lựa chọn Vocabulary Set theo Topic.
 - Học từ mới bằng Flashcard.
 - Nghe phát âm mẫu của từ vựng.
-- Luyện phát âm bằng cách tự nói và nhận đánh giá.
+- Luyện nói bằng browser recognition và nhận feedback phân loại transcript không chấm điểm.
 - Luyện tập từ vựng qua các dạng Quiz.
 - Ôn tập từ vựng theo cơ chế Spaced Repetition.
 - Theo dõi Learning Progress.
@@ -245,7 +245,7 @@ Vocabulary Set là tập hợp các Vocabulary phục vụ cho việc học.
 
 Admin có thể tạo và quản lý các Vocabulary Set chính thức của hệ thống.
 
-System Vocabulary Set có thể được gắn với một Topic.
+Mỗi System Vocabulary Set công khai phải được gắn với một Topic để phục vụ khám phá. Personal Vocabulary Set riêng tư của User không yêu cầu Topic và User không quản lý Topic của Set.
 
 ## 7.2. User Vocabulary Set
 
@@ -326,47 +326,19 @@ Quy tắc cụ thể phải tuân theo Business Rules đã được phê duyệt
 
 Hệ thống hỗ trợ các dạng bài tập từ vựng.
 
-## 9.1. Vietnamese → English Full Typing
+## 9.1. Multiple Choice: English → Vietnamese
 
-Hệ thống hiển thị nghĩa tiếng Việt.
+Mỗi Quiz thuộc một Vocabulary Set cụ thể và hiển thị lần lượt từng từ tiếng Anh theo thứ tự Set Item. Mỗi câu hỏi có đúng bốn lựa chọn nghĩa tiếng Việt, trong đó đúng một lựa chọn chính xác.
 
-Ví dụ:
+Backend tạo lựa chọn, giữ kín đáp án trước khi nộp và chấm điểm authoritative. User chỉ chọn một đáp án; không có bước nhập chữ hoặc sắp xếp ký tự.
 
-    Công việc → ______
+## 9.2. Quiz Feedback
 
-User phải nhập từ tiếng Anh đầy đủ.
+Sau khi Backend chấp nhận đáp án, lựa chọn đúng được đánh dấu rõ ràng; lựa chọn sai do User chọn được phân biệt với các lựa chọn trung lập. Feedback sử dụng cả ngữ nghĩa accessible, không chỉ dựa vào màu sắc.
 
-## 9.2. Missing Letters
+## 9.3. Transient Quiz Result
 
-Hệ thống hiển thị từ bị thiếu một hoặc nhiều ký tự.
-
-Ví dụ:
-
-    w_rk → ______
-
-User phải hoàn thành từ.
-
-## 9.3. Character-level Feedback
-
-Đối với các dạng Quiz nhập chữ, hệ thống hỗ trợ feedback theo từng ký tự/position khi phù hợp.
-
-Ví dụ:
-
-- Ký tự đúng ở đúng vị trí: feedback màu xanh.
-- Ký tự sai hoặc sai vị trí: feedback màu đỏ.
-
-Mục tiêu là tạo feedback trực quan và giúp User nhận biết chính xác vị trí sai.
-
-## 9.4. Quiz Result
-
-Sau mỗi Quiz attempt, hệ thống có thể ghi nhận:
-
-- Kết quả đúng/sai.
-- Điểm.
-- Learning Progress.
-- XP.
-- Streak.
-- SRS information nếu Quiz là một learning/review activity.
+Sau mỗi run, hệ thống hiển thị tổng số câu, số câu đúng và số câu sai của run hiện tại. Quiz không tạo Quiz Attempt/history, điểm bền vững hoặc lịch SRS mới. Backend vẫn cập nhật Learning Progress và XP theo các rule đã được phê duyệt. Với caller session-aware, mỗi câu đúng hoặc sai được chấp nhận đều hoàn thành một phần snapshot; câu cuối cùng hoàn thành Learning Session và có thể trả về projection Streak authoritative. Quiz sessionless giữ nguyên Progress/XP cũ nhưng không đủ điều kiện Streak.
 
 Quiz không được tự ý gọi thêm learning/review flow gây cộng thưởng hai lần cho cùng một learning event.
 
@@ -403,68 +375,30 @@ User có thể nghe lại Model Pronunciation nhiều lần.
 
 ## 10.2. Pronunciation Practice
 
-Flow:
+Speaking Practice V1 là activity USER-only theo Vocabulary Set. Activity đọc payload Learning `NORMAL` đã được Backend authorize, giữ nguyên Set Item order và từng Vocabulary ID, rồi cho phép User nghe mẫu, nói, nhận transcript-classification feedback, chuyển từ, Retry, Restart hoặc Exit về Set Detail hợp lệ.
 
-    Display Word
-        ↓
-    Listen Model Pronunciation
-        ↓
-    Press Microphone
-        ↓
-    User Speaks
-        ↓
-    System Records / Analyzes
-        ↓
-    Pronunciation Assessment
-        ↓
-    Result / Feedback
-        ↓
-    Retry
+Microphone chỉ bắt đầu sau hành động rõ ràng của User: **Nói** (sau disclosure lần đầu) hoặc **Thử nói lại**, trong đó **Thử nói lại** bắt đầu ngay một recognition attempt mới mà không cần bấm **Nói** lần nữa. Không có microphone auto-start khi load, đổi từ, render Retry, Retry page load, Restart hoặc qua automatic retry loop.
 
-Các trạng thái chính có thể bao gồm:
+Các trạng thái V1 gồm loading/ready, disclosure, unsupported/insecure context, starting, listening, finalizing, result/inconclusive, recoverable error, inaccessible/empty, cancelling/disposed và completion tạm thời trong session.
 
-- Ready.
-- Recording.
-- Processing.
-- Result.
-- Error.
-- Unsupported.
+## 10.3. Transcript Classification — V1
 
-## 10.3. Pronunciation Assessment
+V1 dùng browser-native `SpeechRecognition`/`webkitSpeechRecognition` với ngôn ngữ `en-US`. Browser hoặc browser vendor có thể xử lý audio từ xa; ELVocab không cam kết on-device processing.
 
-Hệ thống đánh giá phần phát âm của User.
+Transcript được so khớp bảo thủ theo exact normalized word và cho một trong bốn kết quả:
 
-Kết quả có thể bao gồm:
+- `PRIMARY_MATCH`: transcript chính khớp từ mục tiêu.
+- `ALTERNATIVE_MATCH`: từ mục tiêu chỉ xuất hiện trong alternative; đây là kết quả không chắc chắn.
+- `NO_MATCH`: có transcript dùng được nhưng không khớp.
+- `INCONCLUSIVE`: không có đủ dữ liệu dùng được để kết luận.
 
-- Overall score.
-- Accuracy score.
-- Fluency score.
-- Completeness score.
-- Pass/Fail.
-- Feedback.
+Đây không phải acoustic pronunciation assessment. V1 không có percentage, pronunciation score, pass/fail threshold, phoneme analysis, fluency hoặc completeness score.
 
-Công nghệ và phương pháp tính score cụ thể sẽ được quyết định trong PLAN/Technical Design.
+`Stop` là graceful finalization: kết quả cuối đến trễ trong giới hạn vẫn được phân loại. Nếu User chủ động Stop và không có transcript dùng được, UI trở về Ready mà không hiển thị assessment. Permission denial, missing audio-capture device, spontaneous no-speech và service errors vẫn là các failure riêng có recovery phù hợp.
 
-Không được tự ý giả định một dịch vụ hoặc công nghệ cụ thể nếu chưa được phê duyệt.
+## 10.4. Privacy and Persistence — V1
 
-## 10.4. Passing Rule
-
-Business Rule hiện tại:
-
-    score > 50%  → PASS
-    score ≤ 50% → FAIL
-
-Không được tự ý thay đổi ngưỡng này nếu chưa được người phát triển phê duyệt.
-
-## 10.5. Pronunciation History
-
-Nếu được triển khai, hệ thống có thể lưu lịch sử luyện phát âm để:
-
-- Theo dõi tiến bộ.
-- Hiển thị kết quả học tập.
-- Hỗ trợ Learning Progress.
-
-Cấu trúc lưu trữ cụ thể sẽ được quyết định trong Database Design.
+ELVocab Backend không nhận audio hoặc transcript của Speaking Practice V1. Activity không lưu attempt/history/result, không tạo Learning event, không cập nhật Learning Progress, SRS, XP, Level, Streak hoặc Achievement, và không gọi provider HTTP API. Transcript chỉ tồn tại tạm thời trong frontend session để hiển thị feedback an toàn.
 
 ---
 
@@ -563,13 +497,9 @@ Progress phải được tính dựa trên dữ liệu học tập thực tế, 
 
 ## 12.3. Words to Review
 
-Dashboard có thể hiển thị số Vocabulary cần review.
+Authenticated USER Dashboard hiển thị summary authoritative của Vocabulary đang đến hạn review. Global Review tạo một fixed snapshot tối đa 10 exact Vocabulary ID từ các từ đã học, đang đến hạn và còn truy cập được qua public Set đã mở khóa hoặc private Set do USER sở hữu.
 
-Ví dụ:
-
-    12 words to review
-
-Danh sách này được xác định dựa trên SRS và Learning Progress.
+Eligibility, thứ tự, thời gian và bốn rating `AGAIN`, `HARD`, `GOOD`, `EASY` tiếp tục do Backend SRS quyết định. `AGAIN` requeue trong phiên; **Ôn tiếp** yêu cầu một eligibility evaluation mới. Review không hoàn thành Set và không mở khóa CEFR.
 
 ## 12.4. Learning Statistics
 
@@ -580,7 +510,7 @@ Learning Progress có thể bao gồm:
 - Words needing review.
 - Review count.
 - Quiz accuracy.
-- Pronunciation results.
+- Pronunciation results only in a separately approved future persistence scope; Speaking Practice V1 does not contribute them.
 - Learning history.
 - XP.
 - Level.
@@ -607,25 +537,23 @@ Gamification không được làm thay đổi mục tiêu chính là học từ 
 
 ## 13.1. XP
 
-XP được cộng từ các learning activities hợp lệ.
-
-Quy tắc XP hiện tại là một quy tắc chung cho tất cả User.
+XP & Level V1 áp dụng cho tài khoản `USER`; Guest và `ADMIN` không thể kiếm XP qua các learner route. Backend là nguồn duy nhất quyết định reward eligibility, XP được cộng và Level hiện tại.
 
 ### New Word
 
-User học một Vocabulary lần đầu:
+Lần đầu User gửi một SRS rating `HARD`, `GOOD` hoặc `EASY` cho đúng Vocabulary UUID mà chưa có reward `SRS_INITIAL`:
 
     +3 XP
 
 ### Review
 
-User review một Vocabulary đã học:
+Một Progress đã có `SRS_INITIAL`, đang được lưu ở trạng thái `LEARNED`, có lịch SRS đầy đủ và thực sự đến hạn tại thời điểm Backend chấp nhận event sẽ nhận một reward cho pre-event revision đó:
 
     +1 XP
 
 ### Quiz Correct
 
-User trả lời Quiz đúng:
+Lần đầu User trả lời đúng Multiple Choice Quiz cho đúng Vocabulary UUID mà chưa có reward `QUIZ_FIRST_CORRECT`:
 
     +3 XP
 
@@ -637,11 +565,11 @@ Quiz trả lời sai:
 
 ### Repeated Activity
 
-Việc lặp lại cùng một từ trong cùng một context/activity mà không tạo ra learning event mới:
+SRS `AGAIN` trước initial pass, immediate SRS requeue, Quiz đúng sau lần đầu, incorrect Quiz, NORMAL Flashcard và Speaking Practice:
 
     +0 XP
 
-Hệ thống phải ngăn việc farming XP thông qua các thao tác không mang lại learning event thực sự.
+SRS initial, Quiz first-correct và từng genuine due-review cycle được deduplicate bền vững theo exact USER/Vocabulary identity. Progress mutation, positive reward record và `USER.total_xp` increment commit atomically. Immediate replay trả lại original `xp_earned` cùng current XP/Level nhưng không cộng lại reward.
 
 Ví dụ:
 
@@ -649,6 +577,8 @@ Ví dụ:
 - Nhấn nghe pronunciation nhiều lần không tự động cộng XP.
 - Reload trang không cộng XP.
 - Gửi lại cùng một thao tác không hợp lệ không được cộng XP.
+
+Migration không backfill reward hoặc XP từ Progress lịch sử và giữ nguyên mọi `USER.total_xp` hiện có. Daily Goal bonus là feature riêng được defer; XP & Level V1 không triển khai Daily Goal, Streak, Achievement, leaderboard hoặc XP history.
 
 ---
 
@@ -688,7 +618,7 @@ Ví dụ:
     8,000 XP  → Level 15
     20,000 XP → Level 15
 
-Bảng XP threshold cụ thể từ Level 1 đến Level 15 sẽ được xác định trong Business Rules/PLAN trước khi triển khai.
+Bảng threshold được Backend quản lý theo `25 × L × (L − 1)`: Level 1 bắt đầu tại 0 XP, Level 2 tại 50 XP và Level 15 tại 5,250 XP. Level là projection, không được persist.
 
 Level chỉ phục vụ Gamification.
 
@@ -697,6 +627,8 @@ Level không tự động khóa hoặc mở Vocabulary, Topic hoặc Learning Co
 ---
 
 # 13.3. Daily Goal
+
+> **Trạng thái:** Deferred. Nội dung dưới đây là product direction cho một feature riêng; XP & Level V1 không triển khai Daily Goal progress hoặc bonus và không được xem các quy tắc này là active behavior.
 
 Daily Goal là mục tiêu XP mà User muốn đạt trong một ngày.
 
@@ -769,19 +701,19 @@ Nếu User thay đổi Daily Goal trong ngày:
 
 # 13.4. Streak
 
+> **Trạng thái:** Streak V1 đã được triển khai và có TASK-249 integrated verification được HUMAN chấp nhận. Feature tổng thể vẫn `IN_PROGRESS` cho tới formal TEST, formal REVIEW và các HUMAN gate còn lại; trạng thái này không đồng nghĩa Preview/Production deployment.
+
 Streak biểu thị số ngày User có learning activity liên tiếp.
 
 Streak không dựa đơn thuần vào việc đăng nhập.
 
 ## Qualifying Activities
 
-Các hoạt động có thể duy trì Streak:
+Chính xác ba mode có thể tạo qualifying Learning Session:
 
-- Học Vocabulary.
-- Flashcard learning.
-- Review.
-- Quiz.
-- Pronunciation Practice.
+- NORMAL Flashcard: snapshot 1–10 thẻ phải có Backend-accepted reveal cho mọi item và User phải yêu cầu hoàn thành rõ ràng.
+- SRS Flashcard: `AGAIN` vẫn unresolved; mọi item ban đầu chỉ resolve bằng `HARD`, `GOOD` hoặc `EASY` được Backend chấp nhận.
+- Multiple Choice Quiz: mọi câu trong snapshot phải có một câu trả lời được Backend chấp nhận; zero-correct completion vẫn qualify và không tự tạo Quiz XP.
 
 Các thao tác chỉ xem giao diện không được tính:
 
@@ -790,6 +722,8 @@ Các thao tác chỉ xem giao diện không được tính:
 - Xem Profile.
 - Xem Topic.
 - Xem Vocabulary Set mà không thực hiện learning activity.
+- Chỉ mở, bỏ dở, thất bại hoặc để session hết hạn.
+- Speaking Practice.
 
 ## Streak Rules
 
@@ -806,15 +740,15 @@ Nếu User đã được tính Streak trong ngày hiện tại:
 
     Không cộng thêm.
 
-Nếu User bỏ qua một hoặc nhiều ngày:
-
-    Streak reset về 1 khi User quay lại học.
+Application day được Backend xác định từ completion acceptance time theo `Asia/Ho_Chi_Minh` (UTC+7); client không quyết định ngày hoặc timezone. Nếu hôm nay chưa hoàn thành nhưng hôm qua kết thúc chuỗi liên tiếp thì projection giữ nguyên chuỗi đó và `completed_today = false`. Sau một ngày application bị bỏ lỡ hoàn toàn, current Streak đọc là `0`; qualifying completion kế tiếp bắt đầu lại ở `1` mà không xóa lịch sử ngày đã lưu.
 
 Nhiều learning activities trong cùng một ngày chỉ tính là một Streak day.
 
 Streak không yêu cầu một mức XP tối thiểu nếu User đã thực hiện một learning activity hợp lệ.
 
 Version 1 không có Streak Freeze.
+
+Current Streak được Backend project từ durable `STREAK_DAY`, không lưu trên `USER`. V1 không có `longest_streak`, Daily Goal integration, weekly calendar hoặc Streak history/analytics UI.
 
 ---
 
@@ -858,27 +792,13 @@ Hiển thị progress của ngày hiện tại.
 
 ## 14.3. Continue Learning
 
-Hiển thị các Topic/Vocabulary Set User đang học hoặc học gần đây.
+Dashboard hiển thị tối đa một recommendation authoritative cho required public Vocabulary Set ở CEFR level cao nhất đã mở khóa. Active full-pass ở level đó được ưu tiên resume; nếu không có, Backend chọn incomplete Set sớm nhất theo `created_at`, rồi Set ID.
 
-Ví dụ:
-
-    Travel
-    72%
-    144 / 200 words learned
-
-    12 words to review
-
-    [Continue Learning]
-
-Có thể hiển thị khoảng 2–3 nội dung học tập phù hợp.
+Các Set chưa học ở level cũ vẫn truy cập được nhưng không kéo recommendation chính lùi lại. Recommendation không dựa trên Learning Progress, Quiz, SRS, private Set preview hoặc Featured content.
 
 ## 14.4. Today's Review
 
-Hiển thị số Vocabulary đang đến hạn review.
-
-Ví dụ:
-
-    18 words to review
+Hiển thị số Vocabulary đang đến hạn từ global-review summary và action vào `/review`. Trạng thái không có từ đến hạn, future-due, loading, error và retry được xử lý độc lập với các Dashboard section khác.
 
 ## 14.5. Dashboard Principle
 
@@ -1119,9 +1039,9 @@ Không phải mọi learning activity đều phải đi qua toàn bộ flow trê
 
 Ví dụ:
 
-- User chỉ review một từ → có thể cập nhật Learning Progress + SRS + XP + Streak.
-- User làm Quiz → cập nhật Quiz Result + Learning Progress + XP + Streak.
-- User luyện Pronunciation → cập nhật Pronunciation Result + Learning Progress phù hợp + XP + Streak.
+- User gửi một SRS rating → cập nhật Learning Progress/SRS/XP theo rule hiện có; chỉ một session-aware group hoàn thành đầy đủ mới qualify Streak.
+- User trả lời một câu Quiz → cập nhật Quiz Result + Learning Progress + XP theo rule hiện có; chỉ câu trả lời cuối cùng được chấp nhận của một session-aware snapshot hoàn chỉnh mới qualify Streak.
+- Speaking Practice V1 → không cập nhật Pronunciation Result, Learning Progress, SRS, XP hoặc Streak.
 
 Frontend không được thực hiện hai learning flows cho cùng một activity nếu điều đó dẫn tới cộng XP hoặc cập nhật progress hai lần.
 
@@ -1167,8 +1087,8 @@ Pronunciation bao gồm:
 
 1. Nghe Model Pronunciation.
 2. User tự phát âm.
-3. Hệ thống đánh giá.
-4. Pass khi score > 50%.
+3. Browser-native speech recognition tạo transcript candidates.
+4. Hệ thống phân loại transcript bảo thủ để đưa feedback không chấm điểm.
 
 Pronunciation Practice là learning activity riêng, không phải Quiz Type.
 
@@ -1233,12 +1153,12 @@ AI Agent PHẢI tuân thủ:
 2. Không tự ý thêm feature mới.
 3. Không tự ý xóa feature đã được xác định.
 4. Không tự ý thay đổi Business Rule.
-5. Không tự ý thay đổi pronunciation passing threshold `> 50%`.
+5. Không tự ý thêm pronunciation score, pass/fail threshold hoặc acoustic assessment vào Speaking Practice V1.
 6. Không tự ý thay đổi XP rules.
 7. Không tự ý thay đổi Level Max = 15.
 8. Không tự ý thay đổi Daily Goal rules.
 9. Không tự ý thay đổi Streak rules.
-10. Không tự ý quyết định công nghệ Pronunciation Assessment nếu chưa có PLAN.
+10. Không tự ý thay đổi browser-native recognition architecture hoặc thêm pronunciation assessment/provider ngoài PLAN đã được phê duyệt.
 11. Không tự ý mở rộng Community.
 12. Không tự ý thêm AI feature.
 13. Không tự ý tạo thêm User Role.

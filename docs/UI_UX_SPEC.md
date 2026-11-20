@@ -43,6 +43,8 @@ Guest users are unauthenticated visitors.
 
 Guest users can access public content and authentication-related pages.
 
+SEC-01 keeps the existing Login form and accessible inline `role="alert"` treatment. The first two failed attempts retain the generic invalid-credentials message. The third and fourth failures state the bounded number of attempts remaining without confirming account existence. A five-minute source-scoped block provides clear retry guidance rounded to a bounded minute value. The form remains keyboard operable, preserves submitted email locally through the current form state, never displays the password, and permits a fresh submission after the pending request settles.
+
 User accounts can learn vocabulary, manage personal vocabulary sets, participate in the community, and track learning progress.
 
 Admins manage users, topics, vocabulary data, vocabulary sets, achievements, and community content.
@@ -90,6 +92,10 @@ Follow these principles:
 9. Encourage learning progress
 10. Keep important actions obvious
 
+## 3.3 Frontend Styling Convention
+
+Prefer Tailwind utilities for all supported styling concerns. Use custom CSS only for semantic theme variables, complex animations/background effects, unsupported selectors/states, browser-specific behavior, or cases where utilities materially reduce clarity.
+
 # 4. Information Architecture
 
 The application should be organized into the following main areas:
@@ -112,8 +118,7 @@ User
 ├── Learn Vocabulary
 │   ├── Flashcard
 │   ├── Pronunciation Practice
-│   ├── Vietnamese → English Quiz
-│   ├── Missing Letter Quiz
+│   ├── Multiple Choice Quiz
 │   └── Quiz Result
 │
 ├── Progress
@@ -145,6 +150,8 @@ Admin
 ├── Achievement Management
 └── Community Management
 
+```
+
 Vocabulary Set Detail is a shared screen that may be accessed by Guest and authenticated users according to the system's access rules.
 
 5. Global Layout
@@ -154,8 +161,46 @@ The application should use a modern dashboard layout.
 
 For authenticated users:
 
+The approved shared authenticated layout contains:
+
+- Header.
+- Primary Sidebar navigation.
+- Main Content rendered by the matched nested route through React Router `<Outlet />`.
+- Shared authenticated Footer.
+
+Header responsibilities:
+
+- Display ELVocab branding/logo.
+- Display authenticated account identity on the right using an avatar, or a default avatar when no avatar is available, plus the backend-provided `display_name`.
+- ADMIN context may be displayed as non-interactive context; it does not add an Admin feature or replace backend authorization.
+- Logout is not a primary Header action.
+
+Sidebar responsibilities:
+
+- Remain the primary authenticated navigation on desktop.
+- Contain Logout using the existing Authentication behavior.
+- Show only routes/features that are implemented and approved.
+- Do not render placeholder routes or menu items for future features.
+
+Main Content responsibilities:
+
+- Render route-owned content through the shared route outlet.
+- Remain separate from User Dashboard or other feature-specific business content.
+
+Footer responsibilities:
+
+- Display only `© 2026 ELVocab` in V1.
+- Remain visually secondary and contain no unapproved links.
+- Remain visible in compact form on mobile.
+
+The existing Authentication `AuthenticatedShell` must be reused and extended. The application must not create a second authenticated shell.
+
+Unknown frontend routes render a standalone, full-viewport **404 — Không tìm thấy trang** view after authentication validation. It uses a soft sky, white, mint and peach gradient, a dominant responsive 404 number, the approved heading and description, and only **Về trang chủ**; it has no application Header, Navbar, Sidebar, panel, decorative icon or illustration. The action leads to the public landing page for guests and Dashboard for authenticated USER and ADMIN. The page preserves authentication loading/recovery without exposing protected route content and does not replace `/api/*` responses. The frontend SPA fallback can serve `index.html` with HTTP 200 while React renders this Not Found view; this is not a server-level HTTP 404.
+
+The following diagram is an information-architecture illustration. Search, Profile and future navigation items are not part of the App Layout foundation until their routes/features are separately implemented and approved.
+
 ┌─────────────────────────────────────────────────────┐
-│ Logo                         Search      Profile     │
+│ ELVocab                  Account Identity           │
 ├──────────────┬──────────────────────────────────────┤
 │              │                                      │
 │ Sidebar      │           Main Content               │
@@ -172,19 +217,21 @@ For authenticated users:
 │              │                                      │
 └──────────────┴──────────────────────────────────────┘
 
-The sidebar should remain visually simple.
+The sidebar should remain visually simple. Only implemented and approved destinations may be shown.
 
 The active navigation item must be clearly highlighted.
 
-5.2 Mobile Layout
+5.2 Tablet and Mobile Layout
 
-On mobile devices:
+On tablet and mobile devices:
 
-Sidebar becomes a mobile navigation.
+The persistent desktop Sidebar becomes collapsible/drawer navigation.
 
-Use bottom navigation or collapsible navigation.
+Do not use bottom navigation.
 
 Main content uses full available width.
+
+The authenticated Footer remains visible in compact form.
 
 Cards should stack vertically.
 
@@ -337,14 +384,20 @@ Introduce the platform and encourage users to start learning.
 Required sections:
 
 Hero section
-Product introduction
-Learning feature overview
-Vocabulary learning preview
-Quiz preview
-Progress / achievement preview
-Community preview
+Sticky public Navbar with section navigation and Authentication actions
+Browser-style static product demonstration, clearly identified as non-user data
+Six-card overview of implemented learning capabilities
+Three-step How It Works section
 Call-to-action
 Footer
+
+Landing Page V1 uses Vietnamese UI and the existing ELVocab logo. Its feature copy may describe public Set discovery, Flashcard, SRS, the active four-choice English-to-Vietnamese Quiz, browser speech-recognition practice, Learning Progress, XP, Level and Streak. It must not claim acoustic pronunciation scoring, unsupported Quiz types, unavailable analytics, Achievement or Community functionality, fabricated user statistics, guaranteed learning outcomes or an unverified public domain.
+
+The public Navbar contains only **Tính năng**, **Cách hoạt động**, **Đăng nhập** and **Bắt đầu miễn phí**. It has no obsolete **Đánh giá** destination. Testimonials and a StatsBar are not part of Landing Page V1.
+
+Guest `/` renders Landing Page V1. Authenticated USER and ADMIN actors visiting `/` retain the existing redirect to `/dashboard`. The Landing Page public Navbar and Footer remain separate from `AuthenticatedShell`.
+
+This Footer belongs to the public Landing Page. It is separate from the shared authenticated Footer defined in Global Layout.
 
 Primary actions:
 
@@ -373,7 +426,9 @@ Confirm Password
 Register button
 Link to Login
 Validation messages
-9.4 Public Vocabulary Sets
+9.4 Public Vocabulary Sets — Legacy Draft (superseded for V1)
+
+The remaining legacy content in sections 9.4–9.5 is retained as future-product context only. The active Vocabulary Set V1 public behavior is defined in section 11.5. Discovery V1 is defined in `docs/specs/DISCOVERY_V1_SPEC.md` and is limited to public System Sets using existing Topic-scoped contracts; this legacy text does not authorize public User Sets, Community sharing, creator/social attribution, server-side pagination or server-side search. Its approved client-side pagination is limited to nine filtered Sets per page. Learning, Quiz and copy entry remain governed by their later approved contracts.
 
 Purpose:
 
@@ -414,40 +469,58 @@ Copy Set is available only when the vocabulary set is accessible for copying acc
 
 Copied vocabulary sets become private sets owned by the copying user.
 
+9.6 Public Topic Listing and Detail (Topic V1)
+
+Guest and authenticated users can view Topic metadata through public Topic list and detail routes.
+
+Listing elements:
+
+Page title
+Client-side search
+Topic name
+Optional description
+Loading state
+Empty state
+Error state
+
+Detail displays Topic metadata only. An empty Topic remains visible. Topic V1 does not display Vocabulary Set cards, Vocabulary Set counts, visibility/access information, learning progress, XP or streak effects.
+
 10. User Screens
 10.1 Dashboard
 
-The dashboard is the main home screen after login.
+Dashboard V1 is the authenticated landing at `/dashboard`. It reuses the existing `AuthenticatedShell`; it does not redesign the Header, Sidebar, Main Content, Footer, scrolling or mobile drawer.
 
-Display:
+For `USER`, the production Dashboard is a concise read-only overview composed from Authentication identity, persisted Learning Progress, owned private Vocabulary Sets, Streak, CEFR Learning Path, and global-review summary. Its functional hierarchy is:
 
-Welcome message
-Current level
-XP
-Current streak
-Daily XP Goal progress
-Topic learning progress
-Words to review
-Continue Learning
-Current learning progress
-Recent learning activity
-Achievement preview
+1. one page heading and a personalized greeting from authenticated `display_name`;
+2. a compact learning snapshot containing exactly total started, `LEARNING` and `LEARNED`;
+3. the exact private Set count and at most three Set summaries in existing server order;
+4. independently loaded CEFR recommendation and global-review action;
+5. quick navigation to Topics, My Sets and detailed Learning Progress.
 
-Topic progress should provide a concise overview of the user's learning progress by topic.
+Each Set preview may show its real name, optional description and Item count. Set management/detail navigation remains available, while Learn is shown only when `item_count > 0`. Preview order must not be described as recent, recommended or in progress.
 
-Each topic progress item may display:
+Progress, My Sets, Streak, CEFR path, and global review load independently. Each data-backed section provides an accessible initial loading state, its own valid empty/completed state and a safe scoped error/retry state with duplicate-pending and stale-response protection. Failure of one section leaves successful sibling content usable.
 
-Topic name
-Progress percentage
-Learned words / total words
-Words to review
-Continue Learning action
+Authenticated `ADMIN` keeps `/dashboard` as a neutral safe landing and must not trigger USER-only Progress, My Sets, Streak, CEFR path, or global-review requests. V1 does not create an Admin Dashboard. Guest access continues to use the existing protected-route redirect behavior.
 
-The dashboard should focus on encouraging the user to continue learning.
+The page must use semantic headings, native controls, visible focus, textual meaning independent of color, appropriate live/status/alert semantics, predictable retry focus, existing touch-target conventions and reduced-motion support. Desktop, tablet and mobile layouts must have no horizontal overflow and must preserve the current App Layout behavior.
 
-Do not overload the dashboard with too many statistics.
+A dedicated HUMAN UI/UX Design Checkpoint is mandatory after the role-safe functional foundation and before production Dashboard UI implementation. This active contract defines function and states, not final pixel-level composition.
 
-The dashboard is a summary view and is not the source of truth for learning progress.
+Dashboard does not display conceptual `NEW`, raw `NEEDS_REVIEW` as a queue, Topic percentages, recency recommendations, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. CEFR recommendation and global-review due state come only from their active Backend reads. XP & Level V1 adds one compact authenticated-USER summary inside the existing Progress section: current Level, total XP and a text-plus-progress indication toward the backend-provided next threshold. Zero XP is valid success data. At Level 15 it renders `Level 15 — MAX`, no next target, and a complete/MAX state without implying XP stops. Frontend computes only bounded presentation width from backend bounds; it does not contain authoritative Level, CEFR, recommendation, or SRS calculations.
+
+Dashboard V3 refines the authenticated USER presentation while preserving those authority boundaries. The document owns Dashboard vertical scrolling; the Dashboard route releases the desktop App Shell and Main Content height/overflow constraints that otherwise create an inner main scroller. Other authenticated routes keep their existing scrolling model, the fixed desktop sidebar may still scroll internally when navigation accessibility requires it, and the ADMIN Dashboard keeps its neutral landing behavior. The document scrollbar uses the ELVocab blue treatment where supported and remains usable with browser fallback styling.
+
+The USER page keeps its two-line greeting and four authoritative statistic cards in desktop order: Level, Streak, Total XP and Personal Sets. Their surfaces use distinct blue, orange, cyan and emerald treatments. The XP ring remains a presentation of backend-provided bounds. The Streak flame remains gray when `completed_today` is false and orange-red when it is true; no reset control is present.
+
+After the statistics, desktop uses two balanced columns: **Gợi ý tiếp theo** beside **Từ cần ôn**, followed by **Lộ trình CEFR** beside **Bộ từ nổi bật**. Narrow layouts stack each row. **Gợi ý tiếp theo** consumes only the additive backend `next_suggestion`, never the RESUME-first `recommendation`. The backend selects the first nonempty, incomplete public Set at the highest unlocked CEFR level in curriculum order after excluding active CEFR-pass Sets and unexpired active Set-scoped NORMAL/SRS session Sets. The action is always `START`; no candidate produces `next_suggestion: null` with `NO_ELIGIBLE_NEXT_SET`. Global review sessions have no authoritative Set snapshot, so V3 does not infer reviewed Set identities from global due words or global session cards.
+
+**Từ cần ôn** continues to display the backend global `due_count`, including its truthful zero-due state, and links to Review Center without creating a review session. **Lộ trình CEFR** continues to show only A1, A2, B1, B2 and C1 with backend-owned unlock and completion state. **Bộ từ nổi bật** composes the existing complete public catalog and uses the Discovery convention of the first three nonempty Sets in source order. It displays only persisted Set title, Topic, Set CEFR and item count, links to public Set detail, labels a known locked CEFR level, and does not claim popularity, ranking or recommendation semantics.
+
+Streak V1 adds a separate compact USER region headed **Chuỗi học tập**, loaded from the authenticated Streak read without redesigning Progress/XP/Level or My Sets. Success shows an accessible **Chuỗi hiện tại N ngày** value plus textual state: completed today, positive-but-pending today, or zero/broken and ready to restart. Loading is an announced `status` with reduced-motion-safe skeleton. A first-load failure is an `alert` and never appears as successful zero data. A refresh failure may retain the last value but must label it as potentially stale. Refresh/retry controls have explicit accessible names; failed retry restores focus to retry, while successful retry moves focus to the section heading. ADMIN retains the neutral Dashboard and makes no USER Progress, XP or Streak request.
+
+The Streak region is read-only, responsive without horizontal overflow and communicates state without color alone. It does not add a weekly calendar, longest-Streak value, history/analytics, Daily Goal or another Dashboard endpoint. Gate ST-6 evidence covered Chromium with mocked APIs and equivalent-CSS-viewport 200% probes; no manual screen-reader session or real authenticated Backend was exercised by that focused gate.
 
 10.2 Learn Vocabulary
 
@@ -492,7 +565,7 @@ The user can press the speaker button to listen to the model pronunciation.
 
 The flashcard should only provide model pronunciation playback.
 
-User voice recording and pronunciation evaluation belong to the separate Pronunciation Practice activity.
+User speech recognition and transient transcript feedback belong to the separate Speaking Practice activity.
 
 Actions:
 
@@ -511,15 +584,14 @@ Allow users to practice pronouncing vocabulary words and receive pronunciation f
 
 The Pronunciation Practice activity is separate from the Flashcard activity.
 
-The activity should display:
+The USER-only Focus Mode activity at `/pronunciation/vocabulary-sets/:setId` displays:
 
 Vocabulary word
 IPA pronunciation
 Model pronunciation button
-Record pronunciation button
-Recording state
-Processing state
-Pronunciation result
+Speak/Stop button
+Starting, listening and finalizing announcements
+Transcript-classification result
 Feedback
 Retry button
 
@@ -533,19 +605,13 @@ Press microphone button
         ↓
 User pronounces the word
         ↓
-System records and analyzes the pronunciation
+Browser recognition supplies transcript candidates
         ↓
-Display pronunciation result and feedback
+Display transcript-classification feedback
         ↓
 Retry if needed
 
-UI states:
-
-Ready
-Recording
-Processing
-Result
-Error / Unsupported
+UI states include Loading, Ready, Disclosure, Unsupported/Insecure Context, Starting, Listening, Finalizing, Result, Inconclusive, Recoverable Error, Inaccessible/Empty, Cancelling and session-only Completed.
 
 Example:
 
@@ -564,82 +630,35 @@ Example:
 │     [ Press to start ]       │
 └──────────────────────────────┘
 
-The exact pronunciation analysis technology and scoring mechanism will be determined during the PLAN phase.
+Ready, Starting, Listening and Finalizing do not show generic visible feedback panels. Starting/Listening/Finalizing retain concise screen-reader-only polite announcements. Listening uses the CSS-only waveform inside the Stop button and respects reduced motion.
 
-The system should not assume a specific AI or external pronunciation service at the UI/UX stage.
+Permission denial displays **Không thể sử dụng microphone** with instructions to enable ELVocab microphone access in browser settings. `audio-capture` uses unavailable-device guidance. Explicit Stop without a usable result returns to Ready without an assessment; spontaneous no-speech and other failures remain visible where recovery is required.
 
-10.5 Vietnamese → English Quiz
+Outcome panels are compact: one Lucide icon, one heading and at most one supporting sentence. `PRIMARY_MATCH` is green, uncertain `ALTERNATIVE_MATCH` amber, `NO_MATCH` red and `INCONCLUSIVE` amber. Copy must not imply acoustic accuracy or pronunciation mastery. Only a safe primary transcript may appear separately; alternatives, confidence and native errors are not displayed.
 
-Quiz type:
+10.5 Quiz V1 Run
 
-VI_TO_ENGLISH
+Quiz V1 is a USER-only, Set-scoped flow at `/quiz/vocabulary-sets/:setId`. It starts the sole `MULTIPLE_CHOICE` mode directly and presents every eligible current ordered Set Item once.
 
-Example:
+Quiz entry actions appear only on currently accessible, non-empty public System Sets or owned private Sets. There is no standalone Quiz catalog, Guest route or ADMIN Quiz page.
 
-Công việc
+Quiz uses the authenticated USER Focus Mode shared with Flashcard: the normal authenticated Header, Sidebar and Footer are absent while the existing authentication and USER route guards remain active. A compact top bar shows a back control with the current Set name and the restart action. Back navigation resolves only to that Set's public or owned Set Detail route and never to Dashboard, the My Sets list or unrelated browser history.
 
-[ w _ r k ]
+The page must provide accessible loading, empty, safe error/retry, question-changed, stale Progress conflict, pending, answered and completion states. Submission controls prevent duplicate answers while pending and do not permit immediate re-answer after an accepted result.
 
-Check
+Same-tab resume may use a Quiz-owned `sessionStorage` namespace. Stored state is reconciled against a fresh authorized question payload and cleared by Quiz-owned handling when logout/session invalidation is observed.
 
-The user must type the complete English answer.
+10.6 Quiz Question Types
 
-Important UX requirement:
+`MULTIPLE_CHOICE` shows the English word and primary-Meaning part of speech, followed by exactly four Vietnamese choice cards. One radio choice may be selected before explicit submission. Enabled cards and buttons use pointer cursors, visible focus and at least 44px touch targets. Feedback and focus move to the authoritative result after grading; the pre-answer UI never identifies the correct choice.
 
-Provide character-level feedback.
+The selected opaque choice submits to the Backend for authoritative correctness. After acceptance, the correct choice and any wrong selected choice receive distinct visual treatment plus accessible labels; neutral unselected choices remain unchanged. The correct choice is never identified before acceptance.
 
-Example:
+10.7 Transient Quiz Completion
 
-Correct character → green
-Incorrect character → red
+After one accepted answer for every question, display only current-run total, correct and incorrect counts, plus approved restart/return actions. An accepted newly committed positive reward shows the shared success Toast with the Backend-confirmed `+N XP` amount only when `xp_earned > 0` and `replayed === false`; the answer feedback does not duplicate that XP indicator. Zero/replay/failed/restored-session responses do not show a reward Toast, and reward feedback is never stored. A session-aware terminal response may announce the authoritative current Streak; the frontend does not infer an increment and failure/revisit without a corresponding response cannot invent one. Quiz does not display or imply durable score, accuracy/history, persistent XP history, Daily Goal, Achievement, SRS/review queue or Pronunciation outcome.
 
-Feedback should help the user understand which character or position is incorrect.
-
-Do not reveal the full answer before the user submits unless explicitly designed as a hint.
-
-10.6 Missing Letter Quiz
-
-Quiz type:
-
-MISSING_LETTER
-
-Example:
-
-w_rk
-
-[ w o r k ]
-
-Check
-
-The user fills in the missing characters.
-
-Provide immediate visual feedback after submission.
-
-Correct positions:
-
-Green
-
-Incorrect positions:
-
-Red
-
-The interaction should be simple and fast.
-
-10.7 Quiz Result
-
-After completing a learning session, display:
-
-Score
-Correct answers
-Incorrect answers
-Accuracy
-XP earned
-Streak update if applicable
-Achievement earned if applicable
-Review incorrect answers
-Continue Learning button
-
-The result page should feel rewarding but remain professional.
+The production Quiz composition, focus transitions, responsive arrangement and exact visual hierarchy require the mandatory HUMAN UI/UX Design Checkpoint before final frontend implementation. Keyboard operation, visible focus, screen-reader feedback, reduced motion and no horizontal overflow are required across desktop, tablet and mobile.
 
 10.8 Learning Progress
 
@@ -675,7 +694,9 @@ Example categories:
 Learning milestones
 Streak milestones
 Practice milestones
-10.10 Vocabulary Sets
+10.10 Vocabulary Sets — Legacy Draft (superseded for V1)
+
+The remaining legacy content in sections 10.10–10.12 is retained for future Community/Learning work only. Vocabulary Set V1 USER behavior is defined in section 11.5 and is limited to private My Sets plus copying a System Set.
 
 Tabs:
 
@@ -744,6 +765,22 @@ Save changes
 Cancel
 
 User-created vocabulary sets remain private and are not directly converted to public sets through this screen.
+
+### 10.12.1 Personal Vocabulary Set Detail V1
+
+`/my/vocabulary-sets/:setId` is an authenticated USER-only, owner-scoped learning hub. My Sets cards expose one **Xem** CTA to this route, including empty Sets; the retired separate **Chi tiết** CTA and direct card-to-Flashcard behavior are not used.
+
+The compact header shows only **← Bộ từ của tôi** and the authoritative Set name. Description, standalone count and Set management actions are not rendered here. Set-level **Chỉnh sửa** and **Xóa bộ từ** live in the shared kebab menu on each My Sets card; the existing metadata modal remains centered and contains only **Tên bộ từ** and **Mô tả**—no Topic or membership controls.
+
+Three real activities are shown as compact learning tiles: **Thẻ ghi nhớ**, **Quiz** and **Luyện nói**. For non-empty Sets they link to `/learn/vocabulary-sets/:setId`, `/quiz/vocabulary-sets/:setId` and `/pronunciation/vocabulary-sets/:setId`, preserving the exact Set ID and validated public/private Set Detail return path. Speaking uses a distinct teal border and icon treatment while Flashcard and Quiz retain their established accents. On narrow Personal and Public Set Detail viewports the shared cards use two columns in source order, placing Speaking in the lower-left cell; secondary descriptions may be hidden to keep the cards compact. For empty Sets all three cards remain visible but disabled with **Thêm từ vựng để bắt đầu**; vocabulary management remains usable. No fake progress, pronunciation score or analytics is rendered.
+
+The section title is **Từ vựng trong bộ (N)** with its authoritative ordered-item count. The ordered Vocabulary presentation uses desktop columns **Từ vựng / Phiên âm / Từ loại / Nghĩa / Ví dụ / Thao tác** and mobile fields **Từ vựng / Nghĩa / Thao tác**. It uses the same ten-item client-side pagination convention as Public Set Detail, retains Set Item order, preserves the current valid page after additions and clamps after removals. Missing read-projection data is shown truthfully without fallback. Canonical Vocabulary exposes **Gỡ khỏi bộ**; owner-private Vocabulary exposes **Chỉnh sửa** and **Gỡ khỏi bộ** through the shared kebab-menu pattern. Removal deletes membership only and preserves Vocabulary and Learning Progress. Manual reorder is deferred.
+
+**Thêm từ vựng** opens one centered modal (approximately 640–720px desktop, safe mobile margins), not a drawer. Its search input and icon-only search action share one row. It searches canonical plus owner-private exact identities through the scoped picker. Same-spelling distinct IDs remain separate. Existing selection appends through complete ordered Set PATCH. **Tạo từ mới** changes step inside the same modal and reuses atomic Set-scoped private creation; no nested modal is opened. Private Vocabulary forms use the approved part-of-speech select while preserving the existing string data contract.
+
+The page distinguishes loading, retryable error, safe inaccessible/not-found, empty and scoped mutation states. Dialogs manage initial/restored focus, Escape/backdrop/cancel, pending dismissal protection and safe inline errors. Controls use semantic buttons/links, visible focus and appropriate 44px touch targets; table/list behavior remains meaningful at responsive reductions, respects reduced motion and has no horizontal overflow.
+
+Confirmed vocabulary add/create/update/remove mutations use the shared React-Toastify notification surface with a visible auto-dismiss progress bar. Routine success is brief; important errors remain readable longer. Field/form errors that require correction stay inline, destructive confirmation remains, and duplicate/pending guards prevent repeated success notifications.
 
 10.13 Community
 
@@ -870,7 +907,8 @@ Display:
 Topic list
 Search
 Topic details
-Vocabulary set count
+
+Topic V1 displays metadata only; real Vocabulary Set count is deferred.
 
 Actions:
 
@@ -881,46 +919,63 @@ View
 
 Use confirmation dialogs for destructive operations.
 
+Topic V1 management additionally requires create/edit form validation, loading/empty/error/success states, accessible labelled controls and a delete confirmation with action, consequence, cancel and confirm choices. An ADMIN-only navigation entry is shown only with the implemented management route in the existing authenticated App Layout; frontend route guarding is UX, while backend ADMIN authorization remains authoritative.
+
 11.4 Vocabulary Management
 
-Display:
+Vocabulary V1 is an ADMIN-only `/admin/vocabulary` route inside the existing authenticated App Layout. It has no Guest/USER Vocabulary catalog, public route or USER sidebar entry.
 
-Vocabulary list
-Search
-Filter
-Vocabulary details
-Create vocabulary
-Edit vocabulary
-Delete vocabulary
+Display and actions:
 
-Vocabulary information may include:
+- Unpaginated Vocabulary summary list with client-side word search; no server-side filter or pagination.
+- Complete Vocabulary detail with nested Meanings and each Meaning's Examples.
+- Create, edit, view and delete a Vocabulary aggregate.
+- Optional phonetic/pronunciation URL metadata, one-or-more Meaning editors and zero-or-more Example editors per Meaning.
 
-Word
-Meaning
-Part of speech
-Example
-Context
-Pronunciation
-11.5 Vocabulary Set Management
+Before edit, the UI loads the complete aggregate rather than editing a list summary. A save containing `meanings` sends the complete desired Meaning collection and the complete desired Example collection for every retained Meaning; visible remove controls intentionally omit owned children from replacement data. The UI prevents removing the final Meaning.
 
-Admin can manage system vocabulary sets.
+Provide accessible loading, empty, validation, duplicate-word, not-found, authorization and safe server-error states. Delete confirmation identifies the Vocabulary and owned Meanings/Examples, provides cancel/confirm controls, prevents duplicate submission and restores focus appropriately. Existing dashboard, logout, mobile drawer, Topic routes and Topic management remain unchanged.
+11.5 Vocabulary Set V1
 
-Display:
+Vocabulary Set V1 provides separate public System Set, USER private Set and ADMIN System management flows. It did not itself add a standalone USER Vocabulary catalog, full Vocabulary detail page, public User Set/community sharing screen or learning action. Flashcard / Learning V1 may add only its approved authenticated USER learning entry while preserving these Set-management boundaries.
 
-Set list
-Search
-Topic
-Word count
-Visibility
-Creator
-Created date
+#### Public Topic-based System Sets
 
-Actions:
+Guest and authenticated visitors can open dedicated Topic-scoped System Set discovery and public System Set detail routes. Topic V1 list/detail remain metadata-only and do not embed Set counts or collections.
 
-Create
-Edit
-Delete
-View
+- Discovery shows public System Set summaries for one Topic, client-side Set-name search, loading, empty, safe error and not-found states.
+- Detail shows Set/Topic metadata and ordered Item selection metadata only: Vocabulary word and optional phonetic, never Meaning, Example or CEFR data.
+- An authenticated USER sees optional Copy plus the existing direct Flashcard and Quiz entries for an eligible non-empty public Set. A Guest receives a route to authenticate and cannot start authenticated learning while unauthenticated.
+
+#### Discovery V1 — Set-first catalog
+
+`/topics` is the Set-first **Khám phá bộ từ** landing for public System Sets. It composes the complete catalog from `GET /api/topics` plus concurrent Topic-scoped Set reads, withholds partial results on any required failure, and enables presentation controls only after complete readiness. Authenticated USER and ADMIN actors remain inside the App Shell; Guest browsing remains public; ADMIN is browse-only.
+
+The compact page begins with a visual **Bộ từ nổi bật** preview followed by a wider mini filter sidebar and the normal catalog. In every environment, the preview uses the first 3 Sets from the complete catalog in existing source order. It remains independent of filters, has no ranking/curation semantics and is not represented as popularity or recommendation data. The sidebar provides Set name/description search, exact single-Topic radio filtering, CEFR, result count and reset. Only the viewport-bounded Topic-options region scrolls as Topic count grows; search and its always-rendered reset action, the Topic heading, CEFR and result count remain stable. Reset is disabled only at the all-default state and otherwise clears every filter plus pagination. Search/filter/reset is client-side, makes no new request and provides no sorting, server-side search or server-side pagination.
+
+The normal catalog uses three compact columns where width permits and nine Sets per client-side page (normally three rows on desktop). Featured IDs are removed before normal search/filter and pagination; controls reset page 1, clamping remains safe and page changes make no request. Cards render persisted Set covers when available and use the deterministic Topic fallback when absent or broken; Topic badge overlays the cover, title/count share one row, description clamps to two lines, and left-aligned **Lưu**/**Xem** text actions use Lucide icons. Violet-heavy treatment is not used.
+
+A successful USER copy navigates to the independent private copy and records best-effort current-tab **Đã lưu** feedback without disabling later intentional copies. That session hint may survive a same-tab reload, but the current API exposes no source-copy relationship, so a fresh session/reload cannot derive authoritative account-level saved-source recognition. Public Set Detail matches the Personal Set Detail visual family: authenticated USER may enter Flashcard, Quiz or Speaking Practice directly, keep the independent whole-Set Save action, and use a per-row **+ Thêm** action to save one canonical word into an existing personal Set. The row action opens one accessible destination picker at a time, requires explicit **Thêm vào bộ từ** confirmation, preserves selection for duplicate/error retry, returns focus on close, and uses a centered desktop/tablet modal plus a viewport-safe mobile sheet. The vocabulary table responds to its own available content width: compact mode shows **Từ vựng**, **Nghĩa**, and an icon-only USER action; expanded mode additionally shows **Phiên âm**, **Ví dụ**, and the full **+ Thêm** label. Guest and ADMIN tables omit the action column entirely. It never marks a row globally saved because one canonical word may belong to multiple personal Sets. An empty destination list links to the existing My Sets creation flow. Guest receives the existing login prompt and no mutation control; ADMIN remains browse-only.
+
+Discovery preserves labelled native controls, keyboard/focus behavior, live states and no horizontal overflow at `375`, `390`, `768`, `820`, `1366` and `1536`. It provides exact client-side Set CEFR filtering over the complete loaded catalog. Community-shared USER Sets, creator/social attribution, sorting, production featured ranking, server-side global search/pagination and authoritative persistent saved-source recognition remain deferred.
+
+#### USER My Sets and Editor
+
+Inside the existing authenticated App Layout, USER navigation exposes My Sets only with implemented routes. A USER can list/search/view/create/edit/delete only owned private Sets and may retain an empty draft.
+
+- Personal Set Create/Edit uses a responsive metadata modal with labelled name, optional Set CEFR, description, external HTTPS cover URL, upload preview, replace/remove and a concise public-image warning. Desktop uses a compact two-column layout without normal-state internal scrolling; constrained screens collapse safely.
+- USER create/update requests do not own Vocabulary membership and contain neither Topic nor Item fields. The modal has no Topic loading dependency or selector, Vocabulary picker, selected-Vocabulary collection, or add/remove/reorder controls.
+- Vocabulary membership management belongs to the dedicated Personal Set Detail V1, not the Create/Edit modal. Set Detail provides the approved flows to add existing Vocabulary, create private Vocabulary, edit owner-private Vocabulary, and remove Set membership.
+- Copy success opens the independent private copy. Loading, validation, safe mutation/network error, pending, empty and delete-confirmation states are required.
+- Successful personal Set creation, editing and deletion use the existing top-right notification toast with concise action-specific text; the toast auto-dismisses. Cover-upload and cleanup failures retain persistent, actionable feedback, and a failed Set mutation never shows a success toast.
+
+#### ADMIN System Set Management
+
+`/admin/vocabulary-sets` is inside the existing `ProtectedRoute`, `AdminRoute` and `AuthenticatedShell`; its navigation appears only to ADMIN users. ADMIN can list/search/view/create/edit/delete System Sets. The System Set editor requires Set CEFR, supports external/uploaded cover preview and management, and retains add/remove/reorder membership behavior. Canonical Vocabulary search opens from the separate `+ Thêm từ vựng` dialog instead of remaining inline. It uses a human-readable Topic selector mapped internally to `topic_id` and must prevent save with no Topic or zero Items. Raw Topic UUID entry is never exposed.
+
+My Sets and Discovery cards render persisted cover URLs with `object-fit: cover`, clipped rounded cover bounds, and deterministic fallback on absent/broken images. Public and Personal Set Detail intentionally do not duplicate the cover in their headers. Cover actions expose preview, replace, remove, Cancel, pending/error/retry states; uploaded/external covers are publicly readable, so forms warn users not to upload private or sensitive images.
+
+All Set screens preserve current dashboard, logout, mobile drawer, Topic routes/management and Vocabulary management. Forms use associated labels/errors; dialogs restore focus and block duplicate pending actions; ADMIN ordered Item controls remain keyboard-accessible and responsive at existing breakpoints.
 11.6 Achievement Management
 
 Admin can manage system achievement definitions.
@@ -979,7 +1034,7 @@ Keep controls simple.
 Show progress through the session.
 Provide immediate feedback.
 Clearly distinguish correct and incorrect answers.
-Reward progress with XP and achievements.
+Show only progress and outcomes approved for the current learning feature; XP and achievements remain deferred unless separately approved.
 Avoid unnecessary navigation.
 12.1 Learning Session Header
 
@@ -1011,6 +1066,82 @@ Clear error indication
 Character-level feedback when applicable
 Correct answer after submission when appropriate
 Continue / Retry action
+
+### 12.3.1 Personal Vocabulary V1 — Active Incremental UX Contract
+
+PV-08 implements the following behavior inside the existing owned private Set editor. PV-09 verifies Learning, Flashcard, Progress and TTS compatibility; Quiz compatibility remains a later task:
+
+- Owned-private-Set search returns matching canonical and session-owner private Vocabulary, including zero-membership private Vocabulary.
+- Results expose word, relevant `part_of_speech`, primary/relevant Vietnamese meaning and System/Private source indication so same-headword identities remain distinguishable.
+- Search is reuse-first, but USER may reuse an exact identity or intentionally create another regardless of spelling matches.
+- Selection/add state is keyed by exact `vocabulary_id`; distinct same-spelling IDs may coexist while the same exact ID cannot repeat.
+- The editor exposes approved private aggregate create/update fields but no `pronunciation_url` or server-managed identity/ownership fields.
+- Editing a reused private identity communicates that every Set referencing the exact ID observes updated content; final warning styling remains a UI decision.
+- Membership removal is labelled **Remove from Set** and never implies permanent Vocabulary deletion.
+- Zero-membership recovery occurs through the picker; no Personal Vocabulary Library is introduced.
+- Loading, empty, validation, pending, safe error/retry, keyboard, focus and responsive states remain required.
+- ADMIN System Set editing uses explicit canonical-only capability and exposes no private create/edit behavior.
+
+Flashcard and the active Multiple Choice Quiz present the `part_of_speech` corresponding to the displayed Meaning, consume the exact Set Item Vocabulary, and never substitute content by spelling. Private Vocabulary may use existing native TTS with its exact word and does not borrow canonical pronunciation/content. Broad redesign remains out of scope.
+
+PV-09 verification found the existing Learning path compatible as-is: Set-based authorization, position-ordered exact-ID traversal, deterministic primary Meaning selection with POS/Vietnamese presentation, `(user_id, vocabulary_id)` Progress, per-card pronunciation URL, and native TTS fallback all already preserve Personal Vocabulary identity. No Learning/Flashcard/Progress/TTS production correction or redesign was required. PV-09 is HUMAN approved.
+
+Historical PV-10 evidence (superseded by the active Multiple Choice Quiz contract) found the former `VI_TO_ENGLISH` and `UNSCRAMBLE_WORD` modes compatible with Personal Vocabulary exact identity and Progress behavior. The identity findings remain valid; those two modes are no longer active.
+
+PV-11 closure verification combines the existing affected real-stack regressions with six focused Personal Vocabulary browser scenarios. Together they cover atomic create/double-submit, exact-ID reuse/edit/removal/zero-membership recovery and Progress preservation, same-word coexistence and cross-user concealment, System Set rejection/copy behavior, Flashcard exact content/POS/TTS, and the Quiz identity paths active at that time. The approved contract requires this consolidated scenario matrix, not one monolithic browser journey. TASK-PV-01 through TASK-PV-11 are `COMPLETE — HUMAN APPROVED`; Personal Vocabulary V1 is `DONE — HUMAN APPROVED`. Integration into `dev` has not yet occurred.
+
+### 12.4 Flashcard / Learning V1 Active UX Contract
+
+The V1 route is `/learn/vocabulary-sets/:setId` under the existing `ProtectedRoute`, `AuthenticatedShell` and `UserRoute`. On this route only, the shell provides a dedicated full-viewport Focus Mode without the normal authenticated Header, Sidebar or Footer; all other authenticated routes retain the normal App Layout. Only an authenticated USER can enter from a public System Set or an owned private Set. Guest follows the existing login path; ADMIN and non-owners receive the existing safe route/API behavior.
+
+The USER traverses current Set Items in explicit `position` order. One two-faced card is shown at a time. Its front emphasizes the Vocabulary word, optional phonetic, an icon-only pronunciation control and a safe clickable/Space-enabled reveal surface; there is no separate visible reveal button. Reveal focuses on one deterministic primary Meaning: lowest CEFR in `A1 → A2 → B1 → B2 → C1 → C2` order, with ties and null CEFR resolved by the payload's existing deterministic `created_at`, then `id`, order. The back shows word, phonetic, part of speech, CEFR, primary Vietnamese meaning, optional context and only the first Example in deterministic payload order. The backend still returns the complete Vocabulary aggregate; the one-Example rule is presentation-only and V1 adds no persisted primary field.
+
+Reveal, navigation and audio playback do not update progress. The compact header defaults to **Ôn tập SRS** and provides **Ôn tập thường** as the second segment. NORMAL preserves equal **Thẻ trước**/**Thẻ sau** controls and never submits progress. SRS has no Previous/Next path; after reveal its back face shows **Lại**, **Khó**, **Tốt**, and **Dễ**. Only a successful backend rating response advances or requeues the card. Pending submission disables duplicate actions; retry reuses the inconclusive current event ID/revision, and a progress conflict refreshes/reconciles safely.
+
+The original Flashcard/SRS V1 stored no server Learning Session. Streak V1 supersedes that historical boundary for qualifying NORMAL, SRS and Quiz groups: Backend now owns durable session UUID, immutable 1–10-item snapshot, evidence, lifecycle, seven-day expiry and completion. Frontend versioned same-tab state still owns only recovery/presentation concerns such as mode, cursor and queue display. It is non-authoritative, keyed by USER/Set/session identities, reconciles against Backend state and clears only its Learning-owned namespace on logout/session invalidation.
+
+Reload resumes a valid same-tab run. Restart requires confirmation, clears only transient run state and never resets durable progress. SRS completion occurs only when every fixed-session item is resolved by `HARD`, `GOOD` or `EASY`; `AGAIN` remains unresolved and requeues once after three other presentations when possible, otherwise at queue end. NORMAL has no assessment completion semantics.
+
+Pronunciation prefers stored `pronunciation_url`; when absent, supported browsers may use native English `speechSynthesis`. Front-to-back reveal begins playback concurrently, playback failure never blocks reveal or progress, Back-to-front flip does not replay audio, and the speaker remains independently keyboard-operable without flipping the card.
+
+Required states include accessible loading, empty, not-found, stale-item, event/audio failure, progress-conflict and pending feedback. The final UI must provide semantic headings/groups, keyboard-operable flip/outcome/navigation/restart controls, managed focus, `status`/`alert` announcements as appropriate, a 500ms two-way flip with reduced-motion override, responsive no-overflow Focus Mode and safe overflow fallback for abnormal content/short viewports.
+
+The HUMAN-approved repo-native checkpoint is recorded in `docs/FLASHCARD_LEARNING_V1_UI_UX_CHECKPOINT.md`. It defines card front/back, primary-Meaning hierarchy, run header, external assessment controls, all state transitions, focus/keyboard map, reduced motion and mobile/desktop behavior. Final UI implementation must remain within that checkpoint.
+
+The original SRS V1 closure did not add gamification, and the later XP & Level V1 extension added only Backend-confirmed non-replay XP feedback. Streak V1 subsequently adds authoritative qualifying-session completion without changing those XP rules: `AGAIN` stays unresolved, the final accepted `HARD`/`GOOD`/`EASY` may complete the SRS snapshot, and only a terminal response may announce Streak. NORMAL remains zero-XP. Achievement, Daily Goal, FSRS/SM-2, analytics/history, Community and AI remain outside this boundary.
+
+For all three qualifying modes, the UI must wait for authoritative session readiness before accepting mode-specific keyboard interaction. Completion feedback uses semantic status/live-region content derived from the terminal response and preserves the approved heading-focus behavior. Expired or inaccessible active sessions cannot be locally forced complete; the UI presents safe restart/recovery. Speaking remains a separate transient, read-only activity and never creates a qualifying session.
+
+#### 12.4.1 SRS V1 Rating Preview and Up-to-Date States
+
+This approved SRS extension supersedes section 12.4's two-outcome action wording in SRS mode. On the back face, the four equal-size responsive rating buttons use two visible lines. The primary labels remain **Lại**, **Khó**, **Tốt**, and **Dễ**. The UI maps the backend-provided current-card preview result to exactly: `AGAIN` → **Trong phiên này**, 1 day → **Ngày mai**, 3 days → **1–3 ngày**, 7 days → **1 tuần+**, 14 days → **2 tuần**, and 30 days → **30 ngày**. The frontend must not reproduce or infer the scheduler matrix. Each button's accessible name includes both its primary label and sub-label, and all pending, disabled, focus-visible, responsive and reduced-motion behavior remains available without relying on color alone.
+
+The SRS up-to-date state uses the helper text **Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ.** It exposes only **Ôn tập thường** and **Quay lại bộ từ**; it does not expose **Làm mới SRS**. This server-empty up-to-date state remains distinct from a just-completed client session, where the approved completion summary and restart behavior remain available.
+
+#### 12.4.2 Learning Session V1 Active UX Contract
+
+Opening NORMAL Flashcard, SRS Flashcard, Multiple Choice Quiz or Speaking Practice starts or restores that USER/Set/mode automatically; there is no session-selection screen. A batch contains at most 10 distinct Vocabulary IDs. NORMAL, Quiz and Speaking retain the original Backend-authored Set Item order for the full run, including unstarted batches. Set additions wait for **Học lại từ đầu**; removals are reconciled without refill/substitution, and reordering never repeats or skips a valid original ID. SRS keeps its Backend eligibility/order and `AGAIN` queue rather than a full-Set remainder.
+
+Unfinished state resumes at its previous valid exact ID in the same tab. Batch/full-run completion screens persist on re-entry, and no mode advances or restarts because of reload, midnight or inactivity. Continuation/restart remains explicit: NORMAL final-card completion is **Hoàn thành phiên**; Flashcard/Quiz use **Học tiếp N từ**; Quiz retry is **Làm lại nhóm này**; Speaking uses **Luyện tiếp N từ**; full-run restart is **Học lại từ đầu**; SRS continuation is **Ôn tiếp** and **Hoàn thành ôn tập** is status text. `N` is the reconciled next-batch size.
+
+Session state is versioned and isolated by authenticated USER, Set and mode in same-tab `sessionStorage`. If storage is malformed or unavailable, learning remains usable with page-lifetime memory fallback; reload position may then be lost without a disruptive default warning. Restoration never auto-submits a Quiz answer or SRS rating. Completion never claims Mastery and restart never resets durable Learning Progress or scheduling.
+
+Speaking restores only position/lifecycle in a non-listening state. Transcript, alternatives, confidence, recognition output, audio, attempt details and pronunciation scores are not persisted. All changed states retain keyboard operation, visible focus, textual status/error meaning, reduced-motion behavior, responsive wrapping and no horizontal overflow.
+
+### 12.5 Learning Progress View V1 Active UX Contract
+
+Learning Progress View V1 adds `/my/learning-progress` under the existing authenticated App Layout and `UserRoute`, plus a USER-only **Tiến độ học** navigation destination. Guest and ADMIN cannot use the route. This is a read-only view over the completed per-USER/per-Vocabulary progress engine, not Dashboard or a standalone Vocabulary catalog.
+
+The page presents persisted counts for total started, Learning and Learned, plus **Đến hạn ôn hôm nay** from the same backend-authoritative, unique global SRS `due_count` used by Review Center. This fourth card measures due scheduling rather than a mutually exclusive Progress status; eligible Learning words can contribute, and the compatibility-only Needs Review status remains unchanged in backend Progress data. The card distinguishes loading, confirmed zero and independent request failure with retry. Conceptual New is excluded from the persisted Progress counts, and the UI must not present total started as total available Vocabulary or calculate a global completion percentage.
+
+The server-paginated current-state list displays only word, optional phonetic, textual status, review count and last-reviewed time. A status control supports All, Learning, Learned and Needs Review; changing it returns to page 1. Search, client sorting, charts, review actions, recommendations, Topic/Set progress and gamification are deferred.
+
+Required states are accessible loading without premature empty rendering, first-use empty, filtered-empty, safe error with retry, success and pending pagination/filter feedback. Pagination exposes current-page context, disables unavailable or pending actions and prevents stale responses from replacing the latest selection.
+
+The final page must preserve semantic headings/labels, textual status independent of color, native keyboard controls, visible focus, appropriate live regions, reduced motion, mobile touch targets and no horizontal overflow across existing breakpoints. A dedicated HUMAN UI/UX Design Checkpoint is mandatory before production page implementation; this active contract intentionally does not prescribe pixel-level styling.
+
+Viewing or filtering never creates, updates, resets or recommends Learning Progress. Existing Flashcard Focus Mode, sessionStorage run state, event transitions and completion behavior remain unchanged.
+
 13. Gamification UI
 
 Gamification features:
@@ -1090,23 +1221,20 @@ Its purpose is to let users listen to the model pronunciation.
 The Pronunciation Practice activity provides:
 
 Microphone button
-Recording state
-Processing state
-Pronunciation result
+Listening/finalizing state
+Transcript-classification result
 Feedback
 Retry action
 
 The microphone interaction must be visually distinct from the model pronunciation button.
 
-The UI should clearly communicate:
-
-🔊 Listen to pronunciation
-
-🎙️ Practice pronunciation
+The UI provides separate semantic Listen and Speak/Stop buttons using Lucide icons. On narrow viewports the actions remain vertically ordered with icon-only Ready controls and explicit Vietnamese accessible names; tablet/desktop retains the approved side-by-side labelled layout. Navigation remains separate below the vocabulary card.
 
 The pronunciation feature should not be presented as a third quiz type.
 
-The exact pronunciation analysis technology and scoring mechanism will be determined during the PLAN phase.
+Action legality comes only from the accepted controller snapshot. First Speak shows a concise disclosure that browser-vendor processing may occur locally or remotely; continuing is explicit and does not promise on-device processing. Recognition starts only from an explicit **Nói** or **Thử nói lại** gesture; Retry immediately starts a fresh attempt without a second **Nói** click. Page load, navigation, rendering and automated retry never start recognition, and no automatic retry loop is permitted.
+
+Terminal focus, Retry recovery, target-change/completion focus, atomic live announcements, 44px touch targets, visible focus and reduced-motion behavior follow the accepted accessibility contract. Exact real-device support remains evidence-based; responsive source/mock coverage is not a claim of mobile recognition compatibility.
 
 16. Responsive Design
 
@@ -1367,8 +1495,7 @@ Dashboard
 Learn Vocabulary
 Flashcard
 Pronunciation Practice
-Vietnamese → English Quiz
-Missing Letter Quiz
+Multiple Choice Quiz
 Quiz Result
 Learning Progress
 Achievements
@@ -1422,4 +1549,47 @@ The primary goal of the UI/UX is to create a modern, clear, motivating, and easy
 The interface should help users focus on learning vocabulary rather than navigating a complicated application.
 
 The design should look professional enough for a graduation thesis project while remaining realistic to implement within the project's available development time.
-```
+
+28. CEFR Learning Progress V2 Active UX Contract
+
+### 28.1 Dashboard learning path
+
+The authenticated USER Dashboard independently loads one CEFR path section. It identifies the highest unlocked A1–C1 level and exposes at most one primary START or RESUME action. Current Learning uses the exact active pass and a concise Backend-authored state; V2 removes the numeric pass fraction and progress bar so encounter credit is not presented as mastery. Earlier unlocked-level incomplete Sets remain available separately and never pull the primary recommendation backward.
+
+The section distinguishes `NO_REQUIRED_SETS`, `EMPTY_REQUIRED_SET`, no eligible recommendation, current all-Sets-complete, and preserved terminal achievement with newly incomplete current curriculum. Terminal achievement text does not imply every current Set remains complete. Private My Sets previews and Discovery Featured content keep their existing meaning.
+
+Next Suggestion remains independent from Current Learning and never duplicates the active pass Set. Path loading, error, retry, and stale-response handling remain section-scoped. Existing Progress, XP/Level, Streak, and My Sets content remains usable when the path source fails. ADMIN retains the neutral Dashboard and makes no USER learning-path or global-review request.
+
+### 28.2 Mixed-mode full Set pass
+
+For a required unlocked public Set, the UI starts or resumes the backend pass before requesting a bounded session. A pristine or partial pass may continue through NORMAL or CEFR-scoped SRS. Each immutable batch contains at most ten items and the UI reconciles authoritative credited/remaining state after accepted events rather than incrementing locally.
+
+NORMAL credits only after the Backend accepts the exact reveal. CEFR-scoped SRS credits after any accepted rating, including `AGAIN`; SRS scheduling/progress and CEFR first-credit remain separately tracked, and the existing SRS queue, scheduler, replay, XP, and Streak behavior remains independent. Flashcard keeps the existing NORMAL/SRS mode switch and shows no SRS–CEFR transition notice card in either mode. While NORMAL first-credit persistence is pending, correctness-sensitive navigation remains guarded; after persistence succeeds, `ArrowLeft`/`ArrowRight` navigation resumes, while `Space` keeps its existing safe card-flip behavior. Exact SRS session resume, explicit full-pass completion, and monotonic CEFR unlock behavior remain unchanged.
+
+Reaching or revealing the final card does not complete the Set. When the Backend returns `PASS_READY_TO_COMPLETE`, the UI shows **Sẵn sàng hoàn thành bộ từ** and enables explicit **Hoàn thành bộ từ**. Accepted final completion shows the refreshed highest unlocked level and terminal-achievement state when applicable. Reload/login recovery reconciles pass and session APIs; client storage remains presentation-only.
+
+Expired/inaccessible batches offer safe recovery and preserve evidence accepted before expiry. A frozen snapshot whose item was removed or became inaccessible shows a restart-required state and an explicit new-snapshot action; it never silently credits the item. Locked direct routes show a textual Backend-derived lock state. A historically completed Set starts a fresh independent NORMAL run without creating another pass or restoring stale completed presentation state. Private/copied Set learning remains outside CEFR credit.
+
+### 28.3 Review Center and focused review routes
+
+The authenticated USER route `/review` is the non-mutating Review Center inside the application shell. Its visible content uses a compact, non-interactive **Cần ôn hôm nay** statistic card and an **Ôn theo bộ từ** section; the page retains an accessible screen-reader heading without restoring the superseded large visible title/subtitle. The statistic card displays the Backend-provided unique global due count but has no **Ôn tất cả** action. Only positive-due Sets are listed in the due Set list. Each Set card preserves its exact Set UUID, displays the authoritative **Bộ từ công khai** or **Bộ từ cá nhân** label and due count, and links through **Ôn tập từ đến hạn** to `/review/sets/:setId`. One short note explains the ten-card due-only batch and explicit continuation for remaining due words.
+
+Review Center loading, error/retry, positive-due and zero-due states never fabricate counts or create a session. Zero due shows the completed/up-to-date state and a safe **Tiếp tục học** path; verified unfinished ordinary SET/SRS sessions may still appear in a separate continuation section. The compact statistic is left-aligned and bounded on desktop, full-width on mobile; Set cards wrap long names, retain visible focus/hover states and reflow responsively without public/private grouping sections.
+
+The authenticated USER route `/review/global` creates or restores one fixed backend `GLOBAL`/`SRS` snapshot of at most 10 cards in the focused learning shell without the application sidebar/header. It displays resolved/total progress, shared Flashcard presentation, reveal interaction, and the four ratings **Lại**, **Khó**, **Tốt**, and **Dễ**. `AGAIN` requeues; other accepted ratings resolve the item. Pending submissions prevent duplicate actions, and inaccessible/expired/error states provide explicit recovery. Completing the snapshot shows **Hoàn thành phiên ôn tập**; **Ôn tiếp** explicitly requests a fresh Backend eligibility evaluation, and return navigation leads to Review Center.
+
+The dedicated `/review/sets/:setId` route also uses the focused learning shell and the existing SET SRS controller. URL-derived review context forces SRS, hides Normal-mode controls, shows the informational **Ôn tập** badge and returns to `/review`; the standard `/learn/vocabulary-sets/:setId` route preserves its existing focused layout and Normal/SRS behavior without that review-context badge.
+
+Stability & Security V1 Batch 1 separates the actions: **Ôn tập từ đến hạn** opens a persisted `DUE_ONLY` SET/SRS snapshot of at most ten currently due studied cards, and **Ôn tiếp** requests another due-only batch after completion. A distinct **Tiếp tục phiên SRS** action appears for backend-verified unfinished ordinary SET/SRS sessions found in same-tab storage, including when the Set has no current due count. It resumes the original snapshot on the ordinary learning route. Due-only and ordinary session/run keys remain separate; loading, empty and error states must not display unverified cards or counts.
+
+Dashboard independently loads the global-review summary. After a successful summary load, both positive and zero-due states show **Xem ôn tập** linking to `/review`; no navigation alone creates a session. Review failure does not discard sibling Dashboard sections, and ADMIN makes no review-summary request.
+
+### 28.4 Pending NORMAL evidence
+
+While a reveal acknowledgement is pending, the UI announces status accessibly, keeps passive reading/scrolling and safe pronunciation audio available, and blocks only correctness-sensitive evidence-changing navigation, completion, restart, or mode-switch actions. Retry reuses the same operation identity. Success reconciles authoritative pass state immediately; failure keeps the card and restores meaningful focus to the exact retry action. No optimistic credit or arbitrary timer is used.
+
+### 28.5 Accessibility and verification status
+
+Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state.
+
+Guarded browser run [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) passed 16/16 selected browser tests: 13 CEFR real-stack cases, two mocked SRS cases, and one global SRS non-credit regression. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) passed three deliberately selected mocked browser cases for pending NORMAL, Quiz non-credit, and Speaking non-credit. The Speaking result proves the mocked read-only frontend journey only; it does not claim live microphone/vendor recognition or full real-stack Speaking backend coverage.

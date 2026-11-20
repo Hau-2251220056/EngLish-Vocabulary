@@ -5,18 +5,34 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test",
+    "test:auth": "npm run test:auth:unit && npm run test:auth:browser",
+    "test:auth:unit": "node --test test/auth-service.test.js test/auth-store.test.js test/auth-validation.test.js test/vite-config.test.js",
+    "test:auth:browser": "playwright test",
+    "test:browser:ci": "playwright test",
+    "test:integration:ci": "playwright test --config=playwright.integration.config.js",
+    "test:auth:integration": "node --env-file=../backend/.env.test ./node_modules/@playwright/test/cli.js test --config=playwright.integration.config.js",
+    "test:topic:browser": "node --env-file=../backend/.env.test ./node_modules/@playwright/test/cli.js test --config=playwright.topic.config.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.3.3",
+    "axios": "^1.20.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tailwindcss": "^4.3.3"
+    "react-hook-form": "^7.88.0",
+    "react-router-dom": "^7.18.4",
+    "react-toastify": "^11.1.0",
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",

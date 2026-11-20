@@ -1,0 +1,10 @@
+CREATE TYPE "LEARNING_SESSION_INTENT" AS ENUM ('STANDARD', 'DUE_ONLY');
+
+ALTER TABLE "LEARNING_SESSION"
+    ADD COLUMN "session_intent" "LEARNING_SESSION_INTENT" NOT NULL DEFAULT 'STANDARD';
+
+ALTER TABLE "LEARNING_SESSION" ADD CONSTRAINT "LEARNING_SESSION_due_only_intent_check" CHECK (
+    "session_intent" = 'STANDARD' OR (
+        "scope" = 'SET' AND "mode" = 'SRS' AND "cefr_learning_pass_id" IS NULL
+    )
+);
