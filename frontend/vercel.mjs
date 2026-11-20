@@ -1,3 +1,5 @@
+import { routes } from "@vercel/config/v1";
+
 function readApiProxyOrigin(value) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new TypeError("API_PROXY_TARGET is required for Vercel routing.");
@@ -41,13 +43,7 @@ const apiProxyOrigin = readApiProxyOrigin(process.env.API_PROXY_TARGET);
 
 export const config = {
   rewrites: [
-    {
-      source: "/api/:path*",
-      destination: `${apiProxyOrigin}/api/:path*`,
-    },
-    {
-      source: "/:path*",
-      destination: "/index.html",
-    },
+    routes.rewrite("/api/:path*", `${apiProxyOrigin}/api/:path*`),
+    routes.rewrite("/:path*", "/index.html"),
   ],
 };

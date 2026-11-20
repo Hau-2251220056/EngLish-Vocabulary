@@ -23,7 +23,7 @@ function evaluateConfig(target) {
   );
 }
 
-test("Vercel keeps environment-selected API rewrites ahead of the frontend SPA fallback", () => {
+test("Vercel helper keeps environment-selected API rewrites ahead of the frontend SPA fallback", () => {
   const result = evaluateConfig("https://backend.example.test/");
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(result.stdout);
@@ -69,6 +69,8 @@ test("Vercel routing fails closed for missing or unsafe API proxy targets", () =
 
 test("active Vercel routing contains no hardcoded deployment destination or fallback", async () => {
   const source = await readFile(configUrl, "utf8");
+  assert.match(source, /import \{ routes \} from "@vercel\/config\/v1"/);
+  assert.equal(source.match(/routes\.rewrite\(/g)?.length, 2);
   assert.doesNotMatch(source, /vercel\.app/i);
   assert.doesNotMatch(source, /git-dev/i);
   assert.doesNotMatch(source, /git-release/i);
