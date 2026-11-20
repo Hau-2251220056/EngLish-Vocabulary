@@ -1,13 +1,14 @@
 import { configureTestEnvironment } from "./test-environment.js";
 
-export async function createTestDatabase({ expectedSchema, expectedSchemaMarker } = {}) {
+export async function createTestDatabase({
+  expectedSchema,
+  expectedSchemaMarker,
+} = {}) {
   configureTestEnvironment({ requireReset: true });
   if ((expectedSchema === undefined) !== (expectedSchemaMarker === undefined)) {
     throw new Error("Owned test schema and marker must be provided together.");
   }
-  const { PrismaClient } = await import(
-    "../../src/generated/prisma/client.ts"
-  );
+  const { PrismaClient } = await import("../../src/generated/prisma/client.ts");
   const prisma = new PrismaClient();
 
   try {
@@ -19,11 +20,27 @@ export async function createTestDatabase({ expectedSchema, expectedSchemaMarker 
 
   return {
     prisma,
+
     async reset() {
       if (expectedSchema) {
-        await assertOwnedTestSchema(prisma, expectedSchema, expectedSchemaMarker);
+        await assertOwnedTestSchema(
+          prisma,
+          expectedSchema,
+          expectedSchemaMarker,
+        );
       }
+
+      // Remove CEFR evidence before its referenced learning sessions.
+      await prisma.cEFR_LEARNING_PASS_ITEM.deleteMany();
+
       await resetStreakData(prisma);
+
+      // Sessions no longer reference CEFR passes.
+      await prisma.cEFR_LEARNING_PASS.deleteMany();
+
+      // Remove user-owned learning path state before deleting users.
+      await prisma.cEFR_LEARNING_PATH_STATE.deleteMany();
+
       await resetXpRewardData(prisma);
       await resetLearningProgressData(prisma);
       await resetPrivateVocabularyCreateOperationData(prisma);
@@ -32,21 +49,31 @@ export async function createTestDatabase({ expectedSchema, expectedSchemaMarker 
       await resetTopicData(prisma);
       await resetAuthenticationData(prisma);
     },
+
     async disconnect() {
       await prisma.$disconnect();
     },
   };
 }
 
-export async function assertOwnedTestSchema(prisma, expectedSchema, expectedMarker) {
+export async function assertOwnedTestSchema(
+  prisma,
+  expectedSchema,
+  expectedMarker,
+) {
   const [row] = await prisma.$queryRawUnsafe(
     `SELECT current_schema() AS current_schema,
             obj_description(n.oid, 'pg_namespace') AS marker
        FROM pg_namespace n
       WHERE n.nspname = current_schema()`,
   );
-  if (row?.current_schema !== expectedSchema || row?.marker !== expectedMarker) {
-    throw new Error("Owned test schema verification failed; refusing fixture reset.");
+  if (
+    row?.current_schema !== expectedSchema ||
+    row?.marker !== expectedMarker
+  ) {
+    throw new Error(
+      "Owned test schema verification failed; refusing fixture reset.",
+    );
   }
   return row;
 }
