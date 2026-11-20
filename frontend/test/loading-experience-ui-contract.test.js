@@ -17,8 +17,10 @@ test("Learning startup and mode transitions use the shared loading language", ()
   assert.match(learning, /pendingRating=\{pendingRating\}/);
   assert.match(learning, /max-w-\[30rem\][^"\n]*border-sky-100[^"\n]*px-6 py-7/);
   assert.match(learning, /min-h-\[min\(28rem,calc\(100vh_-_9rem\)\)\]/);
-  assert.match(learning, /className="sr-only"[^>]*ref=\{normalPendingStatusRef\} role="status" tabIndex=\{-1\}>Đang ghi nhận bằng chứng học tập…<\/p>/);
-  assert.match(learning, /setAnnouncement\("Đang ghi nhận bằng chứng học tập\."\)/);
+  const pendingAnnouncementOwners = learning.match(/<div className="sr-only"[^>]*ref=\{normalPendingStatusRef\}[^>]*role="status"[^>]*tabIndex=\{mode === "NORMAL" && eventState === "pending" \? -1 : undefined\}>\{announcement\}<\/div>/g) ?? [];
+  assert.equal(pendingAnnouncementOwners.length, 1);
+  assert.match(learning, /setAnnouncement\("Đang ghi nhận bằng chứng học tập…"\)/);
+  assert.doesNotMatch(learning, /<p className="sr-only"[^>]*role="status"/);
   assert.match(learning, /setAnnouncement\("Đã ghi nhận thẻ được lật\. Bạn có thể tiếp tục\."\)/);
   assert.match(learning, /setAnnouncement\("Chưa thể ghi nhận bằng chứng học tập\. Hãy thử lại\."\)/);
   assert.match(flashcard, /const audioIsDisabled = audioDisabled \?\? disabled/);

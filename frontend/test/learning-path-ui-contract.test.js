@@ -103,7 +103,10 @@ test("changed controls retain semantic, focus, and reduced-motion conventions", 
   assert.match(learning, /disabled=\{eventState === "pending"\}/);
   assert.match(learning, /audioDisabled=\{mode !== "NORMAL" && eventState === "pending"\}/);
   assert.match(learning, /busy=\{mode === "NORMAL" && eventState === "pending"\}/);
-  assert.match(learning, /className="sr-only"[^>]*>Đang ghi nhận bằng chứng học tập…<\/p>/);
+  const pendingAnnouncementOwners = learning.match(/<div className="sr-only"[^>]*ref=\{normalPendingStatusRef\}[^>]*role="status"[^>]*tabIndex=\{mode === "NORMAL" && eventState === "pending" \? -1 : undefined\}>\{announcement\}<\/div>/g) ?? [];
+  assert.equal(pendingAnnouncementOwners.length, 1);
+  assert.match(learning, /setAnnouncement\("Đang ghi nhận bằng chứng học tập…"\)/);
+  assert.doesNotMatch(learning, /<p className="sr-only"[^>]*role="status"[^>]*>Đang ghi nhận bằng chứng học tập…<\/p>/);
   assert.match(learning, /normalPendingStatusRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(learning, /normalRetryButtonRef\.current\?\.focus\(\)/);
   assert.match(learning, /normalProgressionButtonRef\.current\?\.focus\(\)/);
