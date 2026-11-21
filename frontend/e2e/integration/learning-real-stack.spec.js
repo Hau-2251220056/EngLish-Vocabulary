@@ -617,8 +617,8 @@ test("exact vocabulary identity survives same spelling, Set reuse and membership
   await expect.poll(() => prisma.lEARNING_PROGRESS.count({ where: { user_id: learnerRecord.id, vocabulary_id: canonical.id } })).toBe(1);
   expect(await prisma.lEARNING_PROGRESS.count({ where: { user_id: learnerRecord.id, vocabulary_id: privateVocabulary.id } })).toBe(0);
 
-  await page.goto(`/learn/vocabulary-sets/${sharedSet.id}?mode=NORMAL`);
-  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await page.goto(`/learn/vocabulary-sets/${sharedSet.id}`);
+  await page.getByRole("button", { name: "Học thường" }).click();
   await expect(page.getByText("Thẻ 1 / 1")).toBeVisible();
   await prisma.vOCABULARY_SET_ITEM.delete({
     where: { vocabulary_set_id_vocabulary_id: { vocabulary_set_id: firstSet.id, vocabulary_id: canonical.id } },
