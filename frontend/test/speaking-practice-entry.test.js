@@ -26,6 +26,7 @@ test("third activity preserves existing cards and exact Speaking Practice identi
   const actions = await source("../src/vocabulary-sets/set-detail-primitives.jsx");
 
   assert.match(actions, /title="Thẻ ghi nhớ"[\s\S]*to=\{`\/learn\/vocabulary-sets\/\$\{setId\}`\}/);
+  assert.match(actions, /title="Thẻ ghi nhớ"[\s\S]*learningIntent: "OPEN_SRS"/);
   assert.match(actions, /title="Quiz"[\s\S]*to=\{`\/quiz\/vocabulary-sets\/\$\{setId\}`\}/);
   assert.match(
     actions,

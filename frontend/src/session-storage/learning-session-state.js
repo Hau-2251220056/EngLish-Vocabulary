@@ -136,13 +136,15 @@ export async function createLearningSessionWithPendingReplay({
   if (typeof createSession !== "function") {
     throw new TypeError("Learning Session create callback is invalid.");
   }
-  const pending = prepareLearningSessionCreation(storage, identity, operationId);
+  const pending = prepareLearningSessionCreation(storage, identity, operationId, vocabularyIds);
   const request = {
     operation_id: pending.creation_operation_id,
     set_id: identity.setId,
     mode: identity.mode,
     ...(identity.sessionIntent === "DUE_ONLY" ? { session_intent: "DUE_ONLY" } : {}),
-    ...(identity.mode === "SRS" ? {} : { vocabulary_ids: vocabularyIds }),
+    ...(identity.mode === "SRS" ? {} : {
+      vocabulary_ids: pending.vocabulary_ids ?? vocabularyIds,
+    }),
   };
   const result = await createSession(request);
   if (result.session === null) {
@@ -157,7 +159,7 @@ export async function createLearningSessionWithPendingReplay({
   };
 }
 
-export function prepareLearningSessionCreation(storage, identity, operationId) {
+export function prepareLearningSessionCreation(storage, identity, operationId, vocabularyIds = null) {
   const existing = loadPendingLearningSessionCreation(storage, identity);
   if (existing) return existing;
   requireUuid(operationId, "Learning Session creation operation is invalid.");
@@ -169,6 +171,7 @@ export function prepareLearningSessionCreation(storage, identity, operationId) {
     ...(identity.sessionIntent === "DUE_ONLY" ? { session_intent: "DUE_ONLY" } : {}),
     pass_id: identity.passId ?? null,
     creation_operation_id: operationId,
+    ...(identity.mode === "SRS" ? {} : { vocabulary_ids: requireVocabularyIds(vocabularyIds) }),
   });
   requireIdentity(identity.userId, identity.setId, identity.mode, identity.passId ?? null, identity.sessionIntent ?? "STANDARD");
   const key = pendingStorageKey(identity);
@@ -259,12 +262,29 @@ function isRuntimeState(value) {
 }
 
 function isPendingCreationRecord(value, userId, setId, mode, passId = null, sessionIntent = "STANDARD") {
+  const expectedKeys = (sessionIntent === "DUE_ONLY" ? 7 : 6)
+    + (mode === "SRS" || !Object.hasOwn(value ?? {}, "vocabulary_ids") ? 0 : 1);
   return Boolean(value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === (sessionIntent === "DUE_ONLY" ? 7 : 6)
+    && Object.keys(value).length === expectedKeys
     && value.version === VERSION && value.user_id === userId && value.set_id === setId
     && value.mode === mode && value.pass_id === passId
     && (value.session_intent ?? "STANDARD") === sessionIntent
+    && (mode === "SRS" || !Object.hasOwn(value, "vocabulary_ids")
+      || isVocabularyIds(value.vocabulary_ids))
     && UUID_PATTERN.test(value.creation_operation_id));
+}
+
+function requireVocabularyIds(value) {
+  if (!isVocabularyIds(value)) {
+    throw new TypeError("Learning Session vocabulary identity is invalid.");
+  }
+  return [...value];
+}
+
+function isVocabularyIds(value) {
+  return Array.isArray(value) && value.length > 0
+    && value.every((id) => UUID_PATTERN.test(id))
+    && new Set(value).size === value.length;
 }
 
 function requireUuid(value, message) {

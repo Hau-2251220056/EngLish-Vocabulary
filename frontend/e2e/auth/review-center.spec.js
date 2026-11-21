@@ -73,7 +73,7 @@ test("same-name Sets keep distinct identities, scope labels and destinations", a
   await expect(page.getByRole("link", { name: "Ôn tập từ đến hạn Thói quen hằng ngày — Bộ từ cá nhân" })).toHaveAttribute("href", `/review/sets/${SET_BETA}`);
 });
 
-test("zero-due Review Center offers only a backend-verified unfinished ordinary SRS continuation", async ({ page }) => {
+test("zero-due Review Center does not discover or render stored unfinished SRS sessions", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.addInitScript(({ setId, sessionId, vocabularyId }) => {
@@ -87,7 +87,10 @@ test("zero-due Review Center offers only a backend-verified unfinished ordinary 
   await page.route("**/api/learning/review/center", (route) => route.fulfill({
     status: 200, json: { success: true, data: centerSummary({ due_count: 0, has_due_items: false, sets: [] }) },
   }));
-  await page.route(`**/api/learning-sessions/${CONTINUE_SESSION}`, (route) => route.fulfill({
+  let sessionReads = 0;
+  await page.route(`**/api/learning-sessions/${CONTINUE_SESSION}`, (route) => {
+    sessionReads += 1;
+    return route.fulfill({
     status: 200, json: { success: true, data: {
       id: CONTINUE_SESSION, set_id: SET_ALPHA, scope: "SET", session_intent: "STANDARD", mode: "SRS",
       state: "ACTIVE", created_at: "2026-11-19T00:00:00.000Z",
@@ -96,12 +99,13 @@ test("zero-due Review Center offers only a backend-verified unfinished ordinary 
       items: [{ vocabulary_id: CONTINUE_VOCAB, position: 0, evidence: null }],
       can_continue: true, set_name: "Bộ từ đang học",
     } },
-  }));
+  });
+  });
   await page.goto("/review");
-  const action = page.getByRole("link", { name: "Tiếp tục phiên SRS" });
-  await expect(action).toBeVisible();
-  await expect(page.getByText("Bộ từ đang học")).toBeVisible();
-  await expect(action).toHaveAttribute("href", `/learn/vocabulary-sets/${SET_ALPHA}`);
+  await expect(page.getByText("Phiên SRS chưa hoàn thành")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Tiếp tục phiên SRS" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hiện không có từ đến hạn" })).toBeVisible();
+  expect(sessionReads).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

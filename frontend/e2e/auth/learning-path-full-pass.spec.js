@@ -128,7 +128,7 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
   await expect.poll(() => fullPassComplete).toBe(true);
 });
 
-test("historically completed Set detail starts fresh ordinary NORMAL without touching the completed pass", async ({ page }) => {
+test("historically completed Set explicit FRESH_NORMAL starts ordinary NORMAL without touching the completed pass", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   const staleSessionId = "60000000-0000-4000-8000-000000000006";
   const pendingCreateOperationId = "80000000-0000-4000-8000-000000000008";
@@ -176,6 +176,7 @@ test("historically completed Set detail starts fresh ordinary NORMAL without tou
       JSON.stringify({
         version: 3, user_id: userId, set_id: setId, mode: "NORMAL", pass_id: null,
         creation_operation_id: pendingCreateOperationId,
+        vocabulary_ids: [vocabularyId],
       }),
     );
     sessionStorage.setItem("elvocab.backend-learning-session-create.ordinary:v3:other-user:other-set:NORMAL_FLASHCARD", "other pending identity");
@@ -186,6 +187,12 @@ test("historically completed Set detail starts fresh ordinary NORMAL without tou
     sessionStorage.setItem("elvocab.normal-learning-operation:v1:preserved", "accepted operation identity");
     sessionStorage.setItem("unrelated-session-state", "preserved");
   }, { pendingCreateOperationId, setId: SET_ID, staleSessionId, userId: publicUser.id, vocabularyId: VOCABULARY_ID });
+  await page.addInitScript(({ setId }) => {
+    history.replaceState({
+      ...history.state,
+      usr: { learningIntent: "FRESH_NORMAL", returnTo: `/my/vocabulary-sets/${setId}` },
+    }, "", location.href);
+  }, { setId: SET_ID });
 
   await page.route(`**/api/my/vocabulary-sets/${SET_ID}`, (route) => route.fulfill({
     status: 200,
@@ -228,7 +235,6 @@ test("historically completed Set detail starts fresh ordinary NORMAL without tou
     expect(request.mode).toBe("NORMAL");
     expect(request.set_id).toBe(SET_ID);
     expect(request.vocabulary_ids).toEqual([VOCABULARY_ID]);
-    expect(request.operation_id).toBe(pendingCreateOperationId);
     ordinaryOperationIds.add(request.operation_id);
     return route.fulfill({
       status: 201,
@@ -236,13 +242,13 @@ test("historically completed Set detail starts fresh ordinary NORMAL without tou
     });
   });
 
-  await page.goto(`/my/vocabulary-sets/${SET_ID}`);
-  await page.getByRole("link", { name: /Thẻ ghi nhớ/ }).click();
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.getByRole("heading", { name: "book" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toHaveCount(0);
   await expect.poll(() => passStartCalls).toBeGreaterThan(0);
-  expect(ordinarySessionCreates).toBeGreaterThan(0);
-  expect([...ordinaryOperationIds]).toEqual([pendingCreateOperationId]);
+  expect(ordinarySessionCreates).toBe(2);
+  expect(ordinaryOperationIds.has(pendingCreateOperationId)).toBe(true);
+  expect(ordinaryOperationIds.size).toBe(2);
   expect(passMutationRequests).toEqual([`/api/learning-path/sets/${SET_ID}/passes`]);
 
   const preserved = await page.evaluate(({ setId, userId }) => ({

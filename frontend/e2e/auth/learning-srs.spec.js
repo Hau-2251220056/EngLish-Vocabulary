@@ -238,7 +238,7 @@ test("due-only review with no eligible studied card shows an up-to-date state", 
   expect(calls.sessions.find(({ method, body }) => method === "POST" && body.session_intent === "DUE_ONLY")).toBeDefined();
 });
 
-test("Review Center continuation resumes an unfinished STANDARD SRS snapshot without creating a due-only session", async ({ page }) => {
+test("Set Flashcard OPEN_SRS entry resumes an unfinished STANDARD SRS snapshot without creating a new session", async ({ page }) => {
   const initialSession = { ...learningSessionProjection("SRS", [vocabularyId(1)]),
     session_intent: "STANDARD", set_name: "Bộ ôn tập" };
   const calls = await installLearningMock(page, { initialSession });
@@ -250,16 +250,17 @@ test("Review Center continuation resumes an unfinished STANDARD SRS snapshot wit
       view_state: "ACTIVE",
     }));
   }, { setId: SET_ID, sessionId: SESSION_ID, vocabularyId: vocabularyId(1) });
-  await page.route("**/api/learning/review/center", (route) => route.fulfill({
-    status: 200, json: { success: true, data: {
-      evaluated_at: NOW, due_count: 0, has_due_items: false, nearest_future_review_at: null, sets: [],
-    } },
-  }));
-  await page.goto("/review");
-  await page.getByRole("link", { name: "Tiếp tục phiên SRS" }).click();
+  await page.addInitScript(({ setId }) => {
+    history.replaceState({
+      ...history.state,
+      usr: { learningIntent: "OPEN_SRS", returnTo: `/my/vocabulary-sets/${setId}` },
+    }, "", location.href);
+  }, { setId: SET_ID });
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
   expect(calls.sessions.filter(({ method }) => method === "POST")).toHaveLength(0);
-  expect(calls.sessions.filter(({ method }) => method === "GET").length).toBeGreaterThanOrEqual(2);
+  expect(calls.sessions.filter(({ method }) => method === "GET")).toHaveLength(1);
 });
 
 test("focuses the initial SRS card only after the authoritative session becomes active", async ({ page }) => {
@@ -430,6 +431,7 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
   const summary = page.getByRole("status").filter({ has: summaryHeading });
   await expect(summaryHeading).toBeVisible();
   await expect(summaryHeading).toBeFocused();
+  await expect(summary).toContainText("Bạn đã học hết các từ vựng trong phiên này!");
   await expect(summary).toContainText("Chuỗi hiện tại 1 ngày");
   await expect(page.getByRole("alert").filter({ hasText: /XP/ })).toHaveCount(0);
   expect(calls.events).toHaveLength(0);
@@ -440,6 +442,52 @@ test("NORMAL records each reveal, completes explicitly and reopens the terminal 
   await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
   expect(calls.sessions.filter(({ method, pathname, body }) => method === "POST"
     && pathname === "/api/learning-sessions" && body.mode === "NORMAL")).toHaveLength(1);
+
+  const storedSrsBeforeReplay = await page.evaluate((setId) => sessionStorage.getItem(
+    `elvocab.backend-learning-session.ordinary:v3:user-1:${setId}:SRS_FLASHCARD`,
+  ), SET_ID);
+  const replay = page.getByRole("button", { name: "Học lại từ đầu" });
+  await expect(replay).toBeVisible();
+  await replay.click();
+  await expect.poll(() => calls.sessions.filter(({ method, pathname, body }) => method === "POST"
+    && pathname === "/api/learning-sessions" && body.mode === "NORMAL").length).toBe(2);
+  const freshRequest = calls.sessions.filter(({ method, pathname, body }) => method === "POST"
+    && pathname === "/api/learning-sessions" && body.mode === "NORMAL").at(-1).body;
+  expect(freshRequest.vocabulary_ids).toEqual([1, 2, 3, 4].map(vocabularyId));
+  await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
+  expect(await page.evaluate((setId) => sessionStorage.getItem(
+    `elvocab.backend-learning-session.ordinary:v3:user-1:${setId}:SRS_FLASHCARD`,
+  ), SET_ID)).toBe(storedSrsBeforeReplay);
+});
+
+test("explicit FRESH_NORMAL replaces a completed one-card snapshot with all current personal-set cards", async ({ page }) => {
+  let currentCardCount = 1;
+  const calls = await installLearningMock(page, { cardCount: () => currentCardCount });
+  await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
+  await page.getByRole("button", { name: "Ôn tập thường" }).click();
+  await expect.poll(() => calls.sessions.filter(({ method, body }) => method === "POST"
+    && body.mode === "NORMAL").length).toBe(1);
+  await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
+  const complete = page.getByRole("button", { name: "Hoàn thành phiên" });
+  await expect(complete).toBeEnabled();
+  await complete.click();
+  await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
+
+  currentCardCount = 5;
+  await page.evaluate(() => history.replaceState({
+    ...history.state,
+    usr: { learningIntent: "FRESH_NORMAL", returnTo: "/my/vocabulary-sets" },
+  }, "", location.href));
+  await page.reload();
+
+  await expect(page.getByText("Thẻ 1 / 5")).toBeVisible();
+  await expect.poll(() => calls.sessions.filter(({ method, pathname, body }) => method === "POST"
+    && pathname === "/api/learning-sessions" && body.mode === "NORMAL").length).toBe(2);
+  const normalCreates = calls.sessions.filter(({ method, pathname, body }) => method === "POST"
+    && pathname === "/api/learning-sessions" && body.mode === "NORMAL");
+  expect(normalCreates).toHaveLength(2);
+  expect(normalCreates[1].body.vocabulary_ids).toEqual([1, 2, 3, 4, 5].map(vocabularyId));
+  expect(await page.evaluate(() => history.state?.usr?.learningIntent ?? null)).toBeNull();
 });
 
 test("NORMAL retries a lost reveal with the same operation and resumes its persisted cursor", async ({ page }) => {
@@ -763,7 +811,7 @@ test("up-to-date SRS offers Normal review and return action", async ({ page }) =
   await installLearningMock(page, { upToDate: true });
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ôn tập thường" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Học thường" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Quay lại bộ từ" })).toBeVisible();
   await expect(page.getByText("Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Làm mới SRS" })).toHaveCount(0);
@@ -997,6 +1045,9 @@ async function installLearningMock(page, options = {}) {
     ? new Promise((resolve) => { resolveNormalReveal = resolve; })
     : null;
   calls.resolveNormalReveal = () => resolveNormalReveal?.();
+  const selectedCardCount = () => typeof options.cardCount === "function"
+    ? options.cardCount(calls)
+    : options.cardCount ?? 4;
   let revealFailures = options.failRevealOnce ? 1 : 0;
   let eventFailures = options.failEventOnce ? 1 : 0;
   await page.route("**/api/learning-sessions**", async (route) => {
@@ -1015,7 +1066,7 @@ async function installLearningMock(page, options = {}) {
       }
       const ids = body.mode === "SRS"
         ? Array.from({ length: body.session_intent === "DUE_ONLY" && Number.isInteger(options.dueOnlyCount)
-          ? options.dueOnlyCount : options.cardCount ?? 4 }, (_, index) => vocabularyId(index + 1))
+          ? options.dueOnlyCount : selectedCardCount() }, (_, index) => vocabularyId(index + 1))
         : body.vocabulary_ids;
       session = { ...learningSessionProjection(body.mode, ids),
         session_intent: body.session_intent ?? "STANDARD" };
@@ -1074,7 +1125,8 @@ async function installLearningMock(page, options = {}) {
     const upToDate = typeof options.upToDate === "function"
       ? options.upToDate(calls)
       : options.upToDate;
-    await route.fulfill({ status: 200, json: { success: true, data: mode === "NORMAL" ? normalPayload(options.longContent, options.cardCount) : srsPayload(upToDate, options.longContent, options.cardCount, options.ratingPreviews) } });
+    const cardCount = selectedCardCount();
+    await route.fulfill({ status: 200, json: { success: true, data: mode === "NORMAL" ? normalPayload(options.longContent, cardCount) : srsPayload(upToDate, options.longContent, cardCount, options.ratingPreviews) } });
   });
   await page.route("**/api/learning/events", async (route) => {
     const body = route.request().postDataJSON();

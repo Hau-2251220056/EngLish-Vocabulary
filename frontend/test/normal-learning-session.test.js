@@ -5,6 +5,7 @@ import {
   canCompleteNormalLearningSession,
   completeNormalLearningSession,
   openNormalLearningSession,
+  prepareFreshNormalLearningSession,
   persistNormalLearningCursor,
   reconcileNormalLearningSession,
 } from "../src/learning/normal-learning-session.js";
@@ -31,6 +32,40 @@ test("NORMAL opens the exact backend-authored ordered snapshot and resumes it by
   const resumed = await openNormalLearningSession({ storage, identity, vocabularyIds: [IDS.first, IDS.second], service, randomUuid: () => { throw new Error("must not create"); } });
   assert.equal(resumed.session_id, IDS.session);
   assert.deepEqual(calls.map((call) => call[0]), ["create", "read"]);
+});
+
+test("fresh NORMAL resolves an unknown create with its original vocabulary identity before replacing it", async () => {
+  const storage = memoryStorage();
+  const freshIdentity = { ...identity, userId: "user-fresh" };
+  const requests = [];
+  let loseFirstResponse = true;
+  const service = {
+    async createSession(request) {
+      requests.push(request);
+      if (loseFirstResponse) {
+        loseFirstResponse = false;
+        throw new Error("response lost");
+      }
+      return { session: sessionFor(request.vocabulary_ids, requests.length === 2 ? IDS.session : IDS.complete), replayed: requests.length === 2 };
+    },
+    async readSession() { throw new Error("fresh start must not read the obsolete session"); },
+  };
+  await assert.rejects(openNormalLearningSession({
+    storage, identity: freshIdentity, vocabularyIds: [IDS.first], service, randomUuid: () => IDS.create,
+  }), /response lost/);
+
+  await prepareFreshNormalLearningSession({ storage, identity: freshIdentity, service });
+  const fresh = await openNormalLearningSession({
+    storage, identity: freshIdentity, vocabularyIds: [IDS.first, IDS.second], service,
+    randomUuid: () => IDS.secondReveal,
+  });
+
+  assert.deepEqual(requests.map(({ operation_id: id }) => id), [IDS.create, IDS.create, IDS.secondReveal]);
+  assert.deepEqual(requests.map(({ vocabulary_ids: ids }) => ids), [
+    [IDS.first], [IDS.first], [IDS.first, IDS.second],
+  ]);
+  assert.equal(fresh.session_id, IDS.complete);
+  assert.deepEqual(fresh.item_ids, [IDS.first, IDS.second]);
 });
 
 test("reveal persists an operation before the request and exact retry reuses it", async () => {
@@ -161,6 +196,13 @@ function serviceFake(calls, options = {}) {
 function session() {
   return { id: IDS.session, set_id: IDS.set, mode: "NORMAL", state: "ACTIVE", created_at: "2026-10-18T00:00:00.000Z", expires_at: "2026-10-25T00:00:00.000Z", completed_at: null, snapshot_size: 2, completed_items: 0,
     items: [{ vocabulary_id: IDS.first, position: 0, evidence: null }, { vocabulary_id: IDS.second, position: 1, evidence: null }] };
+}
+
+function sessionFor(vocabularyIds, id) {
+  return {
+    ...session(), id, snapshot_size: vocabularyIds.length,
+    items: vocabularyIds.map((vocabulary_id, position) => ({ vocabulary_id, position, evidence: null })),
+  };
 }
 
 function passSummary() { return { id: IDS.pass, state: "ACTIVE", snapshot_size: 2, credited_items: 1, remaining_items: 1, ready_to_complete: false }; }

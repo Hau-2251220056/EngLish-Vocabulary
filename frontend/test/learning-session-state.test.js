@@ -131,9 +131,10 @@ test("unknown create result survives refresh and exact retry reuses the operatio
   const storage = memoryStorage();
   const firstOperation = "66666666-6666-4666-8666-666666666666";
   const replacementOperation = "77777777-7777-4777-8777-777777777777";
-  assert.equal(prepareLearningSessionCreation(storage, IDENTITY, firstOperation).creation_operation_id, firstOperation);
+  assert.equal(prepareLearningSessionCreation(storage, IDENTITY, firstOperation, [FIRST, SECOND]).creation_operation_id, firstOperation);
   assert.equal(loadPendingLearningSessionCreation(storage, IDENTITY).creation_operation_id, firstOperation);
-  assert.equal(prepareLearningSessionCreation(storage, IDENTITY, replacementOperation).creation_operation_id, firstOperation);
+  assert.deepEqual(loadPendingLearningSessionCreation(storage, IDENTITY).vocabulary_ids, [FIRST, SECOND]);
+  assert.equal(prepareLearningSessionCreation(storage, IDENTITY, replacementOperation, [SECOND]).creation_operation_id, firstOperation);
 
   const accepted = acceptLearningSessionCreation(storage, IDENTITY, firstOperation, session());
   assert.equal(accepted.session_id, SESSION_ID);
@@ -157,9 +158,10 @@ test("create orchestration persists before request, retains unknown results and 
   assert.equal(loadPendingLearningSessionCreation(storage, IDENTITY).creation_operation_id, firstOperation);
 
   const result = await createLearningSessionWithPendingReplay({
-    storage, identity: IDENTITY, operationId: replacementOperation, vocabularyIds: [FIRST, SECOND],
+    storage, identity: IDENTITY, operationId: replacementOperation, vocabularyIds: [SECOND],
     createSession: async (request) => {
       assert.equal(request.operation_id, firstOperation);
+      assert.deepEqual(request.vocabulary_ids, [FIRST, SECOND]);
       return { session: session(), replayed: true };
     },
   });
@@ -222,13 +224,13 @@ test("accepted-state storage failure retains pending identity for exact recovery
 test("pending create storage fails closed for malformed, old-version and cross-user records", () => {
   const storage = memoryStorage();
   const operationId = "66666666-6666-4666-8666-666666666666";
-  prepareLearningSessionCreation(storage, IDENTITY, operationId);
+  prepareLearningSessionCreation(storage, IDENTITY, operationId, [FIRST, SECOND]);
   const key = storage.keys().find((candidate) => candidate.includes("backend-learning-session-create"));
   const valid = JSON.parse(storage.getItem(key));
   storage.setItem(key, JSON.stringify({ ...valid, version: 0 }));
   assert.equal(loadPendingLearningSessionCreation(storage, IDENTITY), null);
 
-  prepareLearningSessionCreation(storage, IDENTITY, operationId);
+  prepareLearningSessionCreation(storage, IDENTITY, operationId, [FIRST, SECOND]);
   assert.equal(loadPendingLearningSessionCreation(storage, { ...IDENTITY, userId: "other" }), null);
   assert.throws(() => acceptLearningSessionCreation(
     storage, IDENTITY, "77777777-7777-4777-8777-777777777777", session(),

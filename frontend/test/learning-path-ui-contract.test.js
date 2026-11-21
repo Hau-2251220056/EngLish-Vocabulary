@@ -82,8 +82,12 @@ test("NORMAL full-pass UI requires explicit final completion and truthful restar
   assert.match(source, /CEFR_PASS_RESTART_REQUIRED/);
   assert.match(source, /pathPass\.remaining_items === 0/);
   assert.match(source, /location\.state\?\.learningPathAction/);
-  assert.match(setDetail, /learningIntent: "FRESH_NORMAL"/);
-  assert.match(source, /error\.code === "CEFR_SET_ALREADY_COMPLETED"[\s\S]*freshNormalIntent[\s\S]*clearIndependentNormalSessionPresentation/);
+  assert.match(setDetail, /learningIntent: "OPEN_SRS"/);
+  assert.match(source, /openSrsIntent[\s\S]*continueOrdinarySrs \|\| openSrsIntent \? "SRS"/);
+  assert.match(source, /error\.code === "CEFR_SET_ALREADY_COMPLETED"[\s\S]*handleIndependentFallback/);
+  assert.match(source, /prepareFreshNormalLearningSession/);
+  assert.match(source, /Học lại từ đầu/);
+  assert.match(source, /Bạn đã học hết các từ vựng trong phiên này!/);
   assert.match(source, /startIndependentNormalRun\(current, payload\.cards\)/);
   assert.match(source, /error\.code === "CEFR_PASS_NOT_FOUND"/);
   assert.doesNotMatch(source, /\["CEFR_PASS_NOT_FOUND", "CEFR_SET_ALREADY_COMPLETED"\]/);

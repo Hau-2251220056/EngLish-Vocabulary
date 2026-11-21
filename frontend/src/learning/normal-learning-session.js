@@ -1,9 +1,11 @@
 import {
   loadLearningSessionState,
+  loadPendingLearningSessionCreation,
   reconcileLearningSessionState,
   saveLearningSessionState,
   selectLearningSessionCursor,
   createLearningSessionWithPendingReplay,
+  clearIndependentNormalSessionPresentation,
 } from "../session-storage/learning-session-state.js";
 import { readSessionValue, removeSessionValue, writeSessionValue } from "../session-storage/resilient-session-store.js";
 
@@ -26,6 +28,31 @@ export async function openNormalLearningSession({ storage, identity, vocabularyI
     createSession: (request) => service.createSession(request),
   });
   return result.session_state;
+}
+
+export async function prepareFreshNormalLearningSession({ storage, identity, service }) {
+  requireDependencies(identity, service, () => "unused");
+  if (identity.passId != null) {
+    throw new TypeError("Managed NORMAL sessions cannot be restarted independently.");
+  }
+  const pending = loadPendingLearningSessionCreation(storage, identity);
+  if (pending) {
+    if (!Array.isArray(pending.vocabulary_ids)) {
+      throw new TypeError("Pending NORMAL creation must be resumed before starting fresh.");
+    }
+    await createLearningSessionWithPendingReplay({
+      storage,
+      identity,
+      operationId: pending.creation_operation_id,
+      vocabularyIds: pending.vocabulary_ids,
+      createSession: (request) => service.createSession(request),
+    });
+  }
+  const stored = loadLearningSessionState(storage, identity);
+  const cleared = clearIndependentNormalSessionPresentation(storage, identity);
+  if (stored && !cleared) {
+    throw new TypeError("Existing NORMAL presentation could not be cleared.");
+  }
 }
 
 export async function acknowledgeNormalReveal({ storage, identity, state, vocabularyId, service, randomUuid }) {
