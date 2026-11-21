@@ -458,6 +458,7 @@ test("NORMAL retries a lost reveal with the same operation and resumes its persi
   await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
   await expect(page.getByRole("alert").getByRole("button")).toBeVisible();
   await page.getByRole("alert").getByRole("button").click();
+  await expect.poll(() => calls.sessions.filter(({ method }) => method === "PUT")).toHaveLength(2);
   const revealCalls = calls.sessions.filter(({ method }) => method === "PUT");
   expect(revealCalls).toHaveLength(2);
   expect(revealCalls[0].body.operation_id).toBe(revealCalls[1].body.operation_id);

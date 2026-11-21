@@ -94,6 +94,8 @@ test("ADMIN creates, replaces owned children, and confirms aggregate deletion", 
   await expect(failedConfirmation.getByRole("button", { name: "Đang xóa…" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await expect(failedConfirmation).toBeVisible();
+  await expect.poll(() => deleteAttempts).toBe(1);
+  await expect.poll(() => typeof releaseDeleteFailure).toBe("function");
   releaseDeleteFailure();
   const safeDeleteError = failedConfirmation.getByRole("alert");
   await expect(safeDeleteError).toHaveText("Unable to delete this Vocabulary. Please try again.");
