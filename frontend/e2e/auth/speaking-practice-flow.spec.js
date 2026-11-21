@@ -13,14 +13,19 @@ for (const viewport of [
 ]) {
   test(`practice actions keep a stable ${viewport.name} layout`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await installSpeakingBrowserMocks(page);
+    await installSpeakingBrowserMocks(page, { setName: "Bộ từ luyện nói có tên rất dài để kiểm tra bố cục tiêu đề trên màn hình hẹp" });
     await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
     await expect(page.locator(".focus-mode-header")).toHaveCSS("border-bottom-width", "1px");
     await expectCenteredFocusHeader(page, viewport.width);
     const speakingBadge = page.locator(".focus-mode-title-badge");
+    const privacy = page.getByRole("button", { name: "Quyền riêng tư" });
     await expect(speakingBadge).toHaveText("Luyện nói");
     expect(await speakingBadge.evaluate((badge) => badge.previousElementSibling?.tagName)).toBe("BUTTON");
     await expect(speakingBadge.locator("xpath=..")).toHaveCSS("column-gap", "12px");
+    await expect(privacy).toBeVisible();
+    expect(await privacy.evaluate((button) => button.closest(".focus-mode-header-context") !== null)).toBe(true);
+    const [leftBox, privacyBox] = await Promise.all([speakingBadge.locator("xpath=..").boundingBox(), privacy.boundingBox()]);
+    expect(leftBox && privacyBox && leftBox.x + leftBox.width <= privacyBox.x + 1).toBe(true);
 
     const actions = page.getByTestId("speaking-actions");
     const listen = page.getByRole("button", { name: "Nghe từ mẫu" });
@@ -37,6 +42,7 @@ for (const viewport of [
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
+    const readyCardBox = await page.locator("[data-speaking-state='ready']").boundingBox();
     const readyBoxes = await Promise.all([listen.boundingBox(), speak.boundingBox()]);
     expect(readyBoxes.every((box) => box && box.width >= 44 && box.height >= 44)).toBe(true);
     if (viewport.direction === "column") expect(readyBoxes[0].y).toBeLessThan(readyBoxes[1].y);
@@ -47,6 +53,9 @@ for (const viewport of [
     const stop = page.getByRole("button", { name: "Dừng nói" });
     await expect(actions).toHaveCSS("flex-direction", viewport.direction);
     await expect(stop).toBeVisible();
+    await expect(page.locator("[data-speaking-state='listening']")).toHaveClass(/border-sky-400/);
+    const listeningCardBox = await page.locator("[data-speaking-state='listening']").boundingBox();
+    expect(readyCardBox && listeningCardBox && Math.abs(readyCardBox.height - listeningCardBox.height) <= 2).toBe(true);
     const listeningBoxes = await Promise.all([listen.boundingBox(), stop.boundingBox()]);
     expect(listeningBoxes.every((box) => box && box.width >= 44 && box.height >= 44)).toBe(true);
     if (viewport.direction === "column") expect(listeningBoxes[0].y).toBeLessThan(listeningBoxes[1].y);
@@ -80,6 +89,10 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   await expect(page.getByText("Từ 1 / 2", { exact: true })).toBeVisible();
   await expect(page.getByText("/bʊk/", { exact: true })).toBeVisible();
   await expect(page.getByTestId("listening-waveform")).toHaveCount(0);
+  await page.getByRole("button", { name: "Quyền riêng tư" }).click();
+  await expect(page.getByRole("dialog", { name: "Thông tin xử lý giọng nói" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Thông tin xử lý giọng nói" })).toHaveCount(0);
   expect(calls.learning.length).toBeGreaterThanOrEqual(1);
   expect(calls.learning.every((call) => call.method === "GET" && call.mode === "NORMAL" && call.setId === setId)).toBe(true);
 
@@ -108,7 +121,7 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   const alternativeFeedback = page.getByRole("heading", { name: "Nhận diện chưa chắc chắn" });
   await expect(alternativeFeedback).toBeVisible();
   await expect(page.getByText("Từ mục tiêu chỉ xuất hiện trong kết quả thay thế.", { exact: true })).toBeVisible();
-  await expect(alternativeFeedback.locator("xpath=ancestor::section[1]")).toHaveClass(/bg-\[#FFFBEB\]/);
+  await expect(page.locator("[data-speaking-state='caution']")).toHaveClass(/border-\[#F2BD82\]/);
   await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
 
   const oldRecognitionIndex = await page.evaluate(() => window.__speakingRecognitions.length - 1);
@@ -135,6 +148,28 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
 
   expect(calls.writes).toEqual([]);
   expect(calls.providerRequests).toEqual([]);
+});
+
+test("matched and mismatched results reuse the main Speak action without nested result cards", async ({ page }) => {
+  await installSpeakingBrowserMocks(page);
+  await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
+  await beginRecognition(page);
+  await emitRecognitionResult(page, ["page"]);
+
+  await expect(page.getByRole("heading", { name: "Chưa nhận diện khớp" })).toBeVisible();
+  await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
+  await expect(page.locator("[data-speaking-state='negative']")).toHaveClass(/border-\[#F2BD82\]/);
+  await expect(page.getByRole("button", { name: "Thử nói lại" })).toHaveCount(0);
+
+  const retry = page.getByRole("button", { name: "Nói lại" });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
+  await emitRecognitionResult(page, ["book"]);
+
+  await expect(page.getByRole("heading", { name: "Đã nhận diện từ mục tiêu" })).toBeVisible();
+  await expect(page.locator("[data-speaking-state='positive']")).toHaveClass(/border-\[#9EDDB1\]/);
+  await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
 });
 
 test("Exit aborts active native recognition and stale callbacks cannot restart or restore it", async ({ page }) => {
@@ -197,7 +232,7 @@ test("permission failure is localized and Retry starts only from an explicit act
   await expect(guidanceTrigger).toBeFocused();
   await expect(page.getByRole("button", { name: "Nghe từ mẫu" })).toBeEnabled();
   expect(await page.evaluate(() => window.__speakingNative.recognitionStarts)).toBe(1);
-  await page.getByRole("button", { name: "Thử nói lại" }).click();
+  await page.getByRole("button", { name: "Nói lại" }).click();
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
   expect(await page.evaluate(() => window.__speakingNative.recognitionStarts)).toBe(2);
 });
@@ -286,7 +321,7 @@ test("startup and finalization watchdogs settle at their approved boundaries", a
   await expect(page.getByRole("heading", { name: "Đang bắt đầu nhận diện" })).toHaveCount(0);
   await expect(page.getByText("Đang bắt đầu nhận diện.", { exact: true })).toBeAttached();
   await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toBeVisible({ timeout: 6_500 });
-  await expect(page.getByRole("button", { name: "Thử nói lại" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Nói lại" })).toBeVisible();
 
   await page.reload();
   await page.evaluate(() => { window.__speakingNative.recognitionStartsSynchronously = true; });
@@ -316,7 +351,7 @@ test("intentional empty stop ignores stop-induced errors while natural no-speech
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
   await emitRecognitionError(page, "no-speech");
   await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toBeVisible();
-  await page.getByRole("button", { name: "Thử nói lại" }).click();
+  await page.getByRole("button", { name: "Nói lại" }).click();
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
 });
 
@@ -419,7 +454,7 @@ async function installSpeakingBrowserMocks(page, options = {}) {
       await route.fulfill({ status: 503, json: { success: false, error: { code: "LEARNING_REQUEST_FAILED", message: "temporary" } } });
       return;
     }
-    await route.fulfill({ status: 200, json: { success: true, data: learningPayload() } });
+    await route.fulfill({ status: 200, json: { success: true, data: learningPayload(options.setName) } });
   });
   await page.route("**/api/learning/events", async (route) => {
     calls.writes.push({ method: route.request().method(), pathname: new URL(route.request().url()).pathname });
@@ -440,10 +475,10 @@ async function installSpeakingBrowserMocks(page, options = {}) {
   return calls;
 }
 
-function learningPayload() {
+function learningPayload(setName = "Browser Speaking Set") {
   return {
     id: setId,
-    name: "Browser Speaking Set",
+    name: setName,
     mode: "NORMAL",
     total_items: 2,
     cards: [

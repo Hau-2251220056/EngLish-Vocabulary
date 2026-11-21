@@ -486,7 +486,7 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.match(page, /snapshot\.target\?\.phonetic/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canListen\}/);
   assert.match(page, /snapshot\.controls\.canStop/);
-  assert.match(page, /disabled=\{!snapshot\.controls\.canSpeak\}/);
+  assert.match(page, /disabled=\{!snapshot\.controls\.canSpeak && !snapshot\.controls\.canRetry\}/);
   assert.match(page, /data-testid="speaking-actions"/);
   assert.match(page, /flex-col items-center justify-center gap-3 min-\[640px\]:flex-row min-\[640px\]:flex-wrap/);
   assert.match(page, /aria-label=\{presentation\.actions\.listen\.label\}[\s\S]*size-11[\s\S]*min-\[640px\]:w-auto[\s\S]*hidden min-\[640px\]:inline/);
@@ -503,7 +503,8 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.equal(page.includes("Luy\u1ec7n ti\u1ebfp {nextBatchSize} t\u1eeb"), true);
   assert.equal(page.includes("H\u1ecdc l\u1ea1i t\u1eeb \u0111\u1ea7u"), true);
   assert.match(page, /presentation\.description/);
-  assert.match(page, /snapshot\.controls\.canRetry/);
+  assert.match(page, /snapshot\.controls\.canRetry\) retryAttempt\(event\)/);
+  assert.doesNotMatch(page, /<button[^>]*>[^<]*\{presentation\.actions\.retry\.label\}/);
   assert.match(page, /presentation\.disclosure/);
   assert.match(page, /showFeedback = !\[[\s\S]*SPEAKING_PRACTICE_PHASES\.READY,[\s\S]*SPEAKING_PRACTICE_PHASES\.STARTING,[\s\S]*SPEAKING_PRACTICE_PHASES\.LISTENING,[\s\S]*SPEAKING_PRACTICE_PHASES\.FINALIZING,[\s\S]*\]\.includes\(snapshot\.phase\)[\s\S]*presentation\.issue !== null/);
   assert.match(page, /showFeedback \? <FeedbackPanel/);
@@ -517,6 +518,8 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.match(page, /Giọng nói của bạn có thể được xử lý bởi dịch vụ của trình duyệt/);
   assert.doesNotMatch(page, /<details|Tìm hiểu thêm/);
   assert.match(page, /Quyền riêng tư/);
+  assert.match(page, /<FocusModeHeader actions=\{privacyAction\}/);
+  assert.doesNotMatch(page, /!presentation\.disclosure \? <button/);
   assert.match(page, /SpeakingPrivacyModal/);
   assert.match(page, />Tiếp tục<\/button>/);
   assert.match(page, /speaking-practice-page min-h-full/);
@@ -530,12 +533,12 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   const packageJson = source("package.json");
 
   assert.match(page, /CheckCircle2/);
-  assert.match(page, /XCircle/);
   assert.match(page, /AlertTriangle/);
   assert.match(page, /CircleAlert/);
-  assert.match(page, /positive:[\s\S]*#A7E3B8[\s\S]*#ECFDF3[\s\S]*#166534/);
-  assert.match(page, /negative:[\s\S]*#F4A8A8[\s\S]*#FEF2F2[\s\S]*#991B1B/);
-  assert.match(page, /caution:[\s\S]*#FCD34D[\s\S]*#FFFBEB[\s\S]*#92400E/);
+  assert.match(page, /positive:[\s\S]*#166534/);
+  assert.match(page, /negative:[\s\S]*#92400E/);
+  assert.match(page, /positive: "border-\[#9EDDB1\]"/);
+  assert.match(page, /negative: "border-\[#F2BD82\]"/);
   assert.match(page, /presentation\.issue\.message[\s\S]*presentation\.issue\.recovery/);
   assert.match(page, /Xem hướng dẫn/);
   assert.match(page, /canShowSpeakingPermissionHelp/);
@@ -545,7 +548,8 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   assert.match(page, /!hasOutcome && presentation\.issue[\s\S]*presentation\.issue\.recovery/);
   assert.doesNotMatch(page, /presentation\.clarification/);
   assert.doesNotMatch(page, /Chi tiết và cách khắc phục/);
-  assert.match(page, /<\/section>[\s\S]*presentation\.transcript/);
+  assert.match(page, /presentation\.transcript[\s\S]*text-slate-500/);
+  assert.doesNotMatch(page, /rounded-2xl border px-4 py-3/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML|console\.(?:log|info|debug)|AudioContext|new Audio\(/);
   assert.match(packageJson, /"lucide-react": "\^1\.47\.0"/);
   for (const pictogram of ["✅", "❌", "⚠️", "🔊", "🎤"]) {
@@ -571,7 +575,7 @@ test("permission and privacy dialogs provide bounded guidance and accessible mod
 
 test("Speaking progress and navigation stay separate from the compact vocabulary card", () => {
   const page = source("src/pronunciation/speaking-practice-page.jsx");
-  const cardStart = page.indexOf('<section className="flex min-h-[25rem]');
+  const cardStart = page.indexOf('<section className={`flex min-h-[25rem]');
   const navigationStart = page.indexOf('<nav className="mt-3 grid w-full');
   const cardClose = page.lastIndexOf("</section>", navigationStart);
 

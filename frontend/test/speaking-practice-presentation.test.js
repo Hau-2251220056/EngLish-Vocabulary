@@ -274,6 +274,8 @@ test("retry maps directly to controller canRetry and needs no second confirmatio
     controls: { canRetry: true, canConfirmDisclosure: false },
   }));
   assert.equal(presentation.actions.retry.enabled, true);
+  assert.equal(presentation.actions.speak.enabled, true);
+  assert.equal(presentation.actions.speak.label, "Nói lại");
   assert.equal(presentation.actions.confirmDisclosure.enabled, false);
 });
 

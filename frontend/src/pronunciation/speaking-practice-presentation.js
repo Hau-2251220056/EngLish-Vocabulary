@@ -201,7 +201,7 @@ function actionPresentation(snapshot) {
   const completed = snapshot?.completed === true;
   return Object.freeze({
     listen: action("listen", controls.canListen),
-    speak: action("speak", controls.canSpeak),
+    speak: action("speak", controls.canSpeak || controls.canRetry, controls.canRetry ? "Nói lại" : null),
     stop: action("stop", controls.canStop),
     confirmDisclosure: action("confirmDisclosure", controls.canConfirmDisclosure),
     deferDisclosure: action("deferDisclosure", controls.canConfirmDisclosure),
@@ -214,8 +214,8 @@ function actionPresentation(snapshot) {
   });
 }
 
-function action(name, enabled) {
-  return Object.freeze({ label: SPEAKING_PRACTICE_ACTION_LABELS[name], enabled: enabled === true });
+function action(name, enabled, label = null) {
+  return Object.freeze({ label: label ?? SPEAKING_PRACTICE_ACTION_LABELS[name], enabled: enabled === true });
 }
 
 function copy(heading, description, liveRegion = null) {

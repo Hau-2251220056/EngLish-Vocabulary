@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
@@ -17,11 +17,19 @@ const PREVIOUS_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-sky-200 bg-
 const NEXT_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-[#63A0E0] bg-[#63A0E0] text-white shadow-[0_5px_14px_rgb(99_160_224/22%)] hover:not-disabled:border-[#4f8fce] hover:not-disabled:bg-[#4f8fce] hover:not-disabled:shadow-[0_7px_18px_rgb(99_160_224/28%)] focus-visible:ring-[#a8cff4]`;
 const BRIEF_DISCLOSURE = "Giọng nói của bạn có thể được xử lý bởi dịch vụ của trình duyệt để nhận diện từ bạn nói.";
 const FEEDBACK_STYLES = Object.freeze({
-  positive: Object.freeze({ classes: "border-[#A7E3B8] bg-[#ECFDF3] text-[#166534]", Icon: CheckCircle2 }),
-  negative: Object.freeze({ classes: "border-[#F4A8A8] bg-[#FEF2F2] text-[#991B1B]", Icon: XCircle }),
-  caution: Object.freeze({ classes: "border-[#FCD34D] bg-[#FFFBEB] text-[#92400E]", Icon: AlertTriangle }),
-  issue: Object.freeze({ classes: "border-[#b9d8f4] bg-[#f2f8fd] text-[#285f96]", Icon: CircleAlert }),
-  neutral: Object.freeze({ classes: "border-slate-200 bg-slate-50 text-slate-700", Icon: Info }),
+  positive: Object.freeze({ classes: "text-[#166534]", Icon: CheckCircle2 }),
+  negative: Object.freeze({ classes: "text-[#92400E]", Icon: AlertTriangle }),
+  caution: Object.freeze({ classes: "text-[#92400E]", Icon: AlertTriangle }),
+  issue: Object.freeze({ classes: "text-[#285f96]", Icon: CircleAlert }),
+  neutral: Object.freeze({ classes: "text-slate-700", Icon: Info }),
+});
+const CARD_BORDER_CLASSES = Object.freeze({
+  listening: "border-sky-400",
+  positive: "border-[#9EDDB1]",
+  negative: "border-[#F2BD82]",
+  caution: "border-[#F2BD82]",
+  issue: "border-[#B9D8F4]",
+  neutral: "border-[#B9D8F4]",
 });
 const TERMINAL_PHASES = new Set([
   SPEAKING_PRACTICE_PHASES.RESULT,
@@ -167,11 +175,19 @@ export function SpeakingPracticePage() {
   ].includes(snapshot.phase)
     || presentation.tone !== "neutral"
     || presentation.issue !== null;
+  const cardBorderClass = snapshot.phase === SPEAKING_PRACTICE_PHASES.LISTENING
+    ? CARD_BORDER_CLASSES.listening
+    : presentation.tone !== "neutral"
+      ? CARD_BORDER_CLASSES[presentation.tone] ?? CARD_BORDER_CLASSES.neutral
+      : presentation.issue
+        ? CARD_BORDER_CLASSES.issue
+        : CARD_BORDER_CLASSES.neutral;
+  const privacyAction = <button type="button" className="min-h-11 shrink-0 border-0 bg-transparent px-2 text-sm font-bold text-sky-700 transition-colors hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 motion-reduce:transition-none" onClick={() => setPrivacyOpen(true)}>Quyền riêng tư</button>;
 
   return (
     <main className="speaking-practice-page min-h-full w-full min-w-0 overflow-x-clip text-[#172554]" aria-labelledby="speaking-practice-title">
       <div className="flex min-h-full flex-col">
-        <FocusModeHeader backLabel={snapshot.set?.name} titleBadge="Luyện nói"
+        <FocusModeHeader actions={privacyAction} backLabel={snapshot.set?.name} titleBadge="Luyện nói"
           disabled={!snapshot.controls.canExit} onBack={exitPractice} />
 
         <div className="mx-auto flex w-full max-w-[38rem] flex-1 flex-col px-[clamp(0.8rem,3vw,2rem)] py-[clamp(0.8rem,2vw,1.25rem)]">
@@ -182,7 +198,7 @@ export function SpeakingPracticePage() {
             </div>
           </section>
 
-          <section className="flex min-h-[25rem] w-full min-w-0 flex-col rounded-3xl border border-[#b9d8f4] bg-white p-[clamp(1.15rem,3vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)] max-[600px]:min-h-[22rem]" aria-labelledby="speaking-practice-title">
+          <section className={`flex min-h-[25rem] w-full min-w-0 flex-col rounded-3xl border-2 bg-white p-[clamp(1.15rem,3vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)] transition-colors duration-150 motion-reduce:transition-none max-[600px]:min-h-[22rem] ${cardBorderClass}`} aria-labelledby="speaking-practice-title" data-speaking-state={presentation.tone !== "neutral" ? presentation.tone : snapshot.phase.toLowerCase()}>
             <div ref={speakingContextRef} className="flex flex-1 flex-col items-center justify-center">
               <span className="rounded-full bg-[#edf5fc] px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] text-[#3979b7]">Từ cần luyện</span>
               <h1 ref={targetHeadingRef} tabIndex={-1} id="speaking-practice-title" className="mb-0 mt-4 max-w-full rounded-lg [overflow-wrap:anywhere] text-[clamp(2.5rem,9vw,4.5rem)] font-black leading-none text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">{snapshot.target?.word}</h1>
@@ -190,16 +206,13 @@ export function SpeakingPracticePage() {
 
               <div className="mt-6 flex w-full flex-col items-center justify-center gap-3 min-[640px]:flex-row min-[640px]:flex-wrap" aria-label="Thao tác luyện nói" data-testid="speaking-actions">
                 <button type="button" aria-label={presentation.actions.listen.label} className={`${SECONDARY_BUTTON_CLASSES} size-11 p-0 min-[640px]:h-auto min-[640px]:w-auto min-[640px]:px-4`} disabled={!snapshot.controls.canListen} onClick={() => sessionRef.current?.listen()}><Headphones aria-hidden="true" /><span className="hidden min-[640px]:inline">{presentation.actions.listen.label}</span></button>
-                {snapshot.controls.canStop ? <button type="button" aria-label={presentation.actions.stop.label} className={PRIMARY_BUTTON_CLASSES} onClick={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.stopSpeaking(); }}><ListeningWaveform />{presentation.actions.stop.label}</button> : <button type="button" aria-label={presentation.actions.speak.label} className={`${PRIMARY_BUTTON_CLASSES} size-11 p-0 min-[640px]:h-auto min-[640px]:w-auto min-[640px]:px-4`} disabled={!snapshot.controls.canSpeak} onClick={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.requestSpeak(); }}><Mic aria-hidden="true" /><span className="hidden min-[640px]:inline">{presentation.actions.speak.label}</span></button>}
+                {snapshot.controls.canStop ? <button type="button" aria-label={presentation.actions.stop.label} className={PRIMARY_BUTTON_CLASSES} onClick={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.stopSpeaking(); }}><ListeningWaveform />{presentation.actions.stop.label}</button> : <button type="button" aria-label={presentation.actions.speak.label} className={`${PRIMARY_BUTTON_CLASSES} size-11 p-0 min-[640px]:h-auto min-[640px]:w-auto min-[640px]:px-4`} disabled={!snapshot.controls.canSpeak && !snapshot.controls.canRetry} onClick={(event) => { if (snapshot.controls.canRetry) retryAttempt(event); else { noteTerminalFocusIntent(event); sessionRef.current?.requestSpeak(); } }}><Mic aria-hidden="true" /><span className="hidden min-[640px]:inline">{presentation.actions.speak.label}</span></button>}
               </div>
 
               {presentation.announcement ? <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{presentation.announcement}</p> : null}
               {showFeedback ? <FeedbackPanel announce={!terminalFocusPending} headingRef={feedbackHeadingRef} presentation={presentation} showPermissionHelp={canShowSpeakingPermissionHelp(snapshot.issue)} onPermissionHelp={() => setPermissionHelpOpen(true)} /> : null}
 
-              {snapshot.controls.canRetry ? <button type="button" className={`${QUIET_BUTTON_CLASSES} mt-2`} onClick={retryAttempt}><RotateCcw aria-hidden="true" />{presentation.actions.retry.label}</button> : null}
-
               {presentation.disclosure ? <Disclosure presentation={presentation} controls={snapshot.controls} onConfirm={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.confirmDisclosureAndStart(); }} onPrivacy={() => setPrivacyOpen(true)} sessionRef={sessionRef} /> : null}
-              {!presentation.disclosure ? <button type="button" className="mt-2 min-h-11 border-0 bg-transparent px-3 text-sm font-bold text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" onClick={() => setPrivacyOpen(true)}>Quyền riêng tư</button> : null}
             </div>
 
           </section>
@@ -259,7 +272,7 @@ function FeedbackPanel({ announce, headingRef, onPermissionHelp, presentation, s
   return (
     <>
       {announce && presentation.liveRegion ? <p className="sr-only" role={presentation.liveRegion} aria-live={presentation.liveRegion === "status" ? "polite" : undefined} aria-atomic="true">{announcement}</p> : null}
-      <section className={`mt-5 w-full rounded-2xl border px-4 py-3 text-left ${style.classes}`} aria-labelledby="speaking-feedback-title">
+      <section className={`mt-5 w-full px-1 py-2 text-left ${style.classes}`} aria-labelledby="speaking-feedback-title">
         <div className="flex items-start gap-3">
           <StatusIcon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
@@ -270,7 +283,7 @@ function FeedbackPanel({ announce, headingRef, onPermissionHelp, presentation, s
           </div>
         </div>
       </section>
-      {presentation.transcript ? <p className="mb-0 mt-2 w-full rounded-xl bg-slate-50 px-3 py-2 text-left text-sm text-slate-600"><span className="font-bold">{presentation.transcript.label}:</span> <span>{presentation.transcript.value}</span></p> : null}
+      {presentation.transcript ? <p className="mb-0 mt-1 w-full px-1 text-left text-sm text-slate-500"><span className="font-bold">{presentation.transcript.label}:</span> <span>{presentation.transcript.value}</span></p> : null}
     </>
   );
 }

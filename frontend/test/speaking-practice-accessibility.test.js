@@ -61,7 +61,7 @@ test("native controls preserve keyboard, disabled and reduced-motion behavior", 
   assert.match(page, /NAVIGATION_BUTTON_CLASSES = "[^"]*focus-visible:ring-2[^"]*disabled:cursor-not-allowed[^"]*motion-reduce:transform-none/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canChangeTarget \|\| snapshot\.targetIndex === 0\}/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canListen\}/);
-  assert.match(page, /disabled=\{!snapshot\.controls\.canSpeak\}/);
+  assert.match(page, /disabled=\{!snapshot\.controls\.canSpeak && !snapshot\.controls\.canRetry\}/);
   assert.doesNotMatch(page, /<details|<summary/);
   assert.match(helpModal, /role="dialog"[\s\S]*aria-modal="true"/);
   assert.match(helpModal, /role="group" aria-label="Chọn thiết bị và trình duyệt"/);
@@ -74,6 +74,9 @@ test("native controls preserve keyboard, disabled and reduced-motion behavior", 
   assert.match(page, /aria-label=\{presentation\.actions\.listen\.label\}/);
   assert.match(page, /aria-label=\{presentation\.actions\.speak\.label\}/);
   assert.match(page, /aria-label=\{presentation\.actions\.stop\.label\}/);
+  assert.match(page, /transition-colors duration-150 motion-reduce:transition-none/);
+  assert.match(page, /data-speaking-state=/);
+  assert.match(page, /<FocusModeHeader actions=\{privacyAction\}/);
 });
 
 test("progress and navigation expose accessible names without color-only meaning", () => {
