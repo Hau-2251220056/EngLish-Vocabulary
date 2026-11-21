@@ -515,7 +515,9 @@ test("Focus Mode UI uses controller controls, mapper copy and approved compact v
   assert.match(page, /bg-slate-200[\s\S]*h-full rounded-full bg-\[#63A0E0\]/);
   assert.match(page, /max-w-\[38rem\]/);
   assert.match(page, /Giọng nói của bạn có thể được xử lý bởi dịch vụ của trình duyệt/);
-  assert.match(page, /<details[\s\S]*Tìm hiểu thêm[\s\S]*presentation\.disclosure\.paragraphs/);
+  assert.doesNotMatch(page, /<details|Tìm hiểu thêm/);
+  assert.match(page, /Quyền riêng tư/);
+  assert.match(page, /SpeakingPrivacyModal/);
   assert.match(page, />Tiếp tục<\/button>/);
   assert.match(page, /speaking-practice-page min-h-full/);
   assert.doesNotMatch(page, /speaking-practice-page h-full min-h-0/);
@@ -535,6 +537,9 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   assert.match(page, /negative:[\s\S]*#F4A8A8[\s\S]*#FEF2F2[\s\S]*#991B1B/);
   assert.match(page, /caution:[\s\S]*#FCD34D[\s\S]*#FFFBEB[\s\S]*#92400E/);
   assert.match(page, /presentation\.issue\.message[\s\S]*presentation\.issue\.recovery/);
+  assert.match(page, /Xem hướng dẫn/);
+  assert.match(page, /canShowSpeakingPermissionHelp/);
+  assert.match(page, /SpeakingPermissionHelpModal/);
   assert.match(page, /presentation\.transcript\.label[\s\S]*presentation\.transcript\.value/);
   assert.match(page, /hasOutcome = presentation\.tone !== "neutral"[\s\S]*presentation\.issue \? FEEDBACK_STYLES\.issue/);
   assert.match(page, /!hasOutcome && presentation\.issue[\s\S]*presentation\.issue\.recovery/);
@@ -546,6 +551,22 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   for (const pictogram of ["✅", "❌", "⚠️", "🔊", "🎤"]) {
     assert.equal(page.includes(pictogram), false, pictogram);
   }
+});
+
+test("permission and privacy dialogs provide bounded guidance and accessible modal behavior", () => {
+  const modal = source("src/pronunciation/speaking-practice-help-modal.jsx");
+  for (const text of ["iPhone/iPad · Chrome", "iPhone/iPad · Safari", "Android", "Máy tính", "Micrô", "Nhận dạng Lời nói", "Quyền riêng tư & Bảo mật"]) {
+    assert.equal(modal.includes(text), true, text);
+  }
+  assert.match(modal, /role="dialog"/);
+  assert.match(modal, /aria-modal="true"/);
+  assert.match(modal, /role="group"[\s\S]*aria-pressed=\{platform === key\}/);
+  assert.doesNotMatch(modal, /role="tablist"|role="tab"|role="tabpanel"/);
+  assert.match(modal, /event\.key === "Escape"/);
+  assert.match(modal, /event\.key !== "Tab"/);
+  assert.match(modal, /returnFocus.*focus/);
+  assert.match(modal, /max-h-\[calc\(100dvh-1\.5rem\)\].*overflow-y-auto/);
+  assert.doesNotMatch(modal, /indigo-|purple-/);
 });
 
 test("Speaking progress and navigation stay separate from the compact vocabulary card", () => {

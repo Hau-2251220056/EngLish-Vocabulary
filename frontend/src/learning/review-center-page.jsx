@@ -1,7 +1,9 @@
 import {
   ArrowRight,
+  BookOpen,
   BookOpenCheck,
-  CircleCheckBig,
+  Clock3,
+  Compass,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -255,30 +257,69 @@ function DueSetCard({ set }) {
 }
 
 function EmptyState({ focusTargetRef, hasReviewData }) {
+  const presentation = hasReviewData === false
+    ? {
+      state: "new",
+      Icon: BookOpen,
+      section: "border-sky-200 bg-sky-50",
+      icon: "text-sky-600",
+      heading: "text-sky-950 focus-visible:ring-sky-300",
+      copy: "text-sky-900",
+      title: "Bạn chưa có dữ liệu ôn tập",
+      description: "Hãy bắt đầu học một bộ từ. Các từ đến hạn sẽ xuất hiện tại đây sau khi có tiến độ học.",
+      action: "Bắt đầu học",
+      actionClasses: ACTION_CLASSES,
+    }
+    : hasReviewData === true
+      ? {
+        state: "known",
+        Icon: Clock3,
+        section: "border-emerald-200 bg-emerald-50",
+        icon: "text-emerald-600",
+        heading: "text-emerald-950 focus-visible:ring-emerald-300",
+        copy: "text-emerald-900",
+        title: "Hiện không có từ đến hạn",
+        description: "Bạn có thể tiếp tục học hoặc quay lại khi có từ đến hạn ôn tập.",
+        action: "Tiếp tục học",
+        actionClasses: SECONDARY_ACTION_CLASSES,
+      }
+      : {
+        state: "legacy",
+        Icon: Compass,
+        section: "border-cyan-200 bg-cyan-50",
+        icon: "text-cyan-700",
+        heading: "text-cyan-950 focus-visible:ring-cyan-300",
+        copy: "text-cyan-900",
+        title: "Hiện không có từ đến hạn",
+        description: "Hãy khám phá các bộ từ và quay lại khi có từ đến hạn ôn tập.",
+        action: "Khám phá bộ từ",
+        actionClasses: SECONDARY_ACTION_CLASSES,
+      };
+  const EmptyIcon = presentation.Icon;
   return (
     <section
-      className="rounded-3xl border border-emerald-200 bg-emerald-50 p-[clamp(1.5rem,4vw,2.5rem)] text-center"
+      className={`rounded-3xl border p-[clamp(1.5rem,4vw,2.5rem)] text-center ${presentation.section}`}
       aria-labelledby="review-empty-title"
+      data-review-empty-state={presentation.state}
     >
-      <CircleCheckBig
-        className="mx-auto size-12 text-emerald-600"
+      <EmptyIcon
+        className={`mx-auto size-12 ${presentation.icon}`}
+        data-testid="review-empty-icon"
         aria-hidden="true"
       />
       <h2
-        className="mb-0 mt-4 rounded-sm text-2xl text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+        className={`mb-0 mt-4 rounded-sm text-2xl focus-visible:outline-none focus-visible:ring-2 ${presentation.heading}`}
         id="review-empty-title"
         ref={focusTargetRef}
         tabIndex={-1}
       >
-        {hasReviewData === false ? "Bạn chưa có dữ liệu ôn tập" : "Hiện không có từ đến hạn"}
+        {presentation.title}
       </h2>
-      <p className="mb-5 mt-2 text-emerald-900">
-        {hasReviewData === false
-          ? "Hãy bắt đầu học một bộ từ. Các từ đến hạn sẽ xuất hiện tại đây sau khi có tiến độ học."
-          : "Tiếp tục học và quay lại khi có từ đến hạn ôn tập."}
+      <p className={`mb-5 mt-2 ${presentation.copy}`}>
+        {presentation.description}
       </p>
-      <Link className={SECONDARY_ACTION_CLASSES} to="/topics">
-        Tiếp tục học
+      <Link className={presentation.actionClasses} to="/topics">
+        {presentation.action}
       </Link>
     </section>
   );

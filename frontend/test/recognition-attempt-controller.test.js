@@ -243,15 +243,45 @@ test("explicit stop followed by end settles as an empty stopped attempt", () => 
   assert.equal(timers.count(), 0);
 });
 
-test("no-speech after explicit stop remains a genuine inconclusive error", () => {
+test("stop-induced no-speech or aborted errors wait for end and settle neutral", () => {
+  for (const issue of ["NO_SPEECH", "ABORTED"]) {
+  const { controller, adapters } = createHarness();
+  startDefault(controller);
+  adapters[0].emit({ type: "start" });
+  controller.stop();
+    adapters[0].emit({ type: "error", issue });
+    assert.equal(controller.getSnapshot().phase, "FINALIZING");
+    adapters[0].emit({ type: "end" });
+
+    assert.equal(controller.getSnapshot().phase, "IDLE");
+    assert.equal(controller.getSnapshot().issue, null);
+    assert.equal(controller.getSnapshot().result, null);
+  }
+});
+
+test("real permission and service errors remain visible after explicit stop", () => {
+  for (const issue of ["PERMISSION_DENIED", "SERVICE_NOT_ALLOWED", "NETWORK_ERROR"]) {
+    const { controller, adapters } = createHarness();
+    startDefault(controller);
+    adapters[0].emit({ type: "start" });
+    controller.stop();
+    adapters[0].emit({ type: "error", issue });
+    adapters[0].emit({ type: "end" });
+    assert.equal(controller.getSnapshot().phase, "INCONCLUSIVE");
+    assert.equal(controller.getSnapshot().issue, issue);
+  }
+});
+
+test("delayed final result wins after a stop-induced no-speech event", () => {
   const { controller, adapters } = createHarness();
   startDefault(controller);
   adapters[0].emit({ type: "start" });
   controller.stop();
   adapters[0].emit({ type: "error", issue: "NO_SPEECH" });
-
-  assert.equal(controller.getSnapshot().phase, "INCONCLUSIVE");
-  assert.equal(controller.getSnapshot().issue, "NO_SPEECH");
+  adapters[0].emit(finalResult([{ transcript: "teacher" }]));
+  adapters[0].emit({ type: "end" });
+  assert.equal(controller.getSnapshot().phase, "RESULT");
+  assert.equal(controller.getSnapshot().result.classification, "PRIMARY_MATCH");
 });
 
 test("permission, network, and no-speech errors settle as stable inconclusive issues", () => {

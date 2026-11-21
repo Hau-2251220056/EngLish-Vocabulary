@@ -43,6 +43,13 @@ test("Review Center has truthful loading, recoverable error and zero-due states"
   assert.match(source, /Bạn chưa có dữ liệu ôn tập/);
   assert.match(source, /Hiện không có từ đến hạn/);
   assert.match(source, /summary\.has_review_data/);
+  assert.match(source, /state: "new"[\s\S]*Icon: BookOpen[\s\S]*border-sky-200 bg-sky-50/);
+  assert.match(source, /state: "known"[\s\S]*Icon: Clock3[\s\S]*border-emerald-200 bg-emerald-50/);
+  assert.match(source, /state: "legacy"[\s\S]*Icon: Compass[\s\S]*border-cyan-200 bg-cyan-50/);
+  assert.match(source, /action: "Bắt đầu học"/);
+  assert.match(source, /action: "Tiếp tục học"/);
+  assert.match(source, /action: "Khám phá bộ từ"/);
+  assert.doesNotMatch(source, /indigo-|purple-/);
   assert.match(source, /to="\/topics"/);
   assert.match(source, /state\.status === "loading"/);
   assert.match(source, /state\.status === "error"/);

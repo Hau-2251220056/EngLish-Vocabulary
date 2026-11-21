@@ -182,8 +182,19 @@ test("permission failure is localized and Retry starts only from an explicit act
   await beginRecognition(page);
   await emitRecognitionError(page, "not-allowed");
 
-  await expect(page.getByRole("heading", { name: "Không thể sử dụng microphone" })).toBeVisible();
-  await expect(page.getByText("Hãy cho phép ELVocab truy cập microphone trong cài đặt trình duyệt rồi thử lại.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Micro đang bị chặn" })).toBeVisible();
+  const guidanceTrigger = page.getByRole("button", { name: "Xem hướng dẫn" });
+  await expect(guidanceTrigger).toBeVisible();
+  await guidanceTrigger.click();
+  const dialog = page.getByRole("dialog", { name: "Hướng dẫn quyền microphone" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Máy tính" })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("button", { name: "iPhone/iPad · Chrome" }).click();
+  await expect(dialog.getByRole("button", { name: "iPhone/iPad · Chrome" })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByText(/microphone được cho phép vẫn có thể chưa đủ/i)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(guidanceTrigger).toBeFocused();
   await expect(page.getByRole("button", { name: "Nghe từ mẫu" })).toBeEnabled();
   expect(await page.evaluate(() => window.__speakingNative.recognitionStarts)).toBe(1);
   await page.getByRole("button", { name: "Thử nói lại" }).click();
@@ -197,11 +208,48 @@ test("unsupported recognition keeps reference playback and navigation available"
 
   await expect(page.getByRole("heading", { name: "Trình duyệt chưa hỗ trợ nhận diện giọng nói" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Nói" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Xem hướng dẫn" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Nghe" })).toBeEnabled();
   await page.getByRole("button", { name: "Nghe" }).click();
   await expect.poll(() => page.evaluate(() => window.__speakingNative.audioPlays)).toBe(1);
   await page.getByRole("button", { name: "Từ tiếp theo" }).click();
   await expect(page.getByRole("heading", { name: "travel" })).toBeVisible();
+});
+
+test("route transition while permission help is open unmounts the modal safely", async ({ page }) => {
+  await installSpeakingBrowserMocks(page, { includePublicDetail: true });
+  await page.goto(`/vocabulary-sets/${setId}`);
+  await page.getByRole("link", { name: /Luyện nói/ }).click();
+  await beginRecognition(page);
+  await emitRecognitionError(page, "not-allowed");
+  await page.getByRole("button", { name: "Xem hướng dẫn" }).click();
+  await expect(page.getByRole("dialog", { name: "Hướng dẫn quyền microphone" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${setId}$`));
+  await expect(page.getByRole("dialog", { name: "Hướng dẫn quyền microphone" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Browser Speaking Set" })).toBeVisible();
+});
+
+test("mobile focus-route Back and Forward preserve the nested learning scroll position", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSpeakingBrowserMocks(page, { includePublicDetail: true });
+  await page.goto(`/vocabulary-sets/${setId}`);
+  await page.getByRole("link", { name: /Luyện nói/ }).click();
+  await expect(page.getByRole("heading", { name: "book" })).toBeVisible();
+  await page.addStyleTag({ content: ".learning-focus-shell::after { content: ''; display: block; height: 1800px; }" });
+  const owner = page.locator(".learning-focus-shell");
+  await owner.evaluate((shell) => {
+    shell.scrollTop = 340;
+    shell.dispatchEvent(new Event("scroll"));
+  });
+  await expect.poll(() => owner.evaluate((shell) => shell.scrollTop)).toBe(340);
+
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/vocabulary-sets/${setId}$`));
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`/pronunciation/vocabulary-sets/${setId}$`));
+  await expect.poll(() => page.locator(".learning-focus-shell").evaluate((shell) => shell.scrollTop)).toBe(340);
 });
 
 test("Learning failure exposes retry and keeps the request read-only", async ({ page }) => {
@@ -249,6 +297,27 @@ test("startup and finalization watchdogs settle at their approved boundaries", a
   await expect(page.getByText("Đã dừng lượt nói.", { exact: true })).toBeAttached({ timeout: 5_500 });
   await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Nói" })).toBeEnabled();
+});
+
+test("intentional empty stop ignores stop-induced errors while natural no-speech remains visible", async ({ page }) => {
+  await installSpeakingBrowserMocks(page);
+  await page.goto(`/pronunciation/vocabulary-sets/${setId}`);
+  await beginRecognition(page);
+  await page.getByRole("button", { name: "Dừng nói" }).click();
+  await page.evaluate(() => {
+    const recognition = window.__speakingRecognitions.at(-1);
+    recognition?.onerror?.({ error: "no-speech" });
+    recognition?.onend?.();
+  });
+  await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Nói" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Nói" }).click();
+  await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
+  await emitRecognitionError(page, "no-speech");
+  await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toBeVisible();
+  await page.getByRole("button", { name: "Thử nói lại" }).click();
+  await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
 });
 
 test("Guest and ADMIN cannot enter the USER-only Speaking Practice route", async ({ browser }) => {

@@ -50,8 +50,8 @@ const COMPLETED_COPY = copy(
 );
 
 const PERMISSION_DENIED_COPY = copy(
-  "Không thể sử dụng microphone",
-  "Hãy cho phép ELVocab truy cập microphone trong cài đặt trình duyệt rồi thử lại.",
+  "Micro đang bị chặn",
+  "Bạn có thể xem hướng dẫn quyền cho thiết bị đang dùng rồi thử lại.",
   "alert",
 );
 
@@ -91,8 +91,8 @@ const OUTCOME_COPY = Object.freeze({
 const ISSUE_COPY = Object.freeze({
   UNSUPPORTED: issue("Trình duyệt chưa hỗ trợ nhận diện giọng nói.", "Hãy dùng trình duyệt có hỗ trợ Web Speech; bạn vẫn có thể nghe từ mẫu và chuyển từ."),
   INSECURE_CONTEXT: issue("Micro chỉ khả dụng trong ngữ cảnh an toàn.", "Hãy mở trang qua HTTPS hoặc localhost."),
-  PERMISSION_DENIED: issue("Quyền sử dụng micro đã bị từ chối.", "Cho phép micro trong cài đặt trình duyệt rồi thử lại."),
-  SERVICE_NOT_ALLOWED: issue("Dịch vụ nhận diện của trình duyệt không cho phép yêu cầu này; quyền microphone vẫn có thể đang bật.", "Trên iPhone/iPad, hãy thử mở ELVocab bằng Safari. Nếu vẫn không hoạt động, hãy dùng một trình duyệt hoặc thiết bị khác có hỗ trợ Web Speech."),
+  PERMISSION_DENIED: issue("Trình duyệt đang chặn microphone.", "Mở hướng dẫn quyền rồi thử lại."),
+  SERVICE_NOT_ALLOWED: issue("Dịch vụ nhận diện chưa cho phép lượt nói này.", "Quyền microphone vẫn có thể đang bật; hãy xem hướng dẫn hoặc thử trình duyệt khác."),
   NO_SPEECH: issue("Trình duyệt chưa nghe thấy lời nói.", "Kiểm tra micro, nói gần micro hơn rồi thử lại."),
   AUDIO_CAPTURE_FAILED: issue("Trình duyệt không thể thu âm từ micro.", "Kiểm tra thiết bị đầu vào và quyền micro rồi thử lại."),
   NETWORK_ERROR: issue("Dịch vụ nhận diện của trình duyệt gặp lỗi mạng.", "Kiểm tra kết nối rồi thử lại. Một số trình duyệt có thể xử lý âm thanh từ xa."),
@@ -182,6 +182,10 @@ export function getRecognitionOutcomePresentation(result) {
 
 export function getSpeakingPracticeIssuePresentation(issueCode) {
   return ISSUE_COPY[issueCode] ?? UNKNOWN_ISSUE;
+}
+
+export function canShowSpeakingPermissionHelp(issueCode) {
+  return ["PERMISSION_DENIED", "SERVICE_NOT_ALLOWED", "UNSUPPORTED", "AUDIO_CAPTURE_FAILED"].includes(issueCode);
 }
 
 function transcriptPresentation(result) {

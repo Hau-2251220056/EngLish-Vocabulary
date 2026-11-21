@@ -417,6 +417,134 @@ for (const viewport of viewports) {
   });
 }
 
+for (const viewport of [viewports[0], viewports[2]]) {
+  test(`${viewport.name} route navigation resets PUSH and restores POP on the relevant scroll owner`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+    await page.route("**/api/learning/review/center", (route) => route.fulfill({
+      status: 200,
+      json: { success: true, data: {
+        evaluated_at: "2026-11-21T00:00:00.000Z", due_count: 0, has_due_items: false,
+        has_review_data: true, nearest_future_review_at: null, sets: [],
+      } },
+    }));
+    await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+    await page.goto("/review");
+    await page.addStyleTag({ content: viewport.name === "desktop"
+      ? "main.authenticated-main::after { content: ''; display: block; height: 1800px; }"
+      : "body::after { content: ''; display: block; height: 1800px; }" });
+
+    const owner = viewport.name === "desktop" ? page.locator("main.authenticated-main") : page.locator("html");
+    await owner.evaluate((element) => {
+      element.scrollTop = 420;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect.poll(() => owner.evaluate((element) => element.scrollTop)).toBe(420);
+
+    if (viewport.name === "mobile") {
+      await page.locator(".authenticated-drawer-toggle").click();
+      await page.locator('aside.authenticated-sidebar a[href="/topics"]').click();
+    } else {
+      await page.locator('header.authenticated-header a[href="/topics"]').click();
+    }
+    await expect(page).toHaveURL(/\/topics$/);
+    await expect.poll(() => owner.evaluate((element) => element.scrollTop)).toBe(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/review$/);
+    await expect.poll(() => owner.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  });
+}
+
+test("same-route PUSH and hash navigation do not force a desktop scroll reset", async ({ page }) => {
+  await page.setViewportSize(viewports[2]);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: {
+      evaluated_at: "2026-11-21T00:00:00.000Z", due_count: 0, has_due_items: false,
+      has_review_data: true, nearest_future_review_at: null, sets: [],
+    } },
+  }));
+  await page.goto("/review");
+  await page.addStyleTag({ content: "main.authenticated-main > section { min-height: 1800px !important; }" });
+  const owner = page.locator("main.authenticated-main");
+  await owner.evaluate((element) => { element.scrollTop = 360; });
+  await page.locator('aside.authenticated-sidebar a[href="/review"]').click();
+  await expect.poll(() => owner.evaluate((element) => element.scrollTop)).toBe(360);
+
+  await page.evaluate(() => {
+    window.history.pushState(window.history.state, "", "/review#review-empty-title");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page).toHaveURL(/\/review#review-empty-title$/);
+  await expect.poll(() => owner.evaluate((element) => element.scrollTop)).not.toBe(0);
+});
+
+test("mobile public navigation to authentication resets document scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installAuthApiMock(page);
+  await page.goto("/");
+  await page.addStyleTag({ content: "body::after { content: ''; display: block; height: 1800px; }" });
+  await page.evaluate(() => { document.scrollingElement.scrollTop = 420; });
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollTop)).toBe(420);
+  await page.getByRole("button", { name: "Mở menu" }).click();
+  await page.getByRole("navigation", { name: "Điều hướng trang giới thiệu trên di động" }).getByRole("link", { name: "Đăng nhập" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
+});
+
+test("desktop ADMIN transition resets the nested authenticated main", async ({ page }) => {
+  await page.setViewportSize(viewports[2]);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await page.route("**/api/admin/**", (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+  await page.goto("/admin/topics");
+  const owner = page.locator("main.authenticated-main");
+  await owner.evaluate((main) => {
+    const probe = document.createElement("div");
+    probe.style.height = "1800px";
+    main.append(probe);
+    main.scrollTop = 420;
+  });
+  await expect.poll(() => owner.evaluate((main) => main.scrollTop)).toBe(420);
+  await page.locator('aside.authenticated-sidebar a[href="/admin/vocabulary"]').click();
+  await expect(page).toHaveURL(/\/admin\/vocabulary$/);
+  await expect.poll(() => owner.evaluate((main) => main.scrollTop)).toBe(0);
+});
+
+test("mobile Not Found return resets the document scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installAuthApiMock(page);
+  await page.goto("/missing-route-for-scroll-review");
+  await page.addStyleTag({ content: "body::after { content: ''; display: block; height: 1800px; }" });
+  await page.evaluate(() => { document.scrollingElement.scrollTop = 360; });
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollTop)).toBe(360);
+  await page.getByRole("link", { name: "Về trang chủ" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
+});
+
+test("desktop same-path search update preserves nested scroll", async ({ page }) => {
+  await page.setViewportSize(viewports[2]);
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "topic-scroll", name: "Scroll Topic" }] } }));
+  await page.route("**/api/topics/topic-scroll/vocabulary-sets", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "set-scroll", name: "Scroll Set", description: "Search navigation", cefr_level: "A1", cover_image_url: null, item_count: 1 }] } }));
+  await page.goto("/topics");
+  await expect(page.getByRole("radio", { name: "Scroll Topic" })).toBeVisible();
+  const owner = page.locator("main.authenticated-main");
+  await owner.evaluate((main) => {
+    const probe = document.createElement("div");
+    probe.style.height = "1800px";
+    main.append(probe);
+    main.scrollTop = 380;
+    main.dispatchEvent(new Event("scroll"));
+  });
+  await expect.poll(() => owner.evaluate((main) => main.scrollTop)).toBe(380);
+  await page.getByRole("radio", { name: "Scroll Topic" }).check();
+  await expect(page).toHaveURL(/\/topics\?topic=topic-scroll$/);
+  await expect.poll(() => owner.evaluate((main) => main.scrollTop)).toBe(380);
+});
+
 async function expectNoHorizontalOverflow(page) {
   await expect.poll(() => page.evaluate(() => ({
     body: document.body.scrollWidth - document.body.clientWidth,

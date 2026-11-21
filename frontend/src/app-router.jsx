@@ -12,6 +12,7 @@ import { QuizSessionStorageObserver } from "./quiz/quiz-session-storage-observer
 import { SpeakingSessionStorageObserver } from "./pronunciation/speaking-session-storage-observer.jsx";
 import { useAuthentication } from "./auth/use-authentication.js";
 import { AuthenticationLoadingState } from "./auth/ui/authentication-loading-state.jsx";
+import { RouteScrollManager } from "./components/route-scroll-manager.js";
 
 const AuthPage = lazyRoute(() => import("./auth/ui/auth-page.jsx"), "AuthPage");
 const AuthenticatedShell = lazyRoute(
@@ -78,6 +79,7 @@ const NotFoundPage = lazyRoute(() => import("./not-found/not-found-page.jsx"), "
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <RouteScrollManager />
       <LearningSessionStorageObserver />
       <QuizSessionStorageObserver />
       <SpeakingSessionStorageObserver />

@@ -138,6 +138,7 @@ export function createRecognitionAttemptController({
     }
 
     if (event.type === "error") {
+      if (attempt.stopRequested && ["NO_SPEECH", "ABORTED"].includes(event.issue)) return;
       settleInconclusive(attempt, event.issue || "RECOGNITION_ERROR");
       return;
     }
@@ -195,6 +196,7 @@ export function createRecognitionAttemptController({
       issue: null,
       startupTimer: null,
       finalizationTimer: null,
+      stopRequested: false,
       adapter: null,
     };
 
@@ -230,6 +232,7 @@ export function createRecognitionAttemptController({
       return operationFailure();
     }
 
+    attempt.stopRequested = true;
     attempt.phase = RECOGNITION_ATTEMPT_PHASES.FINALIZING;
     publish(attempt);
     const stopResult = attempt.adapter.stop();

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const page = source("src/pronunciation/speaking-practice-page.jsx");
+const helpModal = source("src/pronunciation/speaking-practice-help-modal.jsx");
 const shell = source("src/auth/ui/authenticated-shell.jsx");
 
 test("long target content and compact states cannot force horizontal page overflow", () => {
@@ -61,7 +62,13 @@ test("native controls preserve keyboard, disabled and reduced-motion behavior", 
   assert.match(page, /disabled=\{!snapshot\.controls\.canChangeTarget \|\| snapshot\.targetIndex === 0\}/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canListen\}/);
   assert.match(page, /disabled=\{!snapshot\.controls\.canSpeak\}/);
-  assert.match(page, /<details[\s\S]*<summary[^>]*focus-visible:ring-2/);
+  assert.doesNotMatch(page, /<details|<summary/);
+  assert.match(helpModal, /role="dialog"[\s\S]*aria-modal="true"/);
+  assert.match(helpModal, /role="group" aria-label="Chọn thiết bị và trình duyệt"/);
+  assert.match(helpModal, /aria-pressed=\{platform === key\}/);
+  assert.doesNotMatch(helpModal, /role="tablist"|role="tab"|role="tabpanel"/);
+  assert.match(helpModal, /event\.key === "Escape"[\s\S]*event\.key !== "Tab"/);
+  assert.match(helpModal, /focus-visible:ring-2/);
   assert.match(page, /aria-hidden="true" data-testid="listening-waveform"/);
   assert.match(page, /animate-\[pulse_[^\]]+\][\s\S]*motion-reduce:animate-none/);
   assert.match(page, /aria-label=\{presentation\.actions\.listen\.label\}/);

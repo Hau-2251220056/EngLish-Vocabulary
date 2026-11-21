@@ -4,9 +4,10 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { FocusModeHeader } from "../components/focus-mode-header.jsx";
-import { getSpeakingPracticePresentation } from "./speaking-practice-presentation.js";
+import { canShowSpeakingPermissionHelp, getSpeakingPracticePresentation, SPEAKING_PRACTICE_DISCLOSURE } from "./speaking-practice-presentation.js";
 import { SPEAKING_PRACTICE_PHASES } from "./speaking-practice-state.js";
 import { bindSpeakingPracticeVisibility, createSpeakingPracticePageSession, resolveSpeakingPracticeReturnTo } from "./speaking-practice-page-session.js";
+import { SpeakingPermissionHelpModal, SpeakingPrivacyModal } from "./speaking-practice-help-modal.jsx";
 
 const PRIMARY_BUTTON_CLASSES = "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border-0 bg-[#63A0E0] px-4 font-bold text-white shadow-[0_6px_16px_rgb(99_160_224/24%)] transition-[transform,background-color,box-shadow] duration-150 hover:not-disabled:-translate-y-px hover:not-disabled:bg-[#4f8fce] hover:not-disabled:shadow-[0_8px_20px_rgb(99_160_224/30%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none";
 const SECONDARY_BUTTON_CLASSES = "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 font-bold text-slate-700 transition-[border-color,background-color,color,transform] duration-150 hover:not-disabled:-translate-y-px hover:not-disabled:border-[#83B4E8] hover:not-disabled:bg-[#f2f8fd] hover:not-disabled:text-[#356faa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none";
@@ -43,6 +44,8 @@ export function SpeakingPracticePage() {
   const [snapshot, setSnapshot] = useState(null);
   const [retryToken, setRetryToken] = useState(0);
   const [terminalFocusIntent, setTerminalFocusIntent] = useState(false);
+  const [permissionHelpOpen, setPermissionHelpOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const returnTo = resolveSpeakingPracticeReturnTo(setId, location.state);
   const userId = user?.id ?? null;
 
@@ -191,11 +194,12 @@ export function SpeakingPracticePage() {
               </div>
 
               {presentation.announcement ? <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{presentation.announcement}</p> : null}
-              {showFeedback ? <FeedbackPanel announce={!terminalFocusPending} headingRef={feedbackHeadingRef} presentation={presentation} /> : null}
+              {showFeedback ? <FeedbackPanel announce={!terminalFocusPending} headingRef={feedbackHeadingRef} presentation={presentation} showPermissionHelp={canShowSpeakingPermissionHelp(snapshot.issue)} onPermissionHelp={() => setPermissionHelpOpen(true)} /> : null}
 
               {snapshot.controls.canRetry ? <button type="button" className={`${QUIET_BUTTON_CLASSES} mt-2`} onClick={retryAttempt}><RotateCcw aria-hidden="true" />{presentation.actions.retry.label}</button> : null}
 
-              {presentation.disclosure ? <Disclosure presentation={presentation} controls={snapshot.controls} onConfirm={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.confirmDisclosureAndStart(); }} sessionRef={sessionRef} /> : null}
+              {presentation.disclosure ? <Disclosure presentation={presentation} controls={snapshot.controls} onConfirm={(event) => { noteTerminalFocusIntent(event); sessionRef.current?.confirmDisclosureAndStart(); }} onPrivacy={() => setPrivacyOpen(true)} sessionRef={sessionRef} /> : null}
+              {!presentation.disclosure ? <button type="button" className="mt-2 min-h-11 border-0 bg-transparent px-3 text-sm font-bold text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" onClick={() => setPrivacyOpen(true)}>Quyền riêng tư</button> : null}
             </div>
 
           </section>
@@ -206,6 +210,8 @@ export function SpeakingPracticePage() {
           </nav>
         </div>
       </div>
+      {permissionHelpOpen ? <SpeakingPermissionHelpModal onClose={() => setPermissionHelpOpen(false)} /> : null}
+      {privacyOpen ? <SpeakingPrivacyModal disclosure={SPEAKING_PRACTICE_DISCLOSURE} onClose={() => setPrivacyOpen(false)} /> : null}
     </main>
   );
 }
@@ -224,16 +230,13 @@ function ListeningWaveform() {
   );
 }
 
-function Disclosure({ controls, onConfirm, presentation, sessionRef }) {
+function Disclosure({ controls, onConfirm, onPrivacy, presentation, sessionRef }) {
   return (
-    <section className="mt-4 w-full rounded-2xl border border-[#b9d8f4] bg-[#f6faff] p-4 text-left" aria-labelledby="speaking-disclosure-title">
-      <h2 id="speaking-disclosure-title" className="m-0 text-base font-black text-slate-900">{presentation.disclosure.heading}</h2>
-      <p className="mb-0 mt-2 text-sm leading-relaxed text-slate-600">{BRIEF_DISCLOSURE}</p>
-      <details className="mt-3 text-sm text-slate-600">
-        <summary className="min-h-11 cursor-pointer content-center rounded-lg font-bold text-[#356faa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">Tìm hiểu thêm</summary>
-        <div className="mt-2 grid gap-2 leading-relaxed">{presentation.disclosure.paragraphs.map((paragraph) => <p className="m-0" key={paragraph}>{paragraph}</p>)}</div>
-      </details>
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
+    <section className="mt-3 w-full rounded-xl border border-sky-100 bg-sky-50/70 p-3 text-left" aria-labelledby="speaking-disclosure-title">
+      <h2 id="speaking-disclosure-title" className="sr-only">{presentation.disclosure.heading}</h2>
+      <p className="m-0 text-sm leading-relaxed text-slate-700">{BRIEF_DISCLOSURE}</p>
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-1">
+        <button type="button" className="min-h-11 border-0 bg-transparent px-3 text-sm font-bold text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" onClick={onPrivacy}>Thông tin</button>
         <button type="button" className={QUIET_BUTTON_CLASSES} disabled={!controls.canConfirmDisclosure} onClick={() => sessionRef.current?.deferDisclosure()}>{presentation.actions.deferDisclosure.label}</button>
         <button type="button" className={PRIMARY_BUTTON_CLASSES} disabled={!controls.canConfirmDisclosure} onClick={onConfirm}>Tiếp tục</button>
       </div>
@@ -241,7 +244,7 @@ function Disclosure({ controls, onConfirm, presentation, sessionRef }) {
   );
 }
 
-function FeedbackPanel({ announce, headingRef, presentation }) {
+function FeedbackPanel({ announce, headingRef, onPermissionHelp, presentation, showPermissionHelp }) {
   const hasOutcome = presentation.tone !== "neutral";
   const style = hasOutcome
     ? FEEDBACK_STYLES[presentation.tone] ?? FEEDBACK_STYLES.neutral
@@ -263,6 +266,7 @@ function FeedbackPanel({ announce, headingRef, presentation }) {
             <h2 ref={headingRef} tabIndex={-1} id="speaking-feedback-title" className="m-0 rounded-lg text-base font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/30">{presentation.heading}</h2>
             <p className="mb-0 mt-1 text-sm leading-relaxed">{supportingText}</p>
             {!hasOutcome && presentation.issue ? <p className="mb-0 mt-1 text-sm leading-relaxed">{presentation.issue.recovery}</p> : null}
+            {showPermissionHelp ? <button type="button" className="mt-1 min-h-11 border-0 bg-transparent px-0 text-sm font-bold text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" onClick={onPermissionHelp}>Xem hướng dẫn</button> : null}
           </div>
         </div>
       </section>

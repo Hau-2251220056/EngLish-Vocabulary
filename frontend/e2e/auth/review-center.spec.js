@@ -146,6 +146,35 @@ test("new USER sees a no-review-data state instead of a completed-review claim",
   await expect(page.getByText("Hiện không có từ đến hạn")).toHaveCount(0);
 });
 
+test("empty-state variants use distinct truthful visuals and actions", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  let summary = centerSummary({ due_count: 0, has_due_items: false, has_review_data: false, sets: [] });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: summary },
+  }));
+
+  await page.goto("/review");
+  const newState = page.locator('[data-review-empty-state="new"]');
+  await expect(newState).toHaveClass(/bg-sky-50/);
+  await expect(newState.locator(".lucide-book-open")).toBeVisible();
+  await expect(newState.locator('a[href="/topics"]')).toHaveText("Bắt đầu học");
+
+  summary = centerSummary({ due_count: 0, has_due_items: false, sets: [] });
+  await page.reload();
+  const knownState = page.locator('[data-review-empty-state="known"]');
+  await expect(knownState).toHaveClass(/bg-emerald-50/);
+  await expect(knownState.locator(".lucide-clock-3")).toBeVisible();
+  await expect(knownState.locator('a[href="/topics"]')).toHaveText("Tiếp tục học");
+
+  delete summary.has_review_data;
+  await page.reload();
+  const legacyState = page.locator('[data-review-empty-state="legacy"]');
+  await expect(legacyState).toHaveClass(/bg-cyan-50/);
+  await expect(legacyState.locator(".lucide-compass")).toBeVisible();
+  await expect(legacyState.locator('a[href="/topics"]')).toHaveText("Khám phá bộ từ");
+});
+
 test("keyboard retry returns focus to the new retry button after another failure", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   await page.route("**/api/learning/review/center", (route) => route.fulfill({

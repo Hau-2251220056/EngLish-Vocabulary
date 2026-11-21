@@ -3,6 +3,7 @@ import test from "node:test";
 import { RECOGNITION_OUTCOMES } from "../src/pronunciation/recognition-classifier.js";
 import { SPEAKING_PRACTICE_PHASES } from "../src/pronunciation/speaking-practice-state.js";
 import {
+  canShowSpeakingPermissionHelp,
   getRecognitionOutcomePresentation,
   getSpeakingPracticeIssuePresentation,
   getSpeakingPracticePresentation,
@@ -100,8 +101,8 @@ test("permission denial overrides the generic inconclusive outcome with explicit
     result: { classification: RECOGNITION_OUTCOMES.INCONCLUSIVE },
     controls: { canListen: true, canSpeak: true, canRetry: true },
   }));
-  assert.equal(presentation.heading, "Không thể sử dụng microphone");
-  assert.equal(presentation.description, "Hãy cho phép ELVocab truy cập microphone trong cài đặt trình duyệt rồi thử lại.");
+  assert.equal(presentation.heading, "Micro đang bị chặn");
+  assert.equal(presentation.description, "Bạn có thể xem hướng dẫn quyền cho thiết bị đang dùng rồi thử lại.");
   assert.equal(presentation.tone, "neutral");
   assert.equal(presentation.issue, null);
   assert.equal(presentation.actions.listen.enabled, true);
@@ -135,15 +136,23 @@ test("service and audio-capture failures retain distinct actionable recovery", (
   }
 });
 
-test("service rejection does not imply microphone denial and offers iOS browser recovery", () => {
+test("service rejection stays distinct from microphone denial", () => {
   const presentation = getSpeakingPracticePresentation(snapshot({
     phase: SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR,
     issue: "SERVICE_NOT_ALLOWED",
   }));
-  assert.match(presentation.issue.message, /quyền microphone vẫn có thể đang bật/i);
-  assert.match(presentation.issue.recovery, /Safari/);
-  assert.match(presentation.issue.recovery, /trình duyệt hoặc thiết bị khác/i);
+  assert.match(presentation.issue.recovery, /quyền microphone vẫn có thể đang bật/i);
+  assert.match(presentation.issue.recovery, /trình duyệt khác/i);
   assert.doesNotMatch(presentation.issue.recovery, /cho phép.*micro/i);
+});
+
+test("permission help is limited to permission, service and capability issues", () => {
+  for (const issue of ["PERMISSION_DENIED", "SERVICE_NOT_ALLOWED", "UNSUPPORTED", "AUDIO_CAPTURE_FAILED"]) {
+    assert.equal(canShowSpeakingPermissionHelp(issue), true, issue);
+  }
+  for (const issue of ["NO_SPEECH", "NETWORK_ERROR", "ABORTED", null]) {
+    assert.equal(canShowSpeakingPermissionHelp(issue), false, issue);
+  }
 });
 
 test("an explicitly stopped empty attempt has a private announcement without an assessment", () => {
