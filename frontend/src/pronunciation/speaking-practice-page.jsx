@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Headphones, Info, Mic, RotateCcw, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
@@ -17,19 +17,19 @@ const PREVIOUS_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-sky-200 bg-
 const NEXT_BUTTON_CLASSES = `${NAVIGATION_BUTTON_CLASSES} border-[#63A0E0] bg-[#63A0E0] text-white shadow-[0_5px_14px_rgb(99_160_224/22%)] hover:not-disabled:border-[#4f8fce] hover:not-disabled:bg-[#4f8fce] hover:not-disabled:shadow-[0_7px_18px_rgb(99_160_224/28%)] focus-visible:ring-[#a8cff4]`;
 const BRIEF_DISCLOSURE = "Giọng nói của bạn có thể được xử lý bởi dịch vụ của trình duyệt để nhận diện từ bạn nói.";
 const FEEDBACK_STYLES = Object.freeze({
-  positive: Object.freeze({ classes: "text-[#166534]", Icon: CheckCircle2 }),
-  negative: Object.freeze({ classes: "text-[#92400E]", Icon: AlertTriangle }),
-  caution: Object.freeze({ classes: "text-[#92400E]", Icon: AlertTriangle }),
+  positive: Object.freeze({ classes: "text-[#15803D]", Icon: CheckCircle2 }),
+  negative: Object.freeze({ classes: "text-[#BE123C]", Icon: XCircle }),
+  caution: Object.freeze({ classes: "text-[#A16207]", Icon: AlertTriangle }),
   issue: Object.freeze({ classes: "text-[#285f96]", Icon: CircleAlert }),
   neutral: Object.freeze({ classes: "text-slate-700", Icon: Info }),
 });
-const CARD_BORDER_CLASSES = Object.freeze({
-  listening: "border-sky-400",
-  positive: "border-[#9EDDB1]",
-  negative: "border-[#F2BD82]",
-  caution: "border-[#F2BD82]",
-  issue: "border-[#B9D8F4]",
-  neutral: "border-[#B9D8F4]",
+const CARD_STATE_STYLES = Object.freeze({
+  ready: "border-[#BAE6FD] bg-white shadow-[0_0_7px_rgb(125_211_252/18%),0_0_20px_rgb(125_211_252/12%),0_12px_25px_rgb(15_23_42/4.5%)]",
+  listening: "border-[#38BDF8] bg-[#F0F9FF] shadow-[0_0_9px_rgb(56_189_248/30%),0_0_28px_rgb(56_189_248/23%),0_12px_25px_rgb(15_23_42/4.5%)]",
+  positive: "border-[#4ADE80] bg-[#F0FDF7] shadow-[0_0_9px_rgb(34_197_94/30%),0_0_28px_rgb(34_197_94/23%),0_12px_25px_rgb(15_23_42/4.5%)]",
+  negative: "border-[#FB7185] bg-[#FFF2F3] shadow-[0_0_9px_rgb(244_63_94/30%),0_0_28px_rgb(244_63_94/23%),0_12px_25px_rgb(15_23_42/4.5%)]",
+  caution: "border-[#FBBF24] bg-[#FFFBEB] shadow-[0_0_9px_rgb(245_158_11/30%),0_0_28px_rgb(245_158_11/23%),0_12px_25px_rgb(15_23_42/4.5%)]",
+  issue: "border-[#B9D8F4] bg-[#F2F8FD] shadow-[0_0_8px_rgb(56_189_248/16%),0_0_22px_rgb(56_189_248/10%),0_12px_25px_rgb(15_23_42/4.5%)]",
 });
 const TERMINAL_PHASES = new Set([
   SPEAKING_PRACTICE_PHASES.RESULT,
@@ -175,13 +175,14 @@ export function SpeakingPracticePage() {
   ].includes(snapshot.phase)
     || presentation.tone !== "neutral"
     || presentation.issue !== null;
-  const cardBorderClass = snapshot.phase === SPEAKING_PRACTICE_PHASES.LISTENING
-    ? CARD_BORDER_CLASSES.listening
+  const cardState = snapshot.phase === SPEAKING_PRACTICE_PHASES.LISTENING
+    ? "listening"
     : presentation.tone !== "neutral"
-      ? CARD_BORDER_CLASSES[presentation.tone] ?? CARD_BORDER_CLASSES.neutral
-      : presentation.issue
-        ? CARD_BORDER_CLASSES.issue
-        : CARD_BORDER_CLASSES.neutral;
+      ? presentation.tone
+      : snapshot.issue && snapshot.issue !== "DISCLOSURE_REQUIRED"
+        ? "issue"
+        : "ready";
+  const cardStateClasses = CARD_STATE_STYLES[cardState] ?? CARD_STATE_STYLES.ready;
   const privacyAction = <button type="button" className="min-h-11 shrink-0 border-0 bg-transparent px-2 text-sm font-bold text-sky-700 transition-colors hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 motion-reduce:transition-none" onClick={() => setPrivacyOpen(true)}>Quyền riêng tư</button>;
 
   return (
@@ -198,7 +199,7 @@ export function SpeakingPracticePage() {
             </div>
           </section>
 
-          <section className={`flex min-h-[25rem] w-full min-w-0 flex-col rounded-3xl border-2 bg-white p-[clamp(1.15rem,3vw,2rem)] text-center shadow-[0_16px_36px_rgb(30_41_59/8%)] transition-colors duration-150 motion-reduce:transition-none max-[600px]:min-h-[22rem] ${cardBorderClass}`} aria-labelledby="speaking-practice-title" data-speaking-state={presentation.tone !== "neutral" ? presentation.tone : snapshot.phase.toLowerCase()}>
+          <section className={`flex min-h-[25rem] w-full min-w-0 flex-col rounded-3xl border-2 p-[clamp(1.15rem,3vw,2rem)] text-center transition-[background-color,border-color,box-shadow,color] duration-250 motion-reduce:transition-none motion-reduce:!duration-0 max-[600px]:min-h-[22rem] ${cardStateClasses}`} aria-labelledby="speaking-practice-title" data-speaking-state={cardState}>
             <div ref={speakingContextRef} className="flex flex-1 flex-col items-center justify-center">
               <span className="rounded-full bg-[#edf5fc] px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] text-[#3979b7]">Từ cần luyện</span>
               <h1 ref={targetHeadingRef} tabIndex={-1} id="speaking-practice-title" className="mb-0 mt-4 max-w-full rounded-lg [overflow-wrap:anywhere] text-[clamp(2.5rem,9vw,4.5rem)] font-black leading-none text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8cff4]">{snapshot.target?.word}</h1>

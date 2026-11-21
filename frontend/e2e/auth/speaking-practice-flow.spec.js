@@ -42,6 +42,7 @@ for (const viewport of [
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
+    await expectCardPalette(page, "ready", CARD_PALETTES.ready);
     const readyCardBox = await page.locator("[data-speaking-state='ready']").boundingBox();
     const readyBoxes = await Promise.all([listen.boundingBox(), speak.boundingBox()]);
     expect(readyBoxes.every((box) => box && box.width >= 44 && box.height >= 44)).toBe(true);
@@ -53,7 +54,7 @@ for (const viewport of [
     const stop = page.getByRole("button", { name: "Dừng nói" });
     await expect(actions).toHaveCSS("flex-direction", viewport.direction);
     await expect(stop).toBeVisible();
-    await expect(page.locator("[data-speaking-state='listening']")).toHaveClass(/border-sky-400/);
+    await expectCardPalette(page, "listening", CARD_PALETTES.listening);
     const listeningCardBox = await page.locator("[data-speaking-state='listening']").boundingBox();
     expect(readyCardBox && listeningCardBox && Math.abs(readyCardBox.height - listeningCardBox.height) <= 2).toBe(true);
     const listeningBoxes = await Promise.all([listen.boundingBox(), stop.boundingBox()]);
@@ -110,6 +111,7 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   await expect(page.getByText("Đang lắng nghe.", { exact: true })).toBeAttached();
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByTestId("listening-waveform").locator("span").first()).toHaveCSS("animation-name", "none");
+  await expect(page.locator("[data-speaking-state='listening']")).toHaveCSS("transition-duration", "0s");
   expect(await page.evaluate(() => window.__speakingNative.recognitionStarts)).toBe(1);
 
   await page.getByRole("button", { name: "Dừng nói" }).click();
@@ -121,12 +123,13 @@ test("USER enters from public Set Detail and completes a read-only mocked speaki
   const alternativeFeedback = page.getByRole("heading", { name: "Nhận diện chưa chắc chắn" });
   await expect(alternativeFeedback).toBeVisible();
   await expect(page.getByText("Từ mục tiêu chỉ xuất hiện trong kết quả thay thế.", { exact: true })).toBeVisible();
-  await expect(page.locator("[data-speaking-state='caution']")).toHaveClass(/border-\[#F2BD82\]/);
+  await expectCardPalette(page, "caution", CARD_PALETTES.caution);
   await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
 
   const oldRecognitionIndex = await page.evaluate(() => window.__speakingRecognitions.length - 1);
   await page.getByRole("button", { name: "Từ tiếp theo" }).click();
   await expect(page.getByRole("heading", { name: "travel" })).toBeVisible();
+  await expectCardPalette(page, "ready", CARD_PALETTES.ready);
   await expect(page.getByText("Từ 2 / 2", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Từ trước" }).click();
   await expect(page.getByRole("heading", { name: "book" })).toBeVisible();
@@ -158,17 +161,18 @@ test("matched and mismatched results reuse the main Speak action without nested 
 
   await expect(page.getByRole("heading", { name: "Chưa nhận diện khớp" })).toBeVisible();
   await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
-  await expect(page.locator("[data-speaking-state='negative']")).toHaveClass(/border-\[#F2BD82\]/);
+  await expectCardPalette(page, "negative", CARD_PALETTES.negative);
   await expect(page.getByRole("button", { name: "Thử nói lại" })).toHaveCount(0);
 
   const retry = page.getByRole("button", { name: "Nói lại" });
   await expect(retry).toBeVisible();
   await retry.click();
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
+  await expectCardPalette(page, "listening", CARD_PALETTES.listening);
   await emitRecognitionResult(page, ["book"]);
 
   await expect(page.getByRole("heading", { name: "Đã nhận diện từ mục tiêu" })).toBeVisible();
-  await expect(page.locator("[data-speaking-state='positive']")).toHaveClass(/border-\[#9EDDB1\]/);
+  await expectCardPalette(page, "positive", CARD_PALETTES.positive);
   await expect(page.getByText("Trình duyệt đã nhận diện:")).toBeVisible();
 });
 
@@ -218,6 +222,7 @@ test("permission failure is localized and Retry starts only from an explicit act
   await emitRecognitionError(page, "not-allowed");
 
   await expect(page.getByRole("heading", { name: "Micro đang bị chặn" })).toBeVisible();
+  await expectCardPalette(page, "issue", CARD_PALETTES.issue);
   const guidanceTrigger = page.getByRole("button", { name: "Xem hướng dẫn" });
   await expect(guidanceTrigger).toBeVisible();
   await guidanceTrigger.click();
@@ -332,6 +337,7 @@ test("startup and finalization watchdogs settle at their approved boundaries", a
   await expect(page.getByText("Đã dừng lượt nói.", { exact: true })).toBeAttached({ timeout: 5_500 });
   await expect(page.getByRole("heading", { name: "Chưa thể xác định kết quả" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Nói" })).toBeEnabled();
+  await expectCardPalette(page, "ready", CARD_PALETTES.ready);
 });
 
 test("intentional empty stop ignores stop-induced errors while natural no-speech remains visible", async ({ page }) => {
@@ -371,6 +377,43 @@ async function beginRecognition(page) {
   await page.getByRole("button", { name: "Nói" }).click();
   await page.getByRole("button", { name: "Tiếp tục" }).click();
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();
+}
+
+const CARD_PALETTES = Object.freeze({
+  ready: Object.freeze({ background: "#FFFFFF", border: "#BAE6FD", shadow: "0 0 7px rgba(125, 211, 252, 0.18), 0 0 20px rgba(125, 211, 252, 0.12), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+  listening: Object.freeze({ background: "#F0F9FF", border: "#38BDF8", shadow: "0 0 9px rgba(56, 189, 248, 0.3), 0 0 28px rgba(56, 189, 248, 0.23), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+  positive: Object.freeze({ background: "#F0FDF7", border: "#4ADE80", shadow: "0 0 9px rgba(34, 197, 94, 0.3), 0 0 28px rgba(34, 197, 94, 0.23), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+  negative: Object.freeze({ background: "#FFF2F3", border: "#FB7185", shadow: "0 0 9px rgba(244, 63, 94, 0.3), 0 0 28px rgba(244, 63, 94, 0.23), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+  caution: Object.freeze({ background: "#FFFBEB", border: "#FBBF24", shadow: "0 0 9px rgba(245, 158, 11, 0.3), 0 0 28px rgba(245, 158, 11, 0.23), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+  issue: Object.freeze({ background: "#F2F8FD", border: "#B9D8F4", shadow: "0 0 8px rgba(56, 189, 248, 0.16), 0 0 22px rgba(56, 189, 248, 0.1), 0 12px 25px rgba(15, 23, 42, 0.045)" }),
+});
+
+async function expectCardPalette(page, state, palette) {
+  const expected = await page.evaluate((value) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = value.background;
+    probe.style.border = `2px solid ${value.border}`;
+    probe.style.boxShadow = value.shadow;
+    document.body.append(probe);
+    const normalized = getComputedStyle(probe);
+    const result = {
+      background: normalized.backgroundColor,
+      border: normalized.borderTopColor,
+      borderWidth: normalized.borderTopWidth,
+      shadow: normalized.boxShadow,
+    };
+    probe.remove();
+    return result;
+  }, palette);
+  await expect.poll(() => page.locator(`[data-speaking-state='${state}']`).evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return {
+      background: computed.backgroundColor,
+      border: computed.borderTopColor,
+      borderWidth: computed.borderTopWidth,
+      shadow: computed.boxShadow.replaceAll("rgba(0, 0, 0, 0) 0px 0px 0px 0px, ", ""),
+    };
+  })).toEqual(expected);
 }
 
 async function emitRecognitionResult(page, transcripts, recognitionIndex = -1) {

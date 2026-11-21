@@ -533,12 +533,17 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   const packageJson = source("package.json");
 
   assert.match(page, /CheckCircle2/);
+  assert.match(page, /XCircle/);
   assert.match(page, /AlertTriangle/);
   assert.match(page, /CircleAlert/);
-  assert.match(page, /positive:[\s\S]*#166534/);
-  assert.match(page, /negative:[\s\S]*#92400E/);
-  assert.match(page, /positive: "border-\[#9EDDB1\]"/);
-  assert.match(page, /negative: "border-\[#F2BD82\]"/);
+  assert.match(page, /positive:[\s\S]*#15803D/);
+  assert.match(page, /negative:[\s\S]*#BE123C[\s\S]*XCircle/);
+  assert.match(page, /caution:[\s\S]*#A16207[\s\S]*AlertTriangle/);
+  assert.match(page, /positive: "border-\[#4ADE80\] bg-\[#F0FDF7\]/);
+  assert.match(page, /negative: "border-\[#FB7185\] bg-\[#FFF2F3\]/);
+  assert.match(page, /caution: "border-\[#FBBF24\] bg-\[#FFFBEB\]/);
+  assert.match(page, /ready: "border-\[#BAE6FD\] bg-white/);
+  assert.match(page, /listening: "border-\[#38BDF8\] bg-\[#F0F9FF\]/);
   assert.match(page, /presentation\.issue\.message[\s\S]*presentation\.issue\.recovery/);
   assert.match(page, /Xem hướng dẫn/);
   assert.match(page, /canShowSpeakingPermissionHelp/);
@@ -550,6 +555,7 @@ test("Outcome and recovery UI uses mapper semantics, Lucide icons and safe trans
   assert.doesNotMatch(page, /Chi tiết và cách khắc phục/);
   assert.match(page, /presentation\.transcript[\s\S]*text-slate-500/);
   assert.doesNotMatch(page, /rounded-2xl border px-4 py-3/);
+  assert.match(page, /transition-\[background-color,border-color,box-shadow,color\] duration-250 motion-reduce:transition-none motion-reduce:!duration-0/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML|console\.(?:log|info|debug)|AudioContext|new Audio\(/);
   assert.match(packageJson, /"lucide-react": "\^1\.47\.0"/);
   for (const pictogram of ["✅", "❌", "⚠️", "🔊", "🎤"]) {

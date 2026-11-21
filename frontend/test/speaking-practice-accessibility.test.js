@@ -74,9 +74,11 @@ test("native controls preserve keyboard, disabled and reduced-motion behavior", 
   assert.match(page, /aria-label=\{presentation\.actions\.listen\.label\}/);
   assert.match(page, /aria-label=\{presentation\.actions\.speak\.label\}/);
   assert.match(page, /aria-label=\{presentation\.actions\.stop\.label\}/);
-  assert.match(page, /transition-colors duration-150 motion-reduce:transition-none/);
+  assert.match(page, /transition-\[background-color,border-color,box-shadow,color\] duration-250 motion-reduce:transition-none motion-reduce:!duration-0/);
   assert.match(page, /data-speaking-state=/);
   assert.match(page, /<FocusModeHeader actions=\{privacyAction\}/);
+  assert.match(page, /negative:[\s\S]*XCircle/);
+  assert.match(page, /caution:[\s\S]*AlertTriangle/);
 });
 
 test("progress and navigation expose accessible names without color-only meaning", () => {
