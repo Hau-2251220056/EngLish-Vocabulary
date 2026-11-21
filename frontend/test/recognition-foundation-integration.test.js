@@ -190,6 +190,7 @@ test("intentional stop preserves a delayed final result and clears its watchdog"
 test("stable native errors settle once as INCONCLUSIVE without native detail", async (t) => {
   for (const [nativeError, issue] of [
     ["not-allowed", "PERMISSION_DENIED"],
+    ["service-not-allowed", "SERVICE_NOT_ALLOWED"],
     ["network", "NETWORK_ERROR"],
     ["no-speech", "NO_SPEECH"],
     ["unknown-private-error", "RECOGNITION_ERROR"],

@@ -39,7 +39,10 @@ test("Review Center has truthful loading, recoverable error and zero-due states"
   assert.match(source, /Đang tải dữ liệu ôn tập…/);
   assert.match(source, /Không thể tải dữ liệu ôn tập/);
   assert.match(source, /Thử lại/);
-  assert.match(source, /Bạn đã ôn xong các từ đến hạn!/);
+  assert.doesNotMatch(source, /Bạn đã ôn xong các từ đến hạn!/);
+  assert.match(source, /Bạn chưa có dữ liệu ôn tập/);
+  assert.match(source, /Hiện không có từ đến hạn/);
+  assert.match(source, /summary\.has_review_data/);
   assert.match(source, /to="\/topics"/);
   assert.match(source, /state\.status === "loading"/);
   assert.match(source, /state\.status === "error"/);

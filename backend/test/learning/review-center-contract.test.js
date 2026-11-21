@@ -52,6 +52,7 @@ test("Review Center summary uses one instant and approved non-additive attributi
     evaluated_at: NOW,
     due_count: 2,
     has_due_items: true,
+    has_review_data: true,
     nearest_future_review_at: new Date("2026-11-09T12:00:00.000Z"),
     sets: [
       { set_id: SET_ALPHA, name: "Alpha", due_count: 2, set_scope: "PUBLIC" },
@@ -69,6 +70,7 @@ test("Review Center excludes future progress and returns truthful zero state", a
     evaluated_at: NOW,
     due_count: 0,
     has_due_items: false,
+    has_review_data: true,
     nearest_future_review_at: new Date("2026-11-09T12:00:00.000Z"),
     sets: [],
   });
@@ -90,6 +92,7 @@ test("a new word can enter Set SRS without increasing the persisted Review Cente
   assert.equal(evaluateProgress(null, NOW).is_eligible, true);
   const center = await serviceWith([]).getReviewCenterSummary(USER_ID);
   assert.equal(center.due_count, 0);
+  assert.equal(center.has_review_data, false);
   assert.deepEqual(center.sets, []);
 });
 
@@ -158,7 +161,7 @@ test("Review Center controller derives identity and preserves safe success/error
     learningService: {
       async getReviewCenterSummary(userId) {
         calls.push(userId);
-        return { due_count: 0, has_due_items: false, evaluated_at: NOW, nearest_future_review_at: null, sets: [] };
+        return { due_count: 0, has_due_items: false, has_review_data: false, evaluated_at: NOW, nearest_future_review_at: null, sets: [] };
       },
     },
   });

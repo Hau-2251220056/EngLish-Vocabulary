@@ -46,6 +46,24 @@ test("small Sets use canonical fallback without adding questions and fail safely
   );
 });
 
+test("Sets with 1, 2, 3, 4, and 10 words generate four distinct choices when the canonical pool is sufficient", async () => {
+  const canonical = Array.from({ length: 3 }, (_, index) => (
+    vocabulary(`external-${index}`, `external-word-${index}`, `external-label-${index}`)
+  ));
+  for (const size of [1, 2, 3, 4, 10]) {
+    const items = Array.from({ length: size }, (_, index) => (
+      setItem(`size-${size}-${index}`, index + 1, `word-${size}-${index}`, `label-${size}-${index}`)
+    ));
+    const payload = await createQuizService({ quizRepository: readRepository(setFixture(items), canonical) })
+      .getQuestions(USER, SET, { type: "MULTIPLE_CHOICE", run_id: RUN });
+    assert.equal(payload.questions.length, size);
+    for (const question of payload.questions) {
+      assert.equal(question.choices.length, 4);
+      assert.equal(new Set(question.choices.map(({ label }) => normalizeChoiceLabel(label))).size, 4);
+    }
+  }
+});
+
 test("bounded reads accept 1 or 10 IDs and preserve submitted order", async () => {
   const items = Array.from({ length: 10 }, (_, index) => setItem(`q${index}`, index + 1, `word-${index}`, `nghĩa-${index}`));
   const set = setFixture(items);

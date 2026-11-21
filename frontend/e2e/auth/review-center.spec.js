@@ -12,6 +12,7 @@ function centerSummary(overrides = {}) {
     evaluated_at: "2026-11-08T12:00:00.000Z",
     due_count: 2,
     has_due_items: true,
+    has_review_data: true,
     nearest_future_review_at: null,
     sets: [
       { set_id: SET_ALPHA, name: "Bộ từ Alpha", due_count: 2, set_scope: "PUBLIC" },
@@ -126,11 +127,23 @@ test("keyboard retry keeps stable loading focus and focuses restored zero-due co
   await page.keyboard.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "Đang tải dữ liệu ôn tập…" })).toBeFocused();
   recovery.resolve();
-  const emptyHeading = page.getByRole("heading", { name: "Bạn đã ôn xong các từ đến hạn!" });
+  const emptyHeading = page.getByRole("heading", { name: "Hiện không có từ đến hạn" });
   await expect(emptyHeading).toBeVisible();
   await expect(emptyHeading).toBeFocused();
   await expect(page.getByRole("link", { name: "Tiếp tục học" })).toHaveAttribute("href", "/topics");
   await expect(page.getByRole("link", { name: "Ôn tất cả" })).toHaveCount(0);
+});
+
+test("new USER sees a no-review-data state instead of a completed-review claim", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
+  await page.route("**/api/learning/review/center", (route) => route.fulfill({
+    status: 200,
+    json: { success: true, data: centerSummary({ due_count: 0, has_due_items: false, has_review_data: false, sets: [] }) },
+  }));
+  await page.goto("/review");
+  await expect(page.getByRole("heading", { name: "Bạn chưa có dữ liệu ôn tập" })).toBeVisible();
+  await expect(page.getByText(/bắt đầu học một bộ từ/i)).toBeVisible();
+  await expect(page.getByText("Hiện không có từ đến hạn")).toHaveCount(0);
 });
 
 test("keyboard retry returns focus to the new retry button after another failure", async ({ page }) => {

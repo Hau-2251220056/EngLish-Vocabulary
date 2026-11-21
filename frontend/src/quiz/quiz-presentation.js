@@ -16,7 +16,8 @@ export function createSharedQuizQuestionLoader(load) {
 export function classifyQuizLoadError(error) {
   if (error?.code === "CEFR_LEVEL_LOCKED") return "locked";
   if (["QUIZ_SET_EMPTY", "LEARNING_SET_EMPTY"].includes(error?.code)) return "empty";
-  if (["QUIZ_ITEM_CHANGED", "QUIZ_CHOICES_UNAVAILABLE"].includes(error?.code)) return "stale";
+  if (error?.code === "QUIZ_CHOICES_UNAVAILABLE") return "choices-unavailable";
+  if (error?.code === "QUIZ_ITEM_CHANGED") return "stale";
   if (error?.kind === "not-found") return "not-found";
   return "error";
 }
@@ -25,7 +26,7 @@ export async function readQuizSessionWithRecovery(readSession, state) {
   try {
     return await readSession(state);
   } catch (error) {
-    if (!["QUIZ_ITEM_CHANGED", "QUIZ_CHOICES_UNAVAILABLE"].includes(error?.code)) throw error;
+    if (error?.code !== "QUIZ_ITEM_CHANGED") throw error;
     return readSession(state);
   }
 }

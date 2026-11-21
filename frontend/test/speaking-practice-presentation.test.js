@@ -135,6 +135,17 @@ test("service and audio-capture failures retain distinct actionable recovery", (
   }
 });
 
+test("service rejection does not imply microphone denial and offers iOS browser recovery", () => {
+  const presentation = getSpeakingPracticePresentation(snapshot({
+    phase: SPEAKING_PRACTICE_PHASES.RECOVERABLE_ERROR,
+    issue: "SERVICE_NOT_ALLOWED",
+  }));
+  assert.match(presentation.issue.message, /quyền microphone vẫn có thể đang bật/i);
+  assert.match(presentation.issue.recovery, /Safari/);
+  assert.match(presentation.issue.recovery, /trình duyệt hoặc thiết bị khác/i);
+  assert.doesNotMatch(presentation.issue.recovery, /cho phép.*micro/i);
+});
+
 test("an explicitly stopped empty attempt has a private announcement without an assessment", () => {
   const presentation = getSpeakingPracticePresentation(snapshot({
     phase: SPEAKING_PRACTICE_PHASES.READY,

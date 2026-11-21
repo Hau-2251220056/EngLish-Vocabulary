@@ -6,7 +6,7 @@ import { classifyQuizLoadError, classifyQuizSubmissionError, createSharedQuizQue
 
 test("Quiz presentation classifies choice and conflict errors", () => {
   assert.equal(classifyQuizLoadError(new QuizApiError({ code: "CEFR_LEVEL_LOCKED", kind: "api", status: 403, message: "x" })), "locked");
-  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" })), "stale");
+  assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" })), "choices-unavailable");
   assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_ITEM_CHANGED", kind: "conflict", status: 409, message: "x" })), "stale");
   assert.equal(classifyQuizLoadError(new QuizApiError({ code: "QUIZ_REQUEST_FAILED", kind: "api", status: 503, message: "x" })), "error");
   assert.equal(classifyQuizSubmissionError(new QuizApiError({ code: "QUIZ_CHOICE_CHANGED", kind: "conflict", status: 409, message: "x" })).kind, "question-changed");
@@ -26,7 +26,7 @@ test("stale question reads reconcile once without posting or looping", async () 
     reads += 1;
     throw new QuizApiError({ code: "QUIZ_CHOICES_UNAVAILABLE", kind: "conflict", status: 409, message: "x" });
   }, { run_id: "run" }), { code: "QUIZ_CHOICES_UNAVAILABLE" });
-  assert.equal(reads, 2);
+  assert.equal(reads, 1);
 });
 test("duplicate loads share one request", async () => {
   let count = 0; const load = createSharedQuizQuestionLoader(async () => { count += 1; return "ok"; });
@@ -48,6 +48,8 @@ test("production page contains compact vertical Multiple Choice presentation and
   assert.match(source, /Học lại từ đầu/);
   assert.match(source, /submitLockRef/);
   assert.match(source, /readQuizSessionWithRecovery/);
+  assert.match(source, /Chưa đủ lựa chọn cho Quiz/);
+  assert.match(source, /Quiz cần bốn nghĩa khác nhau/);
   assert.match(source, /browserSessionStorage/);
 });
 

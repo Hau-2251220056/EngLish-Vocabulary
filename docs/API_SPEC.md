@@ -2093,6 +2093,7 @@ The implemented read-only `GET /api/learning/review/center` response includes `s
   "evaluated_at": "<timestamp>",
   "due_count": 11,
   "has_due_items": true,
+  "has_review_data": true,
   "nearest_future_review_at": null,
   "sets": [
     {
@@ -2110,7 +2111,7 @@ Allowed values are:
 - `PUBLIC`: the existing accessible Set has `is_public = true`;
 - `PERSONAL`: the existing Set has `is_public = false` and is owned by the authenticated USER.
 
-The Backend derives this value from authoritative Set data and existing access checks. It does not return `owner_id`, claim copied-from ancestry or introduce client-side entitlement rules. The endpoint uses the section 75 authenticated USER boundary and standard success/error envelopes. It returns only positive-due Set entries; zero due returns `due_count: 0`, `has_due_items: false`, `sets: []`, and the applicable nullable future-review timestamp.
+The Backend derives this value from authoritative Set data and existing access checks. `has_review_data` is `true` when at least one persisted, accessible Learning Progress candidate was evaluated and `false` when no such review data exists. It does not return `owner_id`, claim copied-from ancestry or introduce client-side entitlement rules. The endpoint uses the section 75 authenticated USER boundary and standard success/error envelopes. It returns only positive-due Set entries; zero due returns `due_count: 0`, `has_due_items: false`, `sets: []`, the applicable nullable future-review timestamp, and the authoritative `has_review_data` distinction.
 
 Due counts represent persisted studied vocabulary currently due at the response's single backend-owned `evaluated_at`. Unstarted `NEW` vocabulary is excluded. The dedicated `/review/sets/:setId` action creates or resumes a `DUE_ONLY` SET/SRS session, while ordinary SET/SRS remains `STANDARD` and may include NEW. Global `due_count` deduplicates by `vocabulary_id`; each Set count deduplicates by `(set_id, vocabulary_id)`. A shared vocabulary identity may contribute to every accessible containing Set, so per-Set counts are not necessarily additive and clients must not sum them to reconstruct the global value.
 

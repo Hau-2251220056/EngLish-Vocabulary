@@ -188,7 +188,7 @@ function ReviewSummary({ focusTargetRef, summary }) {
 
       {summary.has_due_items
         ? <DueSetList focusTargetRef={focusTargetRef} sets={sets} />
-        : <EmptyState focusTargetRef={focusTargetRef} />}
+        : <EmptyState focusTargetRef={focusTargetRef} hasReviewData={summary.has_review_data} />}
     </>
   );
 }
@@ -254,7 +254,7 @@ function DueSetCard({ set }) {
   );
 }
 
-function EmptyState({ focusTargetRef }) {
+function EmptyState({ focusTargetRef, hasReviewData }) {
   return (
     <section
       className="rounded-3xl border border-emerald-200 bg-emerald-50 p-[clamp(1.5rem,4vw,2.5rem)] text-center"
@@ -270,10 +270,12 @@ function EmptyState({ focusTargetRef }) {
         ref={focusTargetRef}
         tabIndex={-1}
       >
-        Bạn đã ôn xong các từ đến hạn!
+        {hasReviewData === false ? "Bạn chưa có dữ liệu ôn tập" : "Hiện không có từ đến hạn"}
       </h2>
       <p className="mb-5 mt-2 text-emerald-900">
-        Tiếp tục học để mở rộng vốn từ của bạn.
+        {hasReviewData === false
+          ? "Hãy bắt đầu học một bộ từ. Các từ đến hạn sẽ xuất hiện tại đây sau khi có tiến độ học."
+          : "Tiếp tục học và quay lại khi có từ đến hạn ôn tập."}
       </p>
       <Link className={SECONDARY_ACTION_CLASSES} to="/topics">
         Tiếp tục học

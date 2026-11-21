@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { answerResult, failure, ids, installQuizApiMock, publicAdmin, question, questionPayload, quizSetId, success } from "./fixtures/quiz-api.js";
+import { answerResult, failure, ids, installQuizApiMock, publicAdmin, question, quizSetId, success } from "./fixtures/quiz-api.js";
 
 test.describe("Multiple Choice Quiz mocked flow", () => {
   test("starts directly, completes ordered questions and writes no Learning event", async ({ page }) => {
@@ -158,11 +158,13 @@ test("new Quiz XP uses one Toast without surviving reload or duplicating inline 
     }
   });
 
-  test("one-shot stale question recovery deliberately retries once", async ({ page }) => {
-    const calls = await installQuizApiMock(page, { onQuestions: ({ call, runId }) => call === 1 ? failure(409, "QUIZ_CHOICES_UNAVAILABLE") : success(questionPayload(runId)) });
+  test("insufficient distinct choices shows a stable actionable state without retrying", async ({ page }) => {
+    const calls = await installQuizApiMock(page, { onQuestions: () => failure(409, "QUIZ_CHOICES_UNAVAILABLE") });
     await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
-    await expect(page.getByRole("heading", { name: "wake" })).toBeVisible();
-    expect(calls.questions).toHaveLength(2);
+    await expect(page.getByRole("heading", { name: "Chưa đủ lựa chọn cho Quiz" })).toBeVisible();
+    await expect(page.getByText(/Quiz cần bốn nghĩa khác nhau/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thử lại" })).toHaveCount(0);
+    expect(calls.questions).toHaveLength(1);
   });
 
   test("CEFR-locked Quiz explains the lock while ordinary failures remain retryable errors", async ({ page }) => {

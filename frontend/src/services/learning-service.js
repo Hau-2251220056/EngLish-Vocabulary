@@ -107,6 +107,7 @@ function requireReviewSummary(value) {
 function requireReviewCenterSummary(value) {
   if (!isRecord(value) || !isNonNegativeInteger(value.due_count)
     || value.has_due_items !== (value.due_count > 0)
+    || !(value.has_review_data === undefined || typeof value.has_review_data === "boolean")
     || !isDateString(value.evaluated_at)
     || !(value.nearest_future_review_at === null || isDateString(value.nearest_future_review_at))
     || !Array.isArray(value.sets) || !value.sets.every(isReviewCenterSet)) {

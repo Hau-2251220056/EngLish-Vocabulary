@@ -12,6 +12,7 @@ test("Review Center service reads the approved endpoint and preserves non-additi
     evaluated_at: NOW,
     due_count: 2,
     has_due_items: true,
+    has_review_data: true,
     nearest_future_review_at: null,
     sets: [
       { set_id: SET_ALPHA, name: "Alpha", due_count: 2, set_scope: "PUBLIC" },
@@ -35,7 +36,22 @@ test("Review Center service accepts the authoritative zero-due response", async 
     evaluated_at: NOW,
     due_count: 0,
     has_due_items: false,
+    has_review_data: true,
     nearest_future_review_at: "2026-11-09T12:00:00.000Z",
+    sets: [],
+  };
+  const service = createLearningService({
+    async get() { return { data: { success: true, data: value } }; },
+  });
+  assert.deepEqual(await service.getReviewCenterSummary(), value);
+});
+
+test("Review Center service accepts a legacy zero-due response for neutral fallback copy", async () => {
+  const value = {
+    evaluated_at: NOW,
+    due_count: 0,
+    has_due_items: false,
+    nearest_future_review_at: null,
     sets: [],
   };
   const service = createLearningService({
@@ -49,12 +65,14 @@ test("Review Center service rejects malformed or misleading summaries", async ()
     evaluated_at: NOW,
     due_count: 2,
     has_due_items: true,
+    has_review_data: true,
     nearest_future_review_at: null,
     sets: [{ set_id: SET_ALPHA, name: "Alpha", due_count: 2, set_scope: "PUBLIC" }],
   };
   for (const value of [
     { ...valid, due_count: undefined },
     { ...valid, has_due_items: false },
+    { ...valid, has_review_data: "yes" },
     { ...valid, evaluated_at: "invalid" },
     { ...valid, sets: [{ ...valid.sets[0], due_count: 0 }] },
     { ...valid, sets: [{ ...valid.sets[0], set_id: "not-a-uuid" }] },

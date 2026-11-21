@@ -811,6 +811,7 @@ function summarizeReviewCenter(candidates, evaluatedAt) {
     evaluated_at: evaluatedAt,
     due_count: dueCount,
     has_due_items: dueCount > 0,
+    has_review_data: evaluated.length > 0,
     nearest_future_review_at: future.length === 0
       ? null : new Date(Math.min(...future.map((value) => value.getTime()))),
     sets: [...setsById.values()].sort((left, right) => (
