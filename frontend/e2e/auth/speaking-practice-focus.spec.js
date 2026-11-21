@@ -53,7 +53,7 @@ test("keyboard Retry restores target focus and a later result can receive focus 
   await emitRecognitionResult(page, "book");
   await expect(page.getByRole("heading", { name: "Đã nhận diện từ mục tiêu" })).toBeFocused();
 
-  await page.getByRole("button", { name: "Thử nói lại" }).focus();
+  await page.getByRole("button", { name: "Nói lại", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "book" })).toBeFocused();
   await expect(page.getByRole("button", { name: "Dừng nói" })).toBeVisible();

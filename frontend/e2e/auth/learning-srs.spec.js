@@ -60,7 +60,7 @@ test("CEFR SRS credits AGAIN once and preserves exact resume without a transitio
   await page.goto(`/learn/vocabulary-sets/${SET_ID}`);
   await expect(page.locator(".focus-mode-title-badge")).toHaveText("Lượt học CEFR");
   await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
-  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await rateAgainAndWaitForResponse(page);
   await expect(page.getByRole("region", { name: "Tiếp tục lượt học CEFR" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Ôn tập SRS" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
@@ -68,11 +68,20 @@ test("CEFR SRS credits AGAIN once and preserves exact resume without a transitio
   await expect(page.getByRole("heading", { name: "word-1", exact: true })).toBeVisible();
   expect(exactReads).toBeGreaterThan(0);
   await page.getByRole("heading", { name: "word-1", exact: true }).press("Space");
-  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await rateAgainAndWaitForResponse(page);
   expect(ratingCount).toBe(2);
   await expect(page.getByText("Tiến độ CEFR đã được lưu độc lập")).toHaveCount(0);
   expect(passCompleted).toBe(false);
 });
+
+async function rateAgainAndWaitForResponse(page) {
+  const response = page.waitForResponse((candidate) => (
+    candidate.request().method() === "POST"
+    && new URL(candidate.url()).pathname === "/api/learning/events"
+  ));
+  await page.getByRole("button", { name: "Lại, Trong phiên này", exact: true }).press("Enter");
+  await response;
+}
 
 test("CEFR transition notice stays absent in SRS and NORMAL while learning controls remain", async ({ page }) => {
   await installLearningMock(page);

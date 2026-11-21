@@ -187,12 +187,6 @@ test("@topic unauthenticated ADMIN route follows the existing login redirect", a
 test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semantics", async ({ page }) => {
   const createdName = `${fixturePrefix} Created`;
   const renamedName = `${fixturePrefix} Renamed`;
-  let patchBody;
-  page.on("request", (request) => {
-    if (request.method() === "PATCH" && new URL(request.url()).pathname.startsWith("/api/admin/topics/")) {
-      patchBody = request.postDataJSON();
-    }
-  });
 
   await login(page, admin);
   await page.goto(`/topics/${nullableTopic.id}`);
@@ -231,16 +225,18 @@ test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semant
 
   await page.getByRole("button", { name: `Sửa ${createdName}` }).click();
   await page.locator("#topic-description").fill("");
+  const clearedDescriptionRequest = waitForAdminTopicPatch(page);
   await page.getByRole("button", { name: "Lưu chủ đề" }).click();
-  expect(patchBody).toEqual({ description: null });
+  expect((await clearedDescriptionRequest).postDataJSON()).toEqual({ description: null });
   await expect(page.getByText("Chưa có mô tả cho chủ đề này.")).toBeVisible();
   await page.getByRole("button", { name: "Đóng chi tiết" }).click();
 
   await page.getByRole("button", { name: `Sửa ${createdName}` }).click();
   await page.locator("#topic-name").fill(renamedName);
+  const renamedTopicRequest = waitForAdminTopicPatch(page);
   await page.getByRole("button", { name: "Lưu chủ đề" }).click();
   await expect(page.getByRole("row", { name: new RegExp(renamedName) })).toBeVisible();
-  expect(patchBody).toEqual({ name: renamedName });
+  expect((await renamedTopicRequest).postDataJSON()).toEqual({ name: renamedName });
 
   const deleteButton = page.getByRole("button", { name: `Xóa ${renamedName}` });
   await deleteButton.focus();
@@ -314,6 +310,13 @@ async function login(page, account) {
   await page.locator("#login-password").fill(password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard$/);
+}
+
+function waitForAdminTopicPatch(page) {
+  return page.waitForRequest((request) => (
+    request.method() === "PATCH"
+    && new URL(request.url()).pathname.startsWith("/api/admin/topics/")
+  ));
 }
 
 async function expectNoHorizontalOverflow(page) {
