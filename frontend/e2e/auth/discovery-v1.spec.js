@@ -358,14 +358,14 @@ test("Public Detail copy shares the session saved state, locks rapid activation,
   await page.goto("/vocabulary-sets/set-airport");
 
   await page.getByRole("button", { name: "Lưu vào Bộ từ của tôi" }).click();
-  expect(copyCalls).toBe(1);
+  await expect.poll(() => copyCalls).toBe(1);
   await expect(page.getByRole("alert")).toContainText("Không thể sao chép bộ từ");
   await page.getByRole("button", { name: "Thử lưu lại" }).evaluate((button) => {
     button.click();
     button.click();
   });
   await expect(page.getByRole("button", { name: "Đang lưu…" })).toBeDisabled();
-  expect(copyCalls).toBe(2);
+  await expect.poll(() => copyCalls).toBe(2);
   resolveCopy();
   await expect(page).toHaveURL(/\/my\/vocabulary-sets\/copied-set$/);
 

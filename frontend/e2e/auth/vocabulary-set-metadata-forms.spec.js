@@ -50,6 +50,7 @@ test("ADMIN edits required CEFR and uploads a replacement without changing Topic
   await page.locator('input[type="file"]').setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: Buffer.from("mock-image") });
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
 
+  await expect.poll(() => calls.find((call) => call.method === "PATCH")).toBeDefined();
   const patch = calls.find((call) => call.method === "PATCH");
   expect(patch.body.topic_id).toBe(set.topic_id);
   expect(patch.body.cefr_level).toBe("B1");

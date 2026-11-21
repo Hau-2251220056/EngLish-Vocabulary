@@ -125,7 +125,7 @@ test("required NORMAL Set needs bounded completion and explicit full-pass confir
   expect(fullPassComplete).toBe(false);
   await page.getByRole("button", { name: "Hoàn thành bộ từ" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành bộ từ" })).toBeVisible();
-  expect(fullPassComplete).toBe(true);
+  await expect.poll(() => fullPassComplete).toBe(true);
 });
 
 test("historically completed Set detail starts fresh ordinary NORMAL without touching the completed pass", async ({ page }) => {

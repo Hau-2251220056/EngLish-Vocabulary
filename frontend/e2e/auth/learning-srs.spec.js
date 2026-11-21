@@ -350,7 +350,7 @@ test("SRS lost response retry preserves the exact event and session identity", a
   await page.reload();
   await expect(page.getByRole("alert")).toContainText("chưa xác định kết quả");
   await page.getByRole("alert").getByRole("button", { name: "Thử lại" }).click();
-  expect(calls.events).toHaveLength(2);
+  await expect.poll(() => calls.events).toHaveLength(2);
   expect(calls.events[1]).toEqual(original);
   expect(calls.events[1].session_id).toBe(SESSION_ID);
 });

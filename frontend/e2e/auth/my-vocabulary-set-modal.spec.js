@@ -95,7 +95,7 @@ test("pending submit is guarded and a server error preserves entered values", as
   const submit = dialog.locator('button[type="submit"]');
   await submit.dblclick();
   await expect(submit).toBeDisabled();
-  expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  await expect.poll(() => calls.filter((call) => call.method === "POST")).toHaveLength(1);
   gate.resolve(responses.error(500, "INTERNAL_SERVER_ERROR", "Internal server error."));
   await expect(dialog.getByRole("alert")).toContainText("Không thể lưu bộ từ");
   await expect(page.getByText("Đã tạo bộ từ thành công.", { exact: true })).toHaveCount(0);
@@ -103,7 +103,7 @@ test("pending submit is guarded and a server error preserves entered values", as
   await expect(dialog.getByLabel("Mô tả (không bắt buộc)")).toHaveValue("Giữ lại nội dung này");
   await submit.click();
   await expect(dialog.getByRole("alert")).toBeVisible();
-  expect(calls.filter((call) => call.method === "POST")).toHaveLength(2);
+  await expect.poll(() => calls.filter((call) => call.method === "POST")).toHaveLength(2);
 });
 
 test("file create persists once, retries only upload, and keeps the private-cover warning", async ({ page }) => {

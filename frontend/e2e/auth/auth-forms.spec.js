@@ -59,7 +59,7 @@ test("valid registration locks submission and hands Guest off to Login", async (
 
   const pendingButton = page.getByRole("button", { name: "Đang tạo tài khoản..." });
   await expect(pendingButton).toBeDisabled();
-  expect(api.callsFor("/api/auth/register")).toHaveLength(1);
+  await expect.poll(() => api.callsFor("/api/auth/register")).toHaveLength(1);
 
   const handoffStartedAt = Date.now();
   pending.resolve(responses.registration());
@@ -241,7 +241,7 @@ test("Register global failures use one shared dismissible toast without stealing
 
   await submit.click();
   await expect(notification).toHaveCount(1);
-  expect(api.callsFor("/api/auth/register")).toHaveLength(2);
+  await expect.poll(() => api.callsFor("/api/auth/register")).toHaveLength(2);
 
   const dismiss = notification.locator(".Toastify__close-button");
   await expect(dismiss).toBeVisible();

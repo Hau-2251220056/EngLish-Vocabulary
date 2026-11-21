@@ -309,7 +309,7 @@ test("membership removal keeps a failed row and retry removes only that membersh
   await removeButton.click(); dialog = page.getByRole("dialog", { name: "Gỡ từ khỏi bộ?" });
   const confirm = dialog.getByRole("button", { name: "Gỡ khỏi bộ" }); await confirm.click();
   await expect(dialog.locator('button[aria-busy="true"]')).toBeDisabled();
-  expect(calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
+  await expect.poll(() => calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
   await page.keyboard.press("Escape"); await expect(dialog).toBeVisible(); removeGate.resolve();
   await expect(page.getByRole("alert")).toContainText("Không thể gỡ từ vựng"); await expect(row).toBeVisible();
   await expect(removeButton).toBeFocused(); await removeButton.click(); dialog = page.getByRole("dialog", { name: "Gỡ từ khỏi bộ?" }); await dialog.getByRole("button", { name: "Gỡ khỏi bộ" }).click(); await expect(row).toHaveCount(0);
@@ -318,8 +318,8 @@ test("membership removal keeps a failed row and retry removes only that membersh
   await expect(successToast).toBeVisible();
   await expect(successToast.locator(".Toastify__progress-bar")).toBeVisible();
   await expect(page.getByRole("row", { name: /book/ })).toBeVisible();
+  await expect.poll(() => calls.filter((call) => call.method === "PATCH")).toHaveLength(2);
   const patches = calls.filter((call) => call.method === "PATCH");
-  expect(patches).toHaveLength(2);
   expect(patches[1].body).toEqual({ items: [{ vocabulary_id: "private-1" }] });
   expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(0);
   await expect(page.getByRole("button", { name: "Xóa từ vựng" })).toHaveCount(0);

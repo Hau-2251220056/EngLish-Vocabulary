@@ -92,12 +92,13 @@ test.describe("Multiple Choice Quiz mocked flow", () => {
     await page.goto(`/quiz/vocabulary-sets/${quizSetId}`);
     await page.getByRole("radio").first().check(); await page.getByRole("button", { name: "Kiểm tra đáp án" }).click();
     await expect(page.getByRole("button", { name: "Đang kiểm tra…" })).toBeDisabled();
-    expect(calls.answers).toHaveLength(1); resolve({ abort: "failed" });
+    await expect.poll(() => calls.answers).toHaveLength(1); resolve({ abort: "failed" });
     await expect(page.getByRole("button", { name: "Thử gửi lại" })).toBeVisible();
     await expect(page.getByRole("alert").filter({ hasText: /\+\d+ XP/ })).toHaveCount(0);
     await page.getByRole("button", { name: "Thử gửi lại" }).click();
     await expect(page.getByRole("heading", { name: "Chính xác" })).toBeVisible();
     await expect(page.getByRole("alert").filter({ hasText: "Bạn vừa nhận +3 XP!" })).toHaveCount(1);
+    await expect.poll(() => calls.answers).toHaveLength(2);
     expect(calls.answers[1]).toEqual(calls.answers[0]);
   });
 

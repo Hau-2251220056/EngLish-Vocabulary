@@ -154,12 +154,15 @@ test("desktop Dashboard keeps the sidebar stable while the document scrolls", as
     "/api/auth/me": responses.currentUser(publicUser),
   });
   await page.goto("/dashboard");
+  await expect(page.locator("#dashboard-title")).toBeVisible();
   await page.locator("main.authenticated-main").evaluate((main) => {
     const tallContent = document.createElement("div");
     tallContent.setAttribute("data-layout-overflow-probe", "");
     tallContent.style.height = "1800px";
     main.append(tallContent);
   });
+  await expect(page.locator("[data-layout-overflow-probe]")).toBeAttached();
+  await expect.poll(() => page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight)).toBeGreaterThanOrEqual(500);
 
   const before = await page.locator("aside.authenticated-sidebar").boundingBox();
   await page.evaluate(() => {
