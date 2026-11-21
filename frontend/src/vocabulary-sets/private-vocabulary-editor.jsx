@@ -14,9 +14,9 @@ const PARTS_OF_SPEECH = [
   ["determiner", "Determiner"], ["phrase", "Phrase"], ["other", "Other"],
 ];
 const BUTTON_CLASSES = "inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[0.7rem] border border-slate-300 bg-white px-[0.65rem] py-[0.42rem] text-[0.8rem] font-medium text-slate-700 transition-[border-color,background-color,color,box-shadow,transform] duration-150 hover:not-disabled:border-[#b8d9f1] hover:not-disabled:bg-[var(--accent-primary-soft)] hover:not-disabled:text-[var(--accent-primary-pressed)] focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none [&_svg]:size-4";
-const FIELD_CLASSES = "h-10 min-h-10 w-full rounded-[0.6rem] border border-[#d7dce6] bg-white px-[0.65rem] py-[0.45rem] text-[0.84rem] leading-[1.35] text-slate-900 outline-0 transition-[border-color,box-shadow,background-color] duration-150 hover:not-disabled:border-[#aeb8c9] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-focus)] focus-visible:outline-0 aria-invalid:border-[#dc6b6b] aria-invalid:shadow-[0_0_0_1px_rgb(220_107_107/22%)] disabled:cursor-not-allowed motion-reduce:transition-none";
+const FIELD_CLASSES = "h-10 min-h-10 w-full min-w-0 max-w-full rounded-[0.6rem] border border-[#d7dce6] bg-white px-[0.65rem] py-[0.45rem] text-[0.84rem] leading-[1.35] text-slate-900 outline-0 transition-[border-color,box-shadow,background-color] duration-150 hover:not-disabled:border-[#aeb8c9] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-focus)] focus-visible:outline-0 aria-invalid:border-[#dc6b6b] aria-invalid:shadow-[0_0_0_1px_rgb(220_107_107/22%)] disabled:cursor-not-allowed motion-reduce:transition-none";
 const TEXTAREA_CLASSES = `${FIELD_CLASSES} resize-none`;
-const LABEL_CLASSES = "grid gap-[0.2rem] text-[0.78rem] font-medium text-slate-700";
+const LABEL_CLASSES = "grid min-w-0 max-w-full gap-[0.2rem] text-[0.78rem] font-medium text-slate-700";
 const OPTIONAL_LABEL_CLASSES = "flex flex-wrap items-baseline gap-x-1 text-[0.78rem] font-medium text-slate-700 [&_span]:text-[0.72rem] [&_span]:font-normal [&_span]:text-slate-500";
 
 export function PrivateVocabularyEditor({ embedded = false, error, initialValue, mode, onCancel, onSubmit, pending }) {
@@ -90,7 +90,7 @@ export function PrivateVocabularyEditor({ embedded = false, error, initialValue,
   }
 
   const panel = (
-      <section className={`private-vocabulary-dialog w-full max-w-[38rem] overflow-auto rounded-[1.15rem] border border-[#e5e7f0] bg-white p-[0.85rem] shadow-[0_20px_45px_rgb(15_23_42/30%)] max-[700px]:p-[0.8rem] ${embedded ? "max-h-none max-w-none overflow-visible border-0 p-0 shadow-none max-[700px]:p-0" : "max-h-[calc(100dvh-2rem)]"}`} aria-labelledby="private-vocabulary-dialog-title">
+      <section className={`private-vocabulary-dialog w-full min-w-0 max-w-[38rem] overflow-auto rounded-[1.15rem] border border-[#e5e7f0] bg-white p-[0.85rem] shadow-[0_20px_45px_rgb(15_23_42/30%)] max-[700px]:p-[0.8rem] ${embedded ? "max-h-none max-w-full overflow-visible border-0 p-0 shadow-none max-[700px]:p-0" : "max-h-[calc(100dvh-2rem)]"}`} aria-labelledby="private-vocabulary-dialog-title">
         <header className="flex items-center justify-between gap-3">
           <div>
             <p className="m-0 text-[0.68rem] font-semibold tracking-[0.06em] text-[var(--accent-primary-pressed)] uppercase">{mode === "edit" ? "Từ vựng của tôi" : "Tạo từ mới"}</p>
@@ -100,16 +100,16 @@ export function PrivateVocabularyEditor({ embedded = false, error, initialValue,
         </header>
         {mode === "edit" ? <p className="my-[0.45rem] rounded-[0.7rem] border border-[#fde7c2] bg-[#fffaf2] px-[0.6rem] py-[0.45rem] text-[0.76rem] leading-[1.4] text-[#8a4b12]">Thay đổi này sẽ áp dụng cho mọi bộ từ đang sử dụng cùng từ vựng này.</p> : null}
         {error ? <p className="my-2 rounded-[0.7rem] bg-red-50 px-3 py-2 text-sm font-semibold text-red-700" role="alert">{error}</p> : null}
-        <form className="mt-[0.4rem]" noValidate onSubmit={submit}>
-          <div className="grid grid-cols-2 items-start gap-x-[0.6rem] gap-y-[0.42rem] max-[700px]:grid-cols-1">
+        <form className="mt-[0.4rem] min-w-0 max-w-full" noValidate onSubmit={submit}>
+          <div className="grid min-w-0 grid-cols-2 items-start gap-x-[0.6rem] gap-y-[0.42rem] max-[700px]:grid-cols-1">
             <div className="grid gap-[0.2rem]"><label className={LABEL_CLASSES} htmlFor="private-vocabulary-word">Từ vựng<input className={FIELD_CLASSES} id="private-vocabulary-word" value={values.word} onChange={(event) => update("word", event.target.value)} disabled={pending} aria-invalid={Boolean(errors.word)} /></label>{errors.word ? <FieldError message={errors.word} /> : null}</div>
             <label className={LABEL_CLASSES} htmlFor="private-vocabulary-phonetic"><span className={OPTIONAL_LABEL_CLASSES}>Phiên âm <span>(không bắt buộc)</span></span><input className={FIELD_CLASSES} id="private-vocabulary-phonetic" value={values.phonetic} onChange={(event) => update("phonetic", event.target.value)} disabled={pending} /></label>
           </div>
-          <div className="mt-2 grid gap-[0.65rem]">
+          <div className="mt-2 grid min-w-0 gap-[0.65rem]">
             {values.meanings.map((meaning, meaningIndex) => (
-              <fieldset className="m-0 border-0 border-t border-[#e8ebf1] p-0 pt-[0.55rem]" key={meaning.id ?? `meaning-${meaningIndex}`}>
+              <fieldset className="m-0 min-w-0 max-w-full border-0 border-t border-[#e8ebf1] p-0 pt-[0.55rem]" key={meaning.id ?? `meaning-${meaningIndex}`}>
                 <legend className="pr-[0.35rem] text-[0.84rem] font-semibold text-slate-800">Nghĩa {meaningIndex + 1}</legend>
-                <div className="grid grid-cols-2 items-start gap-x-[0.6rem] gap-y-[0.42rem] max-[700px]:grid-cols-1">
+                <div className="grid min-w-0 grid-cols-2 items-start gap-x-[0.6rem] gap-y-[0.42rem] max-[700px]:grid-cols-1">
                   <div className="grid gap-[0.2rem]"><label className={LABEL_CLASSES}>Loại từ<NativeSelect className="text-[0.84rem]" value={meaning.part_of_speech} onChange={(event) => updateMeaning(meaningIndex, "part_of_speech", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`part-${meaningIndex}`])}><option value="">Chọn loại từ</option>{meaning.part_of_speech && !PARTS_OF_SPEECH.some(([value]) => value === meaning.part_of_speech) ? <option value={meaning.part_of_speech}>{meaning.part_of_speech}</option> : null}{PARTS_OF_SPEECH.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect></label>{errors[`part-${meaningIndex}`] ? <FieldError message={errors[`part-${meaningIndex}`]} /> : null}</div>
                   <div className="grid gap-[0.2rem]"><label className={LABEL_CLASSES}>Nghĩa tiếng Việt<textarea className={TEXTAREA_CLASSES} value={meaning.meaning_vi} onChange={(event) => updateMeaning(meaningIndex, "meaning_vi", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`meaning-${meaningIndex}`])} /></label>{errors[`meaning-${meaningIndex}`] ? <FieldError message={errors[`meaning-${meaningIndex}`]} /> : null}</div>
                   <label className={LABEL_CLASSES}><span className={OPTIONAL_LABEL_CLASSES}>Ngữ cảnh <span>(không bắt buộc)</span></span><textarea className={TEXTAREA_CLASSES} value={meaning.context} onChange={(event) => updateMeaning(meaningIndex, "context", event.target.value)} disabled={pending} /></label>
@@ -118,7 +118,7 @@ export function PrivateVocabularyEditor({ embedded = false, error, initialValue,
                 <div className="mt-2 border-t border-slate-200 pt-[0.45rem]">
                   <h3 className="m-0 text-[0.82rem] font-semibold">Ví dụ</h3>
                   {meaning.examples.map((example, exampleIndex) => (
-                    <div className="mt-[0.4rem] grid grid-cols-[1fr_1fr_auto] items-end gap-[0.4rem] max-[700px]:grid-cols-1" key={example.id ?? `example-${exampleIndex}`}>
+                    <div className="mt-[0.4rem] grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-[0.4rem] max-[700px]:grid-cols-1" key={example.id ?? `example-${exampleIndex}`}>
                       <label className={LABEL_CLASSES}>Ví dụ tiếng Anh<textarea className={TEXTAREA_CLASSES} value={example.example_en} onChange={(event) => updateExample(meaningIndex, exampleIndex, "example_en", event.target.value)} disabled={pending} aria-invalid={Boolean(errors[`example-${meaningIndex}-${exampleIndex}`])} />{errors[`example-${meaningIndex}-${exampleIndex}`] ? <span className="text-[0.85rem] font-semibold! text-red-700!">{errors[`example-${meaningIndex}-${exampleIndex}`]}</span> : null}</label>
                       <label className={LABEL_CLASSES}><span className={OPTIONAL_LABEL_CLASSES}>Bản dịch tiếng Việt <span>(không bắt buộc)</span></span><textarea className={TEXTAREA_CLASSES} value={example.example_vi} onChange={(event) => updateExample(meaningIndex, exampleIndex, "example_vi", event.target.value)} disabled={pending} /></label>
                       <button className={BUTTON_CLASSES} type="button" onClick={() => removeExample(meaningIndex, exampleIndex)} disabled={pending}><Trash2 aria-hidden="true" />Xóa ví dụ</button>
@@ -134,7 +134,7 @@ export function PrivateVocabularyEditor({ embedded = false, error, initialValue,
         </form>
       </section>
   );
-  if (embedded) return <div className="private-vocabulary-embedded">{panel}</div>;
+  if (embedded) return <div className="private-vocabulary-embedded w-full min-w-0 max-w-full">{panel}</div>;
   return <dialog ref={dialogRef} className="m-auto max-h-[calc(100vh-2rem)] w-[min(calc(100%-2rem),38rem)] max-w-none overflow-hidden border-0 bg-transparent p-0 backdrop:bg-slate-900/50" aria-labelledby="private-vocabulary-dialog-title" onClick={(event) => { if (event.target === dialogRef.current && !pending) onCancel(); }} onCancel={(event) => { event.preventDefault(); if (!pending) onCancel(); }}>{panel}</dialog>;
 }
 

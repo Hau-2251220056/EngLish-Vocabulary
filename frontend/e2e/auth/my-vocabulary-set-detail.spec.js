@@ -226,6 +226,52 @@ test("create step keeps one named dialog and restores focus within and outside t
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
 });
 
+test("Add Vocabulary and embedded private editor stay inside mobile and desktop viewports", async ({ page }, testInfo) => {
+  await install(page);
+  for (const viewport of [
+    { width: 320, height: 700 }, { width: 375, height: 812 }, { width: 390, height: 844 },
+    { width: 768, height: 1024 }, { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/my/vocabulary-sets/${setId}`);
+    const trigger = page.getByRole("button", { name: "Thêm từ vựng" });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Thêm từ vựng" });
+    const searchGeometry = await modalGeometry(dialog);
+    expectGeometryInsideViewport(searchGeometry, viewport.width);
+    await expect(dialog.getByRole("button", { name: "Đóng" })).toBeVisible();
+    await expect(dialog.getByRole("searchbox", { name: "Tìm từ vựng" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Tìm kiếm" })).toBeVisible();
+
+    await dialog.getByRole("button", { name: "Tạo từ mới" }).click();
+    await dialog.getByRole("button", { name: "Thêm ví dụ" }).click();
+    await dialog.getByRole("textbox", { name: "Từ vựng", exact: true }).fill("a".repeat(80));
+    const createGeometry = await modalGeometry(dialog);
+    expectGeometryInsideViewport(createGeometry, viewport.width);
+    expect(createGeometry.dialogScrollHeight).toBeGreaterThanOrEqual(createGeometry.dialogClientHeight);
+    if (viewport.width <= 390) expect(createGeometry.dialogScrollHeight).toBeGreaterThan(createGeometry.dialogClientHeight);
+    await expect(dialog.getByRole("button", { name: "Quay lại tìm kiếm" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Đóng" })).toBeVisible();
+    if ([320, 375, 390, 1440].includes(viewport.width)) {
+      await page.screenshot({ path: testInfo.outputPath(`add-vocabulary-${viewport.width}.png`) });
+    }
+    await dialog.getByRole("button", { name: "Hủy" }).click();
+    await expect(dialog.getByRole("button", { name: "Tạo từ mới" })).toBeFocused();
+    await dialog.getByRole("button", { name: "Đóng" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    const editTrigger = page.getByRole("row", { name: /book/ }).getByRole("button", { name: "Chỉnh sửa book" });
+    await editTrigger.click();
+    const standalone = page.getByRole("dialog", { name: "Chỉnh sửa từ vựng" });
+    expectGeometryInsideViewport(await modalGeometry(standalone), viewport.width);
+    await standalone.getByRole("button", { name: "Hủy" }).click();
+    await expect(editTrigger).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test("private create protects pending work, preserves values after failure, and retries", async ({ page }) => {
   const createGate = deferred(); const calls = await install(page, populated, { createFailures: 1, createGate });
   await page.goto(`/my/vocabulary-sets/${setId}`); await page.getByRole("button", { name: "Thêm từ vựng" }).click();
@@ -511,5 +557,31 @@ test("Focused UI review keeps pagination, toast, touch targets, and overflow saf
 });
 
 function privateAggregate(word, meanings = [{ id: "meaning-1", part_of_speech: "noun", meaning_vi: "sách", context: null, cefr_level: null, examples: [] }]) { return { success: true, data: { id: "private-1", word, phonetic: null, meanings } }; }
+async function modalGeometry(dialog) {
+  return dialog.evaluate((element) => {
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return { left: box.left, right: box.right, width: box.width };
+    };
+    const descendants = [...element.querySelectorAll("input, select, textarea, button, fieldset, .private-vocabulary-embedded, .private-vocabulary-dialog")];
+    return {
+      dialog: rect(element),
+      descendants: descendants.map((node) => ({ tag: node.tagName, className: node.className, ...rect(node) })),
+      dialogClientHeight: element.clientHeight,
+      dialogScrollHeight: element.scrollHeight,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+}
+function expectGeometryInsideViewport(geometry, viewportWidth) {
+  expect(geometry.dialog.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.dialog.right).toBeLessThanOrEqual(viewportWidth);
+  expect(geometry.documentWidth).toBeLessThanOrEqual(viewportWidth);
+  for (const item of geometry.descendants) {
+    expect(item.left, `${item.tag}.${item.className} left`).toBeGreaterThanOrEqual(geometry.dialog.left - 1);
+    expect(item.right, `${item.tag}.${item.className} right`).toBeLessThanOrEqual(geometry.dialog.right + 1);
+  }
+}
 function apiError(route) { return route.fulfill({ status: 500, json: { success: false, error: { code: "INTERNAL_ERROR", message: "internal database detail must not leak" } } }); }
 async function fillPrivateForm(dialog, word) { await dialog.getByRole("textbox", { name: "Từ vựng", exact: true }).fill(word); await dialog.getByRole("combobox", { name: "Loại từ", exact: true }).selectOption("noun"); await dialog.getByRole("textbox", { name: "Nghĩa tiếng Việt", exact: true }).fill("chuyến đi"); }

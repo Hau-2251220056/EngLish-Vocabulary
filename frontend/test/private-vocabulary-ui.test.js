@@ -62,3 +62,17 @@ test("edit dialog warns about shared identity without claiming a Set count or ex
   assert.match(source, /Ngữ cảnh/);
   assert.match(source, /Thêm ví dụ/);
 });
+
+test("embedded private editor resets intrinsic widths without changing standalone dialog bounds", async () => {
+  const [editor, modal] = await Promise.all([
+    readFile(new URL("../src/vocabulary-sets/private-vocabulary-editor.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/vocabulary-sets/add-vocabulary-modal.jsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(editor, /private-vocabulary-embedded w-full min-w-0 max-w-full/);
+  assert.match(editor, /fieldset className="m-0 min-w-0 max-w-full/);
+  assert.match(editor, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_auto\]/);
+  assert.match(editor, /min-w-0 max-w-full rounded-\[0\.6rem\]/);
+  assert.match(editor, /w-\[min\(calc\(100%-2rem\),38rem\)\]/);
+  assert.match(modal, /max-\[480px\]:max-w-\[calc\(100dvw-1\.5rem\)\]/);
+  assert.doesNotMatch(modal, /document\.(?:body|documentElement)\.style\.overflowX/);
+});
