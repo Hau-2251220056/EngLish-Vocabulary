@@ -113,7 +113,7 @@ test("USER Dashboard composes isolated persisted data, stays read-only and opens
   expect(await persistedSnapshot()).toEqual(before);
 });
 
-test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard requests", async ({ page }) => {
+test("ADMIN Dashboard renders system insights and makes zero USER-only Dashboard requests", async ({ page }) => {
   const requestedUserEndpoints = [];
   page.on("request", (request) => {
     const pathname = new URL(request.url()).pathname;
@@ -123,8 +123,9 @@ test("ADMIN Dashboard remains neutral and makes zero USER-only Dashboard request
   });
 
   await login(page, accounts.administrator);
-  await expect(page.getByRole("heading", { name: "Xin chào, Dashboard Real Admin." })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Không gian quản trị" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tổng quan hệ thống" })).toBeVisible();
+  await expect(page.getByText("Tổng chủ đề", { exact: true })).toBeVisible();
+  await expect(page.getByText("Tổng từ vựng", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Tổng quan học tập" })).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(requestedUserEndpoints).toEqual([]);

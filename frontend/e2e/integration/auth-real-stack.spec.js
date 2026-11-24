@@ -175,12 +175,9 @@ test("real ADMIN Login and me identity remain server-derived", async ({ page }) 
   await page.locator("#login-password").fill(password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", {
-    level: 1,
-    name: `Xin chào, ${adminDisplayName}.`,
-  })).toBeVisible();
-  await page.getByRole("button", { name: `Mở menu tài khoản của ${adminDisplayName}` }).click();
-  await expect(page.locator(".authenticated-admin-indicator")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Tổng quan hệ thống" })).toBeVisible();
+  await expect(page.locator(".authenticated-sidebar-account")).toContainText(adminDisplayName);
+  await expect(page.locator(".authenticated-sidebar-account")).toContainText("Quản trị viên");
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 
   const identity = await page.evaluate(async () => {

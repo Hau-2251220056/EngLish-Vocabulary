@@ -38,7 +38,7 @@ test("Lazy routes and Topic Detail use the compact shared loading language", () 
 });
 
 test("Logout and My Sets loading respect motion and keyboard retry focus", () => {
-  assert.equal(shell.match(/animate-spin motion-reduce:animate-none/g)?.length, 2);
+  assert.equal(shell.match(/animate-spin motion-reduce:animate-none/g)?.length, 3);
   assert.match(mySets, /listRetryRequestedRef\.current = event\.detail === 0/);
   assert.match(mySets, /listLoadingFocusRef\.current\?\.focus\(\)/);
   assert.match(mySets, /listRetryButtonRef\.current\?\.focus\(\)/);
