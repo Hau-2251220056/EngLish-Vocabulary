@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, BookOpen, BookOpenCheck, Compass, Flame, LibraryBig, LockKeyhole, Map, RefreshCw, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, BookOpen, BookOpenCheck, BookText, Compass, Flame, LibraryBig, LockKeyhole, Map, RefreshCw, Tags, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import dashboardLearningIllustration from "../assets/images/banner.png";
@@ -7,11 +7,22 @@ import { LoadingIndicator } from "../components/loading-indicator.jsx";
 import { learningService } from "../services/learning-service.js";
 import { learningPathService } from "../services/learning-path-service.js";
 import { learningSessionService } from "../services/learning-session-service.js";
+import { topicService } from "../services/topic-service.js";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { loadDiscoveryCatalog, selectDiscoveryFeaturedSets } from "../topics/discovery-catalog.js";
 import { DefaultSetCoverArtwork, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
 import { getDashboardGreeting } from "./dashboard-greeting.js";
 import { getCurrentLearningPresentation } from "./dashboard-current-learning.js";
+import {
+  aggregateCefrDistribution,
+  aggregateTopicDistribution,
+  percentage,
+  requireSystemSetSummaries,
+  requireTopicSummaries,
+  requireVocabularySummaries,
+  selectLeadingCefr,
+} from "./admin-dashboard-data.js";
+import { loadAdminVocabularyList } from "./admin-vocabulary-store.js";
 import "./dashboard-page.css";
 
 const FOCUS_CLASSES = "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#0877b9]/30";
@@ -29,6 +40,9 @@ const loadMySets = () => vocabularySetService.listMySets();
 const loadLearningPath = () => learningPathService.getPath();
 const loadReviewSummary = () => learningService.getGlobalReviewSummary();
 const loadFeaturedCatalog = () => loadDiscoveryCatalog();
+const loadAdminTopics = () => topicService.listTopics().then(requireTopicSummaries);
+const loadAdminVocabulary = () => loadAdminVocabularyList().then(requireVocabularySummaries);
+const loadAdminSystemSets = () => vocabularySetService.listAdminSystemSets().then(requireAdminSystemSetSummaries);
 
 export function DashboardPage() {
   const { user } = useAuthentication();
@@ -40,8 +54,11 @@ export function DashboardPage() {
   const currentLearning = useCurrentLearningPass(isUser, learningPath);
   const review = useDashboardSource(isUser, loadReviewSummary, "review");
   const featured = useDashboardSource(isUser, loadFeaturedCatalog, "featured");
+  const adminTopics = useDashboardSource(!isUser, loadAdminTopics, "admin-topics");
+  const adminVocabulary = useDashboardSource(!isUser, loadAdminVocabulary, "admin-vocabulary");
+  const adminSystemSets = useDashboardSource(!isUser, loadAdminSystemSets, "admin-system-sets");
 
-  if (!isUser) return <DashboardAdminLanding displayName={user.display_name} />;
+  if (!isUser) return <DashboardAdminLanding systemSets={adminSystemSets} topics={adminTopics} vocabulary={adminVocabulary} />;
 
   return (
     <section aria-labelledby="dashboard-title" className="dashboard-page mx-auto min-w-0 w-full max-w-6xl px-[clamp(1rem,3vw,3rem)] pb-12 pt-[clamp(1.25rem,3vw,2.5rem)] text-[var(--color-body)]">
@@ -350,8 +367,150 @@ function DashboardIntroduction({ displayName }) {
   );
 }
 
-function DashboardAdminLanding({ displayName }) {
-  return <section aria-labelledby="dashboard-title" className="dashboard-page dashboard-admin-page"><header className="dashboard-introduction"><h1 id="dashboard-title">Xin chào, {displayName}.</h1></header><section className="dashboard-admin-panel" aria-labelledby="dashboard-admin-title"><span className="dashboard-admin-icon" aria-hidden="true"><BookOpenCheck /></span><div><h2 id="dashboard-admin-title">Không gian quản trị</h2><p>Đây là điểm bắt đầu an toàn cho tài khoản quản trị. Hãy chọn một khu vực quản lý từ thanh điều hướng để bắt đầu.</p></div></section></section>;
+const ADMIN_CEFR_COLORS = Object.freeze({ A1: "#0ea5e9", A2: "#22c55e", B1: "#f59e0b", B2: "#f97316", C1: "#14b8a6" });
+const ADMIN_CEFR_LEVELS = Object.freeze(Object.keys(ADMIN_CEFR_COLORS));
+
+function normalizeLegacyC2ForDashboardValidation(systemSets) {
+  return systemSets.map((set) => set?.cefr_level === "C2" ? { ...set, cefr_level: "C1" } : set);
+}
+
+function requireAdminSystemSetSummaries(systemSets) {
+  requireSystemSetSummaries(normalizeLegacyC2ForDashboardValidation(systemSets));
+  return systemSets;
+}
+
+function getAdminCurriculumSets(systemSets) {
+  return systemSets.filter(({ cefr_level: level }) => ADMIN_CEFR_LEVELS.includes(level));
+}
+
+function DashboardAdminLanding({ systemSets, topics, vocabulary }) {
+  const destinations = [
+    { description: "Tổ chức danh mục chủ đề dùng cho các bộ từ hệ thống.", icon: Tags, label: "Chủ đề", to: "/admin/topics" },
+    { description: "Tạo và cập nhật từ vựng, nghĩa, ngữ cảnh và ví dụ.", icon: BookOpenCheck, label: "Kho từ vựng", to: "/admin/vocabulary" },
+    { description: "Duy trì các bộ từ công khai và nội dung học theo thứ tự.", icon: BookText, label: "Bộ từ hệ thống", to: "/admin/vocabulary-sets" },
+  ];
+  const curriculumSets = systemSets.status === "success" ? getAdminCurriculumSets(systemSets.data) : null;
+  const cefr = curriculumSets ? aggregateCefrDistribution(curriculumSets) : null;
+  const leadingCefr = cefr ? selectLeadingCefr(cefr) : null;
+  const leadingCefrStatus = !curriculumSets?.length ? "Chưa có dữ liệu" : leadingCefr ? `${leadingCefr.count} bộ từ` : "Đồng hạng";
+
+  return (
+    <section aria-labelledby="dashboard-title" className="dashboard-page dashboard-admin-page">
+      <header className="dashboard-admin-heading">
+        <h1 id="dashboard-title">Tổng quan hệ thống</h1>
+        <p>Thống kê nội dung học tập của ELVocab.</p>
+      </header>
+      <section className="dashboard-admin-kpis" aria-label="Tổng quan nội dung">
+        <AdminKpiCard description="Danh mục đang quản lý" icon={Tags} label="Tổng chủ đề" source={topics} />
+        <AdminKpiCard description="Mục từ trong thư viện" icon={BookOpenCheck} label="Tổng từ vựng" source={vocabulary} />
+        <AdminKpiCard description="Bao gồm mọi cấp hiện có" icon={BookText} label="Tổng bộ từ hệ thống" source={systemSets} />
+        <article className="dashboard-admin-kpi is-leading-cefr" aria-label="Cấp CEFR có nhiều bộ từ nhất" aria-busy={systemSets.status === "loading"}>
+          <span className="dashboard-admin-kpi-icon" aria-hidden="true"><BookOpen /></span>
+          <div><p>Cấp CEFR có nhiều bộ từ nhất</p>
+            {systemSets.status === "loading" ? <span className="dashboard-admin-kpi-loading" role="status">Đang tải…</span> : null}
+            {systemSets.status === "error" ? <><span className="dashboard-admin-kpi-error" role="alert">Chưa thể tải dữ liệu.</span><button type="button" onClick={systemSets.retry}>Thử lại</button></> : null}
+            {systemSets.status === "success" ? <><strong>{leadingCefr?.level ?? "—"}</strong><span>{leadingCefrStatus}</span></> : null}
+          </div>
+        </article>
+      </section>
+      <section className="dashboard-admin-insights" aria-label="Phân bố nội dung">
+        <AdminCefrChart source={systemSets} />
+        <AdminTopicChart setsSource={systemSets} topicsSource={topics} />
+      </section>
+      <div className="dashboard-admin-management-heading">
+        <h2>Khu vực quản lý</h2>
+        <p>Cập nhật nội dung học tập từ các danh mục hiện có.</p>
+      </div>
+      <nav className="dashboard-admin-shortcuts" aria-label="Khu vực quản trị">
+        {destinations.map(({ description, icon: Icon, label, to }) => (
+          <Link className="dashboard-admin-shortcut" key={to} to={to}>
+            <span className="dashboard-admin-shortcut-icon" aria-hidden="true"><Icon /></span>
+            <span className="dashboard-admin-shortcut-copy">
+              <strong>{label}</strong>
+              <span>{description}</span>
+            </span>
+            <ArrowRight className="dashboard-admin-shortcut-arrow" aria-hidden="true" />
+          </Link>
+        ))}
+      </nav>
+    </section>
+  );
+}
+
+function AdminKpiCard({ description, icon: Icon, label, source }) {
+  return (
+    <article className="dashboard-admin-kpi" aria-busy={source.status === "loading"} aria-label={label}>
+      <span className="dashboard-admin-kpi-icon" aria-hidden="true"><Icon /></span>
+      <div>
+        <p>{label}</p>
+        {source.status === "loading" ? <span className="dashboard-admin-kpi-loading" role="status">Đang tải…</span> : null}
+        {source.status === "error" ? <><span className="dashboard-admin-kpi-error" role="alert">Chưa thể tải dữ liệu.</span><button type="button" onClick={source.retry}>Thử lại</button></> : null}
+        {source.status === "success" ? <><strong>{source.data.length.toLocaleString("vi-VN")}</strong><span>{description}</span></> : null}
+      </div>
+    </article>
+  );
+}
+
+function AdminCefrChart({ source }) {
+  if (source.status === "loading") return <AdminChartState loading title="Phân bố bộ từ theo cấp độ CEFR" />;
+  if (source.status === "error") return <AdminChartState title="Phân bố bộ từ theo cấp độ CEFR" message="Chưa thể tải dữ liệu bộ từ." onRetry={source.retry} />;
+
+  const curriculumSets = getAdminCurriculumSets(source.data);
+  const distribution = aggregateCefrDistribution(curriculumSets);
+  const total = curriculumSets.length;
+  if (total === 0) return <AdminChartState title="Phân bố bộ từ theo cấp độ CEFR" message="Chưa có bộ từ hệ thống để phân bố." />;
+
+  const gradient = distribution.reduce(({ cursor, segments }, { count, level }) => {
+    const nextCursor = cursor + (count / total) * 100;
+    return {
+      cursor: nextCursor,
+      segments: [...segments, `${ADMIN_CEFR_COLORS[level]} ${cursor}% ${nextCursor}%`],
+    };
+  }, { cursor: 0, segments: [] }).segments.join(", ");
+
+  return (
+    <section className="dashboard-admin-chart-card dashboard-admin-cefr-card" aria-labelledby="admin-cefr-chart-title">
+      <header><h2 id="admin-cefr-chart-title">Phân bố bộ từ theo cấp độ CEFR</h2><p>{total.toLocaleString("vi-VN")} bộ từ hệ thống</p></header>
+      <div className="dashboard-admin-cefr-visual">
+        <div className="dashboard-admin-donut" style={{ "--admin-cefr-gradient": `conic-gradient(${gradient})` }} role="img" tabIndex={0} aria-label={`Biểu đồ phân bố ${total} bộ từ hệ thống trong các cấp A1 đến C1.`}><span aria-hidden="true"><strong>{total}</strong><small>Tổng bộ từ</small></span></div>
+        <ul className="dashboard-admin-cefr-legend" aria-label="Chi tiết phân bố CEFR">
+          {distribution.map(({ count, level }) => <li key={level}><span className="dashboard-admin-legend-swatch" style={{ backgroundColor: ADMIN_CEFR_COLORS[level] }} aria-hidden="true" /><strong>{level}</strong><span>{count} bộ</span><small>{percentage(count, total)}%</small><span className="sr-only">Cấp {level}: {count} bộ từ, chiếm {percentage(count, total)} phần trăm.</span></li>)}
+        </ul>
+      </div>
+      <div className="sr-only"><table><caption>Phân bố bộ từ hệ thống theo cấp độ CEFR</caption><thead><tr><th scope="col">Cấp độ</th><th scope="col">Số bộ từ</th><th scope="col">Tỷ lệ</th></tr></thead><tbody>{distribution.map(({ count, level }) => <tr key={level}><th scope="row">{level}</th><td>{count}</td><td>{percentage(count, total)}%</td></tr>)}</tbody></table></div>
+    </section>
+  );
+}
+
+function AdminTopicChart({ setsSource, topicsSource }) {
+  const loading = setsSource.status === "loading" || topicsSource.status === "loading";
+  const failed = setsSource.status === "error" || topicsSource.status === "error";
+  const retry = () => {
+    if (setsSource.status === "error") setsSource.retry();
+    if (topicsSource.status === "error") topicsSource.retry();
+  };
+  if (loading) return <AdminChartState loading title="Số bộ từ theo chủ đề" />;
+  if (failed) return <AdminChartState title="Số bộ từ theo chủ đề" message="Chưa thể tải đầy đủ dữ liệu chủ đề và bộ từ." onRetry={retry} />;
+  if (setsSource.data.length === 0) return <AdminChartState title="Số bộ từ theo chủ đề" message="Chưa có bộ từ hệ thống để phân bố theo chủ đề." />;
+
+  let distribution;
+  try { distribution = aggregateTopicDistribution(topicsSource.data, normalizeLegacyC2ForDashboardValidation(setsSource.data)); }
+  catch { return <AdminChartState title="Số bộ từ theo chủ đề" message="Liên kết chủ đề của bộ từ không hợp lệ. Hãy thử tải lại dữ liệu." onRetry={() => { topicsSource.retry(); setsSource.retry(); }} />; }
+  const maximum = Math.max(...distribution.map(({ count }) => count), 1);
+
+  return (
+    <section className="dashboard-admin-chart-card dashboard-admin-topic-card" aria-labelledby="admin-topic-chart-title">
+      <header><h2 id="admin-topic-chart-title">Số bộ từ theo chủ đề</h2><p>{topicsSource.data.length.toLocaleString("vi-VN")} chủ đề</p></header>
+      <ol className="dashboard-admin-topic-bars">
+        {distribution.map(({ count, id, name }) => <li key={id} tabIndex={0} aria-label={`${name}: ${count} bộ từ`}><div><span title={name}>{name}</span><strong>{count}</strong></div><span className="dashboard-admin-topic-track" aria-hidden="true"><span style={{ width: `${(count / maximum) * 100}%` }} /></span></li>)}
+      </ol>
+      <div className="sr-only"><table><caption>Số bộ từ hệ thống theo chủ đề</caption><thead><tr><th scope="col">Chủ đề</th><th scope="col">Số bộ từ</th></tr></thead><tbody>{distribution.map(({ count, id, name }) => <tr key={id}><th scope="row">{name}</th><td>{count}</td></tr>)}</tbody></table></div>
+    </section>
+  );
+}
+
+function AdminChartState({ loading = false, message, onRetry, title }) {
+  return <section className="dashboard-admin-chart-card dashboard-admin-chart-state" aria-busy={loading} aria-label={title}><h2>{title}</h2>{loading ? <LoadingIndicator label="Đang tải dữ liệu…" variant="centered" /> : <p role={onRetry ? "alert" : "status"}>{message}</p>}{onRetry ? <button type="button" onClick={onRetry}>Thử lại</button> : null}</section>;
 }
 
 function getPrimaryLevel(path) { return path.levels.find(({ level }) => level === path.highest_unlocked_level); }

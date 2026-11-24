@@ -122,7 +122,15 @@ test("private Vocabulary GET/PATCH use exact IDs and sanitize editable aggregate
   ]);
 });
 
-const summary = Object.freeze({ id: "vocabulary-1", word: "book" });
+const summary = Object.freeze({
+  id: "vocabulary-1",
+  word: "book",
+  meaning_count: 2,
+  meanings: [
+    { id: "meaning-1", part_of_speech: "noun", meaning_vi: "sách", cefr_level: "A1", examples: [{ example_en: "Read a book." }] },
+    { id: "meaning-2", part_of_speech: "verb", meaning_vi: "đặt chỗ", cefr_level: "B1", examples: [] },
+  ],
+});
 const vocabulary = Object.freeze({
   ...summary,
   phonetic: null,

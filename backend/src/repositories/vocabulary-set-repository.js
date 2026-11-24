@@ -121,7 +121,7 @@ export function createVocabularySetRepository(prisma) {
     listSystem() {
       return prisma.vOCABULARY_SET.findMany({
         where: { is_public: true },
-        orderBy: { created_at: "asc" },
+        orderBy: [{ created_at: "asc" }, { id: "asc" }],
         select: SET_SUMMARY_SELECT,
       });
     },

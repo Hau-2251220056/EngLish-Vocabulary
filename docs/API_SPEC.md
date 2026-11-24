@@ -381,11 +381,13 @@ Vocabulary V1 is ADMIN-only and canonical-only (`VOCABULARY.owner_id IS NULL`). 
 
 A Vocabulary detail returns `{ success: true, data: Vocabulary }`, where `Vocabulary` contains `id`, `word`, nullable `phonetic`, nullable `pronunciation_url`, timestamps and a non-empty `meanings` array. Each Meaning contains its UUID, `part_of_speech`, `meaning_vi`, nullable `context`, nullable Meaning-only `cefr_level`, timestamps and an `examples` array. Each Example is nested under its owning Meaning and contains its UUID, `example_en`, nullable `example_vi` and `created_at`.
 
+The ADMIN list returns the existing Vocabulary scalar summary fields plus authoritative `meaning_count` and every Meaning as a compact ordered summary containing `id`, `part_of_speech`, `meaning_vi`, nullable `cefr_level`, and at most the first ordered Example projected as `{ example_en }`. Meaning and representative-Example order follow the aggregate's existing `created_at ASC` rule. The list projection intentionally omits Meaning context, Meaning timestamps, and all additional Examples. It is produced by one relational query rather than per-Vocabulary detail requests.
+
 12.2 ADMIN Vocabulary Routes
 
 | Method / path | Success | Requirement |
 |---|---:|---|
-| `GET /api/admin/vocabulary` | `200` | Unpaginated canonical Vocabulary summaries; no server search/filter. |
+| `GET /api/admin/vocabulary` | `200` | Unpaginated canonical Vocabulary summaries ordered by `created_at ASC`, then `id ASC`, with compact ordered Meaning data and `meaning_count`; no server search/filter. |
 | `GET /api/admin/vocabulary/:vocabularyId` | `200` | Complete canonical nested aggregate. |
 | `POST /api/admin/vocabulary` | `201` | Create one canonical aggregate (`owner_id = NULL`) atomically with one or more Meanings. |
 | `PATCH /api/admin/vocabulary/:vocabularyId` | `200` | Update approved canonical fields and optional complete-replacement `meanings` collection atomically. |
@@ -625,7 +627,7 @@ Public System Set Detail additionally supports an atomic single-item save throug
 
 | Method / path | Access | Success |
 |---|---|---:|
-| `GET /api/admin/vocabulary-sets` | ADMIN | `200` |
+| `GET /api/admin/vocabulary-sets` | ADMIN | `200`; System Sets are ordered by `created_at ASC`, then `id ASC`. |
 | `POST /api/admin/vocabulary-sets` | ADMIN | `201` |
 | `GET /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
 | `PATCH /api/admin/vocabulary-sets/:setId` | ADMIN | `200` |
@@ -1524,17 +1526,25 @@ Access
 
 Admin.
 
+Implemented read-only contract: authentication plus the existing `ADMIN` role middleware is required. Optional scalar query parameters are `page` (default `1`), `page_size` (default `10`, maximum `100`), `query` (case-insensitive substring match across `display_name` and `email`) and exact `role` (`USER` or `ADMIN`). Unknown, repeated, malformed or unsupported query values return `400 VALIDATION_ERROR`.
+
+The success envelope contains `items`, `pagination` (`page`, `page_size`, `total_items`, `total_pages`) and normalized `filters` (`query`, `role`). Results are ordered by `created_at DESC`, then `id DESC`. Each item exposes only `id`, `display_name`, `email`, nullable `avatar_url`, `role`, `is_active`, `created_at` and `current_streak`. `current_streak` is an authoritative non-negative integer for `USER` accounts and `null` for `ADMIN` accounts. It is projected with the existing Vietnam-timezone streak domain from one batched activity-date query for USER accounts on the current page; raw streak history is never returned. A streak aggregation failure fails the complete request rather than returning a partial list or coercing unavailable data to zero.
+
 53.2 Get User
 GET /api/admin/users/:userId
 Access
 
 Admin.
 
+The path identity must be a UUID. The success envelope exposes the list fields plus `updated_at`. Missing users return `404 USER_NOT_FOUND`; malformed identities return `400 VALIDATION_ERROR`. Neither Admin User endpoint exposes password hashes, authentication sessions/tokens, private Vocabulary, Learning Progress, XP or related private aggregates.
+
 53.3 Update User
 PATCH /api/admin/users/:userId
 Access
 
 Admin.
+
+Not implemented. Role changes, account locking/unlocking and all other User mutations require separate approval and contract definition.
 
 Admin không được tùy tiện chỉnh:
 
@@ -1546,6 +1556,8 @@ trừ khi có administrative requirement rõ ràng.
 
 53.4 Delete / Disable User
 DELETE /api/admin/users/:userId
+
+Not implemented. Account deletion or disabling requires separate approval and contract definition.
 
 Hoặc disable mechanism tương đương nếu được quyết định trong architecture.
 
@@ -1961,8 +1973,8 @@ DELETE /api/community/comments/:commentId
 Admin
 GET    /api/admin/users
 GET    /api/admin/users/:userId
-PATCH  /api/admin/users/:userId
-DELETE /api/admin/users/:userId
+PATCH  /api/admin/users/:userId        [NOT IMPLEMENTED]
+DELETE /api/admin/users/:userId        [NOT IMPLEMENTED]
 
 GET    /api/admin/community/posts
 DELETE /api/admin/community/posts/:postId

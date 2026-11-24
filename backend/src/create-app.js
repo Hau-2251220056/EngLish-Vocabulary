@@ -17,6 +17,7 @@ import {
   createUnexpectedErrorMiddleware,
 } from "./middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
+import { createAdminUserRepository } from "./repositories/admin-user-repository.js";
 import { createLoginAbuseRepository } from "./repositories/login-abuse-repository.js";
 import { createTopicRepository } from "./repositories/topic-repository.js";
 import { createUserRepository } from "./repositories/user-repository.js";
@@ -28,6 +29,7 @@ import { createLearningSessionRepository } from "./repositories/learning-session
 import { createStreakRepository } from "./repositories/streak-repository.js";
 import { createLearningPathRepository } from "./repositories/learning-path-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
+import { createAdminUserRouter } from "./routes/admin-user-routes.js";
 import { createLearningRouter } from "./routes/learning-routes.js";
 import { createQuizRouter } from "./routes/quiz-routes.js";
 import { createLearningSessionRouter, createUserStreakRouter } from "./routes/learning-session-routes.js";
@@ -47,6 +49,8 @@ import {
   createVocabularySetPickerRouter,
 } from "./routes/vocabulary-set-routes.js";
 import { createAuthenticationService } from "./services/authentication-service.js";
+import { createAdminUserService } from "./services/admin-user-service.js";
+import { createAdminUserController } from "./controllers/admin-user-controller.js";
 import { createTopicService } from "./services/topic-service.js";
 import { createVocabularyService } from "./services/vocabulary-service.js";
 import { createVocabularySetService } from "./services/vocabulary-set-service.js";
@@ -108,6 +112,14 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   const topicController = createTopicController({ topicService });
   const adminAuthorizationMiddleware = createRoleAuthorizationMiddleware({
     allowedRoles: ["ADMIN"],
+  });
+  const adminUserRepository = createAdminUserRepository(prisma);
+  const adminUserService = createAdminUserService({ adminUserRepository });
+  const adminUserController = createAdminUserController({ adminUserService });
+  const adminUserRouter = createAdminUserRouter({
+    adminUserController,
+    authenticationMiddleware,
+    adminAuthorizationMiddleware,
   });
   const publicTopicRouter = createPublicTopicRouter({ topicController });
   const adminTopicRouter = createAdminTopicRouter({
@@ -251,6 +263,7 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use("/api/learning-sessions", learningSessionRouter);
   app.use("/api/users/me", userStreakRouter);
   app.use("/api/admin/topics", adminTopicRouter);
+  app.use("/api/admin/users", adminUserRouter);
   app.use("/api/admin/vocabulary", adminVocabularyRouter);
   app.use("/api/admin/vocabulary-sets", adminVocabularySetRouter);
 

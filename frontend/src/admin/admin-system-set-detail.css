@@ -1,0 +1,22 @@
+.admin-set-detail-page { display: grid; gap: 1rem; }
+.admin-set-detail-page .admin-set-detail-back { margin-bottom: 0; width: fit-content; }
+.admin-set-detail-hero { position: relative; border-color: #dbe7f0; box-shadow: 0 8px 24px rgb(15 23 42/6%); }
+.admin-set-detail-cover { background: linear-gradient(145deg,#e0f2fe,#ecfeff); }
+.admin-set-detail-badges .admin-badge { border-radius: 999px; }
+.admin-set-membership { margin-top: 0; border-color: #dbe7f0; box-shadow: 0 8px 24px rgb(15 23 42/6%); }
+.admin-set-membership-heading { background: #fff; }
+.admin-set-membership-heading .admin-secondary-button,.admin-set-membership-footer button { min-height: 2.75rem; }
+.admin-set-item-list li { transition: background-color .15s; }
+.admin-set-item-list li { content-visibility: auto; contain-intrinsic-size: 4.25rem; }
+.admin-set-item-list li:hover { background: #f8fdff; }
+.admin-set-item-meaning strong { color: #334155; font-size: .88rem; }
+.admin-set-item-actions button { touch-action: manipulation; }
+.admin-set-membership-footer { position: sticky; bottom: 0; z-index: 2; }
+.admin-set-membership-footer.is-dirty { border-top-color: #7dd3fc; background: #f0f9ff; }
+.admin-set-membership-footer.is-dirty>span { color: #0369a1; font-weight: 750; }
+.admin-set-membership-footer>div { display: flex; gap: .6rem; }
+.admin-set-membership-footer button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; }
+.admin-set-membership-footer button svg { width: 1rem; height: 1rem; }
+@media(max-width:700px){.admin-set-membership-footer>div{display:grid;grid-template-columns:1fr 1fr}.admin-set-membership-footer>div button{width:100%}}
+@media(max-width:390px){.admin-set-membership-footer>div{grid-template-columns:1fr}.admin-set-detail-heading h1{font-size:1.45rem}.admin-set-item-list li{padding:.75rem}.admin-set-item-actions{width:100%;justify-content:flex-end}}
+@media(prefers-reduced-motion:reduce){.admin-set-item-list li{transition:none}}
