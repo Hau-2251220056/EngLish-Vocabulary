@@ -253,7 +253,7 @@ export function PersonalVocabularySetModal({ aggregate, error, mode, onCancel, o
   );
 }
 
-export function AdminVocabularySetEditor({ aggregate, mode, onCancel, onSave, pending, retryUpload }) {
+export function AdminVocabularySetEditor({ aggregate, manageItems = true, mode, onCancel, onSave, pending, retryUpload }) {
   const [values, setValues] = useState(() => formValues(aggregate));
   const [topics, setTopics] = useState([]);
   const [topicState, setTopicState] = useState("loading");
@@ -287,7 +287,7 @@ export function AdminVocabularySetEditor({ aggregate, mode, onCancel, onSave, pe
   async function searchPicker(event) { event.preventDefault(); const query = pickerQuery.trim(); if (!query) { setPickerState("validation"); return; } setPickerState("loading"); try { setPickerItems(await vocabularySetService.searchVocabularyPicker(query)); setPickerState("ready"); } catch { setPickerState("error"); } }
   function openPicker() { setPickerQuery(""); setPickerItems([]); setPickerState("idle"); setPickerOpen(true); }
   function closePicker() { if (pickerDialogRef.current?.open) pickerDialogRef.current.close(); setPickerOpen(false); requestAnimationFrame(() => pickerTriggerRef.current?.focus()); }
-  async function submit(event) { event.preventDefault(); const nextErrors = validateSystemSet(values); const metadataError = validateMetadata(values.metadata, { requiredCefr: true }); if (metadataError) nextErrors.metadata = metadataError; setErrors(nextErrors); if (Object.keys(nextErrors).length) return; await onSave({ input: serializeSystemSet(values), metadata: values.metadata }); }
+  async function submit(event) { event.preventDefault(); const nextErrors = validateSystemSet(values, { requireItems: manageItems }); const metadataError = validateMetadata(values.metadata, { requiredCefr: true }); if (metadataError) nextErrors.metadata = metadataError; setErrors(nextErrors); if (Object.keys(nextErrors).length) return; await onSave({ input: serializeSystemSet(values, { includeItems: manageItems }), metadata: values.metadata }); }
 
   return (
     <section className="my-vocabulary-set-editor" aria-labelledby="my-vocabulary-set-editor-title">
@@ -308,13 +308,13 @@ export function AdminVocabularySetEditor({ aggregate, mode, onCancel, onSave, pe
         </div>
         <VocabularySetMetadataControls idPrefix="system-set" requiredCefr value={values.metadata} onChange={(metadata) => update("metadata", metadata)} pending={pending} />
         {errors.metadata ? <FieldError message={errors.metadata} /> : null}
-        <fieldset className="my-vocabulary-set-items-editor">
-          <legend>Danh sách từ vựng theo thứ tự</legend>
-          <p>Danh sách này là nội dung đầy đủ sẽ được lưu cho bộ từ. Bộ từ hệ thống cần ít nhất một từ vựng.</p>
+        {manageItems ? <fieldset className={`my-vocabulary-set-items-editor${mode === "create" ? " is-compact-create" : ""}`}>
+          <legend>{mode === "create" ? "Từ vựng trong bộ" : "Danh sách từ vựng theo thứ tự"}</legend>
+          <p>{mode === "create" ? "Chọn ít nhất một từ để tạo bộ từ." : "Danh sách này là nội dung đầy đủ sẽ được lưu cho bộ từ. Bộ từ hệ thống cần ít nhất một từ vựng."}</p>
           {errors.items ? <FieldError message={errors.items} /> : null}
-          <button ref={pickerTriggerRef} className={`${MODAL_BUTTON_CLASSES} mt-2`} type="button" onClick={openPicker} disabled={pending}><Plus className="size-4" aria-hidden="true" />Thêm từ vựng</button>
+          <div className="admin-create-item-summary"><strong>{values.items.length} từ đã chọn</strong><button ref={pickerTriggerRef} className={MODAL_BUTTON_CLASSES} type="button" onClick={openPicker} disabled={pending}><Plus className="size-4" aria-hidden="true" />Thêm từ vựng</button></div>
           <ol>{values.items.map((item, index) => <li key={item.vocabulary_id}><div><strong>{item.word}</strong>{item.phonetic ? <span>{item.phonetic}</span> : null}</div><div className="my-vocabulary-set-item-controls"><button type="button" onClick={() => moveItem(index, -1)} disabled={pending || index === 0} aria-label={`Đưa ${item.word} lên`}><ArrowUp className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => moveItem(index, 1)} disabled={pending || index === values.items.length - 1} aria-label={`Đưa ${item.word} xuống`}><ArrowDown className="size-4" aria-hidden="true" /></button><button type="button" onClick={() => removeItem(index)} disabled={pending} aria-label={`Xóa ${item.word} khỏi bộ từ`}><Trash2 className="size-4" aria-hidden="true" /></button></div></li>)}</ol>
-        </fieldset>
+        </fieldset> : null}
         <div className="my-vocabulary-set-form-actions"><button type="button" onClick={onCancel} disabled={pending}>Hủy</button><button className="my-vocabulary-sets-primary" type="submit" disabled={pending || topicState !== "ready"} aria-busy={pending}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}{pending ? "Đang lưu…" : "Lưu bộ từ"}</button></div>
       </form>
       {pickerOpen ? <dialog ref={pickerDialogRef} className="m-auto max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),36rem)] max-w-none overflow-hidden rounded-2xl border-0 bg-transparent p-0 text-slate-900 shadow-[0_24px_65px_rgb(15_23_42/30%)] backdrop:bg-slate-900/50" aria-labelledby="admin-vocabulary-picker-title" aria-describedby="admin-vocabulary-picker-description" onCancel={(event) => { event.preventDefault(); closePicker(); }} onClick={(event) => { if (event.target === pickerDialogRef.current) closePicker(); }}>
@@ -360,8 +360,8 @@ function personalSetFormValues(aggregate) { return { name: aggregate.name ?? "",
 function serializePersonalSet(values) { return { name: values.name.trim(), description: values.description.trim() || null, cefr_level: values.metadata.cefrLevel || null, cover_image_url: values.metadata.coverFile || values.metadata.removeCover || (values.metadata.isExisting && !values.metadata.coverUrlDirty) ? undefined : values.metadata.coverUrl.trim() || null }; }
 function validatePersonalSet(values) { const errors = {}; if (!values.name.trim()) errors.name = "Tên bộ từ là bắt buộc."; else if (values.name.trim().length > 100) errors.name = "Tên bộ từ không được quá 100 ký tự."; if (values.description.length > 500) errors.description = "Mô tả không được quá 500 ký tự."; return errors; }
 function formValues(aggregate) { return { topic_id: aggregate.topic_id ?? "", name: aggregate.name ?? "", description: aggregate.description ?? "", metadata: initialMetadataValue(aggregate), items: (aggregate.items ?? []).slice().sort((left, right) => left.position - right.position).map((item) => ({ vocabulary_id: item.vocabulary_id, word: item.word, phonetic: item.phonetic ?? null, source: item.source })) }; }
-function serializeSystemSet(values) { return { topic_id: values.topic_id, name: values.name.trim(), description: values.description.trim() || null, cefr_level: values.metadata.cefrLevel, cover_image_url: values.metadata.coverFile || values.metadata.removeCover || (values.metadata.isExisting && !values.metadata.coverUrlDirty) ? undefined : values.metadata.coverUrl.trim() || null, items: values.items.map((item) => ({ vocabulary_id: item.vocabulary_id })) }; }
-function validateSystemSet(values) { const errors = {}; if (!values.name.trim()) errors.name = "Tên bộ từ là bắt buộc."; else if (values.name.trim().length > 100) errors.name = "Tên bộ từ không được quá 100 ký tự."; if (!values.topic_id) errors.topic_id = "Hãy chọn một chủ đề."; if (values.description.length > 500) errors.description = "Mô tả không được quá 500 ký tự."; if (values.items.length === 0) errors.items = "Bộ từ hệ thống cần ít nhất một từ vựng."; return errors; }
+function serializeSystemSet(values, { includeItems = true } = {}) { return { topic_id: values.topic_id, name: values.name.trim(), description: values.description.trim() || null, cefr_level: values.metadata.cefrLevel, cover_image_url: values.metadata.coverFile || values.metadata.removeCover || (values.metadata.isExisting && !values.metadata.coverUrlDirty) ? undefined : values.metadata.coverUrl.trim() || null, ...(includeItems ? { items: values.items.map((item) => ({ vocabulary_id: item.vocabulary_id })) } : {}) }; }
+function validateSystemSet(values, { requireItems = true } = {}) { const errors = {}; if (!values.name.trim()) errors.name = "Tên bộ từ là bắt buộc."; else if (values.name.trim().length > 100) errors.name = "Tên bộ từ không được quá 100 ký tự."; if (!values.topic_id) errors.topic_id = "Hãy chọn một chủ đề."; if (values.description.length > 500) errors.description = "Mô tả không được quá 500 ký tự."; if (requireItems && values.items.length === 0) errors.items = "Bộ từ hệ thống cần ít nhất một từ vựng."; return errors; }
 function filterSets(sets, query) { const normalized = query.trim().toLocaleLowerCase(); if (!normalized) return sets; return sets.filter((set) => [set.name, set.description].filter((value) => typeof value === "string").some((value) => value.toLocaleLowerCase().includes(normalized))); }
 function sortSets(sets, sort) {
   if (sort === "server") return sets;

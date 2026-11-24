@@ -1094,6 +1094,26 @@ Không được chỉ ẩn Admin UI ở frontend mà bỏ qua authorization ở 
 
 Admin có thể quản lý nội dung hệ thống nhưng không được làm thay đổi business data của user ngoài phạm vi được quy định.
 
+### 16.1 Admin UI V2 read-only User Management
+
+`GET /api/admin/users` and `GET /api/admin/users/:userId` use the existing Backend layering:
+
+```text
+ADMIN request
+  -> authentication middleware
+  -> ADMIN role authorization middleware
+  -> Admin User route/controller
+  -> Admin User service
+  -> Admin User repository
+  -> Prisma
+```
+
+The list validates supported scalar search, role and pagination parameters, then performs database-side `count` plus the bounded page read with stable `created_at DESC, id DESC` ordering. List and detail repositories use explicit safe field selections; password hashes, tokens, sessions, private Vocabulary, learning Progress, XP and other unrelated learner data are never selected. The surface is read-only and defines no Admin User mutation route.
+
+For each list request, the service captures one evaluation instant and selects Streak dates in one additional batch query limited to USER IDs on the current page. ADMIN rows do not participate in the Streak query and receive `current_streak: null`. USER rows reuse the authoritative Streak domain projection, including `Asia/Ho_Chi_Minh` today/yesterday semantics, and receive a non-negative integer. This preserves one `count`/page transaction plus one optional batch lookup, avoids per-user N+1 queries and never exposes raw Streak history.
+
+Streak aggregation follows HD-02: a batch/projection failure fails the complete Admin User list request. The service does not return a partially enriched page and does not coerce unavailable aggregation data to zero. Reading all retained qualifying dates avoids an arbitrary correctness cutoff, but history volume remains documented technical debt for large real datasets.
+
 17. Error Handling
 
 Backend sử dụng centralized error handling.

@@ -789,7 +789,7 @@ The Dashboard must not become a separate source of truth for business data.
 - Related TASK: `docs/tasks/DASHBOARD_V1_TASK.md` — HUMAN APPROVED.
 - TASK-073 through TASK-079 are complete and HUMAN approved. TASK-079 formal TEST is `PASS` for AC-01 through AC-15 and formal REVIEW is `APPROVE`, with no findings or blockers.
 - USER V1 scope is limited to a personalized greeting, persisted total-started/`LEARNING`/`LEARNED` snapshot, exact private Set count, at most three Set previews, valid non-empty Set Learn actions and quick navigation to Topics, My Sets and detailed Learning Progress.
-- Authenticated ADMIN retains a safe neutral `/dashboard` landing and must not invoke USER-only Progress or My Sets APIs. Admin Dashboard remains `TODO`.
+- At the Dashboard V1 closure, authenticated ADMIN retained a safe neutral `/dashboard` landing and made no USER-only Progress or My Sets request. The later Admin UI V2 workstream supersedes that historical presentation with a dedicated ADMIN content Dashboard while preserving the zero-USER-endpoint boundary.
 - The original Dashboard V1 closure excluded XP/Level, Streak, Words to Review and Continue Learning. The later XP & Level V1 and Streak V1 workstreams are `DONE`, and CEFR Learning Path V1 now implements the bounded Words to Review summary and authoritative next-learning recommendation. Daily Goal, Topic/Set percentages, achievements, activity/history, Quiz/Pronunciation metrics, weekly calendar and charts remain `TODO` or deferred.
 - HUMAN final closure is approved; User Dashboard V1 is `DONE`.
 
@@ -1020,8 +1020,8 @@ They require explicit scope approval before implementation.
 
 4.12 Admin
 Feature	Status	SPEC	PLAN	TASK	IMPLEMENT	TEST	REVIEW
-Admin Dashboard	TODO	⏳	⏳	⏳	⏳	⏳	⏳
-User Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
+Admin Dashboard	DONE	✓	✓	✓	✓	✓	✓
+User Management	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Management	DONE	✓	✓	✓	✓	✓	✓
 Vocabulary Set Management	DONE	✓	✓	✓	✓	✓	✓
 Topic Management	DONE	✓	✓	⏳	⏳	⏳	⏳
@@ -1029,6 +1029,17 @@ Community Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
 Admin functionality must remain within the approved project scope.
+
+### Admin UI V2 local workstream checkpoint
+
+- Prompts 251–266 implemented the Bright & Clean Admin shell, real-data Dashboard, Topic/Vocabulary/System Set management, routed System Set Detail, shared dialogs/toasts and the read-only Admin User backend. Prompt 267 User Management was HUMAN accepted.
+- Prompt 268 pagination/streak audit is complete. Prompt 269 pagination and Vocabulary table refinement was HUMAN accepted with Topic deterministic ordering intentionally deferred. Prompt 270 Set Detail pagination was HUMAN accepted. Prompt 271 Admin User Current Streak was HUMAN accepted.
+- Historical verification reported for Prompts 269–271: automated runs `100/100 PASS`, HUMAN localhost checks `27/27 PASS`, real-data multi-page and cross-page reorder `PASS`, and Admin/Dashboard Current Streak consistency `PASS`. These are retained historical reports, not newly executed verification in Prompt 273.
+- Prompt 272 final integration audit completed with `REMEDIATION_REQUIRED` solely for active documentation drift, and Prompt 273 reconciled that documentation. Prompt 274 Final Integration Verification was historically `PARTIAL` because P272-03 delete-dialog trigger-focus restoration still failed on Topics and Vocabulary.
+- Prompt 274-R completed the bounded focus-restoration remediation and was HUMAN accepted. P272-03 is `RESOLVED`: Cancel and Escape restore focus to the exact delete trigger for Topics, Vocabulary and System Sets, and all six dismissal flows pass without a delete mutation.
+- Final Integration Verification is `CLOSED`. Final reported verification is Backend DB-free `44/44 PASS`, Frontend unit `43/43 PASS`, mocked Chromium `129/129 PASS`, total `216/216 PASS`; Frontend ESLint, production build, strict UTF-8 validation and `git diff --check` also pass.
+- Admin Dashboard and User Management are locally implemented, tested, reviewed and HUMAN accepted. Their `DONE` status records local development-cycle acceptance only: the accumulated Admin UI V2 implementation remains in the local dirty worktree on `feature/admin-ui-v2` and is uncommitted, unmerged, undeployed and not a production-release claim.
+- Accepted deferred items remain open: Topic deterministic ordering; Streak history query volume; the unrelated USER `/review` same-route PUSH/hash scroll regression with unconfirmed causality; obsolete `AdminPlannedNavigationItem`; DB-backed/real-stack verification (`NOT TESTED`); and large real-database performance (`NOT TESTED`).
 
 Admin APIs must be protected by authentication and role-based authorization.
 

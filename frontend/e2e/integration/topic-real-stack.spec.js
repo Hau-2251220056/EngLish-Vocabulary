@@ -201,40 +201,45 @@ test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semant
   await expect(page.getByRole("heading", { name: "Quản lý chủ đề" })).toBeVisible();
   await expect(page.locator("#admin-topic-search")).toHaveAccessibleName("Tìm kiếm chủ đề");
 
-  await page.getByRole("button", { name: "Tạo chủ đề" }).click();
-  await page.locator("#topic-name").fill("   ");
-  await page.getByRole("button", { name: "Lưu chủ đề" }).click();
-  await expect(page.locator("#topic-name")).toHaveAttribute("aria-invalid", "true");
-  await expect(page.locator("#topic-name")).toHaveAttribute("aria-describedby", "topic-name-error");
+  await page.getByRole("button", { name: "Thêm chủ đề" }).click();
+  let form = page.getByRole("dialog", { name: "Thêm chủ đề" });
+  await form.getByLabel("Tên chủ đề").fill("   ");
+  await form.getByRole("button", { name: "Lưu chủ đề" }).click();
+  await expect(form.getByLabel("Tên chủ đề")).toHaveAttribute("aria-invalid", "true");
+  await expect(form.getByText("Tên chủ đề là bắt buộc.")).toBeVisible();
 
-  await page.locator("#topic-name").fill(`  ${createdName}  `);
-  await page.locator("#topic-description").fill("Created through the real ADMIN API");
-  await page.getByRole("button", { name: "Lưu chủ đề" }).click();
-  await expect(page.getByRole("status")).toContainText("Đã tạo chủ đề thành công");
+  await form.getByLabel("Tên chủ đề").fill(`  ${createdName}  `);
+  await form.getByLabel("Mô tả (không bắt buộc)").fill("Created through the real ADMIN API");
+  await form.getByRole("button", { name: "Lưu chủ đề" }).click();
+  await expect(page.locator(".admin-toast").filter({ hasText: "Tạo chủ đề thành công" })).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(createdName) })).toBeVisible();
 
-  await page.getByRole("button", { name: `Tạo chủ đề` }).click();
-  await page.locator("#topic-name").fill(createdName.toLowerCase());
-  await page.getByRole("button", { name: "Lưu chủ đề" }).click();
-  await expect(page.getByRole("alert")).toContainText("Tên chủ đề đã tồn tại");
-  await page.getByRole("button", { name: "Đóng biểu mẫu" }).click();
+  await page.getByRole("button", { name: "Thêm chủ đề" }).click();
+  form = page.getByRole("dialog", { name: "Thêm chủ đề" });
+  await form.getByLabel("Tên chủ đề").fill(createdName.toLowerCase());
+  await form.getByRole("button", { name: "Lưu chủ đề" }).click();
+  await expect(form.getByRole("alert")).toContainText("Tên chủ đề đã tồn tại");
+  await form.getByRole("button", { name: "Hủy" }).click();
+  await page.getByRole("dialog", { name: "Bỏ thay đổi chưa lưu?" }).getByRole("button", { name: "Bỏ thay đổi" }).click();
 
   await page.getByRole("button", { name: `Xem ${createdName}` }).click();
-  await expect(page.getByRole("heading", { name: createdName })).toBeVisible();
-  await page.getByRole("button", { name: "Đóng chi tiết" }).click();
+  let detail = page.getByRole("dialog", { name: createdName });
+  await expect(detail).toContainText("Created through the real ADMIN API");
+  await detail.getByRole("button", { name: "Đóng", exact: true }).click();
 
   await page.getByRole("button", { name: `Sửa ${createdName}` }).click();
-  await page.locator("#topic-description").fill("");
+  form = page.getByRole("dialog", { name: "Chỉnh sửa chủ đề" });
+  await form.getByLabel("Mô tả (không bắt buộc)").fill("");
   const clearedDescriptionRequest = waitForAdminTopicPatch(page);
-  await page.getByRole("button", { name: "Lưu chủ đề" }).click();
+  await form.getByRole("button", { name: "Lưu chủ đề" }).click();
   expect((await clearedDescriptionRequest).postDataJSON()).toEqual({ description: null });
-  await expect(page.getByText("Chưa có mô tả cho chủ đề này.")).toBeVisible();
-  await page.getByRole("button", { name: "Đóng chi tiết" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(createdName) })).toContainText("Không có mô tả");
 
   await page.getByRole("button", { name: `Sửa ${createdName}` }).click();
-  await page.locator("#topic-name").fill(renamedName);
+  form = page.getByRole("dialog", { name: "Chỉnh sửa chủ đề" });
+  await form.getByLabel("Tên chủ đề").fill(renamedName);
   const renamedTopicRequest = waitForAdminTopicPatch(page);
-  await page.getByRole("button", { name: "Lưu chủ đề" }).click();
+  await form.getByRole("button", { name: "Lưu chủ đề" }).click();
   await expect(page.getByRole("row", { name: new RegExp(renamedName) })).toBeVisible();
   expect((await renamedTopicRequest).postDataJSON()).toEqual({ name: renamedName });
 
@@ -248,7 +253,7 @@ test("@topic ADMIN navigation and real CRUD preserve validation and PATCH semant
   await expect(deleteButton).toBeFocused();
   await deleteButton.click();
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();
-  await expect(page.getByRole("status")).toContainText("Đã xóa chủ đề thành công");
+  await expect(page.locator(".admin-toast").filter({ hasText: "Xóa chủ đề thành công" })).toBeVisible();
   await expect(page.getByText(renamedName)).toHaveCount(0);
 });
 
@@ -267,7 +272,8 @@ test("@topic failed ADMIN deletion keeps the Topic and actionable dialog state",
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText("Không thể hoàn tất hành động");
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.getByRole("alert")).not.toContainText(/database|stack|prisma/i);
   await page.getByRole("button", { name: "Hủy" }).click();
   await expect(page.getByText(nullableTopic.name)).toBeVisible();
 });
@@ -284,7 +290,7 @@ for (const viewport of [
     if (viewport.width <= 900) {
       await drawerToggle.click();
       await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
-      await expect(page.getByRole("link", { name: "Trang chủ" })).toBeFocused();
+      await expect(page.getByRole("link", { name: "Tổng quan hệ thống" })).toBeFocused();
     } else {
       await expect(drawerToggle).toBeHidden();
     }

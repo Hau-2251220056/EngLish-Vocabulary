@@ -58,6 +58,11 @@ const AdminVocabularySetsPage = lazyRoute(
   () => import("./vocabulary-sets/admin-vocabulary-sets-page.jsx"),
   "AdminVocabularySetsPage",
 );
+const AdminVocabularySetDetailPage = lazyRoute(
+  () => import("./vocabulary-sets/admin-vocabulary-set-detail-page.jsx"),
+  "AdminVocabularySetDetailPage",
+);
+const AdminUsersPage = lazyRoute(() => import("./admin/admin-users-page.jsx"), "AdminUsersPage");
 const MyVocabularySetsPage = lazyRoute(
   () => import("./vocabulary-sets/my-vocabulary-sets-page.jsx"),
   "MyVocabularySetsPage",
@@ -115,6 +120,8 @@ export function AppRouter() {
               <Route path="/admin/topics" element={<AdminTopicPage />} />
               <Route path="/admin/vocabulary" element={<AdminVocabularyRoute />} />
               <Route path="/admin/vocabulary-sets" element={<AdminVocabularySetsPage />} />
+              <Route path="/admin/vocabulary-sets/:setId" element={<AdminVocabularySetDetailPage />} />
+              <Route path="/admin/users" element={<AdminUsersPage />} />
             </Route>
           </Route>
         </Route>

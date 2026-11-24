@@ -6,6 +6,22 @@ import {
   responses,
 } from "./fixtures/auth-api.js";
 
+async function installAdminDashboardApi(page) {
+  const topics = [
+    { id: "topic-1", name: "Du lịch" },
+    { id: "topic-2", name: "Công việc và giao tiếp" },
+    { id: "topic-3", name: "Thiên nhiên" },
+  ];
+  const sets = [
+    { id: "set-1", topic_id: "topic-1", cefr_level: "A1" },
+    { id: "set-2", topic_id: "topic-1", cefr_level: "A2" },
+    { id: "set-3", topic_id: "topic-2", cefr_level: "A1" },
+  ];
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: topics } }));
+  await page.route("**/api/admin/vocabulary", (route) => route.fulfill({ status: 200, json: { success: true, data: [1, 2, 3, 4].map((index) => ({ id: `word-${index}` })) } }));
+  await page.route("**/api/admin/vocabulary-sets", (route) => route.fulfill({ status: 200, json: { success: true, data: sets } }));
+}
+
 test("review CTA opens the center for positive and zero due summaries", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
   let dueCount = 4;
@@ -84,11 +100,15 @@ test("USER composes four authoritative statistics with independent source recove
   await expect(page.getByRole("navigation", { name: "Lối tắt Dashboard" })).toHaveCount(0);
 });
 
-test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ page }) => {
+test("ADMIN receives management shortcuts with zero USER-only API calls", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicAdmin),
   });
   let userApiCalls = 0;
+  let adminVocabularyCalls = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/admin/vocabulary") adminVocabularyCalls += 1;
+  });
   await page.route("**/api/learning/progress**", async (route) => {
     userApiCalls += 1;
     await route.abort("failed");
@@ -109,14 +129,110 @@ test("ADMIN receives a neutral landing with zero USER-only API calls", async ({ 
     userApiCalls += 1;
     await route.abort("failed");
   });
+  await installAdminDashboardApi(page);
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: `Xin chào, ${publicAdmin.display_name}.` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tổng quan hệ thống" })).toBeVisible();
+  await expect(page.getByText(`Xin chào, ${publicAdmin.display_name}.`)).toHaveCount(0);
   await expect(page.getByRole("main").getByText("Dashboard", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("điểm bắt đầu an toàn cho tài khoản quản trị")).toBeVisible();
+  const shortcuts = page.getByRole("navigation", { name: "Khu vực quản trị" });
+  await expect(shortcuts.getByRole("link", { name: /Chủ đề/ })).toHaveAttribute("href", "/admin/topics");
+  await expect(shortcuts.getByRole("link", { name: /Kho từ vựng/ })).toHaveAttribute("href", "/admin/vocabulary");
+  await expect(shortcuts.getByRole("link", { name: /Bộ từ hệ thống/ })).toHaveAttribute("href", "/admin/vocabulary-sets");
+  await expect(page.getByRole("article", { name: "Tổng chủ đề" })).toContainText("3");
+  await expect(page.getByRole("article", { name: "Tổng từ vựng" })).toContainText("4");
+  await expect(page.getByRole("article", { name: "Tổng bộ từ hệ thống" })).toContainText("3");
+  await expect(page.getByRole("article", { name: "Cấp CEFR có nhiều bộ từ nhất" })).toContainText("A1");
+  await expect(page.getByRole("region", { name: "Phân bố bộ từ theo cấp độ CEFR" })).toContainText("67%");
+  await expect(page.getByRole("region", { name: "Số bộ từ theo chủ đề" })).toContainText("Công việc và giao tiếp");
   await expect(page.getByRole("heading", { name: "Tóm tắt học tập" })).toHaveCount(0);
   await page.waitForTimeout(100);
   expect(userApiCalls).toBe(0);
+  expect(adminVocabularyCalls).toBe(1);
+  await shortcuts.getByRole("link", { name: /Chủ đề/ }).click();
+  await expect(page).toHaveURL(/\/admin\/topics$/);
+});
+
+test("ADMIN dashboard charts remain usable across supported viewports", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installAdminDashboardApi(page);
+
+  for (const width of [1440, 1280, 1024, 768, 390, 375, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/dashboard");
+    await expect(page.locator(".dashboard-admin-chart-card")).toHaveCount(2);
+    await expect(page.locator(".dashboard-admin-chart-card").first()).toBeVisible();
+    await expect(page.locator(".dashboard-admin-chart-card").last()).toBeVisible();
+
+    const overflowEvidence = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }));
+    expect(overflowEvidence, `viewport ${width}px`).toEqual({
+      documentWidth: width,
+      viewportWidth: width,
+    });
+  }
+});
+
+test("ADMIN dashboard keeps failed KPI and dependent charts truthful, then retries", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  let vocabularyCalls = 0;
+  let allowVocabularySuccess = false;
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "topic-1", name: "Du lịch" }] } }));
+  await page.route("**/api/admin/vocabulary-sets", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "set-1", topic_id: "topic-1", cefr_level: "A1" }] } }));
+  await page.route("**/api/admin/vocabulary", (route) => {
+    vocabularyCalls += 1;
+    return route.fulfill(allowVocabularySuccess
+      ? { status: 200, json: { success: true, data: [{ id: "word-1" }, { id: "word-2" }] } }
+      : { status: 500, json: { success: false, error: { code: "INTERNAL_SERVER_ERROR", message: "Safe error" } } });
+  });
+
+  await page.goto("/dashboard");
+  const vocabularyKpi = page.getByRole("article", { name: "Tổng từ vựng" });
+  await expect(vocabularyKpi.getByRole("alert")).toContainText("Chưa thể tải dữ liệu");
+  await expect(vocabularyKpi).not.toContainText("0");
+  const retry = vocabularyKpi.getByRole("button", { name: "Thử lại" });
+  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  allowVocabularySuccess = true;
+  await retry.click();
+  await expect(vocabularyKpi).toContainText("2");
+  expect(vocabularyCalls).toBeGreaterThanOrEqual(2);
+});
+
+test("ADMIN dashboard renders explicit empty chart states without fabricated categories", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  for (const endpoint of ["/api/topics", "/api/admin/vocabulary", "/api/admin/vocabulary-sets"]) {
+    await page.route(`**${endpoint}`, (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+  }
+  await page.goto("/dashboard");
+  await expect(page.getByRole("article", { name: "Tổng chủ đề" })).toContainText("0");
+  await expect(page.getByLabel("Phân bố bộ từ theo cấp độ CEFR")).toContainText("Chưa có bộ từ hệ thống");
+  await expect(page.getByLabel("Số bộ từ theo chủ đề")).toContainText("Chưa có bộ từ hệ thống");
+  await expect(page.getByRole("article", { name: "Cấp CEFR có nhiều bộ từ nhất" })).toContainText("Chưa có dữ liệu");
+});
+
+test("ADMIN dashboard excludes legacy C2 only from curriculum insights and reports A1–C1 ties", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await page.route("**/api/topics", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "topic-1", name: "Chủ đề có tên rất dài để kiểm tra khả năng xuống dòng trên màn hình nhỏ" }] } }));
+  await page.route("**/api/admin/vocabulary", (route) => route.fulfill({ status: 200, json: { success: true, data: [{ id: "word-1" }] } }));
+  await page.route("**/api/admin/vocabulary-sets", (route) => route.fulfill({ status: 200, json: { success: true, data: [
+    { id: "set-a1", topic_id: "topic-1", cefr_level: "A1" },
+    { id: "set-a2", topic_id: "topic-1", cefr_level: "A2" },
+    { id: "set-c2", topic_id: "topic-1", cefr_level: "C2" },
+  ] } }));
+
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("article", { name: "Tổng bộ từ hệ thống" })).toContainText("3");
+  await expect(page.getByRole("article", { name: "Cấp CEFR có nhiều bộ từ nhất" })).toContainText("Đồng hạng");
+  const cefrChart = page.getByRole("region", { name: "Phân bố bộ từ theo cấp độ CEFR" });
+  await expect(cefrChart).toContainText("2 bộ từ hệ thống");
+  await expect(cefrChart).not.toContainText("C2");
+  await expect(page.getByRole("region", { name: "Số bộ từ theo chủ đề" })).toContainText("3");
+  await page.locator(".dashboard-admin-donut").focus();
+  await expect(page.locator(".dashboard-admin-donut")).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });
 
 test("USER renders one backend-ordered CEFR recommendation and truthful locked levels", async ({ page }) => {

@@ -45,7 +45,7 @@ test.afterAll(async () => {
 test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page }) => {
   await login(page, admin.email);
   await page.getByRole("link", { name: "Quản lý bộ từ" }).click();
-  await expect(page.getByRole("heading", { name: "Quản lý bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Quản lý bộ từ" })).toBeVisible();
   await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Tạo bộ từ" }).click();
   await page.getByRole("button", { name: "Lưu bộ từ" }).click();
@@ -53,40 +53,37 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
   await expect(page.getByRole("alert").filter({ hasText: "Hãy chọn một chủ đề" })).toBeVisible();
   await expect(page.getByRole("alert").filter({ hasText: "ít nhất một từ vựng" })).toBeVisible();
 
-  await page.locator("#my-set-name").fill(`${prefix} System`);
-  await page.locator("#my-set-topic").selectOption(topic.id);
-  await page.getByRole("combobox", { name: /CEFR/ }).selectOption("B1");
-  const pickerTrigger = page.getByRole("button", { name: "Thêm từ vựng" });
-  await expect(page.getByRole("searchbox", { name: "Từ khóa" })).toHaveCount(0);
+  const createDialog = page.getByRole("dialog", { name: "Tạo bộ từ hệ thống" });
+  await createDialog.getByLabel("Tên bộ từ").fill(`${prefix} System`);
+  await createDialog.getByLabel("Chủ đề").selectOption(topic.id);
+  await createDialog.getByRole("combobox", { name: /CEFR/ }).selectOption("B1");
+  const pickerTrigger = createDialog.getByRole("button", { name: "Chọn từ từ Kho từ vựng" });
+  await expect(createDialog.getByRole("searchbox")).toHaveCount(0);
   await pickerTrigger.click();
-  let picker = page.getByRole("dialog", { name: "Thêm từ vựng" });
-  await picker.getByRole("searchbox", { name: "Từ khóa" }).fill(prefix);
-  await picker.getByRole("button", { name: "Tìm từ" }).click();
-  await picker.getByRole("button", { name: "Thêm", exact: true }).first().click();
-  await expect(picker).toHaveCount(0);
-  await expect(pickerTrigger).toBeFocused();
-  await pickerTrigger.click();
-  picker = page.getByRole("dialog", { name: "Thêm từ vựng" });
-  await picker.getByRole("searchbox", { name: "Từ khóa" }).fill(prefix);
-  await picker.getByRole("button", { name: "Tìm từ" }).click();
-  await expect(picker.getByRole("button", { name: "Đã thêm" })).toBeDisabled();
-  await picker.getByRole("button", { name: "Thêm", exact: true }).click();
-  const orderedEditor = page.getByRole("group", { name: "Danh sách từ vựng theo thứ tự" });
-  await orderedEditor.getByRole("button", { name: new RegExp(`Đưa ${prefix} beta lên`) }).click();
-  await page.getByRole("button", { name: "Lưu bộ từ" }).click();
+  const picker = page.getByRole("dialog", { name: "Chọn từ từ Kho từ vựng" });
+  await picker.getByRole("searchbox", { name: "Tìm trong Kho từ vựng" }).fill(prefix);
+  await picker.getByRole("checkbox", { name: new RegExp(`${prefix} alpha`) }).check();
+  await picker.getByRole("checkbox", { name: new RegExp(`${prefix} beta`) }).check();
+  await picker.getByRole("button", { name: "Xác nhận (2)" }).click();
+  await createDialog.getByRole("button", { name: new RegExp(`Đưa ${prefix} beta lên`) }).click();
+  await createDialog.getByRole("button", { name: "Lưu bộ từ" }).click();
 
+  const card = page.getByRole("article").filter({ hasText: `${prefix} System` });
+  await expect(card).toBeVisible();
+  await card.getByRole("link", { name: "Xem chi tiết" }).click();
   await expect(page.getByRole("heading", { name: `${prefix} System` })).toBeVisible();
-  await expect(page.locator(".my-vocabulary-set-detail ol li").first()).toContainText(`${prefix} beta`);
+  await expect(page.locator(".admin-set-item-list li").first()).toContainText(`${prefix} beta`);
   const persisted = await prisma.vOCABULARY_SET.findFirst({ where: { name: `${prefix} System` }, include: { items: { orderBy: { position: "asc" }, include: { vocabulary: true } } } });
   expect(persisted?.is_public).toBe(true);
   expect(persisted?.cefr_level).toBe("B1");
   expect(persisted?.items.map(({ vocabulary }) => vocabulary.word)).toEqual([`${prefix} beta`, `${prefix} alpha`]);
 
-  await page.getByRole("button", { name: "Chỉnh sửa" }).click();
-  await orderedEditor.getByRole("button", { name: `Xóa ${prefix} alpha khỏi bộ từ` }).click();
-  await page.getByRole("button", { name: "Lưu bộ từ" }).click();
-  await expect(page.locator(".my-vocabulary-set-detail ol li")).toHaveCount(1);
-  await page.getByRole("button", { name: "Xóa bộ từ" }).click();
+  await page.getByRole("button", { name: `Gỡ ${prefix} alpha khỏi bộ từ` }).click();
+  await page.getByRole("dialog", { name: "Gỡ từ khỏi bộ từ?" }).getByRole("button", { name: "Gỡ khỏi danh sách" }).click();
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page.locator(".admin-set-item-list li")).toHaveCount(1);
+  await page.getByRole("link", { name: "Quản lý bộ từ" }).click();
+  await page.getByRole("button", { name: `Xóa ${prefix} System` }).click();
   await expect(page.getByRole("dialog", { name: "Xóa bộ từ hệ thống?" })).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
@@ -98,7 +95,7 @@ test("USER cannot access or navigate to ADMIN System Set management", async ({ p
   await expect(page.getByRole("link", { name: "Quản lý bộ từ" })).toHaveCount(0);
   await page.goto("/admin/vocabulary-sets");
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Quản lý bộ từ hệ thống" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Quản lý bộ từ" })).toHaveCount(0);
 });
 
 test("ADMIN management exposes loading, safe error retry, keyboard, and responsive states", async ({ page }) => {
@@ -116,13 +113,13 @@ test("ADMIN management exposes loading, safe error retry, keyboard, and responsi
     await route.continue();
   });
   const navigation = page.goto("/admin/vocabulary-sets");
-  await expect(page.getByRole("status")).toContainText("Đang tải bộ từ hệ thống");
+  await expect(page.getByRole("status")).toContainText("Đang tải bộ từ");
   releaseLoading();
   await navigation;
   await expect(page.getByRole("alert")).toContainText("Không thể tải bộ từ hệ thống");
   failInitialLoad = false;
   await page.getByRole("button", { name: "Thử lại" }).click();
-  await expect(page.getByRole("heading", { name: "Quản lý bộ từ hệ thống" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Quản lý bộ từ" })).toBeVisible();
   await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
   await page.unroute("**/api/admin/vocabulary-sets");
 

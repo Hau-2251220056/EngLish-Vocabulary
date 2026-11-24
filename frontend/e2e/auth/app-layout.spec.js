@@ -12,6 +12,12 @@ const viewports = [
   { name: "desktop", width: 1366, height: 768 },
 ];
 
+async function installEmptyAdminDashboardApi(page) {
+  for (const endpoint of ["/api/topics", "/api/admin/vocabulary", "/api/admin/vocabulary-sets"]) {
+    await page.route(`**${endpoint}`, (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+  }
+}
+
 test("Review Center keeps the application shell", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicUser),
@@ -185,19 +191,19 @@ test("desktop Dashboard keeps the sidebar stable while the document scrolls", as
 test("avatar dropdown exposes identity and Logout with accessible dismissal", async ({ page }) => {
   await page.setViewportSize(viewports[2]);
   await installAuthApiMock(page, {
-    "/api/auth/me": responses.currentUser(publicAdmin),
+    "/api/auth/me": responses.currentUser(publicUser),
   });
   await page.goto("/dashboard");
 
-  const trigger = page.getByRole("button", { name: `Mở menu tài khoản của ${publicAdmin.display_name}` });
+  const trigger = page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` });
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("button", { name: "Đăng xuất" })).toHaveCount(0);
+  await expect(page.locator(".authenticated-account-dropdown")).toHaveCount(0);
 
   await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator(".authenticated-account-dropdown")).toContainText(publicAdmin.display_name);
-  await expect(page.locator(".authenticated-account-dropdown")).toContainText("Quản trị viên");
-  await expect(page.getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+  await expect(page.locator(".authenticated-account-dropdown")).toContainText(publicUser.display_name);
+  await expect(page.locator(".authenticated-account-dropdown")).not.toContainText("Quản trị viên");
+  await expect(page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất" })).toBeVisible();
   await expect(page.getByText("Profile", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Settings", { exact: true })).toHaveCount(0);
 
@@ -513,6 +519,119 @@ test("desktop ADMIN transition resets the nested authenticated main", async ({ p
   await page.locator('aside.authenticated-sidebar a[href="/admin/vocabulary"]').click();
   await expect(page).toHaveURL(/\/admin\/vocabulary$/);
   await expect.poll(() => owner.evaluate((main) => main.scrollTop)).toBe(0);
+});
+
+test("ADMIN shell removes only the desktop header and preserves the mobile drawer", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installEmptyAdminDashboardApi(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard");
+  await expect(page.locator(".authenticated-admin-app")).toBeVisible();
+  await expect(page.locator("header.authenticated-header")).toHaveCount(0);
+  const desktopFooter = page.locator("aside.authenticated-sidebar .authenticated-admin-session");
+  const desktopLogout = desktopFooter.getByRole("button", { name: "Đăng xuất" });
+  await expect(desktopLogout).toBeVisible();
+  await expect(desktopLogout).toHaveAttribute("title", "Đăng xuất");
+  await expect(desktopLogout.locator("span")).toHaveCount(0);
+  await expect.poll(async () => {
+    const box = await desktopLogout.boundingBox();
+    return box ? { height: box.height, width: box.width } : null;
+  }).toEqual({ height: 44, width: 44 });
+  await expect(desktopFooter.locator(".authenticated-sidebar-account")).toContainText(publicAdmin.display_name);
+  await expect(desktopFooter.locator(".authenticated-sidebar-account")).toContainText("Quản trị viên");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const header = page.locator("header.authenticated-admin-mobile-header");
+  await expect(header).toBeVisible();
+  const toggle = header.getByRole("button", { name: "Mở điều hướng" });
+  await toggle.click();
+  const sidebar = page.locator("aside.authenticated-sidebar");
+  await expect(sidebar).toHaveClass(/is-open/);
+  await expect(sidebar.locator(".authenticated-admin-session").getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sidebar).not.toHaveClass(/is-open/);
+  await expect(toggle).toBeFocused();
+});
+
+test("ADMIN dashboard stays within every approved Batch 1 viewport", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installEmptyAdminDashboardApi(page);
+
+  for (const width of [1440, 1280, 1024, 768, 390, 375, 320]) {
+    await page.setViewportSize({ width, height: width >= 1024 ? 900 : 844 });
+    await page.goto("/dashboard");
+    await expect(page.getByRole("navigation", { name: "Khu vực quản trị" })).toBeVisible();
+    await expect(page.locator("header.authenticated-header")).toHaveCount(width >= 1024 ? 0 : 1);
+    if (width < 1024) await page.getByRole("button", { name: "Mở điều hướng" }).click();
+    const footer = page.locator("aside.authenticated-sidebar .authenticated-admin-session");
+    await expect(footer).toBeVisible();
+    await expect(footer.getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+    await expect.poll(() => footer.evaluate((element) => {
+      const identity = element.querySelector(".min-w-0").getBoundingClientRect();
+      const logout = element.querySelector(".authenticated-admin-logout").getBoundingClientRect();
+      return identity.right <= logout.left;
+    })).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if ([1440, 1280, 768, 390, 320].includes(width)) await page.screenshot({ fullPage: true, path: `test-results/admin-shell-footer-${width}.png` });
+  }
+});
+
+test("ADMIN Gemini navigation exposes User Management and keeps Set Detail active", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installEmptyAdminDashboardApi(page);
+  await page.route("**/api/admin/vocabulary-sets/set-shell-review", (route) => route.fulfill({ status: 404, json: { success: false, error: { code: "NOT_FOUND", message: "Not found" } } }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/vocabulary-sets/set-shell-review");
+
+  const navigation = page.getByRole("navigation", { name: "Điều hướng ứng dụng" });
+  await expect(navigation.getByText("Tổng quan", { exact: true })).toBeVisible();
+  await expect(navigation.getByText("Quản trị nội dung", { exact: true })).toBeVisible();
+  await expect(navigation.getByText("Quản trị hệ thống", { exact: true })).toBeVisible();
+  await expect(navigation.locator('a[href="/admin/users"]')).toContainText("Quản lý người dùng");
+  await expect(navigation.locator('a[href="/admin/users"]')).not.toHaveAttribute("aria-disabled", "true");
+  await expect(navigation.locator('a[href="/admin/vocabulary-sets"]')).toHaveAttribute("aria-current", "page");
+  await page.screenshot({ fullPage: true, path: "test-results/admin-shell-gemini-desktop.png" });
+});
+
+test("ADMIN mobile drawer contains focus, locks background, and restores its trigger", async ({ page }) => {
+  await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installEmptyAdminDashboardApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard");
+
+  const toggle = page.getByRole("button", { name: "Mở điều hướng" });
+  await toggle.click();
+  const sidebar = page.locator("aside.authenticated-sidebar");
+  await expect(sidebar).toHaveClass(/is-open/);
+  await expect(page.locator(".authenticated-shell-main")).toHaveAttribute("inert", "");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.overflow)).toBe("hidden");
+
+  const firstLink = sidebar.locator("a").first();
+  const logout = sidebar.getByRole("button", { name: "Đăng xuất" });
+  await expect(firstLink).toBeFocused();
+  await firstLink.press("Shift+Tab");
+  await expect(logout).toBeFocused();
+  await logout.press("Tab");
+  await expect(firstLink).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(toggle).toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.overflow)).toBe("");
+  await page.screenshot({ fullPage: true, path: "test-results/admin-shell-gemini-mobile.png" });
+});
+
+test("ADMIN compact logout invokes the existing auth endpoint and returns to Login", async ({ page }) => {
+  const api = await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicAdmin) });
+  await installEmptyAdminDashboardApi(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard");
+
+  const logout = page.locator("aside.authenticated-sidebar").getByRole("button", { name: "Đăng xuất" });
+  await expect(logout).toHaveAttribute("aria-label", "Đăng xuất");
+  await logout.click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(api.callsFor("/api/auth/logout")).toHaveLength(1);
 });
 
 test("mobile Not Found return resets the document scroll", async ({ page }) => {

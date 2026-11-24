@@ -1,0 +1,36 @@
+.admin-users-readonly { display: inline-flex; min-height: 2rem; align-items: center; gap: .35rem; border: 1px solid #bae6fd; border-radius: 999px; background: #f0f9ff; padding: .35rem .65rem; color: #0369a1; font-size: .72rem; font-weight: 750; white-space: nowrap; }
+.admin-users-readonly svg { width: .9rem; }
+.admin-users-toolbar .admin-filter-control { min-width: 11.5rem; }
+.admin-users-table-card { max-width: 100%; }
+.admin-users-table-card .admin-table-scroll { contain: inline-size; }
+.admin-users-table { min-width: 52rem; }
+.admin-user-identity { display: flex; min-width: 12rem; align-items: center; gap: .65rem; }
+.admin-user-identity > span:last-child { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-user-avatar, .admin-user-detail-avatar { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 999px; background: #f1f5f9; color: #334155; font-weight: 800; }
+.admin-user-avatar { width: 2rem; height: 2rem; font-size: .68rem; }
+.admin-user-identity.is-admin .admin-user-avatar { border: 1px solid #bae6fd; background: #e0f2fe; color: #075985; }
+.admin-user-email { display: block; max-width: 19rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-users-table .admin-badge { display: inline-flex; align-items: center; gap: .25rem; }
+.admin-users-table .admin-badge svg { width: .75rem; }
+.admin-user-view { min-height: 2.25rem; padding: .35rem .65rem; }
+.admin-user-view svg { width: .9rem; }
+.admin-user-streak { display: inline-flex; min-height: 1.75rem; align-items: center; gap: .3rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.admin-user-streak svg { width: 1rem; height: 1rem; }
+.admin-user-streak.is-positive { color: #c2410c; }
+.admin-user-streak.is-zero { color: #64748b; }
+.admin-user-streak.is-na { color: #94a3b8; }
+.admin-user-streak.is-unavailable { color: #64748b; font-size: .7rem; font-weight: 700; }
+.admin-user-detail-dialog { width: min(calc(100% - 2rem), 31rem); }
+.admin-user-detail-hero { display: flex; align-items: center; gap: .85rem; border: 1px solid #e2e8f0; border-radius: .75rem; background: #f8fafc; padding: .9rem; }
+.admin-user-detail-avatar { width: 3rem; height: 3rem; font-size: .8rem; }
+.admin-user-detail-hero.is-admin .admin-user-detail-avatar { background: #0284c7; color: #fff; }
+.admin-user-detail-hero h3, .admin-user-detail-hero p { margin: 0; overflow-wrap: anywhere; }
+.admin-user-detail-hero h3 { color: #0f172a; font-size: 1rem; }
+.admin-user-detail-hero p { margin-top: .18rem; color: #64748b; font-size: .75rem; }
+.admin-user-detail dl { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin: .8rem 0 0; }
+.admin-user-detail dl > div { min-width: 0; border: 1px solid #e2e8f0; border-radius: .65rem; padding: .7rem; }
+.admin-user-detail dt { color: #64748b; font-size: .68rem; font-weight: 700; }
+.admin-user-detail dd { display: flex; align-items: center; gap: .3rem; margin: .35rem 0 0; overflow-wrap: anywhere; color: #1e293b; font-size: .76rem; font-weight: 700; }
+.admin-user-detail dd > svg { width: .85rem; color: #94a3b8; }
+@media (max-width: 800px) { .admin-users-readonly { align-self: flex-start; } .admin-users-toolbar .admin-filter-control { min-width: 0; flex: 1 1 11rem; } .admin-users-table, .admin-users-table tbody, .admin-users-table tr, .admin-users-table th, .admin-users-table td { display: block; width: 100%; box-sizing: border-box; } .admin-users-table { min-width: 0; } .admin-users-table thead { display: none; } .admin-users-table tbody tr { border-bottom: 1px solid #e2e8f0; padding: .65rem .75rem; } .admin-users-table th, .admin-users-table td { border: 0; padding: .3rem 0; } .admin-users-table td[data-label] { display: grid; grid-template-columns: 5.25rem minmax(0, 1fr); gap: .5rem; } .admin-users-table td[data-label]::before { content: attr(data-label); color: #64748b; font-size: .68rem; font-weight: 750; } .admin-users-table .admin-action-group { justify-content: flex-start; padding-top: .2rem; } }
+@media (max-width: 480px) { .admin-users-toolbar .admin-filter-control { width: 100%; flex: none; } .admin-user-identity { min-width: 0; } .admin-user-identity > span:last-child, .admin-user-email { max-width: 100%; } .admin-user-view { width: 100%; min-height: 2.75rem; } .admin-user-detail-dialog { width: 100%; } .admin-user-detail dl { grid-template-columns: 1fr; } }

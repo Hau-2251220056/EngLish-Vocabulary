@@ -502,7 +502,7 @@ Each Set preview may show its real name, optional description and Item count. Se
 
 Progress, My Sets, Streak, CEFR path, and global review load independently. Each data-backed section provides an accessible initial loading state, its own valid empty/completed state and a safe scoped error/retry state with duplicate-pending and stale-response protection. Failure of one section leaves successful sibling content usable.
 
-Authenticated `ADMIN` keeps `/dashboard` as a neutral safe landing and must not trigger USER-only Progress, My Sets, Streak, CEFR path, or global-review requests. V1 does not create an Admin Dashboard. Guest access continues to use the existing protected-route redirect behavior.
+At the Dashboard V1 checkpoint, authenticated `ADMIN` kept `/dashboard` as a neutral safe landing and did not trigger USER-only Progress, My Sets, Streak, CEFR path, or global-review requests. The later Admin UI V2 contract in section 11 supersedes only that historical neutral-landing presentation: ADMIN now receives a dedicated content-management Dashboard while the USER-only request boundary remains unchanged. Guest access continues to use the existing protected-route redirect behavior.
 
 The page must use semantic headings, native controls, visible focus, textual meaning independent of color, appropriate live/status/alert semantics, predictable retry focus, existing touch-target conventions and reduced-motion support. Desktop, tablet and mobile layouts must have no horizontal overflow and must preserve the current App Layout behavior.
 
@@ -510,7 +510,7 @@ A dedicated HUMAN UI/UX Design Checkpoint is mandatory after the role-safe funct
 
 Dashboard does not display conceptual `NEW`, raw `NEEDS_REVIEW` as a queue, Topic percentages, recency recommendations, Daily Goal, achievements, activity/history, Quiz/Pronunciation metrics, charts or fake data. CEFR recommendation and global-review due state come only from their active Backend reads. XP & Level V1 adds one compact authenticated-USER summary inside the existing Progress section: current Level, total XP and a text-plus-progress indication toward the backend-provided next threshold. Zero XP is valid success data. At Level 15 it renders `Level 15 — MAX`, no next target, and a complete/MAX state without implying XP stops. Frontend computes only bounded presentation width from backend bounds; it does not contain authoritative Level, CEFR, recommendation, or SRS calculations.
 
-Dashboard V3 refines the authenticated USER presentation while preserving those authority boundaries. The document owns Dashboard vertical scrolling; the Dashboard route releases the desktop App Shell and Main Content height/overflow constraints that otherwise create an inner main scroller. Other authenticated routes keep their existing scrolling model, the fixed desktop sidebar may still scroll internally when navigation accessibility requires it, and the ADMIN Dashboard keeps its neutral landing behavior. The document scrollbar uses the ELVocab blue treatment where supported and remains usable with browser fallback styling.
+Dashboard V3 refines the authenticated USER presentation while preserving those authority boundaries. The document owns Dashboard vertical scrolling; the Dashboard route releases the desktop App Shell and Main Content height/overflow constraints that otherwise create an inner main scroller. Other authenticated routes keep their existing scrolling model, the fixed desktop sidebar may still scroll internally when navigation accessibility requires it, and the later ADMIN Dashboard uses the separate Admin UI V2 composition defined in section 11. The document scrollbar uses the ELVocab blue treatment where supported and remains usable with browser fallback styling.
 
 The USER page keeps its two-line greeting and four authoritative statistic cards in desktop order: Level, Streak, Total XP and Personal Sets. Their surfaces use distinct blue, orange, cyan and emerald treatments. The XP ring remains a presentation of backend-provided bounds. The Streak flame remains gray when `completed_today` is false and orange-red when it is true; no reset control is present.
 
@@ -875,30 +875,37 @@ Allowed values and detailed business rules are defined by the project's business
 11. Admin Screens
 11.1 Admin Dashboard
 
-Display:
+Admin UI V2 uses a navy sidebar, cyan/sky accents, white content surfaces and a bright workspace. Its primary destinations are `/dashboard`, `/admin/topics`, `/admin/vocabulary`, `/admin/vocabulary-sets` and `/admin/users`; `/admin/vocabulary-sets/:setId` is reached from a System Set card and is not a separate sidebar destination. Desktop uses the persistent sidebar. Tablet and mobile use the existing accessible drawer with background locking, keyboard containment, Escape dismissal and trigger-focus restoration.
 
-Total users
-Total vocabulary
-Total vocabulary sets
-Community activity
-Recent activity
-
-Use simple dashboard cards and charts where useful.
+The ADMIN Dashboard displays four real-data KPI cards: Topic count, canonical Vocabulary count, System Set count and the single leading A1–C1 CEFR level when one exists. It also provides an A1–C1 System Set donut, Topic/System Set distribution bars and working management shortcuts. Topic, Vocabulary and System Set resources load independently with scoped loading, empty, error and retry states. It must not call USER-only Dashboard endpoints, invent statistics, use localStorage CRUD or expose C2 as part of the active A1–C1 curriculum visualization.
 
 11.2 User Management
 
-Display:
+`/admin/users` is read-only. It provides server-side name/email search, exact USER/ADMIN role filtering, ten-account pages, result ranges and a read-only account-detail dialog. The table may display only the approved Admin fields: display name, email, role, account status/date metadata and Current Streak. It provides no create, edit, delete, lock, role-change or password-reset action.
 
-User list
-Search
-Filters
-User details
-Account status
-Role
+For Current Streak, a USER displays an authoritative non-negative integer: a positive value uses an orange flame and zero uses a neutral flame. ADMIN displays an em dash because learner streak does not apply. A missing or invalid USER value is explicitly **Không khả dụng** and must not be coerced to zero. Raw streak history is never displayed.
 
-Admin actions should be clearly separated from destructive actions.
+11.2.1 Shared Admin management behavior
 
-Use confirmation dialogs for destructive operations.
+Topic Management, Vocabulary Bank, System Set Management, System Set Detail and User Management reuse the Admin shell, toolbar, table/card, badge, state, dialog, toast and pagination conventions. Dialogs use native modal semantics, accessible names, Escape/backdrop dismissal where allowed, visible focus and focus restoration. Mutations prevent duplicate pending actions and report success through the shared Admin toast; destructive actions require confirmation.
+
+Accepted client or server page sizes are:
+
+| Surface | Page size |
+|---|---:|
+| Topics | 10 |
+| Vocabulary Bank | 10 |
+| System Sets | 6 |
+| Set Detail | 10 |
+| Users | 10 |
+
+The shared pagination footer remains visible for a populated single-page result, reports the exact visible range and total, and disables unavailable Previous/Next actions. Search or filter changes reset to page 1; a reduced result set clamps to its last valid page.
+
+Vocabulary Bank keeps Vocabulary and Pronunciation in separate columns, shows the first ordered Vietnamese Meaning summary with its POS/CEFR, and loads the complete aggregate before View/Edit. All Meanings and nested Examples remain available in detail/edit and survive a fresh list reload.
+
+System Set Detail paginates only the visible projection of one complete ordered draft. Add, remove, discard and save operate on the complete draft rather than the current page. Cross-page movement updates global order and sends the complete ordered membership on save. While search is active, reordering is disabled (HD-01) so filtered adjacency cannot be mistaken for global adjacency. The final Set item cannot be removed. Dirty internal-link navigation and explicit discard use the shared unsaved-change confirmation flow; browser Back/Forward retains its documented technical limitation.
+
+All Admin management surfaces provide meaningful loading, empty, error and retry states, keyboard-operable controls, responsive containment and no unintended page overflow. The Bright & Clean design does not introduce violet, purple, indigo or blue-purple as an Admin primary accent.
 
 11.3 Topic Management
 

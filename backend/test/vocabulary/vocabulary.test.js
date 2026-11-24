@@ -179,7 +179,15 @@ test("ADMIN creates and retrieves a complete aggregate while list returns summar
         cefr_level: "A1",
         examples: [
           { example_en: " This is a book. ", example_vi: "Đây là một quyển sách." },
+          { example_en: " The second example stays in detail only. ", example_vi: null },
         ],
+      },
+      {
+        part_of_speech: "verb",
+        meaning_vi: "đặt chỗ",
+        context: "booking",
+        cefr_level: "B1",
+        examples: [{ example_en: "Book a table.", example_vi: "Đặt một bàn." }],
       },
     ],
   });
@@ -195,11 +203,44 @@ test("ADMIN creates and retrieves a complete aggregate while list returns summar
   const list = await adminRequest("/api/admin/vocabulary", cookie);
   assert.equal(list.status, 200);
   assert.equal(list.json.data.length, 1);
-  assert.equal("meanings" in list.json.data[0], false);
+  const summary = list.json.data[0];
+  assert.equal(summary.meaning_count, 2);
+  assert.deepEqual(summary.meanings, [
+    {
+      id: vocabulary.meanings[0].id,
+      part_of_speech: "noun",
+      meaning_vi: "quyển sách",
+      cefr_level: "A1",
+      examples: [{ example_en: "This is a book." }],
+    },
+    {
+      id: vocabulary.meanings[1].id,
+      part_of_speech: "verb",
+      meaning_vi: "đặt chỗ",
+      cefr_level: "B1",
+      examples: [{ example_en: "Book a table." }],
+    },
+  ]);
+  assert.equal("context" in summary.meanings[0], false);
+  assert.equal("_count" in summary, false);
 
   const detail = await adminRequest(`/api/admin/vocabulary/${vocabulary.id}`, cookie);
   assert.equal(detail.status, 200);
   assert.deepEqual(detail.json.data, vocabulary);
+});
+
+test("ADMIN list safely projects a canonical row with no meanings", { concurrency: false }, async () => {
+  const cookie = await authenticatedCookie("ADMIN");
+  const vocabulary = await prisma.vOCABULARY.create({
+    data: { word: "Legacy empty aggregate", owner_id: null },
+    select: { id: true },
+  });
+
+  const list = await adminRequest("/api/admin/vocabulary", cookie);
+  assert.equal(list.status, 200);
+  const summary = list.json.data.find(({ id }) => id === vocabulary.id);
+  assert.equal(summary.meaning_count, 0);
+  assert.deepEqual(summary.meanings, []);
 });
 
 test("create validation rejects invalid aggregate data without partial rows", { concurrency: false }, async () => {
