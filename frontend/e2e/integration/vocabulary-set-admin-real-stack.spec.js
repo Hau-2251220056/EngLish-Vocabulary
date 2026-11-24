@@ -44,7 +44,7 @@ test.afterAll(async () => {
 
 test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page }) => {
   await login(page, admin.email);
-  await page.getByRole("link", { name: "Quản lý bộ từ" }).click();
+  await page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Quản lý bộ từ" }).click();
   await expect(page.getByRole("heading", { name: "Quản lý bộ từ" })).toBeVisible();
   await expect(page.getByText(`${prefix} System`, { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Tạo bộ từ" }).click();
@@ -81,8 +81,16 @@ test("ADMIN creates, reorders, updates, and deletes a System Set", async ({ page
   await page.getByRole("button", { name: `Gỡ ${prefix} alpha khỏi bộ từ` }).click();
   await page.getByRole("dialog", { name: "Gỡ từ khỏi bộ từ?" }).getByRole("button", { name: "Gỡ khỏi danh sách" }).click();
   await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Danh sách đã được lưu" })).toBeVisible();
   await expect(page.locator(".admin-set-item-list li")).toHaveCount(1);
-  await page.getByRole("link", { name: "Quản lý bộ từ" }).click();
+  await expect.poll(async () => {
+    const saved = await prisma.vOCABULARY_SET.findFirst({
+      where: { name: `${prefix} System` },
+      include: { items: { orderBy: { position: "asc" }, include: { vocabulary: true } } },
+    });
+    return saved?.items.map(({ vocabulary }) => vocabulary.word);
+  }).toEqual([`${prefix} beta`]);
+  await page.getByRole("region", { name: `${prefix} System` }).getByRole("link", { name: "Quản lý bộ từ" }).click();
   await page.getByRole("button", { name: `Xóa ${prefix} System` }).click();
   await expect(page.getByRole("dialog", { name: "Xóa bộ từ hệ thống?" })).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận xóa" }).click();

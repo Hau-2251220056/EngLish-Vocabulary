@@ -13,14 +13,14 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => { await prisma.$connect(); const password_hash = await hashPassword(password); await prisma.uSER.createMany({ data: [{ ...admin, password_hash }, { ...user, password_hash }] }); existing = await prisma.vOCABULARY.create({ data: { word: `E2E-${run}`, meanings: { create: [{ part_of_speech: "noun", meaning_vi: "nghĩa", examples: { create: [{ example_en: "Example." }] } }] } }, include: { meanings: { include: { examples: true } } } }); createdVocabularyIds.push(existing.id); });
 test.afterAll(async () => { const accounts = await prisma.uSER.findMany({ where: { email: { endsWith: `@${domain}` } }, select: { id: true } }); await prisma.vOCABULARY.deleteMany({ where: { id: { in: createdVocabularyIds } } }); await prisma.aUTH_SESSION.deleteMany({ where: { user_id: { in: accounts.map((x) => x.id) } } }); await prisma.uSER.deleteMany({ where: { id: { in: accounts.map((x) => x.id) } } }); await prisma.$disconnect(); });
 async function login(page, account) { await page.goto("/login"); await page.getByLabel("Email").fill(account.email); await page.locator("#login-password").fill(password); await page.getByRole("button", { name: "Đăng nhập" }).click(); await expect(page).toHaveURL(/dashboard/); }
-test("ADMIN navigates, searches, loads complete detail, and opens edit", async ({ page }) => { await login(page, admin); await page.getByRole("link", { name: "Kho từ vựng" }).click(); await expect(page.getByRole("heading", { name: "Kho từ vựng" })).toBeVisible(); await page.getByLabel("Tìm kiếm từ vựng").fill(existing.word); await expect(page.getByRole("row", { name: new RegExp(existing.word) })).toBeVisible(); await page.getByRole("button", { name: `Xem ${existing.word}` }).click(); const detail = page.getByRole("dialog", { name: existing.word }); await expect(detail.getByText("Example.")).toBeVisible(); await detail.getByRole("button", { name: "Chỉnh sửa" }).click(); const editor = page.getByRole("dialog", { name: `Chỉnh sửa từ: ${existing.word}` }); await expect(editor.locator(".admin-example-group")).toContainText("Ví dụ (1)"); });
+test("ADMIN navigates, searches, loads complete detail, and opens edit", async ({ page }) => { await login(page, admin); await page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Kho từ vựng" }).click(); await expect(page.getByRole("heading", { name: "Kho từ vựng" })).toBeVisible(); await page.getByLabel("Tìm kiếm từ vựng").fill(existing.word); await expect(page.getByRole("row", { name: new RegExp(existing.word) })).toBeVisible(); await page.getByRole("button", { name: `Xem ${existing.word}` }).click(); const detail = page.getByRole("dialog", { name: existing.word }); await expect(detail.getByText("Example.")).toBeVisible(); await detail.getByRole("button", { name: "Chỉnh sửa" }).click(); const editor = page.getByRole("dialog", { name: `Chỉnh sửa từ: ${existing.word}` }); await expect(editor.locator(".admin-example-group")).toContainText("Ví dụ (1)"); });
 test("USER cannot access ADMIN Vocabulary", async ({ page }) => { await login(page, user); await expect(page.getByRole("link", { name: "Kho từ vựng" })).toHaveCount(0); await page.goto("/admin/vocabulary"); await expect(page).toHaveURL(/dashboard/); });
-test("ADMIN receives an accessible Vocabulary list error", async ({ page }) => { await login(page, admin); await page.route("**/api/admin/vocabulary", (route) => route.abort("failed")); await page.locator('a[href="/admin/vocabulary"]').click(); await expect(page.getByRole("alert")).toBeVisible(); });
+test("ADMIN receives an accessible Vocabulary list error", async ({ page }) => { await page.route("**/api/admin/vocabulary", (route) => route.abort("failed")); await login(page, admin); await page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Kho từ vựng" }).click(); await expect(page.getByRole("alert")).toBeVisible(); });
 
 test("ADMIN creates, replaces owned children, and confirms aggregate deletion", async ({ page }) => {
   const createdWord = `E2E-created-${run}`;
   await login(page, admin);
-  await page.locator('a[href="/admin/vocabulary"]').click();
+  await page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Kho từ vựng" }).click();
   await page.getByRole("button", { name: "Thêm từ vựng" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Thêm từ vựng" });
@@ -56,9 +56,13 @@ test("ADMIN creates, replaces owned children, and confirms aggregate deletion", 
   const retainedMeaning = editForm.locator(".admin-meaning-card").first();
   const retainedExamples = retainedMeaning.locator(".admin-example-group");
   await retainedExamples.getByRole("button", { name: "Thêm ví dụ" }).click();
+  await expect(retainedExamples.locator(".admin-example-row")).toHaveCount(2);
+  await retainedExamples.getByLabel("Ví dụ tiếng Anh 2").fill("Replacement example.");
   await retainedExamples.getByRole("button", { name: "Xóa ví dụ 1 của nghĩa 1" }).click();
-  await retainedExamples.getByLabel("Ví dụ tiếng Anh 1").fill("Replacement example.");
+  await expect(retainedExamples.locator(".admin-example-row")).toHaveCount(1);
+  await expect(retainedExamples.getByLabel("Ví dụ tiếng Anh 1")).toHaveValue("Replacement example.");
   await editDialog.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(editDialog).toHaveCount(0);
   await expect(page.getByRole("row", { name: new RegExp(createdWord) })).toBeVisible();
 
   const replaced = await prisma.vOCABULARY.findUniqueOrThrow({ where: { id: created.id }, include: { meanings: { include: { examples: true } } } });
