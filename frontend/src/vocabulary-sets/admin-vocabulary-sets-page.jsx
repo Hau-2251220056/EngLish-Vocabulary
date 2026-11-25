@@ -1,118 +1,40 @@
-import { BookOpen, Plus, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { AdminVocabularySetEditor } from "./my-vocabulary-sets-page.jsx";
+import { ArrowRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { AdminBadge, AdminConfirmDialog, AdminPagination, AdminState, AdminToolbar } from "../admin/admin-ui-primitives.jsx";
+import { adminNotifications } from "../admin/admin-notification-service.js";
+import { AdminSystemSetEditor } from "../admin/admin-system-set-editor.jsx";
+import "../admin/admin-management.css";
+import "../admin/admin-system-sets.css";
+import { topicService } from "../services/topic-service.js";
 import { VocabularySetApiError, vocabularySetService } from "../services/vocabulary-set-service.js";
 
 const EMPTY_SYSTEM_SET = { topic_id: "", name: "", description: "", items: [] };
+const PAGE_SIZE = 6;
 
 export function AdminVocabularySetsPage() {
-  const [sets, setSets] = useState([]);
-  const [state, setState] = useState("loading");
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [editor, setEditor] = useState(null);
-  const [deleting, setDeleting] = useState(null);
-  const [pending, setPending] = useState(null);
-  const [feedback, setFeedback] = useState(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    void Promise.resolve().then(() => {
-      if (active) setState("loading");
-      return vocabularySetService.listAdminSystemSets();
-    }).then((data) => { if (active) { setSets(data); setState("ready"); } }, () => { if (active) setState("error"); });
-    return () => { active = false; };
-  }, [reload]);
-
-  const visible = useMemo(() => filterSets(sets, query), [query, sets]);
-  const retry = () => setReload((value) => value + 1);
-
-  async function open(set, mode) {
-    if (pending) return;
-    setPending("detail");
-    setFeedback(null);
-    try {
-      const aggregate = await vocabularySetService.getAdminSystemSet(set.id);
-      setSelected(aggregate);
-      if (mode === "edit") setEditor({ mode, aggregate });
-    } catch (error) { setFeedback({ type: "error", message: messageFor(error, "Không thể tải chi tiết bộ từ hệ thống.") }); }
-    finally { setPending(null); }
-  }
-
-  async function save({ input, metadata }) {
-    const editing = editor?.mode === "edit";
-    setPending("save"); setFeedback(null);
-    try {
-      let saved = editing ? await vocabularySetService.updateAdminSystemSet(editor.aggregate.id, input) : await vocabularySetService.createAdminSystemSet(input);
-      try {
-        if (metadata.coverFile) saved = await vocabularySetService.uploadAdminSystemSetCover(saved.id, metadata.coverFile);
-        else if (metadata.removeCover && editing) saved = await vocabularySetService.removeAdminSystemSetCover(saved.id);
-      } catch (error) {
-        setSets((current) => upsert(current, saved));
-        setSelected(saved); setEditor({ mode: "edit", aggregate: saved, uploadRetry: metadata.coverFile ?? null });
-        setFeedback({ type: "error", message: messageFor(error, "Bộ từ đã được lưu nhưng ảnh bìa chưa tải lên. Hãy thử tải ảnh lại.") });
-        return false;
-      }
-      setSets((current) => upsert(current, saved));
-      setSelected(saved); setEditor(null);
-      setFeedback(saved.storage_cleanup === "retry_required"
-        ? { type: "error", message: "Bộ từ đã lưu. Cần thử dọn ảnh bìa cũ lại.", cleanupSetId: saved.id }
-        : { type: "success", message: editing ? "Đã cập nhật bộ từ hệ thống." : "Đã tạo bộ từ hệ thống." });
-      return true;
-    } catch (error) { setFeedback({ type: "error", message: messageFor(error, "Không thể lưu bộ từ hệ thống. Vui lòng thử lại.") }); return false; }
-    finally { setPending(null); }
-  }
-
-  async function retryCoverCleanup() {
-    if (!feedback?.cleanupSetId) return;
-    setPending("cleanup");
-    try {
-      await vocabularySetService.cleanupAdminSystemSetCover(feedback.cleanupSetId);
-      setFeedback({ type: "success", message: "Đã dọn ảnh bìa cũ." });
-    } catch (error) { setFeedback({ ...feedback, message: messageFor(error, "Chưa thể dọn ảnh bìa cũ. Vui lòng thử lại.") }); }
-    finally { setPending(null); }
-  }
-
-  async function retryCoverUpload() {
-    if (!editor?.uploadRetry) return;
-    setPending("save"); setFeedback(null);
-    try {
-      const saved = await vocabularySetService.uploadAdminSystemSetCover(editor.aggregate.id, editor.uploadRetry);
-      setSets((current) => upsert(current, saved)); setSelected(saved); setEditor(null);
-      setFeedback({ type: "success", message: "Đã tải ảnh bìa." });
-    } catch (error) { setFeedback({ type: "error", message: messageFor(error, "Chưa thể tải ảnh bìa. Vui lòng thử lại.") }); }
-    finally { setPending(null); }
-  }
-
-  async function remove() {
-    if (!deleting || pending) return;
-    setPending("delete"); setFeedback(null);
-    try {
-      await vocabularySetService.deleteAdminSystemSet(deleting.id);
-      setSets((current) => current.filter((set) => set.id !== deleting.id));
-      if (selected?.id === deleting.id) setSelected(null);
-      setDeleting(null); setFeedback({ type: "success", message: "Đã xóa bộ từ hệ thống." });
-    } catch (error) { setFeedback({ type: "error", message: messageFor(error, "Không thể xóa bộ từ hệ thống. Vui lòng thử lại.") }); }
-    finally { setPending(null); }
-  }
-
-  return <section className="my-vocabulary-sets-page" aria-labelledby="admin-vocabulary-sets-title"><header className="my-vocabulary-sets-header"><div><p className="my-vocabulary-sets-eyebrow">Quản trị nội dung</p><h1 id="admin-vocabulary-sets-title">Quản lý bộ từ hệ thống</h1><p>Tạo và duy trì các bộ từ công khai theo chủ đề.</p></div><button className="my-vocabulary-sets-primary" type="button" disabled={pending !== null} onClick={() => { setSelected(null); setEditor({ mode: "create", aggregate: EMPTY_SYSTEM_SET }); setFeedback(null); }}><Plus className="size-5" aria-hidden="true" />Tạo bộ từ</button></header>
-    {feedback ? <div className={`my-vocabulary-sets-feedback is-${feedback.type}`} role={feedback.type === "error" ? "alert" : "status"} aria-live="polite"><span>{feedback.message}</span>{feedback.cleanupSetId ? <button type="button" disabled={pending !== null} onClick={() => void retryCoverCleanup()}>Thử dọn ảnh lại</button> : null}</div> : null}
-    {editor ? <AdminVocabularySetEditor aggregate={editor.aggregate} mode={editor.mode} pending={pending === "save"} retryUpload={editor.uploadRetry ? retryCoverUpload : null} onCancel={() => setEditor(null)} onSave={save} /> : null}
-    {selected ? <SystemSetDetail aggregate={selected} pending={pending !== null} onClose={() => setSelected(null)} onEdit={() => setEditor({ mode: "edit", aggregate: selected })} onDelete={() => setDeleting(selected)} /> : null}
-    <section className="my-vocabulary-sets-list" aria-labelledby="admin-vocabulary-set-list-title"><div className="my-vocabulary-sets-toolbar"><h2 id="admin-vocabulary-set-list-title">Danh sách bộ từ hệ thống</h2><label className="my-vocabulary-sets-search"><span className="sr-only">Tìm kiếm bộ từ hệ thống</span><Search className="size-5" aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm theo tên hoặc mô tả" autoComplete="off" /></label></div>
-      {state === "loading" ? <State loading message="Đang tải bộ từ hệ thống…" /> : null}
-      {state === "error" ? <State role="alert" title="Không thể tải bộ từ hệ thống" message="Vui lòng thử lại." action={<button type="button" onClick={retry}>Thử lại</button>} /> : null}
-      {state === "ready" && sets.length === 0 ? <State title="Chưa có bộ từ hệ thống" message="Tạo bộ từ hệ thống đầu tiên để công khai theo chủ đề." /> : null}
-      {state === "ready" && sets.length > 0 && visible.length === 0 ? <State title="Không có kết quả" message="Hãy thử từ khóa khác." /> : null}
-      {state === "ready" && visible.length > 0 ? <div className="admin-topic-table-wrap"><table className="admin-topic-table"><caption className="sr-only">Danh sách bộ từ hệ thống</caption><thead><tr><th scope="col">Bộ từ</th><th scope="col">Số từ</th><th scope="col"><span className="sr-only">Hành động</span></th></tr></thead><tbody>{visible.map((set) => <tr key={set.id}><th scope="row"><strong>{set.name}</strong><span className="my-vocabulary-set-table-description">{set.description || "Chưa có mô tả."}</span></th><td>{set.item_count}</td><td><div className="admin-topic-actions"><button type="button" disabled={pending !== null} onClick={() => void open(set, "view")} aria-label={`Xem ${set.name}`}>Xem</button><button type="button" disabled={pending !== null} onClick={() => void open(set, "edit")} aria-label={`Sửa ${set.name}`}>Sửa</button><button type="button" className="is-danger" disabled={pending !== null} onClick={() => setDeleting(set)} aria-label={`Xóa ${set.name}`}>Xóa</button></div></td></tr>)}</tbody></table></div> : null}
-    </section>{deleting ? <DeleteSystemDialog aggregate={deleting} pending={pending === "delete"} onCancel={() => setDeleting(null)} onConfirm={() => void remove()} /> : null}</section>;
+  const [sets,setSets]=useState([]),[state,setState]=useState("loading"),[topics,setTopics]=useState([]),[topicsState,setTopicsState]=useState("loading"),[query,setQuery]=useState(""),[topic,setTopic]=useState(""),[cefr,setCefr]=useState(""),[page,setPage]=useState(1),[editor,setEditor]=useState(null),[deleting,setDeleting]=useState(null),[pending,setPending]=useState(null),[feedback,setFeedback]=useState(null),[reload,setReload]=useState(0);
+  const createRef=useRef(null);
+  useEffect(()=>{let active=true;Promise.resolve().then(()=>{if(active)setState("loading");return vocabularySetService.listAdminSystemSets();}).then(data=>{if(active){setSets(data);setState("ready");}},()=>{if(active)setState("error");});return()=>{active=false;};},[reload]);
+  useEffect(()=>{let active=true;Promise.resolve().then(()=>{if(active)setTopicsState("loading");return topicService.listTopics();}).then(data=>{if(active){setTopics(data);setTopicsState("ready");}},()=>{if(active){setTopics([]);setTopicsState("error");}});return()=>{active=false;};},[reload]);
+  const visible=useMemo(()=>filterSets(sets,query,topic,cefr),[sets,query,topic,cefr]);
+  const pages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE)),current=Math.min(page,pages),shown=visible.slice((current-1)*PAGE_SIZE,current*PAGE_SIZE);
+  async function openEditor(set,returnFocusRef){if(pending)return;setPending("detail");setFeedback(null);try{setEditor({mode:"edit",aggregate:await vocabularySetService.getAdminSystemSet(set.id),returnFocusRef});}catch(error){setFeedback({type:"error",message:messageFor(error,"Không thể tải chi tiết bộ từ hệ thống.")});}finally{setPending(null);}}
+  async function save({input,metadata}){const editing=editor?.mode==="edit";setPending("save");setFeedback(null);try{let saved=editing?await vocabularySetService.updateAdminSystemSet(editor.aggregate.id,input):await vocabularySetService.createAdminSystemSet(input);try{if(metadata.coverFile)saved=await vocabularySetService.uploadAdminSystemSetCover(saved.id,metadata.coverFile);else if(metadata.removeCover&&editing)saved=await vocabularySetService.removeAdminSystemSetCover(saved.id);}catch(error){setSets(v=>upsert(v,saved));setEditor({mode:"edit",aggregate:saved,uploadRetry:metadata.coverFile??null,returnFocusRef:editor?.returnFocusRef});setFeedback({type:"error",message:messageFor(error,"Bộ từ đã lưu nhưng ảnh bìa chưa tải lên. Hãy thử lại.")});return false;}setSets(v=>upsert(v,saved));setEditor(null);if(saved.storage_cleanup==="retry_required")setFeedback({type:"error",message:"Bộ từ đã lưu. Cần thử dọn ảnh bìa cũ lại.",cleanupSetId:saved.id});else{setFeedback(null);adminNotifications.success(editing?"Cập nhật bộ từ thành công":"Tạo bộ từ thành công",`system-set-${editing?"update":"create"}-${saved.id}`);}return true;}catch(error){setFeedback({type:"error",message:messageFor(error,"Không thể lưu bộ từ hệ thống. Vui lòng thử lại.")});return false;}finally{setPending(null);}}
+  async function retryCoverCleanup(){if(!feedback?.cleanupSetId)return;const setId=feedback.cleanupSetId;setPending("cleanup");try{await vocabularySetService.cleanupAdminSystemSetCover(setId);setFeedback(null);adminNotifications.success("Đã dọn ảnh bìa cũ",`system-set-cover-cleanup-${setId}`);}catch(error){setFeedback({...feedback,message:messageFor(error,"Chưa thể dọn ảnh bìa cũ.")});}finally{setPending(null);}}
+  async function retryCoverUpload(){if(!editor?.uploadRetry)return;setPending("save");try{const saved=await vocabularySetService.uploadAdminSystemSetCover(editor.aggregate.id,editor.uploadRetry);setSets(v=>upsert(v,saved));setEditor(null);setFeedback(null);adminNotifications.success("Đã tải ảnh bìa",`system-set-cover-upload-${saved.id}`);}catch(error){setFeedback({type:"error",message:messageFor(error,"Chưa thể tải ảnh bìa.")});}finally{setPending(null);}}
+  async function remove(){if(!deleting||pending)return;const removedId=deleting.id;setPending("delete");try{await vocabularySetService.deleteAdminSystemSet(removedId);setSets(v=>v.filter(x=>x.id!==removedId));setDeleting(null);setFeedback(null);adminNotifications.success("Xóa bộ từ thành công",`system-set-delete-${removedId}`);}catch(error){setFeedback({type:"error",message:messageFor(error,"Không thể xóa bộ từ hệ thống.")});}finally{setPending(null);}}
+  const reset=()=>{setQuery("");setTopic("");setCefr("");setPage(1);};
+  return <section className="admin-management-page admin-system-sets-page" aria-labelledby="admin-vocabulary-sets-title"><header className="admin-management-heading"><div><p className="admin-management-eyebrow">Thư viện học tập</p><h1 id="admin-vocabulary-sets-title">Quản lý bộ từ</h1><p>Tổ chức các bộ từ công khai theo chủ đề, cấp độ CEFR và lộ trình học.</p></div><button ref={createRef} className="admin-primary-action" type="button" disabled={pending!==null} onClick={()=>{setEditor({mode:"create",aggregate:EMPTY_SYSTEM_SET,returnFocusRef:createRef});setFeedback(null);}}><Plus aria-hidden="true"/>Tạo bộ từ</button></header>
+  {feedback?<div className={`admin-management-feedback is-${feedback.type}`} role={feedback.type==="error"?"alert":"status"}><span>{feedback.message}</span>{feedback.cleanupSetId?<button type="button" onClick={()=>void retryCoverCleanup()}>Thử dọn ảnh lại</button>:null}</div>:null}
+  <AdminToolbar className="admin-system-set-toolbar"><label className="admin-search-field"><Search aria-hidden="true"/><span className="sr-only">Tìm kiếm bộ từ</span><input type="search" value={query} onChange={e=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm theo tên hoặc mô tả..."/></label><label><span className="sr-only">Lọc theo chủ đề</span><select value={topic} disabled={topicsState==="loading"} onChange={e=>{setTopic(e.target.value);setPage(1);}}><option value="">{topicsState==="loading"?"Đang tải chủ đề…":"Tất cả chủ đề"}</option>{topics.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label><span className="sr-only">Lọc theo CEFR</span><select value={cefr} onChange={e=>{setCefr(e.target.value);setPage(1);}}><option value="">Tất cả CEFR</option>{["A1","A2","B1","B2","C1"].map(x=><option key={x}>{x}</option>)}</select></label>{query||topic||cefr?<button type="button" className="admin-secondary-action" onClick={reset}>Đặt lại</button>:null}</AdminToolbar>
+  {topicsState==="error"?<div className="admin-management-feedback is-error" role="alert"><span>Không thể tải danh sách chủ đề.</span><button type="button" onClick={()=>setReload(v=>v+1)}>Thử lại</button></div>:null}
+  {state==="loading"?<AdminState kind="loading" title="Đang tải bộ từ" message="Đang lấy dữ liệu bộ từ hệ thống…"/>:null}{state==="error"?<AdminState kind="error" title="Không thể tải bộ từ hệ thống" message="Vui lòng thử lại." action={<button type="button" onClick={()=>setReload(v=>v+1)}>Thử lại</button>}/>:null}{state==="ready"&&sets.length===0?<AdminState title="Chưa có bộ từ hệ thống" message="Tạo bộ từ đầu tiên để xây dựng lộ trình học có cấu trúc." action={<button className="admin-primary-action" type="button" onClick={()=>createRef.current?.click()}>Tạo bộ từ</button>}/>:null}{state==="ready"&&sets.length>0&&visible.length===0?<AdminState title="Không có kết quả" message="Hãy thử từ khóa hoặc bộ lọc khác."/>:null}
+  {state==="ready"&&shown.length?<><ul className="admin-system-set-grid" aria-label="Danh sách bộ từ hệ thống">{shown.map((set,index)=><SetCard key={set.id} set={set} accent={((current-1)*PAGE_SIZE+index)%3} pending={pending!==null} onEdit={openEditor} onDelete={setDeleting}/>)}</ul><AdminPagination currentPage={current} totalPages={pages} pageSize={PAGE_SIZE} totalItems={visible.length} onPrevious={()=>setPage(v=>Math.max(1,v-1))} onNext={()=>setPage(v=>Math.min(pages,v+1))}/></>:null}
+  {editor?<SystemSetEditorDialog editor={editor} error={feedback?.type==="error"?feedback.message:null} pending={pending==="save"} retryUpload={editor.uploadRetry?retryCoverUpload:null} onCancel={()=>setEditor(null)} onSave={save}/>:null}<AdminConfirmDialog open={Boolean(deleting)} title="Xóa bộ từ hệ thống?" description={deleting?`Bạn sẽ xóa “${deleting.name}” khỏi danh sách công khai.`:""} pending={pending==="delete"} onCancel={()=>setDeleting(null)} onConfirm={()=>void remove()}/></section>;
 }
 
-function SystemSetDetail({ aggregate, onClose, onDelete, onEdit, pending }) { const items = [...aggregate.items].sort((left, right) => left.position - right.position); return <section className="my-vocabulary-set-detail" aria-labelledby="admin-vocabulary-set-detail-title"><div className="my-vocabulary-set-detail-heading"><div><p>Hệ thống · Công khai</p><h2 id="admin-vocabulary-set-detail-title">{aggregate.name}</h2></div><button type="button" onClick={onClose} aria-label="Đóng chi tiết bộ từ"><X className="size-5" aria-hidden="true" /></button></div><p>{aggregate.description || "Chưa có mô tả."}</p><p className="my-vocabulary-set-detail-count"><BookOpen className="size-4" aria-hidden="true" />{items.length} từ vựng theo thứ tự đã chọn</p><ol>{items.map((item) => <li key={item.id}><strong>{item.word}</strong>{item.phonetic ? <span>{item.phonetic}</span> : null}</li>)}</ol><div className="my-vocabulary-set-actions"><button type="button" onClick={onEdit} disabled={pending}>Chỉnh sửa</button><button type="button" className="is-danger" onClick={onDelete} disabled={pending}>Xóa bộ từ</button></div></section>; }
-function DeleteSystemDialog({ aggregate, onCancel, onConfirm, pending }) { return <div className="my-vocabulary-set-dialog-backdrop"><section className="my-vocabulary-set-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-system-set-title"><h2 id="delete-system-set-title">Xóa bộ từ hệ thống?</h2><p>Bạn sẽ xóa <strong>{aggregate.name}</strong> khỏi danh sách công khai. Hành động không thể hoàn tác.</p><div><button type="button" autoFocus disabled={pending} onClick={onCancel}>Hủy</button><button type="button" className="is-danger" disabled={pending} aria-busy={pending} onClick={onConfirm}>{pending ? "Đang xóa…" : "Xác nhận xóa"}</button></div></section></div>; }
-function State({ action, loading, message, role, title }) { return <div className="my-vocabulary-set-state" role={loading ? "status" : role} aria-live={loading ? "polite" : undefined}>{title ? <h2>{title}</h2> : null}<p>{message}</p>{action}</div>; }
-function filterSets(sets, query) { const normalized = query.trim().toLocaleLowerCase(); return normalized ? sets.filter((set) => [set.name, set.description].filter((value) => typeof value === "string").some((value) => value.toLocaleLowerCase().includes(normalized))) : sets; }
-function upsert(sets, aggregate) { const summary = { ...aggregate, item_count: aggregate.items?.length ?? 0 }; delete summary.items; const index = sets.findIndex((set) => set.id === summary.id); return index === -1 ? [summary, ...sets] : sets.map((set) => set.id === summary.id ? summary : set); }
-function messageFor(error, fallback) { const messages = { VOCABULARY_SET_NOT_FOUND: "Bộ từ không còn khả dụng.", TOPIC_NOT_FOUND: "Chủ đề đã chọn không còn khả dụng.", VOCABULARY_NOT_FOUND: "Có từ vựng đã chọn không còn khả dụng.", VALIDATION_ERROR: "Dữ liệu bộ từ không hợp lệ.", AUTHENTICATION_FAILED: "Phiên đăng nhập không còn hợp lệ.", FORBIDDEN: "Bạn không có quyền thực hiện hành động này." }; return messages[error?.code] ?? (error instanceof VocabularySetApiError && error.kind === "operational" ? "Không thể kết nối dịch vụ. Vui lòng thử lại." : fallback); }
+function SetCard({accent,onDelete,onEdit,pending,set}){const editRef=useRef(null);return <li><article className={`admin-system-set-card accent-${accent}`}><div className="admin-system-set-cover">{set.cover_image_url?<img src={set.cover_image_url} alt=""/>:<span aria-hidden="true">{set.name.slice(0,1).toUpperCase()}</span>}<div><AdminBadge tone="sky">{set.cefr_level||"—"}</AdminBadge></div></div><div className="admin-system-set-card-body"><h2>{set.name}</h2><p>{set.description||"Chưa có mô tả."}</p><strong>{set.item_count??0} từ vựng</strong></div><footer><Link to={`/admin/vocabulary-sets/${set.id}`}>Xem chi tiết<ArrowRight aria-hidden="true"/></Link><div><button ref={editRef} type="button" disabled={pending} onClick={()=>void onEdit(set,editRef)} aria-label={`Sửa ${set.name}`}><Pencil aria-hidden="true"/></button><button type="button" className="is-danger" disabled={pending} onClick={()=>onDelete(set)} aria-label={`Xóa ${set.name}`}><Trash2 aria-hidden="true"/></button></div></footer></article></li>}
+
+export function SystemSetEditorDialog({editor,error,onCancel,onSave,pending,retryUpload}){return <AdminSystemSetEditor aggregate={editor.aggregate} error={error} mode={editor.mode} pending={pending} retryUpload={retryUpload} returnFocusRef={editor.returnFocusRef} onCancel={onCancel} onSave={onSave}/>}
+function filterSets(sets,q,topic,cefr){const n=q.trim().toLowerCase();return sets.filter(x=>(!n||[x.name,x.description].some(v=>v?.toLowerCase().includes(n)))&&(!topic||(x.topic_id??x.topic?.id)===topic)&&(!cefr||x.cefr_level===cefr))}function upsert(sets,a){const s={...a,item_count:a.items?.length??a.item_count??0};delete s.items;return sets.some(x=>x.id===s.id)?sets.map(x=>x.id===s.id?s:x):[s,...sets]}function messageFor(error,fallback){const m={VOCABULARY_SET_NOT_FOUND:"Bộ từ không còn khả dụng.",TOPIC_NOT_FOUND:"Chủ đề đã chọn không còn khả dụng.",VOCABULARY_NOT_FOUND:"Có từ vựng đã chọn không còn khả dụng.",VALIDATION_ERROR:"Dữ liệu bộ từ không hợp lệ.",AUTHENTICATION_FAILED:"Phiên đăng nhập không còn hợp lệ.",FORBIDDEN:"Bạn không có quyền thực hiện hành động này."};return m[error?.code]??(error instanceof VocabularySetApiError&&error.kind==="operational"?"Không thể kết nối dịch vụ. Vui lòng thử lại.":fallback)}

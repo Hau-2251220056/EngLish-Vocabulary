@@ -1,5 +1,5 @@
 // @ts-nocheck
-const VOCABULARY_SUMMARY_SELECT = {
+const VOCABULARY_BASE_SELECT = {
   id: true,
   word: true,
   phonetic: true,
@@ -8,8 +8,27 @@ const VOCABULARY_SUMMARY_SELECT = {
   updated_at: true,
 };
 
+const VOCABULARY_SUMMARY_SELECT = {
+  ...VOCABULARY_BASE_SELECT,
+  _count: { select: { meanings: true } },
+  meanings: {
+    orderBy: { created_at: "asc" },
+    select: {
+      id: true,
+      part_of_speech: true,
+      meaning_vi: true,
+      cefr_level: true,
+      examples: {
+        orderBy: { created_at: "asc" },
+        take: 1,
+        select: { example_en: true },
+      },
+    },
+  },
+};
+
 const VOCABULARY_DETAIL_SELECT = {
-  ...VOCABULARY_SUMMARY_SELECT,
+  ...VOCABULARY_BASE_SELECT,
   meanings: {
     orderBy: { created_at: "asc" },
     select: {
@@ -42,12 +61,16 @@ const PRIVATE_VOCABULARY_DETAIL_SELECT = {
 
 export function createVocabularyRepository(prisma) {
   return {
-    list() {
-      return prisma.vOCABULARY.findMany({
+    async list() {
+      const rows = await prisma.vOCABULARY.findMany({
         where: { owner_id: null },
-        orderBy: { created_at: "asc" },
+        orderBy: [{ created_at: "asc" }, { id: "asc" }],
         select: VOCABULARY_SUMMARY_SELECT,
       });
+      return rows.map(({ _count, ...vocabulary }) => ({
+        ...vocabulary,
+        meaning_count: _count.meanings,
+      }));
     },
 
     findCompleteById(id) {

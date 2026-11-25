@@ -1,14 +1,17 @@
 import {
-  BookOpenCheck,
+  BookOpen,
   BookText,
   Compass,
+  FolderKanban,
   Home,
+  LayoutDashboard,
+  Layers,
   ChartNoAxesColumnIncreasing,
   LoaderCircle,
   LogOut,
   Menu,
   ShieldCheck,
-  Tags,
+  Users,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -17,6 +20,9 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import elVocabLogo from "../../assets/images/logo.png";
 import elVocabMobileLogo from "../../assets/logo_mobile.png";
 import { useAuthentication } from "../use-authentication.js";
+import { useAdminVocabularyCount } from "../../dashboard/admin-vocabulary-store.js";
+import { AdminBadge } from "../../admin/admin-ui-primitives.jsx";
+import "../../admin/admin-foundation.css";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
 const MOBILE_NAVIGATION_QUERY = "(max-width: 1023px)";
@@ -25,6 +31,7 @@ export function AuthenticatedShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, user } = useAuthentication();
+  const adminVocabularyCount = useAdminVocabularyCount(user.role === "ADMIN");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -70,14 +77,29 @@ export function AuthenticatedShell() {
 
   useEffect(() => {
     if (!isDrawerOpen) return undefined;
-    const focusTimer = window.setTimeout(() => sidebarRef.current?.querySelector("a")?.focus(), 100);
+    const previousOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    const focusTimer = window.setTimeout(() => sidebarRef.current?.querySelector("a, button:not([disabled])")?.focus(), 100);
     function handleKeyDown(event) {
       if (event.key === "Escape") closeDrawer();
+      if (event.key !== "Tab") return;
+      const focusable = [...(sidebarRef.current?.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown);
+      document.documentElement.style.overflow = previousOverflow;
     };
   }, [isDrawerOpen]);
 
@@ -165,7 +187,7 @@ export function AuthenticatedShell() {
     ? <Link className={brandClasses} to="/dashboard" aria-label="Về trang chủ ELVocab">{brandContent}</Link>
     : <div className={brandClasses}>{brandContent}</div>;
 
-  function navigationLink(to, label, Icon, { end = false } = {}) {
+  function navigationLink(to, label, Icon, { end = false, trailing = null } = {}) {
     return (
       <NavLink
         to={to}
@@ -175,6 +197,7 @@ export function AuthenticatedShell() {
       >
         <Icon className="size-5" aria-hidden="true" />
         <span>{label}</span>
+        {trailing}
       </NavLink>
     );
   }
@@ -206,7 +229,7 @@ export function AuthenticatedShell() {
         </nav>
       ) : null}
 
-      <div className={isUser ? "authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:contents" : "contents"}>
+      {isUser ? <div className="authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:contents">
       <div ref={accountMenuRef} className={`authenticated-account-menu${isUser ? " !relative lg:justify-self-end" : ""}`}>
         <button
           ref={accountMenuTriggerRef}
@@ -253,13 +276,14 @@ export function AuthenticatedShell() {
           </div>
         ) : null}
       </div>
-      {isUser ? drawerToggle : null}
+      {drawerToggle}
       </div>
+      : null}
     </>
   );
 
   return (
-    <div className={`authenticated-app${userAppLayoutClasses}${isDashboard ? " dashboard-shell" : ""}`}>
+    <div className={`authenticated-app${isUser ? "" : " authenticated-admin-app"}${userAppLayoutClasses}${isDashboard ? " dashboard-shell" : ""}`}>
       <aside
         ref={sidebarRef}
         id="authenticated-sidebar"
@@ -291,11 +315,14 @@ export function AuthenticatedShell() {
             </>
           ) : (
             <>
-              {navigationLink("/dashboard", "Trang chủ", Home, { end: true })}
-              <p className="authenticated-nav-heading">Quản trị</p>
-              {navigationLink("/admin/topics", "Quản lý chủ đề", Tags)}
-              {navigationLink("/admin/vocabulary", "Quản lý từ vựng", BookOpenCheck)}
-              {navigationLink("/admin/vocabulary-sets", "Quản lý bộ từ", BookText)}
+              <p className="authenticated-nav-heading">Tổng quan</p>
+              {navigationLink("/dashboard", "Tổng quan hệ thống", LayoutDashboard, { end: true })}
+              <p className="authenticated-nav-heading">Quản trị nội dung</p>
+              {navigationLink("/admin/topics", "Quản lý chủ đề", FolderKanban)}
+              {navigationLink("/admin/vocabulary", "Kho từ vựng", BookOpen, { trailing: <AdminVocabularyCountBadge source={adminVocabularyCount} /> })}
+              {navigationLink("/admin/vocabulary-sets", "Quản lý bộ từ", Layers)}
+              <p className="authenticated-nav-heading">Quản trị hệ thống</p>
+              {navigationLink("/admin/users", "Quản lý người dùng", Users)}
             </>
           )}
         </nav>
@@ -308,12 +335,18 @@ export function AuthenticatedShell() {
             {logoutError ? <p className="authenticated-logout-error !mx-[0.35rem] !mb-0 !mt-2 !text-xs !text-red-700" role="alert">{logoutError}</p> : null}
           </div>
         ) : (
-          <div className="authenticated-sidebar-account">
-            <span className="authenticated-sidebar-avatar" aria-hidden="true">{defaultAvatar}</span>
-            <div className="min-w-0">
-              <p className="authenticated-sidebar-name" title={displayName}>{displayName}</p>
-              <p className="authenticated-sidebar-role">Quản trị viên</p>
+          <div className="authenticated-admin-session">
+            <div className="authenticated-sidebar-account">
+              <span className="authenticated-sidebar-avatar" aria-hidden="true">{defaultAvatar}</span>
+              <div className="min-w-0">
+                <p className="authenticated-sidebar-name" title={displayName}>{displayName}</p>
+                <p className="authenticated-sidebar-role"><ShieldCheck className="size-3.5" aria-hidden="true" />Quản trị viên</p>
+              </div>
+              <button type="button" className="authenticated-admin-logout" onClick={handleLogout} disabled={isLoggingOut} aria-busy={isLoggingOut} aria-label="Đăng xuất" title="Đăng xuất">
+                {isLoggingOut ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}
+              </button>
             </div>
+            {logoutError ? <p className="authenticated-admin-logout-error" role="alert">{logoutError}</p> : null}
           </div>
         )}
       </aside>
@@ -328,16 +361,22 @@ export function AuthenticatedShell() {
       ) : null}
 
       <div className={`authenticated-shell-main${userShellLayoutClasses}`} inert={(isMobileNavigation && isDrawerOpen) || undefined}>
-        <header className={`authenticated-header${userHeaderLayoutClasses}`}>
+        {isUser || isMobileNavigation ? <header className={`authenticated-header${isUser ? "" : " authenticated-admin-mobile-header"}${userHeaderLayoutClasses}`}>
           {user.role === "USER" ? (
             <div className="authenticated-header-inner mx-auto flex h-full w-full max-w-[1440px] items-center justify-between px-4 sm:px-8 lg:grid lg:w-[calc(100%-18rem)] lg:max-w-[1280px] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-0 lg:px-8">
               {headerContent}
             </div>
           ) : headerContent}
-        </header>
+        </header> : null}
 
         <main className={`authenticated-main${userMainLayoutClasses}`}><Outlet /></main>
       </div>
     </div>
   );
+}
+
+function AdminVocabularyCountBadge({ source }) {
+  if (source.status === "success") return <AdminBadge className="authenticated-admin-count" label={`Tổng cộng ${source.count} từ vựng`}>{source.count}</AdminBadge>;
+  if (source.status === "loading" || source.status === "idle") return <AdminBadge className="authenticated-admin-count is-pending" label="Đang tải tổng số từ vựng">…</AdminBadge>;
+  return <AdminBadge className="authenticated-admin-count is-error" label="Chưa thể tải tổng số từ vựng">!</AdminBadge>;
 }

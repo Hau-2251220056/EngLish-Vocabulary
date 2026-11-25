@@ -148,17 +148,22 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Chưa có bộ từ để khám phá" })).toBeVisible();
 });
 
-test("ADMIN receives a non-interactive Admin indicator", async ({ page }) => {
+test("ADMIN receives sidebar identity and no redundant account menu", async ({ page }) => {
   await installAuthApiMock(page, {
     "/api/auth/me": responses.currentUser(publicAdmin),
   });
+  for (const endpoint of ["/api/topics", "/api/admin/vocabulary", "/api/admin/vocabulary-sets"]) {
+    await page.route(`**${endpoint}`, (route) => route.fulfill({ status: 200, json: { success: true, data: [] } }));
+  }
   await page.goto("/dashboard");
 
-  await page.getByRole("button", { name: `Mở menu tài khoản của ${publicAdmin.display_name}` }).click();
-  const indicator = page.locator(".authenticated-account-dropdown").getByText("Quản trị viên", { exact: true });
+  const sidebar = page.locator("aside.authenticated-sidebar");
+  const indicator = sidebar.getByText("Quản trị viên", { exact: true });
   await expect(indicator).toBeVisible();
-  await expect(indicator).toHaveJSProperty("tagName", "SPAN");
+  await expect(indicator).toHaveJSProperty("tagName", "P");
   await expect(indicator).not.toHaveAttribute("role", "button");
+  await expect(sidebar.getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${publicAdmin.display_name}` })).toHaveCount(0);
   await expect(page.locator('a[href="/my/learning-progress"]')).toHaveCount(0);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 
