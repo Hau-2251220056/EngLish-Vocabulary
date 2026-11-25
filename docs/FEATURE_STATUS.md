@@ -1030,7 +1030,7 @@ System Achievement Management	TODO	⏳	⏳	⏳	⏳	⏳	⏳
 
 Admin functionality must remain within the approved project scope.
 
-### Admin UI V2 local workstream checkpoint
+### Admin UI V2 release checkpoint
 
 - Prompts 251–266 implemented the Bright & Clean Admin shell, real-data Dashboard, Topic/Vocabulary/System Set management, routed System Set Detail, shared dialogs/toasts and the read-only Admin User backend. Prompt 267 User Management was HUMAN accepted.
 - Prompt 268 pagination/streak audit is complete. Prompt 269 pagination and Vocabulary table refinement was HUMAN accepted with Topic deterministic ordering intentionally deferred. Prompt 270 Set Detail pagination was HUMAN accepted. Prompt 271 Admin User Current Streak was HUMAN accepted.
@@ -1038,8 +1038,10 @@ Admin functionality must remain within the approved project scope.
 - Prompt 272 final integration audit completed with `REMEDIATION_REQUIRED` solely for active documentation drift, and Prompt 273 reconciled that documentation. Prompt 274 Final Integration Verification was historically `PARTIAL` because P272-03 delete-dialog trigger-focus restoration still failed on Topics and Vocabulary.
 - Prompt 274-R completed the bounded focus-restoration remediation and was HUMAN accepted. P272-03 is `RESOLVED`: Cancel and Escape restore focus to the exact delete trigger for Topics, Vocabulary and System Sets, and all six dismissal flows pass without a delete mutation.
 - Final Integration Verification is `CLOSED`. Final reported verification is Backend DB-free `44/44 PASS`, Frontend unit `43/43 PASS`, mocked Chromium `129/129 PASS`, total `216/216 PASS`; Frontend ESLint, production build, strict UTF-8 validation and `git diff --check` also pass.
-- Admin Dashboard and User Management are locally implemented, tested, reviewed and HUMAN accepted. Their `DONE` status records local development-cycle acceptance only: the accumulated Admin UI V2 implementation remains in the local dirty worktree on `feature/admin-ui-v2` and is uncommitted, unmerged, undeployed and not a production-release claim.
-- Accepted deferred items remain open: Topic deterministic ordering; Streak history query volume; the unrelated USER `/review` same-route PUSH/hash scroll regression with unconfirmed causality; obsolete `AdminPlannedNavigationItem`; DB-backed/real-stack verification (`NOT TESTED`); and large real-database performance (`NOT TESTED`).
+- Prompt 278-R2 completed the remaining Admin UI V2 real-stack remediation. Focused real-stack verification is `8/8 PASS`.
+- Admin UI V2 implementation is complete, tested, reviewed and HUMAN accepted. The accumulated changes were committed and merged into `dev` through PR #37. CI run `45450962963` and Guarded Integration run `45450956588` both passed against dev commit `0a6c4824cf6646cba84360d68f94049698ab25fb`.
+- Main release and production deployment remain pending. The `DONE` feature statuses record development-cycle acceptance and do not claim a production release.
+- Accepted deferred items remain open: Topic deterministic ordering; Streak history query volume; the unrelated USER `/review` same-route PUSH/hash scroll regression with unconfirmed causality; obsolete `AdminPlannedNavigationItem`; and large real-database performance (`NOT TESTED`). Earlier local DB-backed/real-stack verification limitations are preserved as historical context; the later guarded CI and focused real-stack results above provide the current release evidence without establishing large-production-dataset performance.
 
 Admin APIs must be protected by authentication and role-based authorization.
 
