@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, CircleAlert, LoaderCircle, X } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -9,11 +9,14 @@ import { getAuthErrorPresentation } from "./auth-error-messages.js";
 import { FormAlert } from "./form-alert.jsx";
 import { FormField } from "./form-field.jsx";
 import { PasswordField } from "./password-field.jsx";
+import { GoogleAuthenticationControl } from "./google-authentication-control.jsx";
 
 export function LoginForm({ initialEmail = "", onSwitchMode }) {
   const navigate = useNavigate();
   const { dismissSessionExpired, login, sessionExpired } = useAuthentication();
   const [formError, setFormError] = useState(null);
+  const [isGoogleBusy, setIsGoogleBusy] = useState(false);
+  const clearFormError = useCallback(() => setFormError(null), []);
   const {
     register,
     handleSubmit,
@@ -29,6 +32,7 @@ export function LoginForm({ initialEmail = "", onSwitchMode }) {
   }, [initialEmail, reset]);
 
   async function submit(values) {
+    if (isGoogleBusy) return;
     setFormError(null);
     try {
       await login(values);
@@ -57,7 +61,7 @@ export function LoginForm({ initialEmail = "", onSwitchMode }) {
           autoComplete="email"
           placeholder="your@example.com"
           error={errors.email}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("email")}
         />
         <PasswordField
@@ -66,15 +70,22 @@ export function LoginForm({ initialEmail = "", onSwitchMode }) {
           autoComplete="current-password"
           placeholder="Nhập mật khẩu"
           error={errors.password}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("password")}
         />
         <SubmitButton
           isSubmitting={isSubmitting}
+          disabled={isGoogleBusy}
           pendingLabel="Đang đăng nhập..."
         >
           Đăng nhập
         </SubmitButton>
+        <GoogleAuthenticationControl
+          buttonText="signin_with"
+          disabled={isSubmitting}
+          onBusyChange={setIsGoogleBusy}
+          onAuthenticationStart={clearFormError}
+        />
       </form>
       <ModeSwitch
         text="Chưa có tài khoản?"
@@ -126,11 +137,11 @@ export function AuthFormFrame({ eyebrow, title, description, children }) {
   );
 }
 
-export function SubmitButton({ isSubmitting, pendingLabel, children }) {
+export function SubmitButton({ isSubmitting, disabled = false, pendingLabel, children }) {
   return (
     <button
       type="submit"
-      disabled={isSubmitting}
+      disabled={isSubmitting || disabled}
       aria-busy={isSubmitting}
       className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#4ca2e6] px-4 text-sm font-[550] text-white shadow-sm outline-none transition hover:bg-[#378fce] focus-visible:ring-4 focus-visible:ring-[#c7e7fa] disabled:cursor-not-allowed disabled:bg-[#a8d4f3] motion-reduce:transition-none"
     >

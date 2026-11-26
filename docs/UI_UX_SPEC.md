@@ -563,6 +563,8 @@ A speaker icon should be displayed inside the flashcard when pronunciation audio
 
 The user can press the speaker button to listen to the model pronunciation.
 
+Stored audio and native browser TTS share one playback lifecycle. Moving to another card, switching mode, finishing a batch, or leaving the page cancels obsolete playback without showing a false error; callbacks from an earlier card cannot update the current card. Genuine playback failure remains a non-blocking status, and browsers without usable playback support must not prevent the learner from continuing the session.
+
 The flashcard should only provide model pronunciation playback.
 
 User speech recognition and transient transcript feedback belong to the separate Speaking Practice activity.
@@ -1547,6 +1549,24 @@ Success states are defined.
 Quiz feedback states are defined.
 Learning flow is prototyped.
 Authentication flow is prototyped.
+
+### Google Authentication — HD-25 through HD-32
+
+Login and Register preserve the existing two-panel Auth composition, form fields,
+primary action and Prompt 309 footer. Immediately after the primary submit action,
+the form presents a neutral `Hoặc` divider, the official GIS-rendered localized
+button, then the existing mode switch. Login requests GIS `signin_with` (Đăng
+nhập với Google) and Register requests `signup_with` (Đăng ký với Google), both
+with locale `vi` and `logo_alignment: "center"`. Google controls the final
+localized wording. One Tap and automatic sign-in are disabled.
+
+Google loading, unavailable, verification failure and account-collision states
+remain inside the form flow without clearing typed password-form values or
+stacking duplicate errors. A Google operation and password submission cannot run
+concurrently. SDK failure leaves password Authentication enabled. Content growth
+increases the shared card naturally; neither panel nor form creates nested scroll.
+The page alone may scroll, both desktop panels remain equal height, and the footer
+follows the card at 1440, 768, 390 and 320 CSS pixels.
 Vocabulary Set flow is prototyped.
 Community flow is prototyped.
 Admin flow is prototyped.
@@ -1690,3 +1710,28 @@ This release does not remediate the separately deferred Flashcard 9/10 issue or
 Supabase database-security migration work. Production seed and Production release
 remain separately gated. CEFR-J permission ambiguity, ShareAlike completeness and
 the existing dataset-quality limitations remain explicitly unresolved.
+
+## Prompt 309 — footer and layout completion
+
+**HD-24:** Normal authenticated learner pages use one shared footer inside the
+main content column: `© 2026 ELVocab.` and a `Nguồn dữ liệu` link to
+`/data-sources`. It follows short content to the viewport bottom and long content
+naturally, is never fixed, and stacks as two centered lines on narrow screens.
+The learner sidebar remains focused on learning navigation and does not duplicate
+the attribution link.
+
+The learner footer is present on Dashboard, Explore and public set detail while
+authenticated, My Sets and its detail, Review Center overview, Learning Progress,
+and authenticated Data Sources. It is absent from Flashcard, Global/Set Review,
+Quiz, Speaking Practice, every Admin route, and modal surfaces. Account Settings
+has no implemented route at this checkpoint; the shared learner shell will own
+its footer if that route is introduced through the approved workflow.
+
+Login and Register share a quiet footer outside the authentication card with
+`Trang chủ · Nguồn dữ liệu` and the educational-purpose copyright statement.
+The existing Landing footer and shared public Topics/Data Sources footer remain
+the public implementations; no duplicate public footer or route is introduced.
+
+Automated Prompt 309 evidence covers route visibility, focus/Admin exclusions,
+keyboard-accessible links, and 1440/768/390/320 responsive widths. HUMAN visual
+approval remains pending; implementation is not marked DONE by this checkpoint.

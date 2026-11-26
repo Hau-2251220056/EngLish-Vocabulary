@@ -74,6 +74,25 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     }
   }
 
+  async function loginWithGoogle(credential) {
+    setState({ ...state, authError: null });
+    try {
+      const user = await authService.loginWithGoogle(credential);
+      setState({
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+        authError: null,
+        sessionExpired: false,
+        authenticationRecoveryRequired: false,
+      });
+      return user;
+    } catch (error) {
+      setState({ ...state, authError: toStateError(error) });
+      throw error;
+    }
+  }
+
   async function logout() {
     setState({ ...state, authError: null, sessionExpired: false });
 
@@ -145,6 +164,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     refreshCurrentUser,
     register,
     login,
+    loginWithGoogle,
     logout,
     dismissSessionExpired,
   });

@@ -20,6 +20,10 @@ enum USER_ROLE {
   ADMIN
 }
 
+enum AUTH_PROVIDER {
+  GOOGLE
+}
+
 enum XP_REWARD_TYPE {
   SRS_INITIAL
   QUIZ_FIRST_CORRECT
@@ -73,7 +77,7 @@ enum SESSION_ITEM_EVIDENCE {
 model USER {
   id                                   String                                @id @default(uuid()) @db.Uuid
   email                                String                                @unique @db.VarChar(255)
-  password_hash                        String                                @db.Text
+  password_hash                        String?                               @db.Text
   display_name                         String                                @db.VarChar(100)
   avatar_url                           String?                               @db.Text
   role                                 USER_ROLE                             @default(USER)
@@ -83,6 +87,7 @@ model USER {
   created_at                           DateTime                              @default(now())
   updated_at                           DateTime                              @updatedAt
   auth_sessions                        AUTH_SESSION[]
+  auth_identities                      AUTH_IDENTITY[]
   vocabulary_sets                      VOCABULARY_SET[]
   owned_vocabularies                   VOCABULARY[]                          @relation("VocabularyOwner")
   private_vocabulary_create_operations PRIVATE_VOCABULARY_CREATE_OPERATION[] @relation("PrivateVocabularyCreateOperationOwner")
@@ -92,6 +97,36 @@ model USER {
   streak_days                          STREAK_DAY[]
   cefr_learning_passes                 CEFR_LEARNING_PASS[]
   cefr_learning_path_state             CEFR_LEARNING_PATH_STATE?
+}
+
+model AUTH_IDENTITY {
+  id               String        @id @default(uuid()) @db.Uuid
+  user_id          String        @db.Uuid
+  provider         AUTH_PROVIDER
+  provider_subject String        @db.VarChar(255)
+  provider_email   String        @db.VarChar(255)
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+  user             USER          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([provider, provider_subject])
+  @@unique([user_id, provider])
+  @@index([user_id])
+}
+
+model GOOGLE_AUTH_CHALLENGE {
+  id                   String    @id @default(uuid()) @db.Uuid
+  nonce_hash           String    @unique @db.Char(64)
+  browser_binding_hash String    @db.Char(64)
+  source_key           String    @db.Char(64)
+  expires_at           DateTime  @db.Timestamp(3)
+  consumed_at          DateTime? @db.Timestamp(3)
+  issued_at            DateTime  @db.Timestamp(3)
+  created_at           DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")) @db.Timestamp(3)
+
+  @@index([expires_at])
+  @@index([browser_binding_hash])
+  @@index([source_key, issued_at])
 }
 
 model AUTH_SESSION {

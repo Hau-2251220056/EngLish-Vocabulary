@@ -3,6 +3,7 @@ import elVocabLogo from "../../assets/images/logo.png";
 import { LoginForm } from "./login-form.jsx";
 import { RegisterForm } from "./register-form.jsx";
 import { VocabularyExperience } from "./vocabulary-experience.jsx";
+import { AuthFooter } from "../../components/site-footers.jsx";
 
 export function AuthShell({
   mode,
@@ -11,8 +12,8 @@ export function AuthShell({
   onRegistrationSuccess,
 }) {
   return (
-    <main className="auth-stage flex min-h-screen justify-center px-3 pb-4 pt-8 sm:px-6 sm:pb-8 sm:pt-10 min-[901px]:py-8">
-      <div className="my-0 w-full max-w-5xl min-[901px]:my-auto">
+    <main className="auth-stage flex min-h-screen flex-col px-3 pt-8 sm:px-6 sm:pt-10 min-[901px]:pt-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center">
         <img
           src={elVocabLogo}
           alt="ELVocab"
@@ -52,6 +53,7 @@ export function AuthShell({
           </div>
         </div>
       </div>
+      <AuthFooter />
     </main>
   );
 }

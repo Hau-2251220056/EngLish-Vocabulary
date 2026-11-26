@@ -30,5 +30,12 @@ export function createUserRepository(prisma) {
         select: AUTHENTICATION_USER_SELECT,
       });
     },
+
+    createGoogleUser({ email, display_name }) {
+      return prisma.uSER.create({
+        data: { email, password_hash: null, display_name, role: "USER" },
+        select: AUTHENTICATION_USER_SELECT,
+      });
+    },
   };
 }

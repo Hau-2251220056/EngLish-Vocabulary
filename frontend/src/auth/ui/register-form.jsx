@@ -7,9 +7,12 @@ import { getAuthErrorPresentation } from "./auth-error-messages.js";
 import { FormField } from "./form-field.jsx";
 import { AuthFormFrame, ModeSwitch, SubmitButton } from "./login-form.jsx";
 import { PasswordField } from "./password-field.jsx";
+import { GoogleAuthenticationControl } from "./google-authentication-control.jsx";
+import { useState } from "react";
 
 export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
   const { register: registerAccount } = useAuthentication();
+  const [isGoogleBusy, setIsGoogleBusy] = useState(false);
   const {
     register,
     handleSubmit,
@@ -27,6 +30,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
   });
 
   async function submit({ display_name, email, password }) {
+    if (isGoogleBusy) return;
     try {
       await registerAccount({ display_name, email, password });
       reset({
@@ -65,7 +69,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
           autoComplete="name"
           placeholder="Tên của bạn"
           error={errors.display_name}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("display_name")}
         />
         <FormField
@@ -75,7 +79,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
           autoComplete="email"
           placeholder="your@example.com"
           error={errors.email}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("email")}
         />
         <PasswordField
@@ -84,7 +88,7 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
           autoComplete="new-password"
           placeholder="Mật khẩu (tối thiểu 8 ký tự)"
           error={errors.password}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("password")}
         />
         <PasswordField
@@ -93,15 +97,21 @@ export function RegisterForm({ onSwitchMode, onRegistrationSuccess }) {
           autoComplete="new-password"
           placeholder="Nhập lại mật khẩu"
           error={errors.confirm_password}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isGoogleBusy}
           {...register("confirm_password")}
         />
         <SubmitButton
           isSubmitting={isSubmitting}
+          disabled={isGoogleBusy}
           pendingLabel="Đang tạo tài khoản..."
         >
           Tạo tài khoản
         </SubmitButton>
+        <GoogleAuthenticationControl
+          buttonText="signup_with"
+          disabled={isSubmitting}
+          onBusyChange={setIsGoogleBusy}
+        />
       </form>
       <ModeSwitch
         text="Đã có tài khoản?"

@@ -2090,6 +2090,14 @@ input {
   overflow-y: auto;
 }
 
+.authenticated-user-app .authenticated-main > :not(.learner-footer) {
+  flex-shrink: 0;
+}
+
+.authenticated-user-app .authenticated-main::after {
+  flex-shrink: 0;
+}
+
 /* Only the active authenticated USER content scroller receives the shared treatment. */
 html:has(.authenticated-user-app) {
   scrollbar-color: #2f86bd #edf3f6;

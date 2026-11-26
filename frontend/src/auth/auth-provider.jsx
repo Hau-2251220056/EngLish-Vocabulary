@@ -24,6 +24,7 @@ export function AuthenticationProvider({ children }) {
       ...state,
       register: store.register,
       login: store.login,
+      loginWithGoogle: store.loginWithGoogle,
       logout: store.logout,
       refreshCurrentUser: store.refreshCurrentUser,
       dismissSessionExpired: store.dismissSessionExpired,

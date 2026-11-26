@@ -56,10 +56,13 @@ test("pronunciation fallback prefers a default English voice without requiring o
   assert.equal(selectEnglishSpeechVoice([]), null);
 });
 
-test("Learning audio keeps card URL priority and exact-word native TTS fallback", async () => {
+test("Learning audio delegates exact-card playback and lifecycle ownership to the shared coordinator", async () => {
   const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
-  assert.match(source, /if \(currentCard\.pronunciation_url\) \{[\s\S]*new Audio\(currentCard\.pronunciation_url\)/);
-  assert.match(source, /new window\.SpeechSynthesisUtterance\(currentCard\.word\)/);
+  assert.match(source, /createReferencePlaybackCoordinator/);
+  assert.match(source, /pronunciationCoordinator\.listen\(\{[\s\S]*targetId: currentCard\.id,[\s\S]*text: currentCard\.word,[\s\S]*audioUrl: currentCard\.pronunciation_url/);
+  assert.match(source, /pronunciationCoordinator\.cancel\(\)/);
+  assert.doesNotMatch(source, /pronunciationCoordinator\.dispose\(\)/);
+  assert.doesNotMatch(source, /utterance\.onerror\s*=/);
   assert.doesNotMatch(source, /find\([^\n]*\.word|filter\([^\n]*\.word/);
 });
 

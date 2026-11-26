@@ -14,6 +14,8 @@ export function createAuthenticationRouter({
 
   router.post("/register", authenticationController.register);
   router.post("/login", authenticationController.login);
+  router.post("/google/challenge", authenticationController.createGoogleChallenge);
+  router.post("/google", authenticationController.googleLogin);
   router.post("/logout", authenticationController.logout);
   router.get(
     "/me",

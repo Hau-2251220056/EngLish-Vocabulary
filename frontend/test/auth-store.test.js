@@ -125,6 +125,14 @@ test("login authenticates and logout returns state to Guest", async () => {
   assert.deepEqual(store.getSnapshot(), guestState);
 });
 
+test("Google login reuses the authenticated state contract", async () => {
+  const store = createAuthenticationStore(
+    createService({ loginWithGoogle: async () => publicUser }),
+  );
+  assert.deepEqual(await store.loginWithGoogle("credential"), publicUser);
+  assert.deepEqual(store.getSnapshot(), authenticatedState);
+});
+
 test("login failure remains unauthenticated with a safe error", async () => {
   const store = createAuthenticationStore(
     createService({ login: async () => { throw authenticationFailure(); } }),
@@ -239,6 +247,7 @@ function createService(overrides = {}) {
   return {
     register: async () => ({ success: true }),
     login: async () => publicUser,
+    loginWithGoogle: async () => publicUser,
     logout: async () => undefined,
     getCurrentUser: async () => {
       throw authenticationFailure();

@@ -22,6 +22,7 @@ import elVocabMobileLogo from "../../assets/logo_mobile.png";
 import { useAuthentication } from "../use-authentication.js";
 import { useAdminVocabularyCount } from "../../dashboard/admin-vocabulary-store.js";
 import { AdminBadge } from "../../admin/admin-ui-primitives.jsx";
+import { LearnerFooter } from "../../components/site-footers.jsx";
 import "../../admin/admin-foundation.css";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
@@ -157,7 +158,7 @@ export function AuthenticatedShell() {
   const userHeaderLayoutClasses = !isUser ? "" : ` !sticky !top-0 !z-10 !flex !min-h-[3.75rem] !basis-[3.75rem] !w-full !shrink-0 !items-center !justify-normal !gap-0 !border-b !border-[var(--border-soft)] !bg-white/[0.97] !p-0 sm:!min-h-[4.25rem] sm:!basis-[4.25rem] lg:!min-h-18 lg:!basis-18${isDashboard
     ? " lg:!sticky lg:!top-0"
     : " lg:!relative"}`;
-  const userMainLayoutClasses = !isUser ? "" : ` !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)]${isDashboard
+  const userMainLayoutClasses = !isUser ? "" : ` !flex !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !flex-col !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)]${isDashboard
     ? " lg:!min-h-[calc(100dvh-4.5rem)] lg:!overflow-visible"
     : " lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto"}`;
 
@@ -369,7 +370,10 @@ export function AuthenticatedShell() {
           ) : headerContent}
         </header> : null}
 
-        <main className={`authenticated-main${userMainLayoutClasses}`}><Outlet /></main>
+        <main className={`authenticated-main${userMainLayoutClasses}`}>
+          <Outlet />
+          {isUser ? <LearnerFooter /> : null}
+        </main>
       </div>
     </div>
   );
