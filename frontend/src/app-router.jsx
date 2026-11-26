@@ -20,6 +20,7 @@ const AuthenticatedShell = lazyRoute(
   "AuthenticatedShell",
 );
 const DashboardPage = lazyRoute(() => import("./dashboard/dashboard-page.jsx"), "DashboardPage");
+const DataSourcesPage = lazyRoute(() => import("./data-sources/data-sources-page.jsx"), "DataSourcesPage");
 const LearningFoundationPage = lazyRoute(
   () => import("./learning/learning-foundation-page.jsx"),
   "LearningFoundationPage",
@@ -90,6 +91,7 @@ export function AppRouter() {
       <SpeakingSessionStorageObserver />
       <Routes>
         <Route element={<DiscoveryRouteLayout />}>
+          <Route path="/data-sources" element={<DataSourcesPage />} />
           <Route path="/topics" element={<TopicListPage />} />
           <Route path="/topics/:topicId" element={<TopicDetailPage />} />
           <Route path="/topics/:topicId/vocabulary-sets" element={<PublicVocabularySetDiscoveryPage />} />

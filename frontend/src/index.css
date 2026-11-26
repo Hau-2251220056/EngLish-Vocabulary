@@ -125,9 +125,7 @@ body {
   display: flex;
   min-height: 100vh;
   flex-direction: column;
-  background:
-    radial-gradient(circle at 12% 12%, rgb(224 231 255 / 70%), transparent 25rem),
-    #f8faff;
+  background: #f8fafc;
 }
 
 .public-topic-header {
@@ -137,8 +135,8 @@ body {
   justify-content: space-between;
   gap: 1rem;
   border-bottom: 1px solid #e2e8f0;
-  background: rgb(255 255 255 / 92%);
-  padding: 0.75rem max(1rem, calc((100% - 70rem) / 2));
+  background: #fff;
+  padding: 0 max(1rem, calc((100% - 70rem) / 2));
 }
 
 .public-topic-brand,
@@ -146,7 +144,7 @@ body {
 .public-topic-back-link,
 .public-topic-card a,
 .public-topic-state a {
-  color: #4338ca;
+  color: #176a9f;
   font-weight: 800;
   text-decoration: none;
 }
@@ -161,23 +159,41 @@ body {
 }
 
 .public-topic-brand {
-  color: #172554;
-  font-size: 1.05rem;
+  min-height: 2.75rem;
+  flex: 0 0 auto;
+  border-radius: 0.75rem;
+  outline: none;
 }
 
-.public-topic-brand-mark,
-.public-topic-heading-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #4f46e5;
-  color: #fff;
-}
-
-.public-topic-brand-mark {
-  width: 2.5rem;
+.public-topic-brand img {
+  display: block;
+  width: auto;
   height: 2.5rem;
-  border-radius: 0.8rem;
+}
+
+.public-topic-brand-mobile {
+  display: none !important;
+}
+
+.public-topic-header-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.public-topic-header-link {
+  min-height: 2.75rem;
+  border-radius: 0.75rem;
+  padding: 0 0.8rem;
+  color: #475569;
+  font-size: 0.875rem;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.public-topic-header-link:hover {
+  background: #f0f7fb;
+  color: #176a9f;
 }
 
 .public-topic-account-link {
@@ -192,8 +208,8 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: #e0f2fe;
+  color: #075985;
   font-size: 0.75rem;
   font-weight: 800;
 }
@@ -209,13 +225,7 @@ body {
   width: min(100% - 2rem, 70rem);
   flex: 1;
   margin-inline: auto;
-  padding-block: 3rem 4rem;
-}
-
-.public-topic-heading-mark {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 1rem;
+  padding-block: 2rem 4rem;
 }
 
 .public-topic-content {
@@ -240,7 +250,7 @@ body {
 
 .public-topic-eyebrow {
   margin: 0;
-  color: #4f46e5;
+  color: #176a9f;
   font-size: 0.78rem;
   font-weight: 900;
   letter-spacing: 0.12em;
@@ -627,7 +637,7 @@ body {
 
 .public-vocabulary-set-card-label {
   margin: 0 0 0.75rem;
-  color: #4f46e5;
+  color: #176a9f;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -981,7 +991,7 @@ body {
 .public-topic-state button {
   border: 0;
   border-radius: 0.75rem;
-  background: #4f46e5;
+  background: #3978b6;
   padding: 0.7rem 1rem;
   color: #fff;
   font-weight: 800;
@@ -1027,7 +1037,7 @@ body {
 .public-topic-metadata dd a,
 .public-topic-detail-link,
 .public-vocabulary-set-auth-prompt a {
-  color: #4338ca;
+  color: #176a9f;
   font-weight: 800;
   text-decoration: none;
 }
@@ -1124,7 +1134,7 @@ body {
 .public-topic-state a:focus-visible,
 .public-topic-state button:focus-visible {
   border-radius: 0.35rem;
-  outline: 3px solid #a5b4fc;
+  outline: 3px solid #b9d9f6;
   outline-offset: 3px;
 }
 
@@ -1132,7 +1142,7 @@ body {
 .public-topic-detail-link:focus-visible,
 .public-vocabulary-set-auth-prompt a:focus-visible {
   border-radius: 0.35rem;
-  outline: 3px solid #a5b4fc;
+  outline: 3px solid #b9d9f6;
   outline-offset: 3px;
 }
 
@@ -1155,9 +1165,27 @@ body {
 }
 
 @media (max-width: 540px) {
+  .public-topic-header {
+    gap: 0.5rem;
+  }
+
+  .public-topic-brand-full {
+    display: none !important;
+  }
+
+  .public-topic-brand-mobile {
+    display: block !important;
+  }
+
+  .public-topic-header-link {
+    gap: 0.35rem;
+    padding-inline: 0.6rem;
+    font-size: 0.78rem;
+  }
+
   .public-topic-main {
     width: min(100% - 1.5rem, 70rem);
-    padding-block: 2rem 3rem;
+    padding-block: 1rem 3rem;
   }
 
   .public-topic-grid,
