@@ -1604,3 +1604,78 @@ While a reveal acknowledgement is pending, the UI announces status accessibly, k
 Changed flows use semantic headings, textual non-color state, keyboard-operable controls, visible focus, `status`/`alert` announcements, responsive wrapping, touch-sized actions, and existing reduced-motion behavior. Retry remains source-scoped and stale asynchronous responses cannot replace newer state.
 
 Guarded browser run [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) passed 16/16 selected browser tests: 13 CEFR real-stack cases, two mocked SRS cases, and one global SRS non-credit regression. Acceptance-gap run [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) passed three deliberately selected mocked browser cases for pending NORMAL, Quiz non-credit, and Speaking non-credit. The Speaking result proves the mocked read-only frontend journey only; it does not claim live microphone/vendor recognition or full real-stack Speaking backend coverage.
+
+## Prompt 302 — release attribution and learning-label clarification
+
+Status: approved local implementation; not released.
+
+- `/data-sources` is an unauthenticated public route. It identifies CEFR-J,
+  Octanove, CMUdict and the QA-only use of ipa-dict, states modifications and
+  unresolved quality/licensing limits, and offers only the isolated
+  Octanove-derived C1 artifact for download.
+- The landing footer and public Topics footer expose the attribution route.
+  Authenticated learners also receive a low-emphasis session/sidebar link; it
+  is not promoted into the primary task navigation.
+- The normal Explore catalog is ordered by CEFR (`A1` through `C2`), then a
+  normalized set name and stable ID. Missing or unsupported levels appear last.
+  Filtering happens before sorting and pagination. Featured sets preserve their
+  existing source selection and order.
+- The shared flashcard completion action reads `Học tiếp` for ordinary set
+  learning and `Ôn tiếp` only for review context. Global Review wording remains
+  unchanged.
+- New interactive targets retain keyboard focus treatment and a minimum
+  44-pixel target. The attribution layout must not introduce horizontal overflow
+  at supported mobile widths.
+
+Decision boundaries: the public artifact does not include CEFR-J entries or IPA;
+its CC BY-SA notice is scoped to Octanove-derived content and does not relicense
+the whole application. Human/legal clearance for CEFR-J commercial-use wording,
+full human semantic review, and full independent pronunciation verification are
+not asserted by this release.
+
+Recorded human decisions:
+
+- **HD-16:** proceed as a temporary non-commercial graduation project while
+  recording unresolved CEFR-J permission ambiguity; no written permission or
+  Production licensing clearance is claimed.
+- **HD-17:** use an isolated 145-record Octanove-derived CC BY-SA 4.0 artifact,
+  subject to the redistribution rights of every included field.
+- **HD-18:** publish concise Vietnamese attribution with copyright notices,
+  source/license links and modification disclosures.
+- **HD-19:** include the isolated Octanove artifact only after its scoped
+  redistribution checks pass.
+- **HD-20:** order Explore results by ascending CEFR with deterministic ties and
+  expose C2 in the filter.
+- **HD-21:** use context-aware Flashcard completion copy and preserve genuine
+  review terminology.
+
+### Prompt 302-R public UI remediation
+
+Prompt 302 manual functional acceptance passed 4/4 for attribution/download,
+Explore CEFR ordering, ordinary SRS `Học tiếp`, and review SRS `Ôn tiếp`. Initial
+HUMAN visual acceptance of the public data-source header failed; after Prompt
+302-R remediation, HUMAN visual acceptance passed 3/3 for the Landing footer,
+attribution branding/header/title, and logo/Home navigation. Total HUMAN
+acceptance is 7/7.
+
+- The Landing footer contains only `Nguồn dữ liệu & Giấy phép`, `Đăng nhập`, and
+  `Đăng ký`. The guest footer no longer advertises Explore; `/topics` and the
+  authenticated Explore navigation remain available and unchanged.
+- `PublicTopicLayout` uses the same existing ELVocab logo assets as the Landing
+  Page. The logo and explicit `Trang chủ` action both navigate deterministically
+  to `/`; `Đăng nhập` continues to navigate to `/login`.
+- The shared public header uses a compact white surface, neutral text and existing
+  sky-blue interaction tokens. The legacy letter-E mark, decorative page icon,
+  indigo gradient and purple/indigo public-layout accents are removed.
+- `/data-sources` begins directly with a compact page heading and its existing
+  introduction. It adds no body-level duplicate Home action and preserves all
+  attribution, licensing, quality-limitation and download content.
+
+Automated responsive evidence covers 1440, 768, 390 and 320 CSS pixels without
+horizontal overflow. Prompt 302 and Prompt 302-R implementation and HUMAN
+acceptance are complete; dev integration and CI remain pending until confirmed.
+
+This release does not remediate the separately deferred Flashcard 9/10 issue or
+Supabase database-security migration work. Production seed and Production release
+remain separately gated. CEFR-J permission ambiguity, ShareAlike completeness and
+the existing dataset-quality limitations remain explicitly unresolved.
