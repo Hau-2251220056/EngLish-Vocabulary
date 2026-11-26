@@ -322,6 +322,67 @@ Các field của `AUTH_SESSION` phải được materialize theo contract sau:
 
 Raw session token chỉ tồn tại trong runtime/cookie theo Authentication Specification.
 
+### Google Authentication identities and challenges
+
+`USER.password_hash` is nullable only for external-identity accounts. Existing
+password users retain their current hashes. `AUTH_IDENTITY` stores one provider
+identity per USER/provider and uniquely maps `(provider, provider_subject)`; the
+Google subject is the stable identifier and `provider_email` is a verified
+snapshot, not a linking key. Deleting a USER cascades only its owned identities.
+
+`GOOGLE_AUTH_CHALLENGE` stores a unique SHA-256 nonce hash, browser-binding hash,
+trusted-source key, issuance time, five-minute expiry, optional consumption time
+and creation time. The raw nonce,
+binding and Google credential are never stored. Atomic conditional consumption
+requires matching hashes, `consumed_at IS NULL` and `expires_at > now`; the expiry
+indexes support opportunistic cleanup and bounded source-rate queries. This table is transient security state and
+does not change AUTH_SESSION semantics.
+
+HD-33 accepts only four parser-representation differences for existing UTC
+`created_at` defaults and the PostgreSQL-truncated SRS receipt index name; their
+catalog semantics were verified equivalent and no database/schema alignment is
+required. HD-34 requires the still-pending Google Authentication migration to
+wrap its unchanged DDL in explicit `BEGIN`/`COMMIT`. HD-35 requires both success
+and injected-failure rollback rehearsal on isolated disposable PostgreSQL before
+that migration may be applied to TEST.
+
+Prompt 312-R3 satisfied HD-35 on disposable PostgreSQL 17.6: both exact success
+and injected pre-COMMIT failure behavior were independently catalog-verified and
+all disposable resources were removed. This is PostgreSQL transaction evidence,
+not Prisma failed-migration-history evidence. TEST deployment remains blocked
+before apply because no valid fresh backup was produced and the TEST database
+credential exposed by process diagnostics must be rotated.
+
+Prompt 312-R4 verified local connectivity after HUMAN-reported credential
+rotation and used a protected `PGPASSFILE` without credential-bearing process
+arguments. The backup supervision path could not obtain a numeric `pg_dump` exit
+code, so fail-closed cleanup removed the unvalidated archive. No migration or TEST
+write followed; a fresh backup with a captured zero exit code and readable archive
+remains mandatory.
+
+Prompt 312-R5 superseded the fresh TEST-backup gate for this migration only via
+HUMAN-approved HD-36. The accepted risk is limited to recoverable TEST data;
+Production backup requirements remain unchanged. No backup, reset, restore or
+reseed was performed. A repeatable-read, read-only baseline fingerprinted all 19
+existing public application tables (4,201 rows). Prisma then applied
+`20261126010000_add_google_authentication` exactly once and recorded it completed.
+Post-apply catalog verification found both Google tables, nine indexes and 17
+table constraints; all pre-existing table counts and content fingerprints were
+unchanged. Bounded real-PostgreSQL authentication fixtures demonstrated one
+successful nonce consumer and one rejected concurrent consumer before the test
+runner outcome became unavailable. The exact synthetic graph was subsequently
+removed (one session, identity and USER; two challenges), and final read-only
+verification found zero fixture residue and unchanged pre-existing fingerprints.
+
+Prompt 313 closed the remaining transaction-integrity evidence gap using the
+actual Google authentication service and repositories against TEST. A
+deterministic exception was injected after challenge consumption, USER creation,
+identity creation and session creation but before transaction completion. The
+exception was explicitly observed; no USER, AUTH_IDENTITY or AUTH_SESSION was
+committed, and the challenge remained unconsumed. Exact fixture cleanup left zero
+residue, while repeatable-read fingerprints of the pre-existing authentication
+tables remained unchanged.
+
 #### Session Expiration
 
 `expires_at` là thời điểm session hết hiệu lực.

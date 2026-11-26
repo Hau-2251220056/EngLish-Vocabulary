@@ -54,7 +54,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(page.getByRole("heading", {
     name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
   })).toBeVisible();
-  await expect(page.locator("footer.authenticated-footer")).toHaveCount(0);
+  await expect(page.locator("footer.learner-footer")).toBeVisible();
   await expect(page.locator("header .authenticated-brand")).toBeVisible();
   const brandLink = page.getByRole("link", { name: "Về trang chủ ELVocab" });
   await expect(brandLink).toHaveAttribute("href", "/dashboard");

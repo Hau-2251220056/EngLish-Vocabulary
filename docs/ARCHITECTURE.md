@@ -1274,6 +1274,40 @@ The browser remains on the Frontend origin, so host-only `HttpOnly`, `Secure` an
 
 Local Vite development remains independent: `/api/**` is proxied to `API_PROXY_TARGET` when explicitly supplied, otherwise to `http://localhost:5000`. Local development does not require Production credentials or a deployed Backend.
 
+### Google Authentication extension (HD-25–HD-32)
+
+Google Login extends rather than replaces the custom Authentication architecture.
+The Login/Register page renders the official Google Identity Services button in
+popup mode. Its JavaScript callback forwards only the Google ID credential to the
+same-origin Express API. The Backend verifies signature, issuer, environment-bound
+audience, expiry, nonce, `sub`, verified email and required claims using
+`google-auth-library`; frontend identity or role claims are never authoritative.
+
+Before GIS initialization, the browser requests a five-minute challenge. The
+Backend returns a cryptographically random nonce and binds it to an HttpOnly
+cookie; PostgreSQL stores only SHA-256 hashes. Challenge consumption is an atomic
+conditional write inside the same transaction as identity resolution, USER
+creation and existing opaque-session issuance. Consumed, expired, mismatched and
+concurrent replay attempts cannot issue a session. No Google credential, access
+token or refresh token is persisted.
+
+`AUTH_IDENTITY` maps stable Google `sub` values to existing USER IDs. New Google
+accounts are USER-only and have no password hash. Matching email alone never
+links accounts; account linking and Google ADMIN login are deferred. Existing
+`AUTH_SESSION`, host-only HttpOnly cookie, `/me`, Logout and role middleware remain
+authoritative. Local/TEST and Production use separate Web OAuth clients. Runtime
+contracts are public `VITE_GOOGLE_CLIENT_ID`, backend `GOOGLE_CLIENT_ID`, and exact
+comma-separated `GOOGLE_AUTH_ALLOWED_ORIGINS`; no client secret is used.
+Challenge issuance reuses the trusted-source HMAC and PostgreSQL advisory-lock
+primitive, with a bounded ten-per-minute source limit. The limit remains shared
+across serverless instances and follows the configured proxy trust boundary.
+
+HD-33 records a bounded exception for the four equivalent UTC-default catalog
+representations and one PostgreSQL-truncated SRS index name identified by Prompt
+312-R; it does not disable general drift detection. HD-34 requires the pending
+Google migration to be explicitly transactional. HD-35 keeps disposable
+success/rollback rehearsal as a mandatory gate before guarded TEST deployment.
+
 Deployment architecture được xem là baseline và không được tự ý thay đổi.
 
 ### 21.1 CI Foundation Boundary

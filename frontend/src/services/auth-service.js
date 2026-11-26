@@ -5,6 +5,8 @@ const AUTH_ENDPOINTS = Object.freeze({
   login: "/api/auth/login",
   logout: "/api/auth/logout",
   currentUser: "/api/auth/me",
+  googleChallenge: "/api/auth/google/challenge",
+  googleLogin: "/api/auth/google",
 });
 
 export class AuthenticationApiError extends Error {
@@ -42,6 +44,24 @@ export function createAuthService(client = httpClient) {
           password,
         });
 
+        return response.data?.data?.user;
+      } catch (error) {
+        throw mapAuthenticationError(error);
+      }
+    },
+
+    async createGoogleChallenge() {
+      try {
+        const response = await client.post(AUTH_ENDPOINTS.googleChallenge);
+        return response.data?.data;
+      } catch (error) {
+        throw mapAuthenticationError(error);
+      }
+    },
+
+    async loginWithGoogle(credential) {
+      try {
+        const response = await client.post(AUTH_ENDPOINTS.googleLogin, { credential });
         return response.data?.data?.user;
       } catch (error) {
         throw mapAuthenticationError(error);

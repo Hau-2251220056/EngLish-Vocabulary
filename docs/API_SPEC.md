@@ -190,6 +190,24 @@ Success
 
 Authentication mechanism cụ thể được quyết định trong ARCHITECTURE.md và PLAN.
 
+### Google Authentication
+
+`POST /api/auth/google/challenge` requires an exact configured same-origin
+`Origin`, creates/replaces a short-lived browser-bound challenge, sets an
+HttpOnly binding cookie and returns only `{ nonce, expires_at }`. It is unavailable
+when Google configuration is absent. Issuance is bounded to ten challenges per
+trusted network source per minute; excess requests return
+`429 GOOGLE_AUTH_RATE_LIMITED` with `Retry-After: 60`.
+
+`POST /api/auth/google` accepts `{ credential }` only. The Backend verifies the
+Google ID token and atomically consumes the challenge before resolving or creating
+the USER and issuing the existing opaque `session_id` cookie. Success uses the
+same public USER response as password login. Invalid credential/challenge/replay
+returns `GOOGLE_AUTHENTICATION_FAILED`; an unlinked existing email returns
+`GOOGLE_ACCOUNT_LINK_REQUIRED` without disclosing role; absent configuration
+returns `GOOGLE_AUTH_UNAVAILABLE`. Account linking and Google ADMIN authentication
+are not supported.
+
 ### 6.1 Login abuse protection (SEC-01)
 
 The Backend tracks consecutive failed login attempts per normalized identifier and trusted network source in shared PostgreSQL state. Existing and nonexistent identifiers follow the same public failure progression.
