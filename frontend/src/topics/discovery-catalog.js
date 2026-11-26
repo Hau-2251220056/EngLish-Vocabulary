@@ -33,6 +33,21 @@ export function filterDiscoveryCatalog(sets, { cefrLevel = "", query, topicId })
   });
 }
 
+const CEFR_RANK = new Map(["A1", "A2", "B1", "B2", "C1", "C2"].map((level, index) => [level, index]));
+
+export function sortDiscoveryCatalog(sets) {
+  return [...sets].sort((left, right) => {
+    const levelDifference = (CEFR_RANK.get(left.cefr_level) ?? CEFR_RANK.size)
+      - (CEFR_RANK.get(right.cefr_level) ?? CEFR_RANK.size);
+    if (levelDifference !== 0) return levelDifference;
+    const leftName = normalizeSortValue(left.name);
+    const rightName = normalizeSortValue(right.name);
+    if (leftName < rightName) return -1;
+    if (leftName > rightName) return 1;
+    return String(left.id).localeCompare(String(right.id), "en");
+  });
+}
+
 export function selectDiscoveryFeaturedSets(sets) {
   return sets.slice(0, 3);
 }
@@ -42,4 +57,8 @@ export function paginateDiscoveryCatalog(sets, page, pageSize = 9) {
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   return { currentPage, items: sets.slice(start, start + pageSize), totalPages };
+}
+
+function normalizeSortValue(value) {
+  return String(value ?? "").normalize("NFKC").toLocaleLowerCase("vi");
 }

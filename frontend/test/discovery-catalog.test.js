@@ -5,6 +5,7 @@ import {
   loadDiscoveryCatalog,
   paginateDiscoveryCatalog,
   selectDiscoveryFeaturedSets,
+  sortDiscoveryCatalog,
 } from "../src/topics/discovery-catalog.js";
 
 const TOPICS = Object.freeze([
@@ -138,6 +139,47 @@ test("paginates filtered catalog at nine items and clamps invalid pages", () => 
   assert.deepEqual(paginateDiscoveryCatalog(sets, 2), { currentPage: 2, items: sets.slice(9, 18), totalPages: 3 });
   assert.deepEqual(paginateDiscoveryCatalog(sets, 99), { currentPage: 3, items: sets.slice(18), totalPages: 3 });
   assert.deepEqual(paginateDiscoveryCatalog([], 4), { currentPage: 1, items: [], totalPages: 1 });
+});
+
+test("sorts visible catalog by A1-C2, normalized name, then stable id without mutation", () => {
+  const sets = [
+    { id: "z-unknown", name: "Unsupported", cefr_level: "Z9" },
+    { id: "b1-beta", name: "Beta", cefr_level: "B1" },
+    { id: "a1-zulu", name: "Zulu", cefr_level: "A1" },
+    { id: "c2-alpha", name: "Alpha", cefr_level: "C2" },
+    { id: "a2-alpha-2", name: "Álpha", cefr_level: "A2" },
+    { id: "a2-alpha-1", name: "Álpha", cefr_level: "A2" },
+    { id: "missing", name: "Missing", cefr_level: null },
+    { id: "c1", name: "C1", cefr_level: "C1" },
+    { id: "b2", name: "B2", cefr_level: "B2" },
+  ];
+  const original = sets.map(({ id }) => id);
+
+  assert.deepEqual(sortDiscoveryCatalog(sets).map(({ id }) => id), [
+    "a1-zulu", "a2-alpha-1", "a2-alpha-2", "b1-beta", "b2", "c1", "c2-alpha", "missing", "z-unknown",
+  ]);
+  assert.deepEqual(sets.map(({ id }) => id), original);
+});
+
+test("applies filtering before deterministic sorting and pagination while Featured keeps source order", () => {
+  const source = [
+    { id: "featured-b2", name: "First source", cefr_level: "B2", topic: { id: "topic-1" } },
+    { id: "featured-a2", name: "Second source", cefr_level: "A2", topic: { id: "topic-1" } },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      id: `a1-${String(index).padStart(2, "0")}`,
+      name: `A1 Set ${index}`,
+      cefr_level: "A1",
+      topic: { id: "topic-1" },
+    })),
+  ];
+  const filtered = filterDiscoveryCatalog(source, { query: "", topicId: "topic-1" });
+  const visible = paginateDiscoveryCatalog(sortDiscoveryCatalog(filtered), 1);
+
+  assert.deepEqual(selectDiscoveryFeaturedSets(source).map(({ id }) => id), ["featured-b2", "featured-a2", "a1-00"]);
+  assert.deepEqual(visible.items.map(({ id }) => id), [
+    "a1-00", "a1-01", "a1-02", "a1-03", "a1-04", "a1-05", "a1-06", "a1-07", "featured-a2",
+  ]);
+  assert.equal(visible.totalPages, 2);
 });
 
 function deferred() {
