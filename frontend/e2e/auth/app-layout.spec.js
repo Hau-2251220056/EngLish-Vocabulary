@@ -68,6 +68,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(page.locator(".authenticated-sidebar-profile")).toContainText(publicUser.display_name);
   await expect(page.locator(".authenticated-sidebar-profile")).toContainText(publicUser.email);
   await expect(page.locator(".authenticated-sidebar-session").getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+  await expect(page.locator("aside.authenticated-sidebar").getByRole("link", { name: "Nguồn dữ liệu & Giấy phép" })).toHaveCount(0);
   const headerNavigation = page.getByRole("navigation", { name: "Điều hướng nhanh" });
   await expect(headerNavigation.getByRole("link")).toHaveCount(3);
   await expect(headerNavigation.getByRole("link")).toHaveText(["Trang chủ", "Bộ từ của tôi", "Khám phá bộ từ"]);
@@ -372,6 +373,7 @@ for (const viewport of viewports.slice(0, 2)) {
     await expect(page.locator(".authenticated-drawer-backdrop")).toBeVisible();
     await expect(sidebar.locator(".authenticated-sidebar-profile")).toContainText(publicUser.email);
     await expect(sidebar.locator(".authenticated-sidebar-session").getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: "Nguồn dữ liệu & Giấy phép" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Trang chủ", exact: true })).toBeFocused();
     await expectNoHorizontalOverflow(page);
 

@@ -107,6 +107,27 @@ test("Guest gets a complete Set-first catalog with search, Topic filter and publ
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("normal Explore results use stable CEFR order while Featured keeps API source order", async ({ page }) => {
+  const sourceOrder = [
+    { id: "source-b2", name: "Zulu", cefr_level: "B2", item_count: 1, topic_id: "topic-travel" },
+    { id: "source-a2", name: "Beta", cefr_level: "A2", item_count: 1, topic_id: "topic-travel" },
+    { id: "source-a1-z", name: "Zulu A1", cefr_level: "A1", item_count: 1, topic_id: "topic-travel" },
+    { id: "source-a1-a", name: "Alpha A1", cefr_level: "A1", item_count: 1, topic_id: "topic-travel" },
+    { id: "source-c2", name: "Alpha C2", cefr_level: "C2", item_count: 1, topic_id: "topic-travel" },
+    { id: "source-null", name: "No level", cefr_level: null, item_count: 1, topic_id: "topic-travel" },
+  ];
+  await installDiscoveryApi(page, {
+    setHandler: (route, topicId) => route.fulfill(ok(topicId === "topic-travel" ? sourceOrder : [])),
+  });
+  await installDiscoveryAuthApiMock(page);
+  await page.goto("/topics");
+
+  const featured = page.locator(".discovery-featured").getByRole("list").getByRole("heading", { level: 2 });
+  await expect(featured).toHaveText(["Zulu", "Beta", "Zulu A1"]);
+  const normal = page.getByRole("list", { name: "Danh sách bộ từ hệ thống" }).getByRole("heading", { level: 2 });
+  await expect(normal).toHaveText(["Alpha A1", "Zulu A1", "Beta", "Zulu", "Alpha C2", "No level"]);
+});
+
 test("catalog paginates nine items client-side and resets after search, Topic, or CEFR filtering", async ({ page }) => {
   const featuredSets = [
     { id: "featured-1", name: "Travel Starter", description: "Ordinary catalog entry", cefr_level: "A2", cover_image_url: "https://covers.example.test/airport.webp", item_count: 20, topic_id: "topic-travel" },
@@ -124,7 +145,7 @@ test("catalog paginates nine items client-side and resets after search, Topic, o
   await expect(page.locator(".discovery-featured").getByRole("listitem")).toHaveCount(3);
   await expect(page.locator(".discovery-featured").getByRole("heading", { name: featuredSets[0].name })).toBeVisible();
   await expect(page.locator(".discovery-featured").locator('[data-cover-state="persisted"] img')).toHaveAttribute("src", featuredSets[0].cover_image_url);
-  for (const featuredSet of featuredSets) await expect(list.getByRole("heading", { name: featuredSet.name })).toBeVisible();
+  await expect(list.getByRole("heading", { name: featuredSets[0].name })).toHaveCount(0);
   await expect(list.getByRole("listitem")).toHaveCount(9);
   await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
   await expect(page.getByText("14 bộ từ phù hợp", { exact: true })).toBeVisible();

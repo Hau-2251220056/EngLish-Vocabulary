@@ -7,7 +7,7 @@ import { NativeSelect } from "../components/native-select.jsx";
 import { vocabularySetService } from "../services/vocabulary-set-service.js";
 import { DefaultSetCoverArtwork, SetCefrBadge, SetCover } from "../vocabulary-sets/set-metadata-presentation.jsx";
 import { useSavedVocabularySetSession } from "../vocabulary-sets/saved-vocabulary-set-session.js";
-import { filterDiscoveryCatalog, loadDiscoveryCatalog, paginateDiscoveryCatalog, selectDiscoveryFeaturedSets } from "./discovery-catalog.js";
+import { filterDiscoveryCatalog, loadDiscoveryCatalog, paginateDiscoveryCatalog, selectDiscoveryFeaturedSets, sortDiscoveryCatalog } from "./discovery-catalog.js";
 
 const DESCRIPTION_FALLBACK = "Chưa có mô tả cho bộ từ này.";
 
@@ -50,7 +50,7 @@ export function TopicListPage() {
   }, [reloadToken]);
 
   const visibleSets = useMemo(
-    () => filterDiscoveryCatalog(catalog.sets, { cefrLevel, query, topicId }),
+    () => sortDiscoveryCatalog(filterDiscoveryCatalog(catalog.sets, { cefrLevel, query, topicId })),
     [catalog.sets, cefrLevel, query, topicId],
   );
   const hasFilters = query.length > 0 || topicId.length > 0 || cefrLevel.length > 0;
@@ -134,7 +134,7 @@ export function TopicListPage() {
           <label className="discovery-cefr-filter grid gap-2 text-sm font-semibold text-slate-700" htmlFor="discovery-cefr-filter">Trình độ CEFR
             <NativeSelect id="discovery-cefr-filter" value={cefrLevel} onChange={(event) => { setCefrLevel(event.target.value); setPage(1); }}>
               <option value="">Tất cả mức độ</option>
-              {["A1", "A2", "B1", "B2", "C1"].map((level) => <option key={level} value={level}>{level}</option>)}
+              {["A1", "A2", "B1", "B2", "C1", "C2"].map((level) => <option key={level} value={level}>{level}</option>)}
             </NativeSelect>
           </label>
           <div className="discovery-results-row">

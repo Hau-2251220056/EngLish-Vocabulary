@@ -214,9 +214,9 @@ export function LandingPage() {
             <p className="mt-2 text-xs text-slate-500">Học từ vựng tiếng Anh từng bước, theo nhịp của bạn.</p>
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-sm" aria-label="Liên kết cuối trang">
-            <Link className="rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/topics">Khám phá bộ từ</Link>
-            <Link className="rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/login">Đăng nhập</Link>
-            <Link className="rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/register">Đăng ký</Link>
+            <Link className="inline-flex min-h-11 items-center rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/data-sources">Nguồn dữ liệu &amp; Giấy phép</Link>
+            <Link className="inline-flex min-h-11 items-center rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/login">Đăng nhập</Link>
+            <Link className="inline-flex min-h-11 items-center rounded-md text-slate-600 no-underline hover:text-[#3978b6] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#b9d9f6]" to="/register">Đăng ký</Link>
           </nav>
           <p className="text-xs text-slate-500">© 2026 ELVocab</p>
         </div>

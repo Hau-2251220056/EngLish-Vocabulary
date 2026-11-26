@@ -689,7 +689,18 @@ test("a completed v3 review remains completed until explicit continuation", asyn
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Học tiếp" })).toBeVisible();
+});
+
+test("a completed dedicated Set review retains the Ôn tiếp label", async ({ page }) => {
+  const initialSession = { ...completedSrsProjection(4), session_intent: "DUE_ONLY" };
+  await preloadDueOnlySession(page, initialSession);
+  await installLearningMock(page, { initialSession });
+  await page.goto(`/review/sets/${SET_ID}`);
+
+  await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ôn tiếp" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Học tiếp" })).toHaveCount(0);
 });
 
 test("a completed v3 review can explicitly continue into the up-to-date state", async ({ page }) => {
@@ -698,7 +709,7 @@ test("a completed v3 review can explicitly continue into the up-to-date state", 
   await page.goto("/learn/vocabulary-sets/10000000-0000-4000-8000-000000000001");
 
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
-  await page.getByRole("button", { name: "Ôn tiếp" }).click();
+  await page.getByRole("button", { name: "Học tiếp" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 });
 
@@ -750,7 +761,7 @@ test("completed session continuation fetches fresh eligibility and becomes up-to
   await page.getByRole("button", { name: "Tốt" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Ôn tiếp" }).click();
+  await page.getByRole("button", { name: "Học tiếp" }).click();
   await expect(page.getByRole("heading", { name: "Hoàn thành ôn tập" })).toBeVisible();
   expect(calls.reads.length).toBeGreaterThanOrEqual(2);
   expect(calls.reads.every((mode) => mode === "SRS")).toBe(true);
