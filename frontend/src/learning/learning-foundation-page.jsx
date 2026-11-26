@@ -977,7 +977,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
             {!reviewContext ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => switchMode("NORMAL")}>Học thường</button> : null}
             {readyToComplete
               ? <button type="button" className={PRIMARY_BUTTON_CLASSES} onClick={() => void completeFullPass()} disabled={eventState === "pending"}>{eventState === "pending" ? "Đang hoàn thành…" : "Hoàn thành bộ từ"}</button>
-              : isSrsFinished && !passCompleted ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={continueSrsReview}><RotateCcw aria-hidden="true" /> Ôn tiếp</button> : null}
+              : isSrsFinished && !passCompleted ? <button type="button" className={SECONDARY_BUTTON_CLASSES} onClick={continueSrsReview}><RotateCcw aria-hidden="true" /> {reviewContext ? "Ôn tiếp" : "Học tiếp"}</button> : null}
             <Link className={SECONDARY_BUTTON_CLASSES} to={returnTo}>{reviewContext ? "Trung tâm ôn tập" : "Quay lại bộ từ"}</Link>
           </div>
         </section>

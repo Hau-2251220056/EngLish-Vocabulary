@@ -76,7 +76,7 @@ test("NORMAL learning UI exposes explicit batch completion, continuation and ful
 test("SRS completion and up-to-date UI use the approved status and explicit continuation", async () => {
   const source = await readFile(new URL("../src/learning/learning-foundation-page.jsx", import.meta.url), "utf8");
   assert.match(source, /isSrsFinished \|\| isUpToDate \|\| isPassReady[\s\S]*"Hoàn thành ôn tập"/);
-  assert.match(source, /onClick=\{continueSrsReview\}[\s\S]*Ôn tiếp/);
+  assert.match(source, /onClick=\{continueSrsReview\}[\s\S]*reviewContext \? "Ôn tiếp" : "Học tiếp"/);
   assert.match(source, /payload\.next_review_at[\s\S]*formatNextReview/);
   assert.doesNotMatch(source, /> Làm mới SRS</);
 });
