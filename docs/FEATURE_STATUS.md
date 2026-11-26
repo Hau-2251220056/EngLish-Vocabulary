@@ -1529,3 +1529,60 @@ Defines current implementation state
     ↓
 Defines how each development stage is performed
 ```
+
+## Prompt 302 local release implementation checkpoint (2026-11-25)
+
+Status: **IN_PROGRESS — local implementation verified, not committed or released**.
+
+- Public data-source attribution route and guest/authenticated discovery links are
+  implemented locally.
+- A CC BY-SA 4.0 distribution artifact containing exactly 145 Octanove-derived C1
+  entries is isolated under `frontend/public/data-sources/`; CEFR-J entries and
+  IPA are excluded from that artifact.
+- Explore results use deterministic CEFR/name/ID ordering after filters and before
+  pagination. Featured selection/order is preserved.
+- Shared set flashcards use `Học tiếp` for ordinary learning and retain `Ôn tiếp`
+  for review context. Global Review wording was not changed.
+- Focused unit tests, mocked browser tests, targeted lint and the frontend
+  production build passed locally. Focused UI/UX review is recorded separately in
+  the Prompt 302 handoff.
+
+This checkpoint does not mark the release DONE. Human visual approval, commit,
+push, CI and deployment have not occurred. CEFR-J permission wording remains a
+human/legal decision; full human semantic review and full independent dictionary
+verification are still incomplete. Dataset flags remain `seed_ready = false`,
+`full_human_semantic_review = false`, `full_dictionary_verification = false`, and
+`DRAFT_NOT_FOR_IMPORT`.
+
+## Prompt 302/302-R release implementation and acceptance (2026-11-26)
+
+Status: **IN_PROGRESS — implementation and HUMAN acceptance complete; dev integration and CI pending**.
+
+- Prompt 302 manual functional acceptance passed 4/4: attribution/download,
+  Explore CEFR ordering, ordinary SRS `Học tiếp`, and review SRS `Ôn tiếp`.
+- Initial HUMAN visual acceptance failed for the public attribution header;
+  Prompt 302-R remediation subsequently passed 3/3 HUMAN visual checks.
+- Total HUMAN acceptance is 7/7.
+- The Landing footer Explore link was removed without removing `/topics` or the
+  authenticated Explore navigation.
+- The shared guest header now reuses the current Landing ELVocab logo, exposes
+  deterministic `Trang chủ` and `Đăng nhập` navigation, and removes the legacy
+  purple/indigo presentation and decorative page icon.
+- The attribution heading and introduction now use compact spacing and type while
+  preserving all licensing text and the existing download artifact.
+- Focused unit, mocked browser, targeted lint, production build, UTF-8, diff,
+  secret and artifact checksum checks passed locally. Responsive browser evidence
+  covers 1440, 768, 390 and 320 CSS pixels.
+
+Historical local verification remains: Prompt 302 focused unit 29/29 and mocked
+browser 8/8 PASS; Prompt 302-R focused unit 4/4, mocked browser 8/8 and keyboard
+focus rerun 1/1 PASS, with targeted ESLint, production build and Focused UI/UX
+Review passing for both stages. These are historical results, not newly executed
+Prompt 303 tests.
+
+Commit, feature push, dev integration and dev CI are pending until Prompt 303
+records them. Production release and Production seed are not complete. CEFR-J
+permission ambiguity, independently unverified ShareAlike completeness, 211
+deferred IPA cases and existing dataset-quality flags remain unresolved. The
+deferred Flashcard 9/10 issue and Supabase database-security remediation are not
+part of this release and remain pending.
