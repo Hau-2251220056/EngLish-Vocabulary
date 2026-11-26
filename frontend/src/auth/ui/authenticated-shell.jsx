@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Users,
   RotateCcw,
-  Scale,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -329,7 +328,6 @@ export function AuthenticatedShell() {
         </nav>
         {user.role === "USER" ? (
           <div className="authenticated-sidebar-session mt-auto border-t border-[var(--border-soft)] pt-3">
-            <Link className="mb-1 flex min-h-11 items-center gap-[0.55rem] rounded-xl px-[0.7rem] py-[0.55rem] text-left text-[0.8rem] font-medium text-[#5e687a] no-underline hover:bg-sky-50 hover:text-[#075f95] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-primary-focus)]" to="/data-sources"><Scale className="size-4" aria-hidden="true" />Nguồn dữ liệu &amp; Giấy phép</Link>
             <button type="button" className="authenticated-sidebar-logout flex min-h-11 w-full cursor-pointer items-center gap-[0.55rem] rounded-xl border border-transparent bg-transparent px-[0.7rem] py-[0.55rem] text-left text-[0.86rem] font-medium text-[#5e687a] transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-primary-focus)] disabled:cursor-not-allowed disabled:opacity-[0.58] motion-reduce:transition-none" onClick={handleLogout} disabled={isLoggingOut} aria-busy={isLoggingOut}>
               {isLoggingOut ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <LogOut className="size-4" aria-hidden="true" />}
               <span>{isLoggingOut ? "Đang đăng xuất…" : "Đăng xuất"}</span>

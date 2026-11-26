@@ -27,9 +27,10 @@ test("Landing footer keeps approved links and removes only guest Explore", async
 });
 
 test("shared public header reuses Landing branding and deterministic navigation", async () => {
-  const [layout, shell, css] = await Promise.all([
+  const [layout, shell, router, css] = await Promise.all([
     "../src/topics/public-topic-layout.jsx",
     "../src/auth/ui/authenticated-shell.jsx",
+    "../src/app-router.jsx",
     "../src/index.css",
   ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
   assert.match(layout, /assets\/images\/logo\.png/);
@@ -38,7 +39,8 @@ test("shared public header reuses Landing branding and deterministic navigation"
   assert.match(layout, /to="\/"[\s\S]*Trang chủ/);
   assert.match(layout, /to="\/login"[\s\S]*Đăng nhập/);
   assert.doesNotMatch(layout, /BookOpen|public-topic-brand-mark|public-topic-heading-mark|to="\/topics"/);
-  assert.match(shell, /to="\/data-sources"/);
+  assert.doesNotMatch(shell, /to="\/data-sources"|Nguồn dữ liệu &amp; Giấy phép/);
+  assert.match(router, /Route path="\/data-sources" element={<DataSourcesPage \/>}/);
   const publicStyles = css.slice(css.indexOf(".public-topic-app"), css.indexOf(".authenticated-brand-mark"));
   assert.doesNotMatch(publicStyles, /#4f46e5|#4338ca|#3730a3|#a5b4fc|224 231 255/i);
 });

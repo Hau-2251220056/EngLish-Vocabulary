@@ -1580,8 +1580,21 @@ focus rerun 1/1 PASS, with targeted ESLint, production build and Focused UI/UX
 Review passing for both stages. These are historical results, not newly executed
 Prompt 303 tests.
 
-Commit, feature push, dev integration and dev CI are pending until Prompt 303
-records them. Production release and Production seed are not complete. CEFR-J
+Prompt 303 committed and pushed the feature, merged PR #39 into `dev`, and
+produced dev commit `ed400b29375955d6d823ebb628f2271ef9a52d3d`. CI run
+`45741320072` and Guarded Integration run `45741320085` both passed against that
+exact commit. The feature Preview failure is HUMAN-reported as a missing
+`API_PROXY_TARGET` configuration; HUMAN confirms Dev Preview already has
+`API_PROXY_TARGET` configured. Prompt 303-R does not investigate or remediate
+that Preview configuration.
+
+Prompt 303-R implements **HD-22**: remove the informational data-sources link
+from the authenticated learner sidebar while preserving its divider, logout,
+all learning navigation, direct authenticated `/data-sources` access, and both
+public footer entry points. Focused Prompt 303-R verification is recorded with
+the implementation commit; CI remains pending until the new dev run reports.
+
+Production release and Production seed are not complete. CEFR-J
 permission ambiguity, independently unverified ShareAlike completeness, 211
 deferred IPA cases and existing dataset-quality flags remain unresolved. The
 deferred Flashcard 9/10 issue and Supabase database-security remediation are not

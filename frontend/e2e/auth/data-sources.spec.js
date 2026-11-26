@@ -82,13 +82,14 @@ test("direct guest Topics access retains existing route behavior with updated pu
   await expect(page.getByRole("link", { name: "Trang chủ ELVocab" })).toBeVisible();
 });
 
-test("authenticated learner reaches attribution from a low-emphasis session link", async ({ page }) => {
+test("authenticated learner retains direct attribution access without a sidebar entry", async ({ page }) => {
   await installAuthApiMock(page, { "/api/auth/me": responses.currentUser(publicUser) });
-  await page.goto("/dashboard");
-  await page.getByRole("link", { name: "Nguồn dữ liệu & Giấy phép" }).click();
+  await page.goto("/data-sources");
   await expect(page).toHaveURL(/\/data-sources$/);
   await expect(page.locator(".authenticated-app")).toBeVisible();
   await expect(page.locator(".public-topic-header")).toHaveCount(0);
+  await expect(page.locator("aside.authenticated-sidebar").getByRole("link", { name: "Nguồn dữ liệu & Giấy phép" })).toHaveCount(0);
+  await expect(page.locator(".authenticated-sidebar-session").getByRole("button", { name: "Đăng xuất" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Nguồn dữ liệu & Giấy phép" })).toBeVisible();
   const explore = page.getByRole("navigation", { name: "Điều hướng ứng dụng" }).getByRole("link", { name: "Khám phá bộ từ" });
   await expect(explore).toHaveAttribute("href", "/topics");

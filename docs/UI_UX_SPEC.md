@@ -1614,8 +1614,9 @@ Status: approved local implementation; not released.
   unresolved quality/licensing limits, and offers only the isolated
   Octanove-derived C1 artifact for download.
 - The landing footer and public Topics footer expose the attribution route.
-  Authenticated learners also receive a low-emphasis session/sidebar link; it
-  is not promoted into the primary task navigation.
+  Under **HD-22**, the authenticated learner sidebar does not repeat this
+  informational link. Direct authenticated access to `/data-sources` remains
+  supported, while the sidebar footer keeps its divider and logout action.
 - The normal Explore catalog is ordered by CEFR (`A1` through `C2`), then a
   normalized set name and stable ID. Missing or unsupported levels appear last.
   Filtering happens before sorting and pagination. Featured sets preserve their
@@ -1673,7 +1674,17 @@ acceptance is 7/7.
 
 Automated responsive evidence covers 1440, 768, 390 and 320 CSS pixels without
 horizontal overflow. Prompt 302 and Prompt 302-R implementation and HUMAN
-acceptance are complete; dev integration and CI remain pending until confirmed.
+acceptance are complete. Prompt 303 integrated the accepted release into `dev`;
+CI run `45741320072` and Guarded Integration run `45741320085` passed against
+`ed400b29375955d6d823ebb628f2271ef9a52d3d`.
+
+**HD-22:** Prompt 303-R removes `Nguồn dữ liệu & Giấy phép` from the
+authenticated learner sidebar because attribution is informational rather than
+a primary learning action. The public Landing and Topics footer entry points,
+public route, direct authenticated access, attribution content and download stay
+unchanged. The earlier feature Preview failure is HUMAN-reported as missing
+`API_PROXY_TARGET`; HUMAN confirms Dev Preview already has that variable. Prompt
+303-R does not investigate or remediate Preview configuration.
 
 This release does not remediate the separately deferred Flashcard 9/10 issue or
 Supabase database-security migration work. Production seed and Production release
