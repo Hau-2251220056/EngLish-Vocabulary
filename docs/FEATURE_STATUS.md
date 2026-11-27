@@ -699,6 +699,7 @@ Status: DONE
 - Durable backend-authoritative progress remains unique per `(user_id, vocabulary_id)`, with transactional meaningful events, revision protection and immediate-current-event retry behavior.
 - At this historical Flashcard V1 closure, same-tab run state was Learning-owned and transient and no persistent Learning Session/history existed. Streak V1 later adds its narrowly scoped authoritative qualifying-session records while frontend recovery state remains transient.
 - The HUMAN-approved Focus Mode Flashcard experience includes deterministic primary-Meaning presentation, accessible interaction, optional stored-audio/native-TTS pronunciation and responsive/reduced-motion behavior.
+- Prompt 308 hardens the shared pronunciation lifecycle for Flashcard playback: intentional cancellation detaches native callbacks, stale card events are ignored by generation/target ownership, repeated playback cannot overlap, genuine failures remain non-blocking, and unsupported browser playback does not block learning. Automated Speech API coverage is mocked; real Chrome/Cốc Cốc/Edge/Firefox/Safari audio behavior remains a HUMAN cross-browser acceptance gate.
 
 ### Deferred / Non-blocking
 
@@ -1599,3 +1600,708 @@ permission ambiguity, independently unverified ShareAlike completeness, 211
 deferred IPA cases and existing dataset-quality flags remain unresolved. The
 deferred Flashcard 9/10 issue and Supabase database-security remediation are not
 part of this release and remain pending.
+
+## Prompt 309 footer and layout checkpoint (2026-11-26)
+
+Status: **IN_PROGRESS — local implementation and focused verification complete; HUMAN visual approval complete**.
+
+- HD-24 adds shared learner and authentication footers without restoring the
+  data-source link to the learner sidebar or changing public routing.
+- Normal USER routes receive the learner footer from `AuthenticatedShell`; focus
+  learning routes and all ADMIN routes remain footer-free.
+- Login/Register receive the auth footer outside their existing card. Existing
+  Landing and public discovery footers remain the public attribution surfaces.
+- Account Settings is not currently represented by an application route and was
+  therefore not invented as part of this layout task.
+- Prompt 309 browser coverage passed 13/13. Related shared-layout, auth-responsive
+  and data-source regression coverage passed 65/68 initially; three detected
+  flex-scroll regressions were corrected and their focused reruns passed 3/3
+  (including the final single-case confirmation). Targeted ESLint passed.
+- HUMAN visual approval is complete. Prompt 308 speech lifecycle changes are
+  preserved independently in the same local working tree.
+
+## Prompt 311 Google Authentication checkpoint (2026-11-26)
+
+Status: **IN_PROGRESS — local implementation and mocked/offline verification only**.
+
+- HD-25–HD-32 approve GIS popup callback, a separate AUTH_IDENTITY model,
+  nullable password hashes, deferred linking, environment-separated OAuth clients,
+  verified origins, persistent strict single-use nonce protection,
+  `google-auth-library`, and pre-Production publishing/privacy review.
+- The prepared migration is not executed against TEST or Production. Real database
+  concurrency, real Google credentials, popup behavior and environment acceptance
+  remain NOT TESTED until separately authorized TEST migration/acceptance.
+- Existing password Authentication, opaque AUTH_SESSION cookies, USER IDs, roles
+  and learning relationships remain the compatibility boundary. Google never
+  creates or links ADMIN accounts and matching email alone does not link users.
+- Google Login must not be marked DONE before guarded TEST migration, real Google
+  acceptance, review approval and the required Production Cloud configuration.
+- Local evidence: Prisma schema validation PASS; Google/backend Authentication
+  targeted regression 30/30 PASS; final Google-only backend rerun 7/7 PASS;
+  frontend Authentication unit tests 22/22 PASS; mocked Google Chromium 11/11
+  PASS; password/layout browser regression 20/20 PASS; targeted ESLint PASS.
+  Prisma Client generation reached the engine replacement step but remained
+  blocked locally by a Windows `EPERM` lock on the existing query-engine DLL;
+  deployment/database behavior is not inferred from mocked evidence.
+
+## Prompt 311-R Prisma generation and dependency-security checkpoint (2026-11-26)
+
+Status: **IN_PROGRESS — offline generation verified; TEST and security remediation pending**.
+
+- Prisma Client 6.19.3 generation completed offline with the repository's cached
+  schema/query engines after the frontend/backend processes were stopped. The
+  generated client contains `AUTH_IDENTITY`, `GOOGLE_AUTH_CHALLENGE`, the
+  `AUTH_PROVIDER.GOOGLE` enum and nullable `USER.password_hash`; client
+  initialization and disposal passed without a database connection.
+- The focused Google Authentication backend suite passed 7/7. No database,
+  migration, real Google credential, browser, CI or deployment operation was
+  performed in this checkpoint. Guarded TEST migration and real Google
+  Authentication acceptance therefore remain pending.
+- Identically executed `npm audit --omit=dev` checks against baseline HEAD and
+  the current lockfile both reported 11 findings: 1 critical, 7 high and 3
+  moderate. The added `google-auth-library` 11.3.4 dependency tree introduced
+  no reported advisory and did not change the baseline counts or severities.
+- Baseline production-installed findings still require remediation assessment
+  before release. They include critical `proxy-addr` through Express, high
+  `body-parser` through Express, high direct `multer`, and high Prisma/config
+  findings; other reported paths include `qs`, `nodemon`/`minimatch`/
+  `brace-expansion`, `deepmerge-ts` and `effect`. Static inspection found that
+  Google login protection resolves trusted addresses without Express `req.ip`,
+  so exploitation of the `proxy-addr` advisory by this flow is not confirmed;
+  denial-of-service exposure in production request-processing dependencies must
+  nevertheless be resolved or explicitly risk-accepted before release.
+- Google Login remains `IN_PROGRESS`. Production release is blocked on a bounded
+  dependency-remediation/compatibility pass in addition to the existing TEST
+  migration, real-provider acceptance and Production configuration gates.
+
+## Prompt 312 guarded TEST migration checkpoint (2026-11-26)
+
+Status: **BLOCKED — unexpected TEST schema drift detected before backup or apply**.
+
+- The configured connection was fail-closed against the tenant-qualified TEST
+  project reference `afyqslnhjiykkjogaqpy`; the Production reference was absent.
+  A live bounded read-only transaction confirmed database `postgres`, an active
+  server connection and `transaction_read_only=on` without exposing credentials.
+- Migration history contains 15 completed migrations, no failed or rolled-back
+  records, and only `20261126010000_add_google_authentication` is pending. The
+  13 historical raw-checksum differences are CRLF checkout differences: each
+  matches its recorded database checksum after LF normalization; the other two
+  historical migrations match their raw checksums.
+- The approved Google migration SQL is additive except for making
+  `USER.password_hash` nullable. It creates `AUTH_PROVIDER`, `AUTH_IDENTITY`,
+  `GOOGLE_AUTH_CHALLENGE`, their approved keys/indexes and the cascading USER
+  foreign key; it contains no data rewrite, reset, seed or unrelated DDL.
+- A read-only Prisma live-schema diff detected unexpected changes outside that
+  artifact: default-expression changes on `CEFR_LEARNING_PASS.created_at`,
+  `CEFR_LEARNING_PATH_STATE.created_at`, `LEARNING_SESSION.created_at` and
+  `STREAK_DAY.created_at`, plus a rename of the
+  `LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_` index.
+  Prompt 312 therefore stopped before backup, baseline capture, migration apply,
+  write fixtures or integration tests. No TEST data or schema was changed.
+- Google Login remains `IN_PROGRESS`. The drift must be reconciled through a
+  separately reviewed decision before guarded TEST migration resumes. Real
+  PostgreSQL constraints/concurrency, real Google acceptance, dependency
+  remediation, CI, Preview and Production release remain pending.
+
+## Prompt 312-R schema-drift and migration-safety audit (2026-11-26)
+
+Status: **IN_PROGRESS — five diff items classified equivalent; transaction wrapper decision pending**.
+
+- The five Prompt 312 diff items were reconstructed from the 15 applied
+  migration artifacts, Git history, the current Prisma schema and a bounded
+  read-only TEST catalog transaction. No shadow database, DDL, DML or migration
+  was used. The scoped five-item baseline is complete; a repository-wide schema
+  reconstruction was intentionally not performed.
+- `CEFR_LEARNING_PASS.created_at`, `CEFR_LEARNING_PATH_STATE.created_at`,
+  `LEARNING_SESSION.created_at` and `STREAK_DAY.created_at` are all non-null
+  `timestamp(3) without time zone` columns whose live default is
+  `(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)`. Their original migrations and
+  Prisma `dbgenerated` definitions specify the same expression without the
+  parser-added `::text` cast. All four are classified **SEMANTICALLY EQUIVALENT**;
+  no CEFR, session or streak runtime behavior changes.
+- The live SRS receipt index is a valid/ready, non-unique btree over
+  `(session_item_id, accepted_revision)` with no predicate or expression and
+  `uuid_ops,int4_ops`. Its migration-requested 66-character name was truncated
+  by PostgreSQL to the 63-character live name; Prisma proposes another
+  63-character name ending in `_idx`. This is classified **SEMANTICALLY
+  EQUIVALENT** and has no query or receipt-integrity impact.
+- The exact Prisma diff would re-set the four already-equivalent defaults and
+  rename only that index. The recommended minimum is a documented exception
+  limited to these five known items; do not mutate TEST or change the Prisma
+  schema solely to make this representation-level diff empty.
+- Prisma Migrate 6 does not wrap PostgreSQL migrations by default. Every SQL
+  statement in the pending Google migration is transaction-compatible, while
+  `ALTER USER.password_hash DROP NOT NULL` takes the normal strong ALTER TABLE
+  lock. The recommended pending-file change is to add `BEGIN;` before its first
+  statement and `COMMIT;` after the foreign key, matching the project's atomic
+  migration convention. This does not change the intended end schema, but an
+  actual rollback rehearsal remains NOT TESTED and separately authorized work.
+- Google Login remains `IN_PROGRESS`. HUMAN approval is required for the exact
+  five-item exception and transaction-wrapper edit before a guarded backup,
+  baseline capture and TEST migration resume. The Prompt 311-R Production
+  dependency-security blocker remains unchanged.
+
+## Prompt 312-R2 atomic migration checkpoint (2026-11-26)
+
+Status: **BLOCKED — disposable rehearsal harness failed before migration execution**.
+
+- HD-33 approved the exact five-item equivalent-drift exception without changing
+  TEST, Prisma schema or applied history. HD-34 was implemented by adding only
+  `BEGIN;` before and `COMMIT;` after the unchanged pending Google migration DDL.
+- A local PostgreSQL 17.6 disposable cluster was available without installation
+  and was verified isolated from TEST/Production. The first supervised startup
+  exposed a Windows `pg_ctl` output-pipe hang; that exact cluster was identified,
+  stopped gracefully and removed. A corrected startup completed, but the harness
+  then lost the quoted `"USER"` identifier while passing its minimal baseline to
+  `psql`, so baseline creation failed before the wrapped migration ran.
+- Both disposable cluster directories were removed after process/path validation;
+  no rehearsal database, PostgreSQL process or injected artifact remains. The
+  wrapped migration's success and rollback behavior therefore remain NOT TESTED.
+- Prompt 312-R2 stopped at mandatory HD-35. No TEST connection, backup, baseline,
+  migration, fixture or integration test occurred, and TEST schema/data remain
+  unchanged. A separately authorized harness-invocation remediation and complete
+  rehearsal are required before guarded TEST migration can resume.
+- Google Login remains `IN_PROGRESS`; real Google acceptance and the Prompt 311-R
+  Production dependency-security remediation remain pending.
+
+## Prompt 312-R3 guarded migration resume checkpoint (2026-11-26)
+
+Status: **BLOCKED — HD-35 passed; TEST backup failed before migration**.
+
+- The wrapped migration checksum remained
+  `F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`.
+  A quoting-safe harness used UTF-8 temporary SQL files and `psql -X -v
+  ON_ERROR_STOP=1 -f`; quoted `"USER"` identifiers were preserved.
+- HD-35 passed on isolated localhost PostgreSQL 17.6. The exact wrapped migration
+  exited 0; nullable password, enum, both tables, nine indexes, cascade/update
+  cascade foreign key and the synthetic USER were verified through an independent
+  connection. An injected pre-COMMIT division-by-zero exited 3; an independent
+  connection verified full DDL rollback, original password NOT NULL and synthetic
+  USER preservation. This verifies PostgreSQL rollback, not Prisma failed-history
+  behavior. All temporary SQL, databases, cluster files and processes were removed.
+- Guarded TEST preflight still showed 15 completed migrations, no failed/rolled
+  back records, absent Google objects and only the Google migration pending. The
+  comprehensive diff contained only its DDL plus the five approved HD-33 items;
+  no other client session was active at the snapshot.
+- The mandatory fresh `pg_dump` did not complete within the bounded execution
+  window. Its process was stopped; the resulting 446,464-byte partial archive
+  failed `pg_restore --list` and was removed. No valid Prompt 312-R3 backup exists.
+- A Windows process-command diagnostic exposed the existing TEST connection URL
+  in the HUMAN-visible tool transcript. TEST database credential rotation and
+  guarded configuration replacement are required before further database work.
+  No credential value is recorded in project documentation.
+- Prompt 312-R3 stopped before baseline capture or migration apply. TEST schema
+  and data remain unchanged. Google Login stays `IN_PROGRESS`; Production
+  dependency-security remediation and real Google acceptance remain pending.
+
+## Prompt 312-R4 secure backup checkpoint (2026-11-26)
+
+Status: **BLOCKED — rotated credential verified; secure backup outcome not provable**.
+
+- HUMAN reported that the TEST password and Vercel Preview `DATABASE_URL` were
+  rotated; GitHub Actions uses a separate CI database and Production was
+  unchanged. Actual local connectivity with the rotated credential was VERIFIED
+  against the tenant-qualified TEST Session Pooler on port 5432 using a bounded
+  read-only transaction. Vercel/GitHub/Production configuration statements remain
+  HUMAN-REPORTED because those systems were not accessed.
+- TEST still contained 15 completed migrations, no failed or rolled-back record,
+  absent Google objects and no other active client session at the snapshot. The
+  wrapped migration checksum remained
+  `F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`.
+- The secure backup harness used a protected temporary `PGPASSFILE`, separate
+  non-secret host/port/user/database arguments, hidden redirected processes and
+  a 120-second bound. No password or credential-bearing URL was placed in process
+  arguments or diagnostic output. Temporary credential/log artifacts were
+  removed in the `finally` path.
+- The backup process ended within the bound, but Windows `Start-Process` did not
+  yield a numeric exit code to the harness. Fail-closed handling therefore could
+  not prove mandatory `pg_dump exit 0`; the unvalidated archive was removed and
+  no automatic retry was attempted. No valid Prompt 312-R4 backup exists.
+- Prompt 312-R4 stopped before pre-migration baseline or migration apply. TEST
+  schema/data remain unchanged. Google Login remains `IN_PROGRESS`; a separately
+  authorized backup-supervision correction is required before migration can resume.
+
+## Prompt 312-R5 guarded TEST migration (2026-11-26)
+
+Status: **IN_PROGRESS â€” migration applied and data preserved; real-stack transaction evidence partial**.
+
+- HD-36 was HUMAN-approved as a TEST-only fresh-backup waiver. TEST data-loss risk
+  was explicitly accepted because demo data is recoverable. Backup status is
+  `WAIVED BY HUMAN`, not PASS; Production backup requirements are unchanged. No
+  backup, reset, restore or reseed was executed.
+- The guarded target was reverified as TEST project `afyqslnhjiykkjogaqpy` with
+  15 completed migrations, no unresolved migration, absent Google objects and a
+  controlled activity window. The wrapped artifact retained SHA-256
+  `F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`.
+- A `REPEATABLE READ, READ ONLY` baseline fingerprinted 19 existing public
+  application tables and 4,201 rows. `prisma migrate deploy` applied
+  `20261126010000_add_google_authentication` exactly once with exit code 0.
+  Migration history is completed/not rolled back; the catalog contains both new
+  tables, nine indexes and 17 constraints. Every existing table count and content
+  fingerprint matched the baseline after migration and after fixture cleanup.
+- Real PostgreSQL execution created one Google USER/identity/session from two
+  concurrent nonce-consumption attempts, establishing one commit and one reject.
+  The execution host did not return the remainder of the runner outcome, so the
+  injected authentication-transaction rollback assertion is `INCONCLUSIVE` and
+  was not retried. Bounded reconciliation found and removed exactly one session,
+  one identity, one USER and two challenges; final residue counts were zero.
+- Targeted Google Authentication backend tests passed 7/7. Google Login remains
+  `IN_PROGRESS`: real Google acceptance is not tested, and the Production
+  dependency-security blocker remains active.
+
+## Prompt 313 transaction rollback and local acceptance checkpoint (2026-11-26)
+
+Status: **LOCAL/TEST GOOGLE AUTHENTICATION ACCEPTANCE PASS â€” Production pending**.
+
+- The tenant-qualified connection was revalidated as TEST project
+  `afyqslnhjiykkjogaqpy`; the completed Google migration was verified and was not
+  rerun. Production was not accessed.
+- A deterministic failure was injected through the actual Google authentication
+  service/repository transaction path after the synthetic challenge was consumed
+  and the USER, AUTH_IDENTITY and AUTH_SESSION writes had executed. The failure
+  was explicitly observed. Independent reads verified no partial USER, identity
+  or session and an unconsumed challenge, proving transaction rollback semantics.
+  Exact cleanup completed with zero fixture residue and unchanged pre-existing
+  authentication-table fingerprints.
+- Local Google variables are not yet configured. HUMAN must place the same Local/
+  TEST Web Client ID in ignored `frontend/.env.local` as
+  `VITE_GOOGLE_CLIENT_ID` and ignored `backend/.env` as `GOOGLE_CLIENT_ID`, plus
+  set backend `GOOGLE_AUTH_ALLOWED_ORIGINS=http://localhost:5173`. No client
+  secret is required. The local TEST database target is separately verified, but
+  the normal backend `npm run dev` loads `.env`, not `.env.test`; guarded startup
+  must explicitly map the verified `TEST_DATABASE_URL` to `DATABASE_URL`.
+- The official GIS SDK endpoint returned HTTP 200 with JavaScript content during
+  readiness verification. Actual frontend/backend runtime and real Google popup,
+  first/returning login, session, cancellation, password compatibility and email
+  collision acceptance remain `NOT TESTED` pending HUMAN configuration and test.
+- Google Login remains `IN_PROGRESS`. Production dependency-security remediation
+  remains a release blocker.
+- HUMAN completed the real-provider Local/TEST acceptance checklist with `9/9
+  PASS`: Login/Register presentation, first Google login, Dashboard navigation,
+  returning-account reuse, refresh/protected navigation/logout, popup
+  cancellation/form preservation/retry, existing password login, rejection of
+  arbitrary password for a Google-only account and email-collision protection.
+  These UI/runtime results are HUMAN-REPORTED and are not inferred from mocks.
+- The actual local configuration uses ignored `frontend/.env` and `backend/.env`.
+  Both Client ID variables are present and match, and the backend allowed origin
+  is exactly `http://localhost:5173`; no values are recorded in documentation.
+- A bounded `REPEATABLE READ, READ ONLY` TEST verification independently found
+  exactly one Google AUTH_IDENTITY linked to exactly one active `USER` account,
+  role `USER`, nullable `password_hash`, and no orphan identity. There are zero
+  current sessions after the HUMAN's final logout, consistent with session
+  invalidation. Two password-only accounts remain and zero password-based users
+  are linked to Google, supporting collision protection without modifying an
+  existing account. Historical creation/deletion of each individual session is
+  not retained by the schema, so that detailed sequence remains HUMAN-REPORTED.
+- The HUMAN-created Google TEST account was preserved. Preview acceptance,
+  Production OAuth configuration, guarded Production migration and the active
+  Production dependency-security remediation remain required. Google Login is
+  not marked Production-ready or globally `DONE`.
+
+## Prompt 314/314-R dependency security checkpoint (2026-11-26)
+
+Verdict: **PARTIAL REMEDIATION — HUMAN DECISION REQUIRED**.
+HD-37 through HD-40 are HUMAN APPROVED. Prompt 313 retains
+**LOCAL/TEST GOOGLE AUTHENTICATION ACCEPTANCE PASS** (HUMAN 9/9).
+
+- Registry-backed npm audits used `--offline=false`. The initial offline
+  zero-count reports were invalid as security evidence. Backend full audit
+  moved from 1 critical, 7 high, 3 moderate to 0 critical, 4 high, 2 moderate.
+  Backend `--omit=dev` moved from the same baseline to 0 critical, 4 high,
+  0 moderate. Frontend full and `--omit=dev` each moved from 4 high to
+  3 high, with zero critical and moderate findings. Low counts were zero
+  throughout. Distinct advisories fell from 10 to 3 (backend full),
+  10 to 2 (backend omit-dev), and 2 to 1 (both frontend scopes).
+  No new advisory IDs appeared.
+- Backend direct changes: Express 5.2.1 → 5.3.0 and Multer 2.4.0 → 2.5.0.
+  Express resolves proxy-addr 2.0.7 → 2.0.8, body-parser 2.3.0 → 2.4.0,
+  and qs 6.16.0 → 6.17.1, clearing GHSA-jqcg-44mw-7w3h,
+  GHSA-27r3-jxmh-p828 and GHSA-6pq8-jhm2-2vcw. Multer clears
+  GHSA-q7qp-rjg7-q26m. Nodemon 3.1.14 moved to devDependencies because
+  only the local watcher script uses it. Its brace-expansion 5.0.9 → 5.1.0
+  clears GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7 and
+  GHSA-6j4f-fj2g-mc7p. Google Auth Library stays at 11.3.4.
+- Frontend @vercel/config 0.15.0 → 0.15.1 now resolves Zod 4.6.7
+  and removes nested Zod 3.25.76, clearing GHSA-mrhx-c7xc-m3w5.
+  Both projects installed successfully with lifecycle scripts disabled.
+  Lockfile dry-runs and direct installed version checks passed. Generated
+  Prisma 6.19.3 model and engine artifacts and offline client initialization
+  passed. Frontend Vite, React/Tailwind plugins, Rolldown and Lightning CSS
+  loaded successfully.
+- Targeted regression passed: backend 47/47, frontend Vercel routing 4/4
+  and loopback JSON/multipart checks 5/5. These checks used no live database
+  or external storage. Full suites and deployment builds remain untested.
+
+Open findings for HUMAN decision:
+
+- **High, Prisma tooling present in omit-dev:** `@prisma/client@6.19.3`
+  optionally peers with installed `prisma@6.19.3`, which pins
+  `@prisma/config@6.19.3`. Config pins `deepmerge-ts@7.1.5`
+  (GHSA-ggr8-5vv4-36mx, fixed in 8.0.0) and `effect@3.21.0`
+  (GHSA-7589-6fvf-x4pw, fixed in 3.22.1). Neither package is directly
+  imported by the application's request handlers. Runtime reachability is
+  unconfirmed. No compatible Prisma 6 update was found. npm suggests
+  Prisma 7.10.1, but its registry metadata still pins affected Effect 3.20.0.
+  An audited upstream release or separately approved tooling change is needed.
+- **High, Vercel config tooling present in omit-dev:**
+  `@vercel/config@0.15.1 → @vercel/routing-utils@6.6.1 →
+  path-to-regexp@6.1.0` (GHSA-9wv6-86v2-598j, fixed in 6.3.0).
+  The package pins both legacy 6.1.0 and a patched 6.3.0 alias. The
+  application uses the config helper for build-time route definitions.
+  Deployed request-path reachability is unconfirmed. npm suggests an
+  out-of-range rollback to config 0.0.32. A supported upstream release
+  or a separately approved routing-tool change is needed.
+- **Moderate, local dev tooling only:** `nodemon@3.1.14 →
+  minimatch@10.2.6` (GHSA-g3hv-75wg-m249, fixed in 11.0.1).
+  Nodemon's range excludes the patched major. npm proposes reverting
+  Nodemon to 3.1.11 outside the declared range. Assess that older watcher
+  or approve a supported alternative before changing the toolchain.
+
+No open advisory has been accepted as risk. Google Login remains
+`IN_PROGRESS`. Production dependency security, Preview acceptance,
+Production OAuth configuration and guarded Production migration
+remain release gates.
+
+## Prompt 314-R2 residual dependency exposure review (2026-11-26)
+
+**INCONCLUSIVE — RELEASE BLOCKED.** HD-41 preserves Prisma 6.19.3
+pending HUMAN review of bounded risk. HD-42 keeps Vercel routing blocked.
+HD-43 defers the development-only Nodemon finding. Prompt 313 Local/TEST
+Google acceptance remains PASS (HUMAN 9/9).
+
+- **deepmerge-ts 7.1.5, high ([GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx)) — NOT REACHABLE within the assessed architecture.**
+  The optional Prisma CLI peer of `@prisma/client@6.19.3` is installed
+  as `prisma@6.19.3`. Its `@prisma/config@6.19.3` passes `deepmerge`
+  to c12's local config loader (`dist/index.js:894`, `:917`).
+  The call is part of install/build generation and operator CLI use.
+  The advisory requires recursive object graphs at matching merge paths.
+  `backend/prisma.config.ts:7` supplies an acyclic config and an
+  operator-controlled URL string. The loader disables remote config,
+  extension, RC and package.json config sources. The local config is still
+  executable code and must remain trusted. HTTP inputs do not feed this
+  loader. The application entries instantiate the generated Prisma Client.
+- **Effect 3.21.0, high ([GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw)) — NOT REACHABLE within the assessed architecture.**
+  The same Prisma CLI/config chain uses Effect's `Schema.decodeUnknownEither`
+  to validate config exports (`@prisma/config/dist/index.js:708`, `:746`).
+  The inspected config schemas do not use the affected `Schema.TemplateLiteral`
+  decoder, which requires an ambiguous multi-string template and a long
+  nonmatching input. The decoder receives CLI configuration, with no
+  identified HTTP input path. For both Prisma findings, generated
+  `client.ts:18` and `internal/class.ts:420` select the Prisma Client
+  runtime API. `backend/src/index.js:9` and `src/main.js:6` do not load
+  the CLI configuration. Registry metadata lists 6.19.3 as the newest
+  Prisma 6. The upstream fixes require deepmerge-ts 8.0.0 and Effect 3.22.1
+  or later, outside the exact config pins. Recommend HUMAN consideration
+  of time-bounded risk acceptance limited to the reviewed pins and trusted
+  config path, with reassessment on any build, runtime or config change.
+- **path-to-regexp 6.1.0, high ([GHSA-9wv6-86v2-598j](https://github.com/advisories/GHSA-9wv6-86v2-598j)) — INCONCLUSIVE for hosted request-time exposure.**
+  `@vercel/config@0.15.1 → @vercel/routing-utils@6.6.1 → path-to-regexp@6.1.0`.
+  `frontend/vercel.mjs:42` validates a build-time destination origin.
+  Plain `routes.rewrite` returns rewrite definitions. Routing utils'
+  `getTransformedRoutes → convertRewrites → sourceToRegex → pathToRegexp`
+  compiles them. `dist/superstatic.js:47` returns the legacy expression
+  even though the patched 6.3.0 alias is compared. The two checked-in
+  sources each contain a single catch-all and lack the advisory's
+  ambiguous two-parameter segment. Public request paths are matched
+  against deployed rules. No exploit condition was found in these two
+  definitions. Effective hosted route output, platform-added rules and
+  matcher behavior were not independently verified. Express uses a
+  separate 8.4.2 copy via `router`. The latest compatible Vercel
+  packages still pin 6.1.0. Keep HD-42 blocked. Review effective route
+  artifacts and project routing settings under separate authorization,
+  then evaluate an upstream fix or an approved routing-tool change.
+- **Minimatch 10.2.6, moderate ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)) — NOT REACHABLE within the assessed architecture.**
+  `nodemon@3.1.14 → minimatch@10.2.6` is used by the local backend
+  `dev` script. `nodemon/lib/monitor/match.js:194` passes watcher
+  rules with no `optimizationLevel` override. Minimatch defaults to 1,
+  while this advisory needs an attacker-controlled glob and level 2
+  or higher. No startup, deploy or HTTP code supplies watcher rules.
+  Nodemon latest still uses `^10.2.1` and the fix starts at 11.0.1.
+  HD-43's development-only deferral condition is met.
+
+Static source and installed-package inspection only. Hosted artifacts
+and exploit behavior were outside scope. No Prisma or Vercel risk was
+accepted. Google Login stays `IN_PROGRESS` for Production, with
+dependency security, Preview acceptance, Production OAuth configuration
+and the guarded Production migration still pending.
+
+## Prompt 314-R3 Vercel effective routing checkpoint (2026-11-26)
+
+**INCONCLUSIVE — RELEASE BLOCKED.** HD-44 approves time-bounded acceptance
+of GHSA-ggr8-5vv4-36mx and GHSA-7589-6fvf-x4pw for the current graduation
+release under the Prisma 6.19.3 pins and trusted config/runtime boundary
+verified in 314-R2. Reassess after this release or on a dependency, build,
+runtime or config trust-boundary change, whichever comes first. HD-43
+still defers Nodemon. HD-45 authorizes read-only Vercel inspection and
+leaves Vercel risk acceptance pending.
+
+- Control-plane GETs using the existing Vercel CLI session returned HTTP
+  403 for team discovery, user identity and project listing. The cause
+  of the refusal was unverified. Neither project's active deployment
+  ID, source SHA, effective route table, project-level routing rules or
+  hosted matcher provenance was available. No local
+  `.vercel/output/config.json` existed in either project.
+- The locally recorded `origin/main` ref
+  `cc734cd22498799c8e6d2739b9d45e9e64855114` and the unreleased worktree
+  have identical checked-in Vercel configuration. Frontend declares
+  `/api/:path*` followed by `/:path*`, with no redirects. Backend
+  declares an Express function and no explicit rewrites or redirects.
+  The local main lockfile has `@vercel/config@0.15.0`, while the candidate
+  has 0.15.1. Both snapshots pin routing-utils 6.6.1 and legacy
+  path-to-regexp 6.1.0. The local ref is repository evidence only.
+- Read-only local compilation of the candidate's two frontend literals
+  through installed `@vercel/routing-utils` produced anchored expressions
+  with one path capture each. Additional segments are separated by
+  slashes. Neither rule has the ambiguous same-segment parameters covered
+  by [GHSA-9wv6-86v2-598j](https://github.com/advisories/GHSA-9wv6-86v2-598j).
+  The compiler uses 6.1.0 for its returned regex and compares against a
+  6.3.0 alias. No exploit condition was found in the two local definitions.
+  Participation of the affected dependency or a vulnerable generated regex
+  in hosted request handling remains INCONCLUSIVE.
+- Smallest next step is for a project owner with existing read access
+  to provide the active Production deployment ID and Git SHA for each
+  project, ordered sanitized route sources/regexes from the deployment
+  manifests (including framework or platform routes), and published
+  Routing Rules and bulk redirects or explicit empty-state evidence.
+  Inspect existing artifacts only. If they cannot show which matcher
+  serves the effective rules, request read-only confirmation from Vercel.
+  Apply that evidence only to the identified deployment and review any
+  future candidate artifact separately when available.
+
+The Vercel security gate remains open. Prompt 313 Local/TEST acceptance
+remains PASS (HUMAN 9/9). Preview acceptance, Production OAuth
+configuration and guarded Production migration remain pending.
+
+## Prompt 315 security closure and final integration (2026-11-26)
+
+**SECURITY REMEDIATION COMPLETED WITH BOUNDED RESIDUAL RISK ACCEPTANCE.**
+This supersedes the Prompt 314 Vercel security blocker for the current
+graduation release under the conditions below. The Prompt 314-R audit
+counts and Prompt 314-R2 exposure classifications remain the evidence
+record. The four advisory IDs remain open in audit results.
+
+- HD-37–HD-40 governed compatible updates, authoritative audit evidence,
+  focused regression and explicit HUMAN risk decisions. HD-41 preserves
+  Prisma 6.19.3. HD-42 held the Vercel gate pending assessment. HD-43
+  defers the development-only Minimatch finding (GHSA-g3hv-75wg-m249).
+  HD-44 accepts the two Prisma tooling findings (GHSA-ggr8-5vv4-36mx and
+  GHSA-7589-6fvf-x4pw) for this release under the reviewed toolchain and
+  trust-boundary constraints. HD-45 authorized the read-only inspection
+  that could not verify effective hosted matchers.
+- **HD-46, HUMAN APPROVED.** Bounded acceptance of Vercel's remaining
+  GHSA-9wv6-86v2-598j for this release. On 2026-11-26 the HUMAN verified
+  via Vercel Dashboard that frontend `frontend-elvocab` (deployment
+  prefix `3q46CM5JX`) and backend `eng-lish-vocabulary` (prefix
+  `2pih8PghQ`) were Production Ready / Current, both on `main` at
+  commit prefix `cc734cd`. Both showed Routing Rules 0/100, Project Routes,
+  Microfrontends, Skew Protection and Rolling Releases not configured,
+  and Project Redirects restricted by Hobby. This evidence describes the
+  deployed commit. Bulk Redirects, platform-generated routes and internal
+  hosted matchers remain unverified. Hosted exposure stays INCONCLUSIVE.
+- Preserve the assessed dependency graph and routing configuration.
+  Inspect candidate routes in Preview acceptance, including generated
+  artifacts where available. Reassess when a compatible fix is available
+  or by 2026-12-26 (30 days), whichever comes first. Reopen the security
+  blocker if new evidence indicates reachable exposure. Acceptance
+  does not change advisory severity or the audit counts. The final
+  Prompt 314-R counts remain backend full 4 high / 2 moderate, backend
+  omit-dev 4 high, and frontend full and omit-dev 3 high each.
+
+- Login passes GIS `signin_with` and Register passes `signup_with`, both
+  with locale `vi`. The shared control still delegates button rendering
+  and localized wording to GIS. The Google mock spec uses a dedicated
+  loopback Playwright project with a synthetic Client ID. The ordinary
+  browser project disables GIS so unrelated auth specs keep their original
+  fixture contract, even on machines with a configured local Client ID.
+- New verification: 91/91 targeted Node tests for speech coordination,
+  learning presentation and auth state/services. Focused Chromium passed
+  25/25 (12 GIS mocks and 13 footer cases) after separating the test
+  environments. Login and Register were checked at 320, 375, 768, 1024
+  and 1440 CSS px for button bounds, page overflow and footer placement.
+  Mocked failure, cancellation/retry, form preservation and keyboard
+  activation passed. Scoped ESLint and the frontend production build
+  passed. The backend production-mode entry imported offline using
+  synthetic settings. The generated Prisma client matches 6.19.3,
+  exposes both Google models and the nullable password field, and has
+  the expected Windows/Linux engine artifacts. The transaction wrapper
+  and approved migration checksum matched.
+- Reused the guarded TEST migration/data-preservation and rollback
+  evidence, Prompt 313 real Google **LOCAL/TEST ACCEPTANCE PASS** (HUMAN
+  9/9), and Prompt 314-R backend dependency regression results. No
+  database, real Google login or deployed behavior was retested here.
+  Real GIS wording with the new options, real cross-browser speech
+  behavior and full dev CI remain to be verified separately.
+
+**FINAL INTEGRATION PASS — READY FOR COMMIT/PUSH APPROVAL.** Google
+Login remains `IN_PROGRESS` for Production. Preview routing and real
+Google acceptance, Production OAuth configuration and the guarded
+Production migration remain release gates.
+
+## Prompt 315-R Google button visual acceptance (2026-11-26)
+
+- The shared GIS button uses centered logo alignment on Login and
+  Register. The approved text options, Vietnamese locale, dimensions
+  and authentication flow remain unchanged.
+- Both focused Chromium GIS configuration tests passed. Scoped ESLint,
+  strict UTF-8 and diff hygiene passed. The HUMAN confirmed visual
+  acceptance for the real Google button on Login and Register. Prompt
+  315-R is closed.
+- Prompt 313 Local/TEST Google Authentication acceptance remains PASS.
+  HD-43, HD-44 and HD-46 continue to apply, including the 2026-12-26
+  Vercel reassessment deadline or an earlier compatible fix. Full dev CI,
+  Preview routing and real Google acceptance, Production OAuth
+  configuration and the guarded Production migration remain release gates.
+
+## Prompt 319 / 319-R learner notifications (2026-11-27)
+
+Status: **IN_PROGRESS — integrated on dev and accepted locally on TEST;
+Production release pending**. HD-48 covers interruption of any positive streak and
+3/7/14/30-day milestones in Vietnam time. HD-49 uses started vocabulary
+milestones 25/50/100/250/500/1000 and existing exact Vocabulary identities.
+Final HD-50 excludes all CEFR and learning-path notifications from V1.
+HD-51 sets a fixed activation cutoff, 90-day visibility and retained dedupe
+keys. HD-52 places the desktop bell beside the avatar and uses it in the
+mobile avatar slot. HD-53 defines the responsive inbox and keyboard dismissal.
+HD-54 governs read state, including mark-all across unloaded pages. HD-55
+governs loading, empty, error and retry states. The inbox uses three-item
+cursor pagination (HD-56) and a 60-second per-session cache.
+
+HD-47 accepted the known missing `API_PROXY_TARGET` error for Feature Preview
+only. PR #41 merged to dev at `0ef589fa7453f2858ae32677193afe8e60a1cf62`.
+Dev CI #104 and Guarded Integration #150 are HUMAN-reported PASS. Dev Preview
+Google manual acceptance remains deferred and untested. Intermittent
+availability and latency were reported. A region-related cause remains
+unverified. Prompt 313 Local/TEST acceptance and the bounded residual-risk
+decisions remain in effect. The combined Google/Notification Production
+release remains pending its separate gates.
+
+Prompt 319-R offline evidence: backend 7/7, frontend cache 5/5, and 24
+distinct focused mocked Chromium cases passed across inbox and auth/header
+regression specs. Inbox geometry passed at 320, 390, 768 and 1440 CSS px.
+Scoped ESLint, Prisma schema validation, offline client generation and
+Express composition passed. Real PostgreSQL constraint/concurrency,
+role/RLS compatibility, query plans, Preview and hosted behavior remain
+untested at that offline checkpoint. Review, HUMAN visual acceptance and
+guarded TEST migration approval were pending.
+
+Prompt 319-R2 records HUMAN acceptance of the overall inbox design subject to
+HD-56 (three rows per page, content-sized panel, list-only overflow) and HD-57
+(icon-only close control with a 44 px target and visible keyboard focus).
+Prompt 320 records HUMAN visual acceptance **PASS** for desktop and mobile
+after HD-56 and HD-57. The final initial and subsequent page size is three.
+
+Prompt 320 stopped at the schema drift gate.
+The tenant-qualified session pooler targeted Supabase TEST
+`afyqslnhjiykkjogaqpy`. Live read-only checks verified 16 successful
+migrations, Google Authentication already applied, and only Notification V1
+pending. The migration checksum and explicit transaction boundaries matched.
+Prisma reported an additional default difference on
+`GOOGLE_AUTH_CHALLENGE.created_at` beyond the five approved HD-33 exceptions
+and the expected Notification V1 DDL. Prompt 320-R verified that the explicit
+`::text` cast on the UTC literal has equivalent PostgreSQL semantics. HD-58
+approved this exact sixth difference and preserved the five HD-33 exceptions.
+
+Prompt 320-R2 validated a fresh TEST backup with `pg_restore --list`, then
+applied the approved migration once. The TEST ledger, schema, runtime role
+privileges, RLS and 21 existing-table fingerprints passed verification.
+Local TEST uses the fixed activation instant `2026-11-27T00:00:00.000Z`
+in the process environment. With isolated fixtures, missing or invalid
+activation did not generate notifications. Real PostgreSQL verification
+covered Vietnam midnight, interruption after 1, 2 and 30 days, a restarted
+streak, repeated streak awards across runs, all six vocabulary thresholds,
+source UUID uniqueness, concurrent refresh and hidden deduplication keys.
+It also covered the exact 90-day boundary, tied-timestamp cursor ordering,
+three-item pages, unread counts across unloaded pages and idempotent
+mark-one and mark-all. Real Express sessions verified guest 401, ADMIN 403
+and cross-user 404 with no foreign inbox rows.
+
+Representative TEST `EXPLAIN ANALYZE` execution times were 2.306 ms for the
+source query (60 streak days, 1,000 progress rows), 0.160 ms for the first
+page with unread count (16 notifications), and 0.056 ms for standalone unread
+count (8 unread). PostgreSQL used user-scoped source indexes, the inbox index
+and the partial unread index. The refresh code issues at most three data
+statements within its transaction. These measurements exclude network time
+and cover the TEST fixtures only.
+
+Real localhost Chromium used the Vite application and Express against TEST.
+It verified learner login and re-login, shell refresh and badge, opening the
+inbox without marking it read, three initial rows and three more, mark-one
+and mark-all, read persistence after reload and re-login, cache invalidation
+after successful learning completion, and retry after a real PostgreSQL
+refresh failure. The first learning fixture selection received the expected
+CEFR lock. The resumed verification selected a public A1 set. The existing
+learning completion and Streak write committed even with notification refresh
+failing. This verification did not rerun the full CEFR acceptance suite.
+
+Both synthetic fixture batches were removed by exact IDs. The final check
+found zero fixture users or notifications, and all 21 existing table
+fingerprints still matched the pre-migration baseline.
+
+Prompt 321 records HUMAN local TEST real-stack acceptance **PASS** for the
+scenarios checked manually. No scenario-by-scenario manual inventory was
+supplied. The desktop and mobile visual acceptance after HD-56 and HD-57
+also remains **PASS**. The automated Prompt 320-R2 evidence above is separate.
+Backup archive validation passed. Restore remains **NOT TESTED**.
+
+Final local review verified HD-48 through HD-58, the unchanged transactional
+Notification migration and its SHA-256, and preservation of historical
+migrations, CEFR learning transactions, Google Authentication, Flashcard Speech,
+Footer and transient toast behavior. Scoped ESLint, offline Prisma validation,
+embedded generated-schema and model checks, offline Express initialization,
+frontend production-mode build, strict UTF-8, diff hygiene and an added-line
+secret/artifact review passed. No regression suite was repeated. Only local
+TEST uses the fixed documented cutoff. Production activation remains a release
+configuration gate.
+
+PR #42 merged to dev at `3f518e05a5bf68a64d041f8abb4556d65de483b3`.
+Dev CI #106 and Guarded Integration #152 passed on that commit. The approved
+missing-`API_PROXY_TARGET` exception was limited to the PR #42 Feature Preview.
+The standard backend CI commands still exclude the Notification-specific
+backend spec. Its focused offline pass remains local evidence.
+
+## Google Authentication table hardening and combined release
+
+**TEST hardening PASS. Production hardening and release PENDING.**
+
+- **HD-59.** Keep the shared Google OAuth project in Testing for the graduation
+  release, with separate TEST and Production Web Clients. Defer Branding,
+  publishing and brand verification. The test-user list is separate from
+  application access control. The saved Production client IDs matched and
+  allowed origin matched the verified frontend alias. Actual Production
+  Google sign-in acceptance is pending. Google Dev Preview manual acceptance
+  remains deferred by HUMAN.
+- **HD-60.** Accepted temporary Dev Preview loading behavior. HUMAN verified
+  the Notification panel and empty state, and the Dashboard recommendation
+  loaded after Retry. TEST data identification was HUMAN-confirmed from
+  distinctive vocabulary sets and covers. The exact Sensitive database ref,
+  effective runtime routing and Notification deployment attribution were
+  unverified. Root cause remains INCONCLUSIVE. Full Production acceptance is
+  required.
+- **HD-61.** Approved exactly the five equivalent Production drift items listed
+  in DATABASE.md. Preserve the existing defaults and SRS receipt index name.
+  The additional HD-58 exception remains TEST-only.
+- **HD-62.** One forward-only migration enables RLS on `AUTH_IDENTITY` and
+  `GOOGLE_AUTH_CHALLENGE`, with no FORCE or policies. It revokes all table
+  privileges from PUBLIC, anon, authenticated and service_role on these two
+  tables. Prisma ownership and access are preserved.
+- **HD-63.** One-time approval to integrate HD-62 directly into dev, skipping
+  the intermediate feature branch CI cycle. Existing Dev CI and Guarded
+  Integration remain the verification gates for the resulting dev commit.
+
+Prompt 325-R3 applied the hardening migration once on guarded TEST. The ledger
+advanced from 17 to 18 successful migrations. Fresh backup archive validation
+and the isolated success and injected-failure rollback rehearsals passed.
+Offline Google Auth tests passed 7/7. Real Prisma with a mocked Google verifier
+passed 4/4 groups for challenge issuance and cleanup, first and repeat login,
+identity update, nonce concurrency and replay, collision handling and password
+login. Fixture cleanup followed exact IDs and left zero residue. Fingerprints
+of all 22 existing application tables, unrelated ACLs and auth index and
+constraint definitions matched. Backup restore and real Google OAuth browser
+acceptance after hardening are **NOT TESTED**.
+
+Production Data API OFF is HUMAN-confirmed. Automatic exposure of new tables
+is unverified. The combined Production plan now has three migrations and
+requires fresh verified backup, guarded migration and preservation checks,
+HUMAN-approved fixed activation, authorized release and Production acceptance.
+Hosted routing and performance limitations remain. HD-43, HD-44 and HD-46
+and the existing 2026-12-26 reassessment deadline remain in effect.

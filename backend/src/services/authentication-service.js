@@ -127,15 +127,14 @@ export function createAuthenticationService({
           return { authenticationFailure: { kind: "invalid" } };
         }
 
-        const sessionToken = randomBytes(32).toString("base64url");
-        const expires_at = new Date(attemptedAt.getTime() + SESSION_LIFETIME_MS);
+        const session = createSessionCredential(attemptedAt);
         await transactionalSessions.createSession({
           user_id: user.id,
-          session_identifier_hash: hashSessionToken(sessionToken),
-          expires_at,
+          session_identifier_hash: session.sessionIdentifierHash,
+          expires_at: session.expiresAt,
         });
         await loginAbuseRepository.deleteForIdentifier(identifierKey);
-        return { user: toPublicUserIdentity(user), sessionToken };
+        return { user: toPublicUserIdentity(user), sessionToken: session.sessionToken };
       });
 
       if (outcome.authenticationFailure) {
@@ -213,6 +212,15 @@ function normalizeEmail(email) {
 
 function hashSessionToken(sessionToken) {
   return createHash("sha256").update(sessionToken).digest("hex");
+}
+
+export function createSessionCredential(issuedAt = new Date()) {
+  const sessionToken = randomBytes(32).toString("base64url");
+  return {
+    sessionToken,
+    sessionIdentifierHash: hashSessionToken(sessionToken),
+    expiresAt: new Date(issuedAt.getTime() + SESSION_LIFETIME_MS),
+  };
 }
 
 function isExpired(session) {

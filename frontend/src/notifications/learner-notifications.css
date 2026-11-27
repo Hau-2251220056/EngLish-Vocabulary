@@ -1,0 +1,133 @@
+.learner-notification-anchor { position: relative; flex: 0 0 auto; }
+
+.learner-notification-bell,
+.learner-notification-close {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  color: #164e63;
+  cursor: pointer;
+}
+
+.learner-notification-bell {
+  border: 1px solid var(--border-soft, #e2e8f0);
+  border-radius: 50%;
+  background: white;
+}
+
+.learner-notification-close {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.learner-notification-bell:hover,
+.learner-notification-close:hover { background: #f0f9ff; }
+.learner-notification-bell:focus-visible,
+.learner-notification-panel button:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+.learner-notification-badge {
+  position: absolute;
+  inset: -2px -3px auto auto;
+  min-inline-size: 18px;
+  padding: 1px 4px;
+  border-radius: 12px;
+  background: #b91c1c;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.learner-notification-panel {
+  position: absolute;
+  z-index: 20;
+  inset: calc(100% + 12px) 0 auto auto;
+  inline-size: min(392px, calc(100vw - 24px));
+  max-block-size: min(34rem, calc(100dvh - 6rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: white;
+  border: 1px solid #dbe7ec;
+  border-radius: 18px;
+  box-shadow: 0 14px 40px rgb(8 47 73 / 14%);
+  text-align: left;
+}
+
+@media (max-width: 1023px) {
+  .learner-notification-anchor { position: static; }
+  .learner-notification-panel {
+    inset: calc(100% + 4px) 12px auto;
+    inline-size: auto;
+    max-block-size: calc(100dvh - 5.5rem);
+  }
+}
+
+.learner-notification-panel-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 44px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+@media (max-width: 390px) {
+  .learner-notification-panel-header {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 7.75rem) 44px;
+  }
+}
+
+.learner-notification-panel h2 { margin: 0; font-size: 1rem; font-weight: 700; }
+.learner-notification-meta,
+.learner-notification-panel time { color: #475569; font-size: .75rem; }
+.learner-notification-panel button { font-family: inherit; }
+.learner-notification-action {
+  min-block-size: 44px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #075985;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.learner-notification-action:disabled { color: #64748b; cursor: default; }
+.learner-notification-list { min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 8px; }
+.learner-notification-list ul { margin: 0; padding: 0; list-style: none; }
+.learner-notification-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 8px;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding: 9px 8px;
+  margin: 2px 0;
+  border: 0;
+  border-radius: 10px;
+  background: white;
+  color: #334155;
+  text-align: left;
+}
+.learner-notification-item.is-unread { background: #f0f9ff; }
+.learner-notification-item.is-unread:not([aria-disabled="true"]) { cursor: pointer; }
+.learner-notification-copy { display: grid; gap: 2px; font-size: .82rem; overflow-wrap: anywhere; }
+.learner-notification-title { color: #0f172a; font-weight: 500; }
+.is-unread .learner-notification-title { font-weight: 600; }
+.learner-notification-icon { display: grid; place-items: center; block-size: 34px; border-radius: 10px; }
+.learner-notification-icon.is-peach { color: #c2410c; background: #ffedd5; }
+.learner-notification-icon.is-yellow { color: #a16207; background: #fef9c3; }
+.learner-notification-icon.is-sky { color: #0369a1; background: #e0f2fe; }
+.learner-notification-dot { margin-top: 7px; border-radius: 50%; inline-size: 7px; block-size: 7px; background: #0284c7; }
+.learner-notification-panel-footer { padding: 4px 12px; text-align: center; color: #475569; font-size: .8rem; border-top: 1px solid #e2e8f0; }
+.learner-notification-empty { display: grid; place-items: center; gap: 6px; padding: 20px 8px; text-align: center; color: #475569; }
+.learner-notification-empty p { margin: 0; font-size: .82rem; }
+.learner-notification-skeleton { display: grid; gap: 6px; }
+.learner-notification-skeleton div { height: 54px; background: #f1f5f9; border-radius: 10px; }

@@ -35,6 +35,8 @@ test("auth service uses exact relative endpoints and normalizes email", async ()
     password: "password",
   }), publicUser);
   await service.logout();
+  assert.deepEqual(await service.createGoogleChallenge(), undefined);
+  assert.deepEqual(await service.loginWithGoogle("google-credential"), undefined);
   assert.deepEqual(await service.getCurrentUser(), publicUser);
 
   assert.deepEqual(calls, [
@@ -53,6 +55,8 @@ test("auth service uses exact relative endpoints and normalizes email", async ()
       body: { email: "learner@example.com", password: "password" },
     },
     { method: "POST", url: "/api/auth/logout", body: undefined },
+    { method: "POST", url: "/api/auth/google/challenge", body: undefined },
+    { method: "POST", url: "/api/auth/google", body: { credential: "google-credential" } },
     { method: "GET", url: "/api/auth/me" },
   ]);
 });

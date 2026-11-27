@@ -563,6 +563,8 @@ A speaker icon should be displayed inside the flashcard when pronunciation audio
 
 The user can press the speaker button to listen to the model pronunciation.
 
+Stored audio and native browser TTS share one playback lifecycle. Moving to another card, switching mode, finishing a batch, or leaving the page cancels obsolete playback without showing a false error; callbacks from an earlier card cannot update the current card. Genuine playback failure remains a non-blocking status, and browsers without usable playback support must not prevent the learner from continuing the session.
+
 The flashcard should only provide model pronunciation playback.
 
 User speech recognition and transient transcript feedback belong to the separate Speaking Practice activity.
@@ -1547,6 +1549,24 @@ Success states are defined.
 Quiz feedback states are defined.
 Learning flow is prototyped.
 Authentication flow is prototyped.
+
+### Google Authentication — HD-25 through HD-32
+
+Login and Register preserve the existing two-panel Auth composition, form fields,
+primary action and Prompt 309 footer. Immediately after the primary submit action,
+the form presents a neutral `Hoặc` divider, the official GIS-rendered localized
+button, then the existing mode switch. Login requests GIS `signin_with` (Đăng
+nhập với Google) and Register requests `signup_with` (Đăng ký với Google), both
+with locale `vi` and `logo_alignment: "center"`. Google controls the final
+localized wording. One Tap and automatic sign-in are disabled.
+
+Google loading, unavailable, verification failure and account-collision states
+remain inside the form flow without clearing typed password-form values or
+stacking duplicate errors. A Google operation and password submission cannot run
+concurrently. SDK failure leaves password Authentication enabled. Content growth
+increases the shared card naturally; neither panel nor form creates nested scroll.
+The page alone may scroll, both desktop panels remain equal height, and the footer
+follows the card at 1440, 768, 390 and 320 CSS pixels.
 Vocabulary Set flow is prototyped.
 Community flow is prototyped.
 Admin flow is prototyped.
@@ -1690,3 +1710,65 @@ This release does not remediate the separately deferred Flashcard 9/10 issue or
 Supabase database-security migration work. Production seed and Production release
 remain separately gated. CEFR-J permission ambiguity, ShareAlike completeness and
 the existing dataset-quality limitations remain explicitly unresolved.
+
+## Prompt 309 — footer and layout completion
+
+**HD-24:** Normal authenticated learner pages use one shared footer inside the
+main content column: `© 2026 ELVocab.` and a `Nguồn dữ liệu` link to
+`/data-sources`. It follows short content to the viewport bottom and long content
+naturally, is never fixed, and stacks as two centered lines on narrow screens.
+The learner sidebar remains focused on learning navigation and does not duplicate
+the attribution link.
+
+The learner footer is present on Dashboard, Explore and public set detail while
+authenticated, My Sets and its detail, Review Center overview, Learning Progress,
+and authenticated Data Sources. It is absent from Flashcard, Global/Set Review,
+Quiz, Speaking Practice, every Admin route, and modal surfaces. Account Settings
+has no implemented route at this checkpoint; the shared learner shell will own
+its footer if that route is introduced through the approved workflow.
+
+Login and Register share a quiet footer outside the authentication card with
+`Trang chủ · Nguồn dữ liệu` and the educational-purpose copyright statement.
+The existing Landing footer and shared public Topics/Data Sources footer remain
+the public implementations; no duplicate public footer or route is introduced.
+
+Automated Prompt 309 evidence covers route visibility, focus/Admin exclusions,
+keyboard-accessible links, and 1440/768/390/320 responsive widths. HUMAN visual
+approval remains pending; implementation is not marked DONE by this checkpoint.
+
+## Learner notification bell and inbox (HD-52 through HD-57)
+
+Show the bell immediately left of the desktop avatar. Below 1024 CSS px the
+bell replaces the header avatar. Keep the brand and navigation toggle, with
+identity and Logout available in the existing mobile drawer. Guest, ADMIN and
+active learning focus routes do not render the bell.
+
+The 44 px control has an accessible count and red upper-right badge. Hide the
+badge for zero or unknown, distinguish unknown in the accessible name, and
+display 99+ for higher counts. The non-modal panel anchors below the bell at
+approximately 392 px desktop and spans the mobile header with safe insets.
+The panel fits its content up to the viewport height constraint. Only the list
+scrolls when additional items exceed that space. The heading, unread count,
+mark-all and close controls remain
+visible. Toggle by bell, close by Escape, outside pointer or close button.
+Escape and close restore trigger focus. Opening another header overlay closes
+the panel. The close button shows an X without a border or background in its
+normal state (HD-57). Its 44 px target and visible keyboard focus are preserved.
+
+Rows display full Vietnamese copy and relative time with semantic icons:
+orange flame for interruption, yellow trophy for a streak milestone and
+sky-blue book for a vocabulary milestone. Unread rows have a light sky
+surface, semibold title and blue dot with accessible unread state.
+Opening the panel never marks items read. Selecting an unread item marks only
+that row and does not navigate. Read rows do not issue another mutation.
+Mark-all covers unloaded pages and is disabled when the unread count is zero.
+
+The panel loads three rows at a time (HD-56). **Xem thêm** appends the next three without
+discarding previous rows or resetting the list scroll. It disappears at end
+of list. Initial loading uses skeletons with unknown count. Empty copy is
+**Chưa có thông báo.** and **Các thông báo mới sẽ xuất hiện tại đây.**
+Initial failure offers **Thử lại**. Background, pagination and read errors
+preserve existing rows and counts with scoped recovery controls. Pending
+actions block duplicate requests. No dedicated notification page is added.
+Transient toasts, including XP feedback, continue to use the existing toast
+system independently of the inbox.

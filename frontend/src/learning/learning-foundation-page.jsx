@@ -3,6 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthentication } from "../auth/use-authentication.js";
 import { LoadingIndicator } from "../components/loading-indicator.jsx";
+import {
+  createReferencePlaybackCoordinator,
+  REFERENCE_PLAYBACK_ISSUES,
+} from "../pronunciation/reference-playback-coordinator.js";
 import { LearningApiError, learningService } from "../services/learning-service.js";
 import { LearningSessionApiError, learningSessionService } from "../services/learning-session-service.js";
 import { LearningPathApiError, learningPathService } from "../services/learning-path-service.js";
@@ -36,7 +40,6 @@ import {
   pendingLearningRating,
   resolveFlashcardInteraction,
   revealWithPronunciation,
-  selectEnglishSpeechVoice,
   selectPrimaryMeaning,
   SRS_INTERVAL_LABELS as RATING_INTERVAL_LABELS,
   SRS_RATING_LABELS as RATING_LABELS,
@@ -126,11 +129,25 @@ export function LearningFoundationPage({ reviewContext = false }) {
   const normalRetryButtonRef = useRef(null);
   const normalProgressionButtonRef = useRef(null);
   const normalMutationFocusIntentRef = useRef(false);
-  const audioRef = useRef(null);
-  const pronunciationRequestRef = useRef(0);
   const returnTo = reviewContext ? "/review" : location.state?.returnTo ?? "/my/vocabulary-sets";
   const supportsSpeechSynthesis = typeof window !== "undefined"
-    && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    && typeof window.speechSynthesis?.speak === "function"
+    && typeof window.SpeechSynthesisUtterance === "function";
+  const pronunciationCoordinator = useMemo(() => createReferencePlaybackCoordinator({
+    speechSynthesis: supportsSpeechSynthesis ? window.speechSynthesis : null,
+    createUtterance: supportsSpeechSynthesis
+      ? (text) => new window.SpeechSynthesisUtterance(text)
+      : null,
+    onStateChange: ({ issue }) => {
+      if (issue === REFERENCE_PLAYBACK_ISSUES.PLAYBACK_FAILED) {
+        setAudioError("Không thể phát âm từ này. Bạn vẫn có thể tiếp tục ôn tập.");
+      } else if (issue === REFERENCE_PLAYBACK_ISSUES.NO_PLAYBACK_AVAILABLE) {
+        setAudioError("Trình duyệt không hỗ trợ phát âm từ này. Bạn vẫn có thể tiếp tục ôn tập.");
+      } else {
+        setAudioError(null);
+      }
+    },
+  }), [supportsSpeechSynthesis]);
 
   const requestedMode = pendingMode ?? mode;
 
@@ -180,12 +197,9 @@ export function LearningFoundationPage({ reviewContext = false }) {
     );
     return () => {
       active = false;
-      pronunciationRequestRef.current += 1;
-      audioRef.current?.pause();
-      audioRef.current = null;
-      if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
+      pronunciationCoordinator.cancel();
     };
-  }, [reloadToken, requestedMode, sessionIntent, setId, supportsSpeechSynthesis, user.id]);
+  }, [pronunciationCoordinator, reloadToken, requestedMode, sessionIntent, setId, user.id]);
 
   useEffect(() => {
     if (status !== "ready" || !payload || reviewContext || continueOrdinarySrs) return undefined;
@@ -895,32 +909,13 @@ export function LearningFoundationPage({ reviewContext = false }) {
     };
   }
 
-  async function playPronunciation() {
+  function playPronunciation() {
     if (!currentCard?.pronunciation_url && !supportsSpeechSynthesis) return;
-    const requestId = pronunciationRequestRef.current + 1;
-    pronunciationRequestRef.current = requestId;
-    setAudioError(null);
-    try {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
-      if (currentCard.pronunciation_url) {
-        const audio = new Audio(currentCard.pronunciation_url);
-        audioRef.current = audio;
-        await audio.play();
-        return;
-      }
-      const utterance = new window.SpeechSynthesisUtterance(currentCard.word);
-      const voice = selectEnglishSpeechVoice(window.speechSynthesis.getVoices());
-      utterance.lang = voice?.lang ?? "en-US";
-      if (voice) utterance.voice = voice;
-      utterance.onerror = () => setAudioError("Không thể phát âm từ này. Bạn vẫn có thể tiếp tục ôn tập.");
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      if (pronunciationRequestRef.current === requestId) {
-        setAudioError("Không thể phát âm thanh mẫu. Bạn vẫn có thể tiếp tục ôn tập.");
-      }
-    }
+    pronunciationCoordinator.listen({
+      targetId: currentCard.id,
+      text: currentCard.word,
+      audioUrl: currentCard.pronunciation_url,
+    });
   }
 
   function playFromSpeaker() {
@@ -930,10 +925,7 @@ export function LearningFoundationPage({ reviewContext = false }) {
   }
 
   function cancelPronunciation() {
-    pronunciationRequestRef.current += 1;
-    audioRef.current?.pause();
-    audioRef.current = null;
-    if (supportsSpeechSynthesis) window.speechSynthesis.cancel();
+    pronunciationCoordinator.cancel();
   }
 
   if (!reviewContext && ["locked", "error"].includes(pathPassStatus)) {

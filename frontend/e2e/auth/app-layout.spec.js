@@ -54,7 +54,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(page.getByRole("heading", {
     name: new RegExp(`^Chào buổi (sáng|trưa|chiều|tối) ${publicUser.display_name}$`),
   })).toBeVisible();
-  await expect(page.locator("footer.authenticated-footer")).toHaveCount(0);
+  await expect(page.locator("footer.learner-footer")).toBeVisible();
   await expect(page.locator("header .authenticated-brand")).toBeVisible();
   const brandLink = page.getByRole("link", { name: "Về trang chủ ELVocab" });
   await expect(brandLink).toHaveAttribute("href", "/dashboard");
@@ -218,7 +218,7 @@ test("avatar dropdown exposes identity and Logout with accessible dismissal", as
 });
 
 for (const width of [375, 390, 430]) {
-  test(`USER mobile header composes brand, avatar, and menu at ${width}px`, async ({ page }) => {
+  test(`USER mobile header composes brand, notification bell, and menu at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 812 });
     await installAuthApiMock(page, {
       "/api/auth/me": responses.currentUser(publicUser),
@@ -227,7 +227,7 @@ for (const width of [375, 390, 430]) {
 
     const header = page.locator("header.authenticated-header");
     const brand = header.getByRole("link", { name: "Về trang chủ ELVocab" });
-    const avatar = header.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` });
+    const bell = header.getByRole("button", { name: /^Thông báo,/ });
     const toggle = header.getByRole("button", { name: "Mở điều hướng" });
     const geometry = await header.evaluate((element) => {
       const bounds = (selector) => {
@@ -238,8 +238,7 @@ for (const width of [375, 390, 430]) {
         headerHeight: element.getBoundingClientRect().height,
         brand: bounds(".authenticated-mobile-brand"),
         logo: bounds(".elvocab-logo-mobile"),
-        avatar: bounds(".authenticated-avatar-trigger"),
-        avatarVisual: bounds(".authenticated-avatar"),
+        bell: bounds(".learner-notification-bell"),
         toggle: bounds(".authenticated-drawer-toggle"),
         menuIcon: bounds(".authenticated-drawer-toggle svg"),
         utilities: bounds(".authenticated-header-utilities"),
@@ -252,24 +251,23 @@ for (const width of [375, 390, 430]) {
     await expect(brand.locator(".elvocab-logo-mobile")).toBeVisible();
     await expect(brand.locator(".elvocab-logo-full")).toBeHidden();
     await expect.poll(() => brand.locator(".elvocab-logo-mobile").evaluate((image) => image.naturalWidth / image.naturalHeight)).toBeLessThan(1.2);
-    await expect(avatar).toBeVisible();
+    await expect(bell).toBeVisible();
+    await expect(header.locator(".authenticated-avatar-trigger")).toBeHidden();
     await expect(page.getByRole("navigation", { name: "Điều hướng nhanh" })).toBeHidden();
     await expect(page.locator(".authenticated-header-inner")).toHaveCSS("display", "flex");
     await expect(page.locator(".authenticated-header-inner")).toHaveCSS("justify-content", "space-between");
     await expect(toggle).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     expect(geometry.brand.left).toBe(16);
-    expect(geometry.brand.left).toBeLessThan(geometry.avatar.left);
-    expect(geometry.avatar.left).toBeLessThan(geometry.toggle.left);
+    expect(geometry.brand.left).toBeLessThan(geometry.bell.left);
+    expect(geometry.bell.left).toBeLessThan(geometry.toggle.left);
     expect(geometry.headerHeight).toBe(60);
     expect(geometry.logo.width).toBe(40);
     expect(geometry.logo.height).toBe(40);
-    expect(geometry.avatarVisual.width).toBe(32);
-    expect(geometry.avatarVisual.height).toBe(32);
     expect(geometry.menuIcon.width).toBe(18);
     expect(geometry.menuIcon.height).toBe(18);
     expect(geometry.utilityGap).toBe("4px");
-    expect(geometry.avatar.width).toBeGreaterThanOrEqual(44);
-    expect(geometry.avatar.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.bell.width).toBeGreaterThanOrEqual(44);
+    expect(geometry.bell.height).toBeGreaterThanOrEqual(44);
     expect(geometry.toggle.width).toBeGreaterThanOrEqual(44);
     expect(geometry.toggle.height).toBeGreaterThanOrEqual(44);
     expect(width - geometry.utilities.right).toBeGreaterThanOrEqual(12);
@@ -289,7 +287,7 @@ test("very narrow USER header keeps the linked mark and compact utilities", asyn
   await expect(brand.locator(".elvocab-logo-full")).toBeHidden();
   await expect(brand.getByText("ELVocab", { exact: true })).toHaveCount(0);
   await expect.poll(() => brand.locator(".elvocab-logo-mobile").evaluate((image) => image.naturalWidth / image.naturalHeight)).toBeLessThan(1.2);
-  await expect(page.locator(".authenticated-avatar-trigger")).toBeVisible();
+  await expect(page.locator(".learner-notification-bell")).toBeVisible();
   await expect(page.locator(".authenticated-drawer-toggle")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
@@ -304,12 +302,12 @@ for (const width of [768, 820]) {
 
     const headerInner = page.locator(".authenticated-header-inner");
     const brand = page.getByRole("link", { name: "Về trang chủ ELVocab" });
-    const avatar = page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` });
+    const bell = page.getByRole("button", { name: /^Thông báo,/ });
     const toggle = page.getByRole("button", { name: "Mở điều hướng" });
     const positions = await headerInner.evaluate((element) => ({
       brand: element.querySelector(".authenticated-mobile-brand").getBoundingClientRect().left,
       logoHeight: element.querySelector(".elvocab-logo-full").getBoundingClientRect().height,
-      avatar: element.querySelector(".authenticated-avatar-trigger").getBoundingClientRect().left,
+      bell: element.querySelector(".learner-notification-bell").getBoundingClientRect().left,
       toggle: element.querySelector(".authenticated-drawer-toggle").getBoundingClientRect().left,
     }));
 
@@ -320,12 +318,12 @@ for (const width of [768, 820]) {
     await expect(brand.locator(".elvocab-logo-mobile")).toBeHidden();
     await expect.poll(() => brand.locator(".elvocab-logo-full").evaluate((image) => image.naturalWidth / image.naturalHeight)).toBeGreaterThan(2);
     await expect(page.getByRole("navigation", { name: "Điều hướng nhanh" })).toBeHidden();
-    await expect(avatar).toBeVisible();
+    await expect(bell).toBeVisible();
     await expect(toggle).toBeVisible();
     expect(positions.brand).toBe(32);
     expect(positions.logoHeight).toBe(40);
-    expect(positions.brand).toBeLessThan(positions.avatar);
-    expect(positions.avatar).toBeLessThan(positions.toggle);
+    expect(positions.brand).toBeLessThan(positions.bell);
+    expect(positions.bell).toBeLessThan(positions.toggle);
   });
 }
 
@@ -420,9 +418,14 @@ for (const viewport of viewports) {
     });
     await page.goto("/dashboard");
 
-    const trigger = page.getByRole("button", { name: `Mở menu tài khoản của ${longName}` });
-    await trigger.click();
-    await expect(page.locator(".authenticated-account-identity > p")).toHaveText(longName);
+    if (viewport.width < 1024) {
+      await page.getByRole("button", { name: "Mở điều hướng" }).click();
+      await expect(page.locator(".authenticated-sidebar-profile")).toContainText(longName);
+      await expect(page.locator(".authenticated-sidebar-logout")).toBeVisible();
+    } else {
+      await page.getByRole("button", { name: `Mở menu tài khoản của ${longName}` }).click();
+      await expect(page.locator(".authenticated-account-identity > p")).toHaveText(longName);
+    }
     await expect(page.locator("footer.authenticated-footer")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
   });

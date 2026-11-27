@@ -1,0 +1,38 @@
+BEGIN;
+
+CREATE TYPE "LEARNER_NOTIFICATION_TYPE" AS ENUM ('STREAK_INTERRUPTED', 'STREAK_MILESTONE', 'VOCABULARY_MILESTONE');
+
+CREATE TABLE "LEARNER_NOTIFICATION" (
+    "id" UUID NOT NULL,
+    "user_id" UUID NOT NULL,
+    "type" "LEARNER_NOTIFICATION_TYPE" NOT NULL,
+    "event_key" VARCHAR(64) NOT NULL,
+    "payload" JSONB NOT NULL,
+    "occurred_at" TIMESTAMPTZ(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "read_at" TIMESTAMPTZ(3),
+    CONSTRAINT "LEARNER_NOTIFICATION_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "LEARNER_NOTIFICATION_event_key_check" CHECK (length(trim("event_key")) > 0),
+    CONSTRAINT "LEARNER_NOTIFICATION_payload_check" CHECK (jsonb_typeof("payload") = 'object'),
+    CONSTRAINT "LEARNER_NOTIFICATION_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "USER"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX "LEARNER_NOTIFICATION_event_unique" ON "LEARNER_NOTIFICATION" ("user_id", "type", "event_key");
+CREATE INDEX "LEARNER_NOTIFICATION_inbox_idx" ON "LEARNER_NOTIFICATION" ("user_id", "occurred_at" DESC, "id" DESC);
+CREATE INDEX "LEARNER_NOTIFICATION_unread_idx" ON "LEARNER_NOTIFICATION" ("user_id", "occurred_at" DESC) WHERE "read_at" IS NULL;
+
+-- The application uses its existing Prisma database role. Public API roles do
+-- not need notification access even if the Data API is enabled in the future.
+ALTER TABLE "LEARNER_NOTIFICATION" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE "LEARNER_NOTIFICATION" FROM PUBLIC;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        REVOKE ALL ON TABLE "LEARNER_NOTIFICATION" FROM anon;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        REVOKE ALL ON TABLE "LEARNER_NOTIFICATION" FROM authenticated;
+    END IF;
+END $$;
+
+COMMIT;

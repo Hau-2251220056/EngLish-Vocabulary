@@ -17,6 +17,8 @@ import {
   createUnexpectedErrorMiddleware,
 } from "./middleware/request-diagnostics-middleware.js";
 import { createAuthSessionRepository } from "./repositories/auth-session-repository.js";
+import { createAuthIdentityRepository } from "./repositories/auth-identity-repository.js";
+import { createGoogleAuthChallengeRepository } from "./repositories/google-auth-challenge-repository.js";
 import { createAdminUserRepository } from "./repositories/admin-user-repository.js";
 import { createLoginAbuseRepository } from "./repositories/login-abuse-repository.js";
 import { createTopicRepository } from "./repositories/topic-repository.js";
@@ -27,6 +29,10 @@ import { createLearningRepository } from "./repositories/learning-repository.js"
 import { createQuizRepository } from "./repositories/quiz-repository.js";
 import { createLearningSessionRepository } from "./repositories/learning-session-repository.js";
 import { createStreakRepository } from "./repositories/streak-repository.js";
+import { createLearnerNotificationRepository } from "./repositories/learner-notification-repository.js";
+import { createLearnerNotificationService } from "./services/learner-notification-service.js";
+import { createLearnerNotificationController } from "./controllers/learner-notification-controller.js";
+import { createLearnerNotificationRouter } from "./routes/learner-notification-routes.js";
 import { createLearningPathRepository } from "./repositories/learning-path-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createAdminUserRouter } from "./routes/admin-user-routes.js";
@@ -49,6 +55,8 @@ import {
   createVocabularySetPickerRouter,
 } from "./routes/vocabulary-set-routes.js";
 import { createAuthenticationService } from "./services/authentication-service.js";
+import { createGoogleAuthenticationService } from "./services/google-authentication-service.js";
+import { createGoogleIdTokenVerifier } from "./security/google-id-token-verifier.js";
 import { createAdminUserService } from "./services/admin-user-service.js";
 import { createAdminUserController } from "./controllers/admin-user-controller.js";
 import { createTopicService } from "./services/topic-service.js";
@@ -69,7 +77,7 @@ import { createLoginAbuseKeyFactory } from "./security/login-abuse-keys.js";
 
 const TEST_LOGIN_ABUSE_SECRET = "test-only-login-abuse-secret-32-characters";
 
-export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor, diagnosticLogger, loginAbuseSecret, loginAbuseProxyMode } = {}) {
+export function createApp({ prisma, learningNow, coverStorage, coverImageProcessor, diagnosticLogger, loginAbuseSecret, loginAbuseProxyMode, googleClientId, googleAllowedOrigins, googleOauthClient } = {}) {
   if (!prisma) {
     throw new TypeError("A Prisma client is required to create the application.");
   }
@@ -90,6 +98,19 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     authSessionRepository: createAuthSessionRepository(transaction),
     loginAbuseRepository: createLoginAbuseRepository(transaction),
   }));
+  const resolvedGoogleClientId = googleClientId ?? process.env.GOOGLE_CLIENT_ID;
+  const resolvedGoogleOrigins = parseAllowedOrigins(googleAllowedOrigins ?? process.env.GOOGLE_AUTH_ALLOWED_ORIGINS);
+  const googleVerifier = createGoogleIdTokenVerifier({ clientId: resolvedGoogleClientId, oauthClient: googleOauthClient });
+  const withGoogleTransaction = (callback) => prisma.$transaction((transaction) => callback({
+    userRepository: createUserRepository(transaction),
+    authSessionRepository: createAuthSessionRepository(transaction),
+    authIdentityRepository: createAuthIdentityRepository(transaction),
+    challengeRepository: createGoogleAuthChallengeRepository(transaction),
+  }));
+  const withChallengeTransaction = (callback) => prisma.$transaction((transaction) => callback({
+    challengeRepository: createGoogleAuthChallengeRepository(transaction),
+    loginAbuseRepository: createLoginAbuseRepository(transaction),
+  }));
   const authenticationService = createAuthenticationService({
     userRepository,
     authSessionRepository,
@@ -97,11 +118,19 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     loginAbuseKeys,
     withLoginTransaction,
   });
+  const googleAuthenticationService = createGoogleAuthenticationService({
+    verifier: googleVerifier,
+    withGoogleTransaction,
+    withChallengeTransaction,
+    loginAbuseKeys,
+  });
   const authenticationMiddleware = createAuthenticationMiddleware({
     authenticationService,
   });
   const authenticationController = createAuthenticationController({
     authenticationService,
+    googleAuthenticationService,
+    googleAllowedOrigins: resolvedGoogleOrigins,
   });
   const authRouter = createAuthenticationRouter({
     authenticationController,
@@ -261,6 +290,15 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use("/api/learning-path", learningPathRouter);
   app.use("/api/quiz", quizRouter);
   app.use("/api/learning-sessions", learningSessionRouter);
+  const learnerNotificationRouter = createLearnerNotificationRouter({
+    controller: createLearnerNotificationController(createLearnerNotificationService({
+      repository: createLearnerNotificationRepository(prisma),
+      activatedAt: process.env.NOTIFICATIONS_ACTIVATED_AT,
+    })),
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
+  app.use("/api/users/me/notifications", learnerNotificationRouter);
   app.use("/api/users/me", userStreakRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/users", adminUserRouter);
@@ -276,4 +314,17 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use(createUnexpectedErrorMiddleware({ logger: diagnosticLogger ?? console }));
 
   return app;
+}
+
+function parseAllowedOrigins(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || value.trim() === "") return [];
+  return value.split(",").map((origin) => origin.trim()).filter((origin) => {
+    try {
+      const parsed = new URL(origin);
+      return parsed.origin === origin && (parsed.protocol === "https:" || parsed.hostname === "localhost");
+    } catch {
+      return false;
+    }
+  });
 }

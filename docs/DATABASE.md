@@ -322,6 +322,67 @@ Các field của `AUTH_SESSION` phải được materialize theo contract sau:
 
 Raw session token chỉ tồn tại trong runtime/cookie theo Authentication Specification.
 
+### Google Authentication identities and challenges
+
+`USER.password_hash` is nullable only for external-identity accounts. Existing
+password users retain their current hashes. `AUTH_IDENTITY` stores one provider
+identity per USER/provider and uniquely maps `(provider, provider_subject)`; the
+Google subject is the stable identifier and `provider_email` is a verified
+snapshot, not a linking key. Deleting a USER cascades only its owned identities.
+
+`GOOGLE_AUTH_CHALLENGE` stores a unique SHA-256 nonce hash, browser-binding hash,
+trusted-source key, issuance time, five-minute expiry, optional consumption time
+and creation time. The raw nonce,
+binding and Google credential are never stored. Atomic conditional consumption
+requires matching hashes, `consumed_at IS NULL` and `expires_at > now`; the expiry
+indexes support opportunistic cleanup and bounded source-rate queries. This table is transient security state and
+does not change AUTH_SESSION semantics.
+
+HD-33 accepts only four parser-representation differences for existing UTC
+`created_at` defaults and the PostgreSQL-truncated SRS receipt index name; their
+catalog semantics were verified equivalent and no database/schema alignment is
+required. HD-34 requires the still-pending Google Authentication migration to
+wrap its unchanged DDL in explicit `BEGIN`/`COMMIT`. HD-35 requires both success
+and injected-failure rollback rehearsal on isolated disposable PostgreSQL before
+that migration may be applied to TEST.
+
+Prompt 312-R3 satisfied HD-35 on disposable PostgreSQL 17.6: both exact success
+and injected pre-COMMIT failure behavior were independently catalog-verified and
+all disposable resources were removed. This is PostgreSQL transaction evidence,
+not Prisma failed-migration-history evidence. TEST deployment remains blocked
+before apply because no valid fresh backup was produced and the TEST database
+credential exposed by process diagnostics must be rotated.
+
+Prompt 312-R4 verified local connectivity after HUMAN-reported credential
+rotation and used a protected `PGPASSFILE` without credential-bearing process
+arguments. The backup supervision path could not obtain a numeric `pg_dump` exit
+code, so fail-closed cleanup removed the unvalidated archive. No migration or TEST
+write followed; a fresh backup with a captured zero exit code and readable archive
+remains mandatory.
+
+Prompt 312-R5 superseded the fresh TEST-backup gate for this migration only via
+HUMAN-approved HD-36. The accepted risk is limited to recoverable TEST data;
+Production backup requirements remain unchanged. No backup, reset, restore or
+reseed was performed. A repeatable-read, read-only baseline fingerprinted all 19
+existing public application tables (4,201 rows). Prisma then applied
+`20261126010000_add_google_authentication` exactly once and recorded it completed.
+Post-apply catalog verification found both Google tables, nine indexes and 17
+table constraints; all pre-existing table counts and content fingerprints were
+unchanged. Bounded real-PostgreSQL authentication fixtures demonstrated one
+successful nonce consumer and one rejected concurrent consumer before the test
+runner outcome became unavailable. The exact synthetic graph was subsequently
+removed (one session, identity and USER; two challenges), and final read-only
+verification found zero fixture residue and unchanged pre-existing fingerprints.
+
+Prompt 313 closed the remaining transaction-integrity evidence gap using the
+actual Google authentication service and repositories against TEST. A
+deterministic exception was injected after challenge consumption, USER creation,
+identity creation and session creation but before transaction completion. The
+exception was explicitly observed; no USER, AUTH_IDENTITY or AUTH_SESSION was
+committed, and the challenge remained unconsumed. Exact fixture cleanup left zero
+residue, while repeatable-read fingerprints of the pre-existing authentication
+tables remained unchanged.
+
 #### Session Expiration
 
 `expires_at` là thời điểm session hết hiệu lực.
@@ -1966,3 +2027,181 @@ Ephemeral PostgreSQL run [`43402432992`](https://github.com/Hau-2251220056/EngLi
 
 `LOGIN_ABUSE_STATE` is bounded shared security state keyed by the composite HMAC-SHA-256 pair `(identifier_key, source_key)`. It stores `failure_count` (constrained to 1-5), `last_failed_at`, nullable `blocked_until`, and `updated_at`; it has no USER foreign key so unknown and existing identifiers receive equivalent handling. Raw email, client address and password values are never persisted. The composite primary key supports one serialized state per identifier/source pair, and `updated_at` is indexed for bounded maintenance. The forward-only migration creates only this table, check constraint and index; it does not rewrite existing data.
 ```
+
+## 45 LEARNER_NOTIFICATION (Notification V1)
+
+One inbox row per `(user_id, type, event_key)`, with UUID primary key, USER
+foreign key (cascade on account deletion), JSON object payload, occurrence and
+creation timestamps, and nullable read timestamp. The enum is limited to
+`STREAK_INTERRUPTED`, `STREAK_MILESTONE`, and `VOCABULARY_MILESTONE`, with
+respective payloads `{}`, `{ days }`, and `{ started }`. The inbox index is
+`(user_id, occurred_at DESC, id DESC)`. The SQL migration maintains the partial
+unread index on `(user_id, occurred_at DESC)` and check constraints.
+
+The additive migration is explicitly transactional. It enables RLS without a
+public policy and revokes direct PUBLIC, anon and authenticated privileges where
+those roles exist. Confirm the existing Prisma runtime role can operate on the
+table before enabling the feature in TEST. The migration updates no existing
+application rows.
+
+Prompt 320 authorized execution on Supabase TEST only. Read-only preflight
+confirmed 16 successful migrations, with Google Authentication applied and
+only Notification V1 pending. The approved SQL matched SHA-256
+`A92F879DA8AD852A5A0D57E230FA7F846ADAE9434F74B2C1E64354E48A72AE73`
+and retained explicit transaction boundaries. The Prisma schema diff reported
+the five previously approved HD-33 differences and an additional default
+difference on `GOOGLE_AUTH_CHALLENGE.created_at` beyond the expected
+notification DDL. The Google migration source and current Prisma schema both
+specify UTC. Prompt 320-R verified the catalog default
+`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)` on a
+`timestamp(3) without time zone NOT NULL` column. Both expressions used
+`timezone(text, timestamp with time zone)` and returned the same UTC value
+under the UTC and Asia/Ho_Chi_Minh session settings in one read-only
+transaction. HD-58 approves only this sixth difference, alongside the five
+existing HD-33 exceptions.
+
+Prompt 320-R2 verified TEST project `afyqslnhjiykkjogaqpy` and captured a
+fresh PostgreSQL custom-format backup before deployment.
+`pg_dump` and `pg_restore --list` both exited 0. The archive contains 704
+inventory entries and is 707,306 bytes. Its SHA-256 is
+`4EAC6D9239FEF0F1730A32C4E6DF7540BF3314C03FC2DB05BF86F2498F627E17`.
+Archive path:
+`F:\ELVocab\Backups\Prompt320-R2_TEST_20261127T020048Z_e534818a\ELVocab_TEST_afyqslnhjiykkjogaqpy_20261127T020048Z_e534818a.dump`.
+Archive validation checked inventory and readability. Restore was outside scope.
+
+Guarded `prisma migrate deploy` ran once and exited 0. The ledger contains
+17 successful migrations and the preceding 16 entries matched their baseline.
+The empty Notification table, three enum values, column types and nullability,
+check constraints, cascading USER foreign key, unique event index, inbox
+index and partial unread index matched the approved SQL. The TEST Prisma role
+`postgres` owns the table and has DML access. RLS is enabled without FORCE or
+policies. PUBLIC, anon and authenticated have no table grants. Repeatable-read
+counts and SHA-256 row fingerprints matched across all 21 existing application
+tables immediately after deploy and after exact-ID fixture cleanup. The final
+aggregate baseline fingerprint was
+`17AAF283A130F04987E25EDC5F1C78C6A9DF29E959F9C68ADF77BF663AC1AF1F`.
+
+### Guarded local TEST startup for Notification V1
+
+In a PowerShell window for the backend, use the fixed TEST activation instant
+`2026-11-27T00:00:00.000Z`. The cutoff is scoped to the local process.
+
+```powershell
+Set-Location -LiteralPath 'F:\English Vocabulary\backend'
+$env:NOTIFICATIONS_ACTIVATED_AT = '2026-11-27T00:00:00.000Z'
+$guardedStartup = @'
+import { configureTestEnvironment } from "./test/helpers/test-environment.js";
+import { PrismaClient } from "./src/generated/prisma/client.ts";
+import { createApp } from "./src/create-app.js";
+let prisma;
+try {
+  const ref = "afyqslnhjiykkjogaqpy";
+  const { databaseUrl } = configureTestEnvironment({ requireReset: false });
+  const target = new URL(databaseUrl);
+  const user = decodeURIComponent(target.username);
+  const sessionPooler = /^aws-\d+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(target.hostname)
+    && user === "postgres." + ref;
+  const direct = target.hostname === "db." + ref + ".supabase.co" && user === "postgres";
+  const allowed = new Set(["sslmode", "schema", "connection_limit", "connect_timeout", "pool_timeout", "socket_timeout"]);
+  if ((!sessionPooler && !direct) || target.port !== "5432" || target.pathname !== "/postgres"
+    || !/^postgres(?:ql)?:$/.test(target.protocol) || !target.password || target.hash
+    || ![null, "public"].includes(target.searchParams.get("schema"))
+    || [...target.searchParams.keys()].some(key => !allowed.has(key))) throw new Error("Invalid TEST target");
+  prisma = new PrismaClient({ datasourceUrl: databaseUrl });
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+    await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '8s'");
+    const [identity] = await tx.$queryRawUnsafe(
+      "SELECT current_database() AS db, current_user::text AS role, current_setting('transaction_read_only') AS ro");
+    if (identity.db !== "postgres" || identity.role !== "postgres" || identity.ro !== "on") {
+      throw new Error("Unexpected TEST identity");
+    }
+  }, { maxWait: 8000, timeout: 12000 });
+  const server = createApp({ prisma }).listen(5000, "127.0.0.1", () =>
+    console.log("ELVocab TEST backend ready at http://127.0.0.1:5000"));
+  server.on("error", async () => {
+    console.error("TEST backend startup failed.");
+    await prisma.$disconnect().catch(() => {});
+    process.exitCode = 1;
+  });
+} catch {
+  console.error("Guarded TEST startup failed.");
+  if (prisma) await prisma.$disconnect().catch(() => {});
+  process.exitCode = 1;
+}
+'@
+$guardedStartup | node --env-file=.env.test --input-type=module -
+```
+
+After the TEST backend reports ready, start the frontend in a separate
+PowerShell window and open `http://127.0.0.1:5173`.
+
+```powershell
+Set-Location -LiteralPath 'F:\English Vocabulary\frontend'
+$env:API_PROXY_TARGET = 'http://127.0.0.1:5000'
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Only the latest 90 days by `occurred_at` are visible or eligible for read
+mutations. Older rows retain their deduplication keys. Vocabulary thresholds
+derive from the Nth surviving Progress row by `created_at, id`. Deleting older
+Progress can shift inferred crossing times for unsent milestones. An existing
+milestone key prevents repeating a threshold. V1 keeps no historical vocabulary
+ledger.
+
+### Google Authentication hardening and combined Production migration plan
+
+HD-61 approves exactly five Production drift exceptions from Prompt 325-R2.
+Keep the `created_at` defaults on `CEFR_LEARNING_PASS`,
+`CEFR_LEARNING_PATH_STATE`, `LEARNING_SESSION` and `STREAK_DAY`. The catalog's
+`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)` is semantically equivalent to
+the Prisma declaration. Both forms returned the same value under UTC and
+Asia/Ho_Chi_Minh for the same transaction timestamp. Keep the PostgreSQL-truncated
+`LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_` index name.
+Prisma proposes `LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revis_idx`.
+The catalog index is a valid non-unique B-tree on
+`(session_item_id, accepted_revision)` with the intended ordering and operator
+classes. HD-33 and HD-58 remain separate TEST decisions.
+
+HD-62 enables RLS without FORCE or policies on `AUTH_IDENTITY` and
+`GOOGLE_AUTH_CHALLENGE` and revokes all table privileges from PUBLIC, anon,
+authenticated and service_role on these two tables. Ownership and Prisma
+runtime access are preserved. Global defaults, schema ACLs, Storage,
+Notification and other tables are outside this change.
+
+Prompt 325-R3 verified the exact migration and an injected pre-COMMIT failure
+on isolated PostgreSQL. Rollback restored the prior RLS and ACL state and
+preserved synthetic rows. Disposable resources were removed. Guarded TEST
+`prisma migrate deploy` exited 0 on its single attempt and advanced the ledger
+from 17 to 18 successful migrations. Catalog and SET ROLE checks confirmed
+the expected table and column access and the retained Prisma owner privileges.
+Fingerprints for all 22 application tables, unrelated ACLs, and the auth
+constraint and index definitions matched after apply and synthetic cleanup.
+Cleanup removed two fixture users, one identity, three sessions and three
+remaining challenges by exact ID. The expired fixture challenge was removed
+by the challenge cleanup exercised in the test. Zero fixture residue remained.
+
+The fresh TEST custom archive had 713 entries and 712,180 bytes. Both
+`pg_dump` and `pg_restore --list` exited 0. SHA-256:
+`34F28E199B7129DFB91F5A032F661F62D8567E38105069B5B3ADCFC76B7FE3F2`.
+The archive is
+`F:\ELVocab\Backups\Prompt325-R3_TEST_20261127T050216Z_5116caca\ELVocab_TEST_afyqslnhjiykkjogaqpy_20261127T050216Z_5116caca.dump`.
+Restore was **NOT TESTED**.
+
+Production migration and release remain pending. Verify the ledger, exact
+approved drift, actual LF execution checksums, a fresh verified Production
+backup and a consistent baseline before separately authorized apply. The plan
+orders the three transactional migrations as follows:
+
+1. `20261126010000_add_google_authentication`
+   (`F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`).
+2. `20261127010000_add_learner_notifications`
+   (`A92F879DA8AD852A5A0D57E230FA7F846ADAE9434F74B2C1E64354E48A72AE73`).
+3. `20261127020000_harden_google_auth_tables`
+   (`C8776D0EF12B6BC7F8911E6787F67978675CB907F89F88278156B5EF13664154`).
+
+Keep Data API OFF during the controlled window. Each migration commits
+separately. Verify all three ledger entries, auth ACLs, runtime access and
+existing-data preservation before code using the new tables receives traffic.
+Notification inbox reads require its table even with generation disabled.
+HUMAN will separately select the fixed Production activation instant.

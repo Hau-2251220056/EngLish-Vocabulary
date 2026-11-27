@@ -1274,6 +1274,40 @@ The browser remains on the Frontend origin, so host-only `HttpOnly`, `Secure` an
 
 Local Vite development remains independent: `/api/**` is proxied to `API_PROXY_TARGET` when explicitly supplied, otherwise to `http://localhost:5000`. Local development does not require Production credentials or a deployed Backend.
 
+### Google Authentication extension (HD-25–HD-32)
+
+Google Login extends rather than replaces the custom Authentication architecture.
+The Login/Register page renders the official Google Identity Services button in
+popup mode. Its JavaScript callback forwards only the Google ID credential to the
+same-origin Express API. The Backend verifies signature, issuer, environment-bound
+audience, expiry, nonce, `sub`, verified email and required claims using
+`google-auth-library`; frontend identity or role claims are never authoritative.
+
+Before GIS initialization, the browser requests a five-minute challenge. The
+Backend returns a cryptographically random nonce and binds it to an HttpOnly
+cookie; PostgreSQL stores only SHA-256 hashes. Challenge consumption is an atomic
+conditional write inside the same transaction as identity resolution, USER
+creation and existing opaque-session issuance. Consumed, expired, mismatched and
+concurrent replay attempts cannot issue a session. No Google credential, access
+token or refresh token is persisted.
+
+`AUTH_IDENTITY` maps stable Google `sub` values to existing USER IDs. New Google
+accounts are USER-only and have no password hash. Matching email alone never
+links accounts; account linking and Google ADMIN login are deferred. Existing
+`AUTH_SESSION`, host-only HttpOnly cookie, `/me`, Logout and role middleware remain
+authoritative. Local/TEST and Production use separate Web OAuth clients. Runtime
+contracts are public `VITE_GOOGLE_CLIENT_ID`, backend `GOOGLE_CLIENT_ID`, and exact
+comma-separated `GOOGLE_AUTH_ALLOWED_ORIGINS`; no client secret is used.
+Challenge issuance reuses the trusted-source HMAC and PostgreSQL advisory-lock
+primitive, with a bounded ten-per-minute source limit. The limit remains shared
+across serverless instances and follows the configured proxy trust boundary.
+
+HD-33 records a bounded exception for the four equivalent UTC-default catalog
+representations and one PostgreSQL-truncated SRS index name identified by Prompt
+312-R; it does not disable general drift detection. HD-34 requires the pending
+Google migration to be explicitly transactional. HD-35 keeps disposable
+success/rollback rehearsal as a mandatory gate before guarded TEST deployment.
+
 Deployment architecture được xem là baseline và không được tự ý thay đổi.
 
 ### 21.1 CI Foundation Boundary
@@ -1522,3 +1556,42 @@ The frontend reconciles pass and session projections from the Backend. It offers
 
 The additive V2 migration extends pass items with the first-credit tuple, relaxes pass-linked sessions to `SET` plus `NORMAL`/`SRS`, and backfills only exact accepted V1 pass-linked NORMAL evidence. It cannot complete a pass or change entitlement. Guarded evidence is recorded in GitHub Actions runs [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) (ephemeral PostgreSQL, 7/7 offline guards and 6/6 integration tests), [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) (16/16 browser tests), and [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) (focused mocked/browser and PostgreSQL acceptance gaps). The last run does not establish full real-stack Speaking backend coverage.
 ```
+
+## Learner in-app notifications V1
+
+The USER shell loads the inbox via the existing same-origin API proxy. The
+backend projects three event types on refresh from committed `STREAK_DAY`
+and `LEARNING_PROGRESS` rows. Notification writes use a separate transaction
+and never participate in learning completion transactions. No scheduled job or
+external service is involved. Set `NOTIFICATIONS_ACTIVATED_AT` once to the
+approved UTC rollout instant (ISO 8601 with `Z`). Missing, invalid or future
+activation disables event generation while the inbox remains readable after
+migration. Keep the instant fixed across deploys. The guarded local TEST cutoff
+is `2026-11-27T00:00:00.000Z`. Production cutoff selection and configuration
+remain release gates.
+
+Streak interruptions become eligible at Vietnam midnight after one full missed
+day, independently of the length of the previous run. Internal gaps remain
+detectable after a new run starts. Streak milestones use the accepted day
+timestamp at 3/7/14/30 days. Vocabulary milestones use existing `total_started`
+semantics at 25/50/100/250/500/1000 distinct Progress identities. HD-50 excludes
+every CEFR notification. Neither entitlement nor the learning path changes.
+
+One notification refresh uses one user-scoped source statement (90-day window
+plus 30 warm-up days for streaks and up to the first 1,000 ranked Progress rows),
+zero or one batch insert, and one page/count query. A user's Progress set may
+still require a sort for the timestamp order. Ordinary list uses one page/count
+query, after normal authentication. Mark-one uses a scoped update, row read and
+count; mark-all uses a scoped update and count. Transaction acquisition and
+execution are bounded at 2 and 5 seconds. Prompt 320-R2 verified representative
+plans and concurrent refresh on guarded TEST. Hosted Production performance
+remains untested.
+
+The shell keeps one in-memory cache per authenticated session, fresh for 60
+seconds. Entering the learner header and opening stale content can trigger
+refresh without polling. Successful non-replayed learning-session completion
+invalidates the cache through a client-side signal only. A refresh revalidates
+three-item pages through the prior tail, with a 32-page bound, and replaces the
+list only after success. Operations serialize so stale responses cannot
+overwrite a newer count within one session. Logout or account switch resets the
+cache and aborts its pending operations.

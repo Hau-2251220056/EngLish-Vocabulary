@@ -22,20 +22,30 @@ import elVocabMobileLogo from "../../assets/logo_mobile.png";
 import { useAuthentication } from "../use-authentication.js";
 import { useAdminVocabularyCount } from "../../dashboard/admin-vocabulary-store.js";
 import { AdminBadge } from "../../admin/admin-ui-primitives.jsx";
+import { LearnerFooter } from "../../components/site-footers.jsx";
+import { LearnerNotificationBell } from "../../notifications/learner-notification-bell.jsx";
+import { createLearnerNotificationCache } from "../../notifications/learner-notification-cache.js";
+import { learnerNotificationApi } from "../../notifications/learner-notification-api.js";
 import "../../admin/admin-foundation.css";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
 const MOBILE_NAVIGATION_QUERY = "(max-width: 1023px)";
 
 export function AuthenticatedShell() {
+  const { logout, user } = useAuthentication();
+  return <AuthenticatedSessionShell key={user.id} logout={logout} user={user} />;
+}
+
+function AuthenticatedSessionShell({ logout, user }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useAuthentication();
   const adminVocabularyCount = useAdminVocabularyCount(user.role === "ADMIN");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [notificationLocation, setNotificationLocation] = useState(null);
+  const [notificationCache] = useState(() => createLearnerNotificationCache(learnerNotificationApi));
   const [isMobileNavigation, setIsMobileNavigation] = useState(
     () => typeof window !== "undefined" && window.matchMedia(MOBILE_NAVIGATION_QUERY).matches,
   );
@@ -45,10 +55,21 @@ export function AuthenticatedShell() {
   const accountMenuTriggerRef = useRef(null);
 
   useEffect(() => {
+    if (user.role !== "USER") return;
+    const invalidate = () => notificationCache.invalidate();
+    window.addEventListener("elvocab:learner-notifications-stale", invalidate);
+    return () => {
+      window.removeEventListener("elvocab:learner-notifications-stale", invalidate);
+      notificationCache.reset();
+    };
+  }, [notificationCache, user.role]);
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia(MOBILE_NAVIGATION_QUERY);
     function syncNavigationMode(event) {
       setIsMobileNavigation(event.matches);
       if (!event.matches) setIsDrawerOpen(false);
+      if (event.matches) setIsAccountMenuOpen(false);
     }
     syncNavigationMode(mediaQuery);
     mediaQuery.addEventListener("change", syncNavigationMode);
@@ -66,11 +87,13 @@ export function AuthenticatedShell() {
   }
 
   function openDrawer() {
+    setNotificationLocation(null);
     setIsAccountMenuOpen(false);
     setIsDrawerOpen(true);
   }
 
   function toggleAccountMenu() {
+    setNotificationLocation(null);
     if (!isAccountMenuOpen) setIsDrawerOpen(false);
     setIsAccountMenuOpen((isOpen) => !isOpen);
   }
@@ -157,7 +180,7 @@ export function AuthenticatedShell() {
   const userHeaderLayoutClasses = !isUser ? "" : ` !sticky !top-0 !z-10 !flex !min-h-[3.75rem] !basis-[3.75rem] !w-full !shrink-0 !items-center !justify-normal !gap-0 !border-b !border-[var(--border-soft)] !bg-white/[0.97] !p-0 sm:!min-h-[4.25rem] sm:!basis-[4.25rem] lg:!min-h-18 lg:!basis-18${isDashboard
     ? " lg:!sticky lg:!top-0"
     : " lg:!relative"}`;
-  const userMainLayoutClasses = !isUser ? "" : ` !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)]${isDashboard
+  const userMainLayoutClasses = !isUser ? "" : ` !flex !min-h-[calc(100dvh-3.75rem)] !min-w-0 !flex-1 !flex-col !overflow-visible sm:!min-h-[calc(100dvh-4.25rem)]${isDashboard
     ? " lg:!min-h-[calc(100dvh-4.5rem)] lg:!overflow-visible"
     : " lg:!min-h-0 lg:!overflow-x-hidden lg:!overflow-y-auto"}`;
 
@@ -229,8 +252,15 @@ export function AuthenticatedShell() {
         </nav>
       ) : null}
 
-      {isUser ? <div className="authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:contents">
-      <div ref={accountMenuRef} className={`authenticated-account-menu${isUser ? " !relative lg:justify-self-end" : ""}`}>
+      {isUser ? <div className="authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:col-start-3 lg:justify-self-end">
+      <LearnerNotificationBell key={user.id} cache={notificationCache} open={notificationLocation === location.key}
+        onClose={() => setNotificationLocation(null)}
+        onToggle={() => {
+          setIsDrawerOpen(false);
+          setIsAccountMenuOpen(false);
+          setNotificationLocation(notificationLocation === location.key ? null : location.key);
+        }} />
+      <div ref={accountMenuRef} className="authenticated-account-menu !relative max-lg:!hidden">
         <button
           ref={accountMenuTriggerRef}
           type="button"
@@ -369,7 +399,10 @@ export function AuthenticatedShell() {
           ) : headerContent}
         </header> : null}
 
-        <main className={`authenticated-main${userMainLayoutClasses}`}><Outlet /></main>
+        <main className={`authenticated-main${userMainLayoutClasses}`}>
+          <Outlet />
+          {isUser ? <LearnerFooter /> : null}
+        </main>
       </div>
     </div>
   );
