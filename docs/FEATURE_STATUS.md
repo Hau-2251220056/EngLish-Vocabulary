@@ -2154,8 +2154,8 @@ Production migration remain release gates.
 
 ## Prompt 319 / 319-R learner notifications (2026-11-27)
 
-Status: **IN_PROGRESS — integrated on dev and accepted locally on TEST;
-Production release pending**. HD-48 covers interruption of any positive streak and
+Status: **DONE — released with bounded Production acceptance under HD-64**.
+HD-48 covers interruption of any positive streak and
 3/7/14/30-day milestones in Vietnam time. HD-49 uses started vocabulary
 milestones 25/50/100/250/500/1000 and existing exact Vocabulary identities.
 Final HD-50 excludes all CEFR and learning-path notifications from V1.
@@ -2249,9 +2249,9 @@ migrations, CEFR learning transactions, Google Authentication, Flashcard Speech,
 Footer and transient toast behavior. Scoped ESLint, offline Prisma validation,
 embedded generated-schema and model checks, offline Express initialization,
 frontend production-mode build, strict UTF-8, diff hygiene and an added-line
-secret/artifact review passed. No regression suite was repeated. Only local
-TEST uses the fixed documented cutoff. Production activation remains a release
-configuration gate.
+secret/artifact review passed. No regression suite was repeated. Prompt 321
+verified the fixed local TEST cutoff. Prompt 326 later verified the separate
+saved Production cutoff.
 
 PR #42 merged to dev at `3f518e05a5bf68a64d041f8abb4556d65de483b3`.
 Dev CI #106 and Guarded Integration #152 passed on that commit. The approved
@@ -2261,22 +2261,22 @@ backend spec. Its focused offline pass remains local evidence.
 
 ## Google Authentication table hardening and combined release
 
-**TEST hardening PASS. Production hardening and release PENDING.**
+**DONE — Production hardening verified and Google Authentication accepted.**
 
 - **HD-59.** Keep the shared Google OAuth project in Testing for the graduation
   release, with separate TEST and Production Web Clients. Defer Branding,
   publishing and brand verification. The test-user list is separate from
   application access control. The saved Production client IDs matched and
-  allowed origin matched the verified frontend alias. Actual Production
-  Google sign-in acceptance is pending. Google Dev Preview manual acceptance
-  remains deferred by HUMAN.
+  allowed origin matched the verified frontend alias. HUMAN completed actual
+  Production sign-in acceptance in Prompt 327. Google Dev Preview manual
+  acceptance remains deferred by HUMAN.
 - **HD-60.** Accepted temporary Dev Preview loading behavior. HUMAN verified
   the Notification panel and empty state, and the Dashboard recommendation
   loaded after Retry. TEST data identification was HUMAN-confirmed from
   distinctive vocabulary sets and covers. The exact Sensitive database ref,
   effective runtime routing and Notification deployment attribution were
-  unverified. Root cause remains INCONCLUSIVE. Full Production acceptance is
-  required.
+  unverified. Root cause remains INCONCLUSIVE. The Production acceptance
+  results and the HD-64 exception are recorded below.
 - **HD-61.** Approved exactly the five equivalent Production drift items listed
   in DATABASE.md. Preserve the existing defaults and SRS receipt index name.
   The additional HD-58 exception remains TEST-only.
@@ -2285,8 +2285,13 @@ backend spec. Its focused offline pass remains local evidence.
   privileges from PUBLIC, anon, authenticated and service_role on these two
   tables. Prisma ownership and access are preserved.
 - **HD-63.** One-time approval to integrate HD-62 directly into dev, skipping
-  the intermediate feature branch CI cycle. Existing Dev CI and Guarded
-  Integration remain the verification gates for the resulting dev commit.
+  the intermediate feature branch CI cycle. Dev CI #107 and Guarded
+  Integration #153 passed on `8c890839ad11293fe2597980a17b18bf5e127901`.
+- **HD-64.** Bounded Notification Production acceptance. Defer three
+  scenarios until real eligible notifications appear: initial three plus
+  append-three pagination, mark individual and all as read, and read-state
+  persistence after reload. Prompt 320-R2 verified these scenarios on TEST.
+  The three scenarios remain **NOT TESTED** on Production.
 
 Prompt 325-R3 applied the hardening migration once on guarded TEST. The ledger
 advanced from 17 to 18 successful migrations. Fresh backup archive validation
@@ -2296,12 +2301,171 @@ passed 4/4 groups for challenge issuance and cleanup, first and repeat login,
 identity update, nonce concurrency and replay, collision handling and password
 login. Fixture cleanup followed exact IDs and left zero residue. Fingerprints
 of all 22 existing application tables, unrelated ACLs and auth index and
-constraint definitions matched. Backup restore and real Google OAuth browser
-acceptance after hardening are **NOT TESTED**.
+constraint definitions matched. Restore and actual Google OAuth browser
+acceptance were outside Prompt 325-R3. HUMAN later verified Google OAuth
+in Production. Backup restore remains **NOT TESTED**.
 
-Production Data API OFF is HUMAN-confirmed. Automatic exposure of new tables
-is unverified. The combined Production plan now has three migrations and
-requires fresh verified backup, guarded migration and preservation checks,
-HUMAN-approved fixed activation, authorized release and Production acceptance.
-Hosted routing and performance limitations remain. HD-43, HD-44 and HD-46
-and the existing 2026-12-26 reassessment deadline remain in effect.
+## Prompt 327 — Production acceptance and graduation feature freeze (2026-11-27)
+
+**FEATURE FREEZE ACTIVE.** No new feature development for this graduation
+release. The remaining risks and deferred checks carry forward.
+
+[Release PR #43](https://github.com/Hau-2251220056/EngLish-Vocabulary/pull/43)
+merged to main at `7ab9a963bf357379e88c3d2cf5e0ff332b3383c1`. Its tree
+`acf8c698f58af7e2339d62200e02b44cb94ab26b` matches the approved dev candidate.
+The [backend Production deployment](https://vercel.com/hau-2251220056s-projects/eng-lish-vocabulary/GGqvCqNTWaS9Gnhp9BfsmNhTDZHT)
+and [frontend Production deployment](https://vercel.com/hau-2251220056s-projects/frontend-elvocab/5poXiiZ14icDfH1UAkBq4kZ6sUhK)
+were READY on the release SHA, including their respective Production aliases.
+Prompt 325-R5 validated a fresh backup archive, applied the three migrations
+and preserved the pre-migration fingerprints for 19 application tables.
+The Prompt 327 read-only check found 18 successful migrations, retained auth
+and Notification access controls, one valid post-release Google-only USER
+with a linked identity, and zero duplicates, orphans or unlinked
+passwordless accounts in the checked scopes.
+
+HUMAN Production acceptance was **20 PASS, 3 NOT TESTED, 0 FAIL**.
+
+| Area | HUMAN result |
+| --- | --- |
+| Google Authentication | 6/6 PASS for button placement, first and repeat sign-in, session navigation and logout, password login, and rejection of an arbitrary password for a Google-only account. |
+| Notification V1 | 3/6 PASS for desktop and mobile bell placement, opening without API errors, and the empty state. Three scenarios deferred under HD-64. |
+| Learning | 7/7 PASS across Dashboard, vocabulary and catalog, NORMAL Flashcard speech completion, SRS, Quiz, Speaking, and existing learning data. |
+| Admin and UI | 4/4 PASS for Admin authentication and Dashboard, management surfaces, footer and attribution, and mobile UI. |
+
+The saved Production cutoff is `2026-11-27T06:15:00.000Z` (13:15 in
+Asia/Ho_Chi_Minh). The deployed backend metadata includes the key.
+The effective runtime value is **INCONCLUSIVE**. The read-only snapshot
+found zero stored notifications and zero eligible projected events for the
+four active learners evaluated at the saved cutoff. This is consistent with
+HUMAN empty-state acceptance.
+
+Production Data API OFF remains HUMAN-confirmed. Automatic exposure of new
+tables is unverified. Broader Supabase security remediation remains deferred.
+Hosted matcher reachability is **INCONCLUSIVE** and hosted Production
+performance is **NOT TESTED**. HD-43, HD-44 and HD-46 remain in force with
+reassessment at the first compatible fix or by 2026-12-26, whichever comes
+first. Backup restore remains **NOT TESTED**. Public attribution acceptance
+is recorded above. CEFR-J permission ambiguity, independently unverified
+ShareAlike completeness and the existing editorial and IPA limitations remain
+open. Daily Goal and Leaderboard remain deferred.
+
+## Prompt 330 — Leaderboard V1 planning (2026-11-27)
+
+**PLANNED. Implementation and release remain DEFERRED under Feature Freeze.**
+HD-65 through HD-69 define an authenticated learner XP leaderboard using
+existing data, with weekly, monthly and all-time rankings, current streak,
+10 rows per page and near-real-time refresh. The proposed design and task
+gates are in the [Leaderboard V1 plan](plans/LEADERBOARD_V1_PLAN.md).
+
+HD-65 cross-learner name and avatar disclosure remains a release blocker.
+Historical XP timestamp semantics, query cost and the proposed 60-second
+polling interval require separately authorized TEST verification. HUMAN
+reported favorable Gemini prototype review. No prototype artifact was available
+for direct comparison in this planning gate.
+
+## Prompt 331 — Leaderboard V1 local implementation (2026-11-27)
+
+**Status at Prompt 331: IN_PROGRESS.** HD-70 authorizes local implementation on `dev` and reopens
+Feature Freeze only for Leaderboard V1. No release is authorized. Unrelated
+features remain frozen. HD-46 and HD-64 remain in force.
+
+HD-65 approves names and avatars between authenticated learners subject to
+privacy safeguards. The response omits emails and UUIDs, suppresses email-like
+or email-local-part names, and uses neutral names when necessary. Arbitrary
+personal text in a chosen display name cannot be identified reliably. Default
+avatars are used until a safe source is verified. There is no persistent
+opt-out or external avatar request.
+
+The local endpoint calculates rankings, the personal summary and current
+streak from one read-only snapshot. The learner page uses visible-only
+near-real-time refresh with session-scoped memory, late-response protection,
+rollover and page clamping. Login or logout in a supported same-origin tab
+signals session revalidation without sharing identity or row data. Validated
+new XP and successful streak-changing completion invalidate Leaderboard without
+changing Notification invalidation or learning rules.
+
+Targeted verification passed 15/15 backend offline tests (8 Leaderboard and
+7 Notification regression cases), 33/33 frontend offline tests (9 Leaderboard
+and 24 related cases), and 7/7 mocked Chromium cases including 320, 390, 768
+and 1440px. Scoped ESLint, frontend production build and offline Express
+initialization passed.
+
+Real TEST timestamp history, SQL execution, PostgreSQL snapshot behavior,
+query plans, latency, connection pool cost and the Production polling interval
+remain **NOT TESTED**. HUMAN acceptance of the implemented UI and release
+review remain pending. The [Prompt 330 plan](plans/LEADERBOARD_V1_PLAN.md)
+retains the approved design and release gates.
+
+## Prompt 333-R — Leaderboard V1 local integration
+
+**Local implementation and final integration COMPLETE. HUMAN UI acceptance
+PASS.** HUMAN accepted the Gemini-based presentation and final mobile podium.
+The acceptance covers visual design. Independent functional evidence and its
+limits are recorded below. Commit and push require separate authorization.
+Dev CI, Preview and Production release remain pending. The HD-70 exception
+applies only to Leaderboard V1. Unrelated features remain frozen.
+
+- **HD-71.** Render initials and deterministic pastel colors locally from
+  privacy-filtered labels. Generic labels use neutral initials. There are no
+  external avatar images or new storage infrastructure.
+- **HD-72.** Retain approximately 60-second visible-page polling based on
+  the current TEST evidence. Concurrent capacity and Production performance
+  remain unapproved.
+- **HD-73.** Adopt the accepted Gemini-based layout and compact mobile podium.
+  Three cards occupy one equal-width row ordered 2–1–3 by entry position.
+  Two use balanced columns and one is compact and centered. Medal styles use
+  the actual API rank, including ties.
+
+Prompt 333 found an auth recovery defect. A cross-tab signal cleared the
+Leaderboard session, then a transient auth read failed. The successful retry
+restored the same learner, but the unchanged ID and role prevented a new cache
+from being created. Prompt 333-R reproduced the header-only page in a mocked
+Chromium browser. The fix initializes one fresh cache after successful USER
+verification when the old cache is missing. Ordinary verification preserves
+a valid cache and stale responses cannot repopulate an invalidated session.
+No backend, schema, dependency or accepted presentation change was needed.
+
+| Evidence | Result |
+| --- | --- |
+| Prompt 331, prior execution | Backend 15/15, frontend 33/33, mock Chromium 7/7. Scoped ESLint, production build and offline checks passed. |
+| Prompt 332, prior execution | Real PostgreSQL TEST passed for available data. All periods matched independent calculations, all 15 reward timestamps supported UTC, and ranking plus streak shared a read-only repeatable-read snapshot. No database writes or schema changes. |
+| Prompt 332-R, prior execution | Frontend 9/9, mock Chromium 12/12. Responsive checks, scoped ESLint and production build passed. |
+| Prompt 332-R2, prior execution | Mock Chromium 13/13 at 320, 390, 768 and 1440px. Scoped ESLint and diff check passed. |
+| Prompt 333-R, executed | Original browser regression failed before correction and passed after it without a page reload. Frontend/auth 27/27 and focused mock Chromium 3/3. Scoped ESLint and production build passed. |
+
+These runs overlap and are listed individually. Prompt 332 recorded 18
+sequential reads on small TEST data, six per period, with service p50 about
+1.56 seconds and p95 about 1.65–1.78 seconds. Production XP timestamp history,
+Production performance, concurrent load, pool saturation and snapshot behavior
+under a concurrent writer remain **NOT TESTED**. TEST lacked populated second
+pages, personal rank beyond page one, tied ranks, a full podium, inactive
+accounts and display-label fallback cases. Mock coverage does not close
+those real-data gaps.
+
+HD-65 display-name filtering cannot identify all personal text. Persistent
+opt-out and external avatar images remain deferred. Existing XP fairness and
+ledger history limits still apply. [Design and release gates](plans/LEADERBOARD_V1_PLAN.md)
+
+## Prompt 334-R — Leaderboard navigation CI regression
+
+[CI #109](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45967219248)
+reported 480 passing and seven failing Chromium cases on Leaderboard commit
+`7a0077df69de57e43522066e99a2fae8d8c60b95`. Its verified parent is
+`4597116d282bba4c8f1f300acdf7d28493c0738e`.
+
+The browser job log showed the same count mismatch in all seven cases.
+The desktop USER shell and USER routing specs each expected five sidebar
+links and received six. The five Auth responsive cases had the same mismatch
+at 375, 390, 768, 820 and 1366px. The sixth link is the approved **Bảng xếp
+hạng** destination at `/my/leaderboard`, immediately after **Tiến độ học tập**.
+
+Updated the exact USER navigation expectations in `app-layout.spec.js`,
+`auth-responsive.spec.js` and `auth-routing.spec.js` and checked the new
+link's label, route and order. The responsive cases also check visibility
+and viewport fit in the opened drawer. All seven affected Chromium cases
+and the related Guest and ADMIN cases passed locally with mocks (9/9).
+Scoped ESLint passed. Application code and CI configuration are unchanged.
+
+The next Dev CI and Guarded Integration results, Preview acceptance and
+Production release remain pending. Prior Leaderboard limitations and
+Feature Freeze boundaries still apply.

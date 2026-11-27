@@ -80,7 +80,7 @@ test("desktop USER renders the production shell with only approved destinations"
   await expect(headerNavigation.getByRole("link", { name: "Trang chủ" })).toHaveCSS("color", "rgb(76, 162, 230)");
   await expect(headerNavigation.getByRole("link", { name: "Trang chủ" })).toHaveCSS("font-size", "15px");
   await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${publicUser.display_name}` })).toBeVisible();
-  await expect(page.locator(".authenticated-navigation").getByRole("link")).toHaveCount(5);
+  await expect(page.locator(".authenticated-navigation").getByRole("link")).toHaveCount(6);
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Bộ từ của tôi", exact: true })).toHaveAttribute("href", "/my/vocabulary-sets");
@@ -91,6 +91,10 @@ test("desktop USER renders the production shell with only approved destinations"
   ).toHaveAttribute("href", "/topics");
   await expect(page.locator('.authenticated-navigation a[href="/review"]')).toHaveCount(1);
   await expect(page.locator('.authenticated-navigation a[href="/my/learning-progress"]')).toHaveCount(1);
+  const leaderboard = page.getByRole("navigation", { name: "Điều hướng ứng dụng" })
+    .getByRole("link", { name: "Bảng xếp hạng", exact: true });
+  await expect(leaderboard).toHaveAttribute("href", "/my/leaderboard");
+  await expect(page.locator('.authenticated-navigation a[href="/my/learning-progress"] + a[href="/my/leaderboard"]')).toHaveCount(1);
   await expect(page.locator('.authenticated-navigation a[href^="/admin/"]')).toHaveCount(0);
   await expect(page.locator(".authenticated-drawer-toggle")).toBeHidden();
   const headerBox = await page.locator("header.authenticated-header").boundingBox();

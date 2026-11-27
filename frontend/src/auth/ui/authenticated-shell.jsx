@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
+  Trophy,
   Users,
   RotateCcw,
   X,
@@ -342,6 +343,7 @@ function AuthenticatedSessionShell({ logout, user }) {
               <p className="authenticated-nav-heading !mb-2 !mt-4 !px-3 !text-[0.66rem] !font-semibold !uppercase !tracking-[0.11em] !text-[var(--text-secondary)]">Học tập</p>
               {navigationLink("/review", "Ôn tập", RotateCcw)}
               {navigationLink("/my/learning-progress", "Tiến độ học tập", ChartNoAxesColumnIncreasing)}
+              {navigationLink("/my/leaderboard", "Bảng xếp hạng", Trophy)}
             </>
           ) : (
             <>

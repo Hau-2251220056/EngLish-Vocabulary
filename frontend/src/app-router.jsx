@@ -36,6 +36,7 @@ const LearningProgressPage = lazyRoute(
   "LearningProgressPage",
 );
 const LandingPage = lazyRoute(() => import("./landing/landing-page.jsx"), "LandingPage");
+const LeaderboardPage = lazyRoute(() => import("./leaderboard/leaderboard-page.jsx"), "LeaderboardPage");
 const QuizFoundationPage = lazyRoute(
   () => import("./quiz/quiz-foundation-page.jsx"),
   "QuizFoundationPage",
@@ -115,6 +116,7 @@ export function AppRouter() {
               <Route path="/quiz/vocabulary-sets/:setId" element={<QuizFoundationPage />} />
               <Route path="/pronunciation/vocabulary-sets/:setId" element={<SpeakingPracticePage />} />
               <Route path="/my/learning-progress" element={<LearningProgressPage />} />
+              <Route path="/my/leaderboard" element={<LeaderboardPage />} />
               <Route path="/my/vocabulary-sets" element={<MyVocabularySetsPage />} />
               <Route path="/my/vocabulary-sets/:setId" element={<MyVocabularySetDetailPage />} />
             </Route>

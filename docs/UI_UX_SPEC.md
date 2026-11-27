@@ -1772,3 +1772,38 @@ preserve existing rows and counts with scoped recovery controls. Pending
 actions block duplicate requests. No dedicated notification page is added.
 Transient toasts, including XP feedback, continue to use the existing toast
 system independently of the inbox.
+
+## Leaderboard V1
+
+The local learner route `/my/leaderboard` appears as **Bảng xếp hạng** after
+**Tiến độ học tập** in the desktop sidebar and mobile drawer. The page uses
+the existing Bright & Clean shell. The Gemini-based header places
+**Tuần này**, **Tháng này** and **Toàn thời gian** in a segmented control.
+The status card shows the selected Vietnam date range and last successful
+update. The personal card shows rank, XP and streak. **Xem vị trí của tôi**
+opens the API-provided page and focuses and scrolls to the learner's row.
+
+HD-71 uses local initials avatars and deterministic pastel colors based only
+on privacy-filtered display labels. Generic fallbacks use neutral styling.
+HD-73 retains the desktop podium and the compact mobile layout. Three learners
+appear in one bottom-aligned row of equal columns ordered 2–1–3 by entry
+position. Two use balanced columns and one is compact and centered on mobile.
+Medal colors follow actual rank, so two rank-1 entries both receive gold.
+Mobile podium avatars are 40–44px. Long names truncate visually on mobile
+while their full text remains accessible.
+
+The table highlights the current learner with a separate **Bạn** badge and
+shows rank, initials and display name, XP and streak. The footer shows the
+rendered range and server totals, including zero results. It retains
+pagination on a single page and limits page-number buttons with ellipses for
+large result sets.
+
+Initial loading uses skeletons. A background refresh retains the current
+snapshot and shows **Cập nhật lúc** and a quiet progress indicator. A failed
+refresh keeps valid data and offers **Thử lại**. If a weekly or monthly
+rollover retains old data, the period label identifies it explicitly.
+HD-72 retains the approximately 60-second visible-page poll. Polling stops
+while hidden or unmounted and refreshes on visibility restoration.
+HUMAN accepted the implemented visual design and mobile podium. Chromium mock
+verification covered 320, 390, 768 and 1440px. Production performance and release
+remain pending.

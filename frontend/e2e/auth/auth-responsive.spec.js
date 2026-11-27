@@ -421,6 +421,7 @@ for (const viewport of viewports) {
       "/topics",
       "/review",
       "/my/learning-progress",
+      "/my/leaderboard",
     ];
     await expect(navigationLinks).toHaveCount(expectedHrefs.length);
     expect(
@@ -436,6 +437,13 @@ for (const viewport of viewports) {
     await expectWithinViewport(page, ".dashboard-page");
 
     await accountTrigger.click();
+    if (isCompact) {
+      const leaderboard = page.locator(".authenticated-navigation")
+        .getByRole("link", { name: "Bảng xếp hạng", exact: true });
+      await expect(leaderboard).toBeVisible();
+      await expect(leaderboard).toHaveAttribute("href", "/my/leaderboard");
+      await expectWithinViewport(page, '.authenticated-navigation a[href="/my/leaderboard"]');
+    }
     const logout = isCompact
       ? page.locator(".authenticated-sidebar-logout")
       : page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất", exact: true });

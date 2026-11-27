@@ -1,5 +1,6 @@
 import { httpClient } from "./http-client.js";
 import { isRewardProjection } from "./xp-level-response.js";
+import { leaderboardSession } from "../leaderboard/leaderboard-session.js";
 import { requireSessionProjection, requireStreakProjection } from "./learning-session-service.js";
 
 const ENDPOINT = "/api/quiz";
@@ -32,7 +33,12 @@ export function createQuizService(client = httpClient) {
     },
     async submitAnswer(input) {
       const body = serializeAnswer(input);
-      try { return requireAnswerResult((await client.post(`${ENDPOINT}/answers`, body)).data?.data); }
+      const invalidate = leaderboardSession.captureInvalidation();
+      try {
+        const result = requireAnswerResult((await client.post(`${ENDPOINT}/answers`, body)).data?.data);
+        invalidate(result);
+        return result;
+      }
       catch (error) { throw mapQuizError(error); }
     },
   };

@@ -2149,7 +2149,7 @@ Progress can shift inferred crossing times for unsent milestones. An existing
 milestone key prevents repeating a threshold. V1 keeps no historical vocabulary
 ledger.
 
-### Google Authentication hardening and combined Production migration plan
+### Google Authentication hardening and combined Production migration evidence
 
 HD-61 approves exactly five Production drift exceptions from Prompt 325-R2.
 Keep the `created_at` defaults on `CEFR_LEARNING_PASS`,
@@ -2188,10 +2188,11 @@ The archive is
 `F:\ELVocab\Backups\Prompt325-R3_TEST_20261127T050216Z_5116caca\ELVocab_TEST_afyqslnhjiykkjogaqpy_20261127T050216Z_5116caca.dump`.
 Restore was **NOT TESTED**.
 
-Production migration and release remain pending. Verify the ledger, exact
-approved drift, actual LF execution checksums, a fresh verified Production
-backup and a consistent baseline before separately authorized apply. The plan
-orders the three transactional migrations as follows:
+Prompt 325-R5 verified the Production session pooler for project
+`cmkhnvsgrjcnorcztapb`, the historical ledger, exactly the approved HD-61
+drift, and the hashes of the actual LF execution copies. One guarded
+`prisma migrate deploy` exited 0 and applied these three transactional
+migrations in order:
 
 1. `20261126010000_add_google_authentication`
    (`F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`).
@@ -2200,8 +2201,36 @@ orders the three transactional migrations as follows:
 3. `20261127020000_harden_google_auth_tables`
    (`C8776D0EF12B6BC7F8911E6787F67978675CB907F89F88278156B5EF13664154`).
 
-Keep Data API OFF during the controlled window. Each migration commits
-separately. Verify all three ledger entries, auth ACLs, runtime access and
-existing-data preservation before code using the new tables receives traffic.
-Notification inbox reads require its table even with generation disabled.
-HUMAN will separately select the fixed Production activation instant.
+The fresh Production custom archive had 655,921 bytes and 560 entries.
+`pg_dump` and `pg_restore --list` both exited 0. SHA-256:
+`7C33CDA0CE37C7D5557318D2EC12AFF362F090DFF415000680601B9F26775097`.
+The archive is
+`F:\ELVocab\Backups\Prompt325-R5_Production_20261127T060420Z_81113ebe\ELVocab_Production_cmkhnvsgrjcnorcztapb_20261127T060420Z_81113ebe.dump`.
+Restore remains **NOT TESTED**.
+
+The ledger reached 18 successful migrations. Post-migration catalog checks
+verified nullable `USER.password_hash`, the new schema and ACLs, and
+fingerprints of all 19 pre-existing application tables. Unrelated schema and
+ACLs matched. The Data API setting was HUMAN-confirmed OFF and automatic
+exposure of new tables remains unverified.
+
+Prompt 327 independently rechecked Production in a read-only transaction.
+The ledger remained at 18 successful migrations with zero unresolved.
+Both auth tables retained RLS without FORCE or policies. PUBLIC, anon,
+authenticated and service_role had no effective table or column privileges
+on them, including the checked role-inheritance paths. The Prisma owner
+retained its required privileges. Notification retained its approved RLS
+and schema. Its `service_role` privileges remain `MAINTAIN`, `REFERENCES`,
+`TRIGGER` and `TRUNCATE` under the approved Notification migration.
+The aggregate check found one valid Google-only USER linked since the release
+and no duplicate or orphan identities. Checks for dangling session, set
+membership, Progress, learning, XP, Streak and CEFR item references returned
+zero. These are post-release consistency checks, separate from the pre-release
+fingerprint comparison.
+
+Prompt 327 verified the saved Production cutoff
+`2026-11-27T06:15:00.000Z` (13:15 Asia/Ho_Chi_Minh) and the corresponding
+key in deployment metadata. The effective runtime value remains unverified.
+The read-only snapshot found zero stored notifications and zero eligible
+projected events at that cutoff. HD-64 defers Production verification of
+pagination, read actions and read persistence until real events appear.
