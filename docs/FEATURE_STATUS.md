@@ -2154,8 +2154,8 @@ Production migration remain release gates.
 
 ## Prompt 319 / 319-R learner notifications (2026-11-27)
 
-Status: **IN_PROGRESS — implementation and local TEST acceptance complete;
-commit, dev integration and release pending**. HD-48 covers interruption of any positive streak and
+Status: **IN_PROGRESS — integrated on dev and accepted locally on TEST;
+Production release pending**. HD-48 covers interruption of any positive streak and
 3/7/14/30-day milestones in Vietnam time. HD-49 uses started vocabulary
 milestones 25/50/100/250/500/1000 and existing exact Vocabulary identities.
 Final HD-50 excludes all CEFR and learning-path notifications from V1.
@@ -2253,12 +2253,55 @@ secret/artifact review passed. No regression suite was repeated. Only local
 TEST uses the fixed documented cutoff. Production activation remains a release
 configuration gate.
 
-Ready for separate Prompt 322 commit/push approval. Prompt 323 still requires
-PR checks and protected dev integration. The standard backend CI commands use
-explicit file lists and currently exclude the Notification-specific backend
-spec. Its focused offline pass remains local evidence. Dev Preview acceptance
-and hosted routing review, Production OAuth configuration, guarded Production
-migrations and backup, fixed Production activation and Production verification
-remain pending. Google Dev Preview manual acceptance remains deferred.
-Hosted Production performance is **NOT TESTED**. HD-43, HD-44 and HD-46 and
-the existing 2026-12-26 reassessment deadline remain in effect.
+PR #42 merged to dev at `3f518e05a5bf68a64d041f8abb4556d65de483b3`.
+Dev CI #106 and Guarded Integration #152 passed on that commit. The approved
+missing-`API_PROXY_TARGET` exception was limited to the PR #42 Feature Preview.
+The standard backend CI commands still exclude the Notification-specific
+backend spec. Its focused offline pass remains local evidence.
+
+## Google Authentication table hardening and combined release
+
+**TEST hardening PASS. Production hardening and release PENDING.**
+
+- **HD-59.** Keep the shared Google OAuth project in Testing for the graduation
+  release, with separate TEST and Production Web Clients. Defer Branding,
+  publishing and brand verification. The test-user list is separate from
+  application access control. The saved Production client IDs matched and
+  allowed origin matched the verified frontend alias. Actual Production
+  Google sign-in acceptance is pending. Google Dev Preview manual acceptance
+  remains deferred by HUMAN.
+- **HD-60.** Accepted temporary Dev Preview loading behavior. HUMAN verified
+  the Notification panel and empty state, and the Dashboard recommendation
+  loaded after Retry. TEST data identification was HUMAN-confirmed from
+  distinctive vocabulary sets and covers. The exact Sensitive database ref,
+  effective runtime routing and Notification deployment attribution were
+  unverified. Root cause remains INCONCLUSIVE. Full Production acceptance is
+  required.
+- **HD-61.** Approved exactly the five equivalent Production drift items listed
+  in DATABASE.md. Preserve the existing defaults and SRS receipt index name.
+  The additional HD-58 exception remains TEST-only.
+- **HD-62.** One forward-only migration enables RLS on `AUTH_IDENTITY` and
+  `GOOGLE_AUTH_CHALLENGE`, with no FORCE or policies. It revokes all table
+  privileges from PUBLIC, anon, authenticated and service_role on these two
+  tables. Prisma ownership and access are preserved.
+- **HD-63.** One-time approval to integrate HD-62 directly into dev, skipping
+  the intermediate feature branch CI cycle. Existing Dev CI and Guarded
+  Integration remain the verification gates for the resulting dev commit.
+
+Prompt 325-R3 applied the hardening migration once on guarded TEST. The ledger
+advanced from 17 to 18 successful migrations. Fresh backup archive validation
+and the isolated success and injected-failure rollback rehearsals passed.
+Offline Google Auth tests passed 7/7. Real Prisma with a mocked Google verifier
+passed 4/4 groups for challenge issuance and cleanup, first and repeat login,
+identity update, nonce concurrency and replay, collision handling and password
+login. Fixture cleanup followed exact IDs and left zero residue. Fingerprints
+of all 22 existing application tables, unrelated ACLs and auth index and
+constraint definitions matched. Backup restore and real Google OAuth browser
+acceptance after hardening are **NOT TESTED**.
+
+Production Data API OFF is HUMAN-confirmed. Automatic exposure of new tables
+is unverified. The combined Production plan now has three migrations and
+requires fresh verified backup, guarded migration and preservation checks,
+HUMAN-approved fixed activation, authorized release and Production acceptance.
+Hosted routing and performance limitations remain. HD-43, HD-44 and HD-46
+and the existing 2026-12-26 reassessment deadline remain in effect.

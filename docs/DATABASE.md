@@ -2149,10 +2149,59 @@ Progress can shift inferred crossing times for unsent milestones. An existing
 milestone key prevents repeating a threshold. V1 keeps no historical vocabulary
 ledger.
 
-For the combined Production release, verify the Production migration ledger,
-approved drift and fresh backup under the separate release gate. Apply pending
-migrations in repository order: Google Authentication before Notification V1.
-Verify the resulting schema and data preservation before deploying application
-code that uses the new tables. Notification inbox reads require the table even
-with generation disabled. Separately select the fixed Production activation
-instant and coordinate Production OAuth configuration and acceptance.
+### Google Authentication hardening and combined Production migration plan
+
+HD-61 approves exactly five Production drift exceptions from Prompt 325-R2.
+Keep the `created_at` defaults on `CEFR_LEARNING_PASS`,
+`CEFR_LEARNING_PATH_STATE`, `LEARNING_SESSION` and `STREAK_DAY`. The catalog's
+`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)` is semantically equivalent to
+the Prisma declaration. Both forms returned the same value under UTC and
+Asia/Ho_Chi_Minh for the same transaction timestamp. Keep the PostgreSQL-truncated
+`LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revision_` index name.
+Prisma proposes `LEARNING_SESSION_SRS_RECEIPT_session_item_id_accepted_revis_idx`.
+The catalog index is a valid non-unique B-tree on
+`(session_item_id, accepted_revision)` with the intended ordering and operator
+classes. HD-33 and HD-58 remain separate TEST decisions.
+
+HD-62 enables RLS without FORCE or policies on `AUTH_IDENTITY` and
+`GOOGLE_AUTH_CHALLENGE` and revokes all table privileges from PUBLIC, anon,
+authenticated and service_role on these two tables. Ownership and Prisma
+runtime access are preserved. Global defaults, schema ACLs, Storage,
+Notification and other tables are outside this change.
+
+Prompt 325-R3 verified the exact migration and an injected pre-COMMIT failure
+on isolated PostgreSQL. Rollback restored the prior RLS and ACL state and
+preserved synthetic rows. Disposable resources were removed. Guarded TEST
+`prisma migrate deploy` exited 0 on its single attempt and advanced the ledger
+from 17 to 18 successful migrations. Catalog and SET ROLE checks confirmed
+the expected table and column access and the retained Prisma owner privileges.
+Fingerprints for all 22 application tables, unrelated ACLs, and the auth
+constraint and index definitions matched after apply and synthetic cleanup.
+Cleanup removed two fixture users, one identity, three sessions and three
+remaining challenges by exact ID. The expired fixture challenge was removed
+by the challenge cleanup exercised in the test. Zero fixture residue remained.
+
+The fresh TEST custom archive had 713 entries and 712,180 bytes. Both
+`pg_dump` and `pg_restore --list` exited 0. SHA-256:
+`34F28E199B7129DFB91F5A032F661F62D8567E38105069B5B3ADCFC76B7FE3F2`.
+The archive is
+`F:\ELVocab\Backups\Prompt325-R3_TEST_20261127T050216Z_5116caca\ELVocab_TEST_afyqslnhjiykkjogaqpy_20261127T050216Z_5116caca.dump`.
+Restore was **NOT TESTED**.
+
+Production migration and release remain pending. Verify the ledger, exact
+approved drift, actual LF execution checksums, a fresh verified Production
+backup and a consistent baseline before separately authorized apply. The plan
+orders the three transactional migrations as follows:
+
+1. `20261126010000_add_google_authentication`
+   (`F1A868F288C8FCF9C6B9F67B70BD39A7C0B5296307C7B2EC3DB3029D71500004`).
+2. `20261127010000_add_learner_notifications`
+   (`A92F879DA8AD852A5A0D57E230FA7F846ADAE9434F74B2C1E64354E48A72AE73`).
+3. `20261127020000_harden_google_auth_tables`
+   (`C8776D0EF12B6BC7F8911E6787F67978675CB907F89F88278156B5EF13664154`).
+
+Keep Data API OFF during the controlled window. Each migration commits
+separately. Verify all three ledger entries, auth ACLs, runtime access and
+existing-data preservation before code using the new tables receives traffic.
+Notification inbox reads require its table even with generation disabled.
+HUMAN will separately select the fixed Production activation instant.
