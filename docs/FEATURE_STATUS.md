@@ -2445,3 +2445,27 @@ those real-data gaps.
 HD-65 display-name filtering cannot identify all personal text. Persistent
 opt-out and external avatar images remain deferred. Existing XP fairness and
 ledger history limits still apply. [Design and release gates](plans/LEADERBOARD_V1_PLAN.md)
+
+## Prompt 334-R — Leaderboard navigation CI regression
+
+[CI #109](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45967219248)
+reported 480 passing and seven failing Chromium cases on Leaderboard commit
+`7a0077df69de57e43522066e99a2fae8d8c60b95`. Its verified parent is
+`4597116d282bba4c8f1f300acdf7d28493c0738e`.
+
+The browser job log showed the same count mismatch in all seven cases.
+The desktop USER shell and USER routing specs each expected five sidebar
+links and received six. The five Auth responsive cases had the same mismatch
+at 375, 390, 768, 820 and 1366px. The sixth link is the approved **Bảng xếp
+hạng** destination at `/my/leaderboard`, immediately after **Tiến độ học tập**.
+
+Updated the exact USER navigation expectations in `app-layout.spec.js`,
+`auth-responsive.spec.js` and `auth-routing.spec.js` and checked the new
+link's label, route and order. The responsive cases also check visibility
+and viewport fit in the opened drawer. All seven affected Chromium cases
+and the related Guest and ADMIN cases passed locally with mocks (9/9).
+Scoped ESLint passed. Application code and CI configuration are unchanged.
+
+The next Dev CI and Guarded Integration results, Preview acceptance and
+Production release remain pending. Prior Leaderboard limitations and
+Feature Freeze boundaries still apply.

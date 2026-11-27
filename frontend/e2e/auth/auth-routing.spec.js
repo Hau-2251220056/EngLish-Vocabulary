@@ -122,7 +122,7 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
   await expect(page.locator(".authenticated-sidebar-name")).toHaveText(publicUser.display_name);
   await expect(page.getByText("Quản trị viên")).toHaveCount(0);
   const links = page.locator(".authenticated-navigation").getByRole("link");
-  await expect(links).toHaveCount(5);
+  await expect(links).toHaveCount(6);
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("href", "/dashboard");
   await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Trang chủ" })).toHaveAttribute("aria-current", "page");
     await expect(
@@ -137,6 +137,9 @@ test("USER receives USER navigation and no Admin indicator", async ({ page }) =>
     await expect(
       page.locator(".authenticated-navigation").locator('a[href="/my/learning-progress"]'),
     ).toHaveCount(1);
+  await expect(page.locator(".authenticated-navigation").getByRole("link", { name: "Bảng xếp hạng", exact: true }))
+    .toHaveAttribute("href", "/my/leaderboard");
+  await expect(page.locator('.authenticated-navigation a[href="/my/learning-progress"] + a[href="/my/leaderboard"]')).toHaveCount(1);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
 
   await page
