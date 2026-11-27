@@ -44,6 +44,9 @@ export const responses = Object.freeze({
 });
 
 export async function installAuthApiMock(page, handlers = {}, { mockTopics = true } = {}) {
+  await page.route("**/api/users/me/notifications**", (route) => route.fulfill({
+    json: { success: true, data: { items: [], unread_count: 0, has_more: false, next_cursor: null } },
+  }));
   const calls = [];
 
   await page.route("**/api/learning-path", (route) =>

@@ -1556,3 +1556,42 @@ The frontend reconciles pass and session projections from the Backend. It offers
 
 The additive V2 migration extends pass items with the first-credit tuple, relaxes pass-linked sessions to `SET` plus `NORMAL`/`SRS`, and backfills only exact accepted V1 pass-linked NORMAL evidence. It cannot complete a pass or change entitlement. Guarded evidence is recorded in GitHub Actions runs [`43402432992`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43402432992) (ephemeral PostgreSQL, 7/7 offline guards and 6/6 integration tests), [`43553259145`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43553259145) (16/16 browser tests), and [`43678604817`](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/43678604817) (focused mocked/browser and PostgreSQL acceptance gaps). The last run does not establish full real-stack Speaking backend coverage.
 ```
+
+## Learner in-app notifications V1
+
+The USER shell loads the inbox via the existing same-origin API proxy. The
+backend projects three event types on refresh from committed `STREAK_DAY`
+and `LEARNING_PROGRESS` rows. Notification writes use a separate transaction
+and never participate in learning completion transactions. No scheduled job or
+external service is involved. Set `NOTIFICATIONS_ACTIVATED_AT` once to the
+approved UTC rollout instant (ISO 8601 with `Z`). Missing, invalid or future
+activation disables event generation while the inbox remains readable after
+migration. Keep the instant fixed across deploys. The guarded local TEST cutoff
+is `2026-11-27T00:00:00.000Z`. Production cutoff selection and configuration
+remain release gates.
+
+Streak interruptions become eligible at Vietnam midnight after one full missed
+day, independently of the length of the previous run. Internal gaps remain
+detectable after a new run starts. Streak milestones use the accepted day
+timestamp at 3/7/14/30 days. Vocabulary milestones use existing `total_started`
+semantics at 25/50/100/250/500/1000 distinct Progress identities. HD-50 excludes
+every CEFR notification. Neither entitlement nor the learning path changes.
+
+One notification refresh uses one user-scoped source statement (90-day window
+plus 30 warm-up days for streaks and up to the first 1,000 ranked Progress rows),
+zero or one batch insert, and one page/count query. A user's Progress set may
+still require a sort for the timestamp order. Ordinary list uses one page/count
+query, after normal authentication. Mark-one uses a scoped update, row read and
+count; mark-all uses a scoped update and count. Transaction acquisition and
+execution are bounded at 2 and 5 seconds. Prompt 320-R2 verified representative
+plans and concurrent refresh on guarded TEST. Hosted Production performance
+remains untested.
+
+The shell keeps one in-memory cache per authenticated session, fresh for 60
+seconds. Entering the learner header and opening stale content can trigger
+refresh without polling. Successful non-replayed learning-session completion
+invalidates the cache through a client-side signal only. A refresh revalidates
+three-item pages through the prior tail, with a 32-page bound, and replaces the
+list only after success. Operations serialize so stale responses cannot
+overwrite a newer count within one session. Logout or account switch resets the
+cache and aborts its pending operations.

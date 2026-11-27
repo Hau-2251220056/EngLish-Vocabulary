@@ -2152,3 +2152,35 @@ The endpoint is read-only and does not create a review session or mutate learnin
 Public discovery/detail/copy APIs remain unchanged. Backend service boundaries reject NORMAL, per-Set SRS, Quiz reads/answers, and the Speaking Learning dependency when a USER targets a locked public A1–C1 Set. Owned private/copied Sets retain existing activity authorization and never earn CEFR completion. Public null-CEFR Sets remain outside progression and retain existing access.
 
 Existing Learning Session endpoints remain active: `POST /api/learning-sessions`, `GET /api/learning-sessions/:sessionId`, `PUT /api/learning-sessions/:sessionId/items/:vocabularyId/reveal`, `POST /api/learning-sessions/:sessionId/complete`, and `POST /api/learning/events`. Ordinary callers continue as `scope: "SET"`, including the projection compatibility default. Formal HTTP, real-stack, and database verification remains outside TASK-014.
+
+## Learner Notification V1
+
+All endpoints below are under `/api/users/me/notifications`, return the usual
+`{ success, data }` envelope, require USER authentication and are private
+`no-store`. Guest receives 401 and ADMIN receives 403. Mutations require
+`X-ELVocab-Notification: 1` and reject browser Fetch Metadata other than
+`same-origin` when present. The intended browser accesses them through the
+same-origin frontend proxy without cross-origin CORS.
+
+- `POST /refresh?limit=3` derives eligible notifications idempotently from
+  committed learning data and returns the first page.
+- `GET /?cursor=…&limit=3` reads a page without generating events. Omit cursor
+  for the first page. Page size defaults to 3 (HD-56) and accepts 1 through 50.
+  Both page endpoints return `items` (each contains `id`, `type`, `payload`,
+  `occurred_at`, `read_at`), `has_more`, nullable `next_cursor` and
+  `unread_count`. The opaque cursor is based on descending
+  `(occurred_at, id)`. Unread count covers all visible pages.
+- `PATCH /:id/read` returns `id`, persisted `read_at` and `unread_count`.
+  An already-read item preserves its original timestamp. Missing, expired
+  and other-user IDs return the same 404.
+- `POST /read-all` marks all visible unread items for the caller, including
+  items on unloaded pages, and returns `read_at` and `unread_count`.
+  Replays do not modify previously read rows. Items committed concurrently may
+  remain unread if they became visible after the update statement.
+
+Malformed cursors, invalid limits and malformed UUIDs return 400. Request
+bodies are unused. The notification type and payload are assigned by the backend.
+The 90-day window is evaluated server-side for every operation.
+With missing, invalid or future activation, refresh reads the first page
+without projecting events. An error in refresh affects only the Notification
+request.

@@ -409,7 +409,11 @@ for (const viewport of viewports) {
     await expect(page.getByRole("heading", {
       name: /^Chào buổi (sáng|trưa|chiều|tối) Learner with an intentionally very long display name for responsive coverage$/,
     })).toBeVisible();
-    await expect(page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` })).toBeVisible();
+    const isCompact = viewport.width < 1024;
+    const accountTrigger = isCompact
+      ? page.getByRole("button", { name: "Mở điều hướng" })
+      : page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` });
+    await expect(accountTrigger).toBeVisible();
     const navigationLinks = page.locator(".authenticated-navigation a");
     const expectedHrefs = [
       "/dashboard",
@@ -428,14 +432,16 @@ for (const viewport of viewports) {
     await expectNoHorizontalOverflow(page);
     await expectWithinViewport(page, ".authenticated-app");
     await expectWithinViewport(page, ".authenticated-main");
-    await expectWithinViewport(page, ".authenticated-avatar-trigger");
+    await expectWithinViewport(page, isCompact ? ".learner-notification-bell" : ".authenticated-avatar-trigger");
     await expectWithinViewport(page, ".dashboard-page");
 
-    await page.getByRole("button", { name: `Mở menu tài khoản của ${longNameUser.display_name}` }).click();
-    const logout = page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất", exact: true });
+    await accountTrigger.click();
+    const logout = isCompact
+      ? page.locator(".authenticated-sidebar-logout")
+      : page.locator(".authenticated-account-dropdown").getByRole("button", { name: "Đăng xuất", exact: true });
     await expect(logout).toBeVisible();
     await expect(logout).toBeEnabled();
-    await expectWithinViewport(page, ".authenticated-logout-button");
+    await expectWithinViewport(page, isCompact ? ".authenticated-sidebar-logout" : ".authenticated-logout-button");
     await logout.click();
     await expect(page).toHaveURL(/\/login$/);
   });

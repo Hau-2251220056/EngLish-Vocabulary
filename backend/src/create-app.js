@@ -29,6 +29,10 @@ import { createLearningRepository } from "./repositories/learning-repository.js"
 import { createQuizRepository } from "./repositories/quiz-repository.js";
 import { createLearningSessionRepository } from "./repositories/learning-session-repository.js";
 import { createStreakRepository } from "./repositories/streak-repository.js";
+import { createLearnerNotificationRepository } from "./repositories/learner-notification-repository.js";
+import { createLearnerNotificationService } from "./services/learner-notification-service.js";
+import { createLearnerNotificationController } from "./controllers/learner-notification-controller.js";
+import { createLearnerNotificationRouter } from "./routes/learner-notification-routes.js";
 import { createLearningPathRepository } from "./repositories/learning-path-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createAdminUserRouter } from "./routes/admin-user-routes.js";
@@ -286,6 +290,15 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
   app.use("/api/learning-path", learningPathRouter);
   app.use("/api/quiz", quizRouter);
   app.use("/api/learning-sessions", learningSessionRouter);
+  const learnerNotificationRouter = createLearnerNotificationRouter({
+    controller: createLearnerNotificationController(createLearnerNotificationService({
+      repository: createLearnerNotificationRepository(prisma),
+      activatedAt: process.env.NOTIFICATIONS_ACTIVATED_AT,
+    })),
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  });
+  app.use("/api/users/me/notifications", learnerNotificationRouter);
   app.use("/api/users/me", userStreakRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/users", adminUserRouter);

@@ -23,20 +23,29 @@ import { useAuthentication } from "../use-authentication.js";
 import { useAdminVocabularyCount } from "../../dashboard/admin-vocabulary-store.js";
 import { AdminBadge } from "../../admin/admin-ui-primitives.jsx";
 import { LearnerFooter } from "../../components/site-footers.jsx";
+import { LearnerNotificationBell } from "../../notifications/learner-notification-bell.jsx";
+import { createLearnerNotificationCache } from "../../notifications/learner-notification-cache.js";
+import { learnerNotificationApi } from "../../notifications/learner-notification-api.js";
 import "../../admin/admin-foundation.css";
 
 const LOGOUT_ERROR_MESSAGE = "Không thể đăng xuất lúc này. Vui lòng thử lại.";
 const MOBILE_NAVIGATION_QUERY = "(max-width: 1023px)";
 
 export function AuthenticatedShell() {
+  const { logout, user } = useAuthentication();
+  return <AuthenticatedSessionShell key={user.id} logout={logout} user={user} />;
+}
+
+function AuthenticatedSessionShell({ logout, user }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useAuthentication();
   const adminVocabularyCount = useAdminVocabularyCount(user.role === "ADMIN");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [notificationLocation, setNotificationLocation] = useState(null);
+  const [notificationCache] = useState(() => createLearnerNotificationCache(learnerNotificationApi));
   const [isMobileNavigation, setIsMobileNavigation] = useState(
     () => typeof window !== "undefined" && window.matchMedia(MOBILE_NAVIGATION_QUERY).matches,
   );
@@ -46,10 +55,21 @@ export function AuthenticatedShell() {
   const accountMenuTriggerRef = useRef(null);
 
   useEffect(() => {
+    if (user.role !== "USER") return;
+    const invalidate = () => notificationCache.invalidate();
+    window.addEventListener("elvocab:learner-notifications-stale", invalidate);
+    return () => {
+      window.removeEventListener("elvocab:learner-notifications-stale", invalidate);
+      notificationCache.reset();
+    };
+  }, [notificationCache, user.role]);
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia(MOBILE_NAVIGATION_QUERY);
     function syncNavigationMode(event) {
       setIsMobileNavigation(event.matches);
       if (!event.matches) setIsDrawerOpen(false);
+      if (event.matches) setIsAccountMenuOpen(false);
     }
     syncNavigationMode(mediaQuery);
     mediaQuery.addEventListener("change", syncNavigationMode);
@@ -67,11 +87,13 @@ export function AuthenticatedShell() {
   }
 
   function openDrawer() {
+    setNotificationLocation(null);
     setIsAccountMenuOpen(false);
     setIsDrawerOpen(true);
   }
 
   function toggleAccountMenu() {
+    setNotificationLocation(null);
     if (!isAccountMenuOpen) setIsDrawerOpen(false);
     setIsAccountMenuOpen((isOpen) => !isOpen);
   }
@@ -230,8 +252,15 @@ export function AuthenticatedShell() {
         </nav>
       ) : null}
 
-      {isUser ? <div className="authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:contents">
-      <div ref={accountMenuRef} className={`authenticated-account-menu${isUser ? " !relative lg:justify-self-end" : ""}`}>
+      {isUser ? <div className="authenticated-header-utilities col-start-2 flex items-center justify-end gap-1 sm:gap-1.5 lg:col-start-3 lg:justify-self-end">
+      <LearnerNotificationBell key={user.id} cache={notificationCache} open={notificationLocation === location.key}
+        onClose={() => setNotificationLocation(null)}
+        onToggle={() => {
+          setIsDrawerOpen(false);
+          setIsAccountMenuOpen(false);
+          setNotificationLocation(notificationLocation === location.key ? null : location.key);
+        }} />
+      <div ref={accountMenuRef} className="authenticated-account-menu !relative max-lg:!hidden">
         <button
           ref={accountMenuTriggerRef}
           type="button"
