@@ -2184,3 +2184,35 @@ The 90-day window is evaluated server-side for every operation.
 With missing, invalid or future activation, refresh reads the first page
 without projecting events. An error in refresh affects only the Notification
 request.
+
+## Leaderboard V1
+
+Local implementation and integration are complete. Prompt 332 verified the
+read-only query against the available PostgreSQL TEST data. Dev CI, Preview
+and Production release are pending.
+
+`GET /api/leaderboard?period=weekly|monthly|all&page=1` uses the existing
+session cookie and requires an active `USER`. The default is weekly, page 1,
+with 10 rows per page. Responses use `Cache-Control: private, no-store`.
+Only active `USER` accounts with positive XP in the selected period appear in
+the ranking. Week and month use `XP_REWARD` within half-open Vietnam time
+windows beginning on Monday and the first of the month respectively.
+All-time uses `USER.total_xp`. A read-only repeatable-read snapshot supplies
+the podium, page, personal summary and batch streak.
+
+The data envelope includes `period`, `timezone`, `window`, `as_of`,
+`xp_basis`, `top`, `items`, `me` and `pagination`. Ties share the competition
+rank (1, 1, 3). Position and page use a deterministic internal tie-breaker
+that is excluded from the response. The personal summary supplies `me.page`.
+An unranked learner has null rank, position and page. Invalid input returns
+400. Missing or invalid authentication returns 401. An authenticated ADMIN
+receives 403. An in-range integer page beyond the final page returns an empty
+`items` array with the podium, personal summary and totals.
+
+The server applies the HD-65 privacy projection to display labels. Email-like
+and normalized email-local-part labels use neutral fallbacks. The envelope
+omits email addresses, internal UUIDs and external avatar URLs. `avatar_url`
+is null for every result. Under HD-71 the frontend derives initials locally
+using only the projected label. Prompt 332 supported the UTC interpretation
+for all 15 existing TEST reward timestamps. Production history remains
+unverified. [Full field contract and evidence](plans/LEADERBOARD_V1_PLAN.md)

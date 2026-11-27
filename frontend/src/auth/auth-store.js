@@ -12,10 +12,11 @@ const INITIAL_STATE = Object.freeze({
   authenticationRecoveryRequired: false,
 });
 
-export function createAuthenticationStore(authService = defaultAuthService) {
+export function createAuthenticationStore(authService = defaultAuthService, leaderboard, announceSessionChange) {
   let state = { ...INITIAL_STATE };
   let initializationPromise = null;
   let initializationStarted = false;
+  let sessionRead = 0;
   const listeners = new Set();
 
   function getSnapshot() {
@@ -27,8 +28,12 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     return () => listeners.delete(listener);
   }
 
-  function setState(nextState) {
+  function setState(nextState, newSession = false) {
+    const previousUser = state.user;
     state = nextState;
+    if (newSession || previousUser?.id !== state.user?.id || previousUser?.role !== state.user?.role) {
+      leaderboard?.replace(state.user?.role === "USER");
+    }
     listeners.forEach((listener) => listener());
   }
 
@@ -59,6 +64,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
 
     try {
       const user = await authService.login(credentials);
+      sessionRead += 1;
       setState({
         user,
         isAuthenticated: true,
@@ -66,7 +72,8 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         authError: null,
         sessionExpired: false,
         authenticationRecoveryRequired: false,
-      });
+      }, true);
+      announceSessionChange?.();
       return user;
     } catch (error) {
       setGuest(toStateError(error));
@@ -78,6 +85,7 @@ export function createAuthenticationStore(authService = defaultAuthService) {
     setState({ ...state, authError: null });
     try {
       const user = await authService.loginWithGoogle(credential);
+      sessionRead += 1;
       setState({
         user,
         isAuthenticated: true,
@@ -85,7 +93,8 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         authError: null,
         sessionExpired: false,
         authenticationRecoveryRequired: false,
-      });
+      }, true);
+      announceSessionChange?.();
       return user;
     } catch (error) {
       setState({ ...state, authError: toStateError(error) });
@@ -98,14 +107,18 @@ export function createAuthenticationStore(authService = defaultAuthService) {
 
     try {
       await authService.logout();
+      sessionRead += 1;
       setGuest();
+      announceSessionChange?.();
     } catch (error) {
       setState({ ...state, authError: toStateError(error) });
       throw error;
     }
   }
 
-  async function refreshCurrentUser() {
+  async function refreshCurrentUser({ resetLeaderboard = false } = {}) {
+    const read = ++sessionRead;
+    if (resetLeaderboard) leaderboard?.replace(false);
     const hadAuthenticatedSession = state.isAuthenticated;
     const previousState = state;
     setState({
@@ -117,6 +130,8 @@ export function createAuthenticationStore(authService = defaultAuthService) {
 
     try {
       const user = await authService.getCurrentUser();
+      if (read !== sessionRead) return null;
+      const needsLeaderboardSession = user.role === "USER" && leaderboard?.getSnapshot() === null;
       setState({
         user,
         isAuthenticated: true,
@@ -124,9 +139,10 @@ export function createAuthenticationStore(authService = defaultAuthService) {
         authError: null,
         sessionExpired: false,
         authenticationRecoveryRequired: false,
-      });
+      }, resetLeaderboard || needsLeaderboardSession);
       return user;
     } catch (error) {
+      if (read !== sessionRead) return null;
       if (isAuthenticationFailure(error)) {
         setGuest(null, hadAuthenticatedSession);
         return null;

@@ -6,9 +6,13 @@ import {
 } from "react";
 import { createAuthenticationStore } from "./auth-store.js";
 import { AuthenticationContext } from "./authentication-context.js";
+import { leaderboardSession } from "../leaderboard/leaderboard-session.js";
 
 export function AuthenticationProvider({ children }) {
-  const [store] = useState(() => createAuthenticationStore());
+  const [sessionEvents] = useState(() => new EventTarget());
+  const [store] = useState(() => createAuthenticationStore(undefined, leaderboardSession, () => {
+    sessionEvents.dispatchEvent(new Event("session-changed"));
+  }));
   const state = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
@@ -17,7 +21,18 @@ export function AuthenticationProvider({ children }) {
 
   useEffect(() => {
     void store.initialize();
-  }, [store]);
+    if (typeof BroadcastChannel !== "function") return;
+    const channel = new BroadcastChannel("elvocab-auth-session");
+    const announce = () => channel.postMessage("session-changed");
+    sessionEvents.addEventListener("session-changed", announce);
+    channel.onmessage = ({ data }) => {
+      if (data === "session-changed") void store.refreshCurrentUser({ resetLeaderboard: true });
+    };
+    return () => {
+      sessionEvents.removeEventListener("session-changed", announce);
+      channel.close();
+    };
+  }, [sessionEvents, store]);
 
   const value = useMemo(
     () => ({

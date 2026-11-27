@@ -2348,3 +2348,100 @@ first. Backup restore remains **NOT TESTED**. Public attribution acceptance
 is recorded above. CEFR-J permission ambiguity, independently unverified
 ShareAlike completeness and the existing editorial and IPA limitations remain
 open. Daily Goal and Leaderboard remain deferred.
+
+## Prompt 330 — Leaderboard V1 planning (2026-11-27)
+
+**PLANNED. Implementation and release remain DEFERRED under Feature Freeze.**
+HD-65 through HD-69 define an authenticated learner XP leaderboard using
+existing data, with weekly, monthly and all-time rankings, current streak,
+10 rows per page and near-real-time refresh. The proposed design and task
+gates are in the [Leaderboard V1 plan](plans/LEADERBOARD_V1_PLAN.md).
+
+HD-65 cross-learner name and avatar disclosure remains a release blocker.
+Historical XP timestamp semantics, query cost and the proposed 60-second
+polling interval require separately authorized TEST verification. HUMAN
+reported favorable Gemini prototype review. No prototype artifact was available
+for direct comparison in this planning gate.
+
+## Prompt 331 — Leaderboard V1 local implementation (2026-11-27)
+
+**Status at Prompt 331: IN_PROGRESS.** HD-70 authorizes local implementation on `dev` and reopens
+Feature Freeze only for Leaderboard V1. No release is authorized. Unrelated
+features remain frozen. HD-46 and HD-64 remain in force.
+
+HD-65 approves names and avatars between authenticated learners subject to
+privacy safeguards. The response omits emails and UUIDs, suppresses email-like
+or email-local-part names, and uses neutral names when necessary. Arbitrary
+personal text in a chosen display name cannot be identified reliably. Default
+avatars are used until a safe source is verified. There is no persistent
+opt-out or external avatar request.
+
+The local endpoint calculates rankings, the personal summary and current
+streak from one read-only snapshot. The learner page uses visible-only
+near-real-time refresh with session-scoped memory, late-response protection,
+rollover and page clamping. Login or logout in a supported same-origin tab
+signals session revalidation without sharing identity or row data. Validated
+new XP and successful streak-changing completion invalidate Leaderboard without
+changing Notification invalidation or learning rules.
+
+Targeted verification passed 15/15 backend offline tests (8 Leaderboard and
+7 Notification regression cases), 33/33 frontend offline tests (9 Leaderboard
+and 24 related cases), and 7/7 mocked Chromium cases including 320, 390, 768
+and 1440px. Scoped ESLint, frontend production build and offline Express
+initialization passed.
+
+Real TEST timestamp history, SQL execution, PostgreSQL snapshot behavior,
+query plans, latency, connection pool cost and the Production polling interval
+remain **NOT TESTED**. HUMAN acceptance of the implemented UI and release
+review remain pending. The [Prompt 330 plan](plans/LEADERBOARD_V1_PLAN.md)
+retains the approved design and release gates.
+
+## Prompt 333-R — Leaderboard V1 local integration
+
+**Local implementation and final integration COMPLETE. HUMAN UI acceptance
+PASS.** HUMAN accepted the Gemini-based presentation and final mobile podium.
+The acceptance covers visual design. Independent functional evidence and its
+limits are recorded below. Commit and push require separate authorization.
+Dev CI, Preview and Production release remain pending. The HD-70 exception
+applies only to Leaderboard V1. Unrelated features remain frozen.
+
+- **HD-71.** Render initials and deterministic pastel colors locally from
+  privacy-filtered labels. Generic labels use neutral initials. There are no
+  external avatar images or new storage infrastructure.
+- **HD-72.** Retain approximately 60-second visible-page polling based on
+  the current TEST evidence. Concurrent capacity and Production performance
+  remain unapproved.
+- **HD-73.** Adopt the accepted Gemini-based layout and compact mobile podium.
+  Three cards occupy one equal-width row ordered 2–1–3 by entry position.
+  Two use balanced columns and one is compact and centered. Medal styles use
+  the actual API rank, including ties.
+
+Prompt 333 found an auth recovery defect. A cross-tab signal cleared the
+Leaderboard session, then a transient auth read failed. The successful retry
+restored the same learner, but the unchanged ID and role prevented a new cache
+from being created. Prompt 333-R reproduced the header-only page in a mocked
+Chromium browser. The fix initializes one fresh cache after successful USER
+verification when the old cache is missing. Ordinary verification preserves
+a valid cache and stale responses cannot repopulate an invalidated session.
+No backend, schema, dependency or accepted presentation change was needed.
+
+| Evidence | Result |
+| --- | --- |
+| Prompt 331, prior execution | Backend 15/15, frontend 33/33, mock Chromium 7/7. Scoped ESLint, production build and offline checks passed. |
+| Prompt 332, prior execution | Real PostgreSQL TEST passed for available data. All periods matched independent calculations, all 15 reward timestamps supported UTC, and ranking plus streak shared a read-only repeatable-read snapshot. No database writes or schema changes. |
+| Prompt 332-R, prior execution | Frontend 9/9, mock Chromium 12/12. Responsive checks, scoped ESLint and production build passed. |
+| Prompt 332-R2, prior execution | Mock Chromium 13/13 at 320, 390, 768 and 1440px. Scoped ESLint and diff check passed. |
+| Prompt 333-R, executed | Original browser regression failed before correction and passed after it without a page reload. Frontend/auth 27/27 and focused mock Chromium 3/3. Scoped ESLint and production build passed. |
+
+These runs overlap and are listed individually. Prompt 332 recorded 18
+sequential reads on small TEST data, six per period, with service p50 about
+1.56 seconds and p95 about 1.65–1.78 seconds. Production XP timestamp history,
+Production performance, concurrent load, pool saturation and snapshot behavior
+under a concurrent writer remain **NOT TESTED**. TEST lacked populated second
+pages, personal rank beyond page one, tied ranks, a full podium, inactive
+accounts and display-label fallback cases. Mock coverage does not close
+those real-data gaps.
+
+HD-65 display-name filtering cannot identify all personal text. Persistent
+opt-out and external avatar images remain deferred. Existing XP fairness and
+ledger history limits still apply. [Design and release gates](plans/LEADERBOARD_V1_PLAN.md)

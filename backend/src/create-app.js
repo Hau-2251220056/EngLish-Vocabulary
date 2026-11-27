@@ -33,6 +33,9 @@ import { createLearnerNotificationRepository } from "./repositories/learner-noti
 import { createLearnerNotificationService } from "./services/learner-notification-service.js";
 import { createLearnerNotificationController } from "./controllers/learner-notification-controller.js";
 import { createLearnerNotificationRouter } from "./routes/learner-notification-routes.js";
+import { createLeaderboardRepository } from "./repositories/leaderboard-repository.js";
+import { createLeaderboardService } from "./services/leaderboard-service.js";
+import { createLeaderboardRouter } from "./routes/leaderboard-routes.js";
 import { createLearningPathRepository } from "./repositories/learning-path-repository.js";
 import { createAuthenticationRouter } from "./routes/auth-routes.js";
 import { createAdminUserRouter } from "./routes/admin-user-routes.js";
@@ -299,6 +302,11 @@ export function createApp({ prisma, learningNow, coverStorage, coverImageProcess
     userAuthorizationMiddleware,
   });
   app.use("/api/users/me/notifications", learnerNotificationRouter);
+  app.use("/api/leaderboard", createLeaderboardRouter({
+    service: createLeaderboardService({ repository: createLeaderboardRepository(prisma) }),
+    authenticationMiddleware,
+    userAuthorizationMiddleware,
+  }));
   app.use("/api/users/me", userStreakRouter);
   app.use("/api/admin/topics", adminTopicRouter);
   app.use("/api/admin/users", adminUserRouter);

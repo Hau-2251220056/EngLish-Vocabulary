@@ -1,4 +1,5 @@
 import { httpClient } from "./http-client.js";
+import { leaderboardSession } from "../leaderboard/leaderboard-session.js";
 
 const SESSION_ENDPOINT = "/api/learning-sessions";
 const STREAK_ENDPOINT = "/api/users/me/streak";
@@ -79,6 +80,7 @@ export function createLearningSessionService(client = httpClient) {
 
     async completeNormalSession(sessionId, operationId) {
       [sessionId, operationId].forEach(requireUuid);
+      const invalidate = leaderboardSession.captureInvalidation();
       try {
         const value = (await client.post(
           `${SESSION_ENDPOINT}/${encodeURIComponent(sessionId)}/complete`,
@@ -88,7 +90,9 @@ export function createLearningSessionService(client = httpClient) {
         const session = requireSessionProjection(value.session);
         if (session.id !== sessionId || session.mode !== "NORMAL"
           || session.state !== "COMPLETED") throw invalidResponse();
-        return { session, streak: requireStreakProjection(value.streak), replayed: value.replayed };
+        const result = { session, streak: requireStreakProjection(value.streak), replayed: value.replayed };
+        invalidate(result);
+        return result;
       } catch (error) { throw mapError(error); }
     },
 

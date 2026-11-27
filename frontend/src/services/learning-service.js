@@ -1,5 +1,6 @@
 import { httpClient } from "./http-client.js";
 import { isRewardProjection, isXpLevelProjection } from "./xp-level-response.js";
+import { leaderboardSession } from "../leaderboard/leaderboard-session.js";
 import {
   requireCefrPassEvidenceSummary,
   requireSessionProjection,
@@ -44,9 +45,12 @@ export function createLearningService(client = httpClient) {
         || (Object.hasOwn(input, "session_id") && !UUID_PATTERN.test(input.session_id))) {
         throw invalidRatingError();
       }
+      const invalidate = leaderboardSession.captureInvalidation();
       try {
         const response = await client.post(`${LEARNING_ENDPOINT}/events`, input);
-        return requireRatingProgress(response.data?.data, input);
+        const result = requireRatingProgress(response.data?.data, input);
+        invalidate(result);
+        return result;
       } catch (error) {
         throw mapLearningError(error);
       }
