@@ -1735,3 +1735,40 @@ the public implementations; no duplicate public footer or route is introduced.
 Automated Prompt 309 evidence covers route visibility, focus/Admin exclusions,
 keyboard-accessible links, and 1440/768/390/320 responsive widths. HUMAN visual
 approval remains pending; implementation is not marked DONE by this checkpoint.
+
+## Learner notification bell and inbox (HD-52 through HD-57)
+
+Show the bell immediately left of the desktop avatar. Below 1024 CSS px the
+bell replaces the header avatar. Keep the brand and navigation toggle, with
+identity and Logout available in the existing mobile drawer. Guest, ADMIN and
+active learning focus routes do not render the bell.
+
+The 44 px control has an accessible count and red upper-right badge. Hide the
+badge for zero or unknown, distinguish unknown in the accessible name, and
+display 99+ for higher counts. The non-modal panel anchors below the bell at
+approximately 392 px desktop and spans the mobile header with safe insets.
+The panel fits its content up to the viewport height constraint. Only the list
+scrolls when additional items exceed that space. The heading, unread count,
+mark-all and close controls remain
+visible. Toggle by bell, close by Escape, outside pointer or close button.
+Escape and close restore trigger focus. Opening another header overlay closes
+the panel. The close button shows an X without a border or background in its
+normal state (HD-57). Its 44 px target and visible keyboard focus are preserved.
+
+Rows display full Vietnamese copy and relative time with semantic icons:
+orange flame for interruption, yellow trophy for a streak milestone and
+sky-blue book for a vocabulary milestone. Unread rows have a light sky
+surface, semibold title and blue dot with accessible unread state.
+Opening the panel never marks items read. Selecting an unread item marks only
+that row and does not navigate. Read rows do not issue another mutation.
+Mark-all covers unloaded pages and is disabled when the unread count is zero.
+
+The panel loads three rows at a time (HD-56). **Xem thêm** appends the next three without
+discarding previous rows or resetting the list scroll. It disappears at end
+of list. Initial loading uses skeletons with unknown count. Empty copy is
+**Chưa có thông báo.** and **Các thông báo mới sẽ xuất hiện tại đây.**
+Initial failure offers **Thử lại**. Background, pagination and read errors
+preserve existing rows and counts with scoped recovery controls. Pending
+actions block duplicate requests. No dedicated notification page is added.
+Transient toasts, including XP feedback, continue to use the existing toast
+system independently of the inbox.

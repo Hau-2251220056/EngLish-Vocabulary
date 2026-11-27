@@ -2151,3 +2151,114 @@ Production migration remain release gates.
   Vercel reassessment deadline or an earlier compatible fix. Full dev CI,
   Preview routing and real Google acceptance, Production OAuth
   configuration and the guarded Production migration remain release gates.
+
+## Prompt 319 / 319-R learner notifications (2026-11-27)
+
+Status: **IN_PROGRESS — implementation and local TEST acceptance complete;
+commit, dev integration and release pending**. HD-48 covers interruption of any positive streak and
+3/7/14/30-day milestones in Vietnam time. HD-49 uses started vocabulary
+milestones 25/50/100/250/500/1000 and existing exact Vocabulary identities.
+Final HD-50 excludes all CEFR and learning-path notifications from V1.
+HD-51 sets a fixed activation cutoff, 90-day visibility and retained dedupe
+keys. HD-52 places the desktop bell beside the avatar and uses it in the
+mobile avatar slot. HD-53 defines the responsive inbox and keyboard dismissal.
+HD-54 governs read state, including mark-all across unloaded pages. HD-55
+governs loading, empty, error and retry states. The inbox uses three-item
+cursor pagination (HD-56) and a 60-second per-session cache.
+
+HD-47 accepted the known missing `API_PROXY_TARGET` error for Feature Preview
+only. PR #41 merged to dev at `0ef589fa7453f2858ae32677193afe8e60a1cf62`.
+Dev CI #104 and Guarded Integration #150 are HUMAN-reported PASS. Dev Preview
+Google manual acceptance remains deferred and untested. Intermittent
+availability and latency were reported. A region-related cause remains
+unverified. Prompt 313 Local/TEST acceptance and the bounded residual-risk
+decisions remain in effect. The combined Google/Notification Production
+release remains pending its separate gates.
+
+Prompt 319-R offline evidence: backend 7/7, frontend cache 5/5, and 24
+distinct focused mocked Chromium cases passed across inbox and auth/header
+regression specs. Inbox geometry passed at 320, 390, 768 and 1440 CSS px.
+Scoped ESLint, Prisma schema validation, offline client generation and
+Express composition passed. Real PostgreSQL constraint/concurrency,
+role/RLS compatibility, query plans, Preview and hosted behavior remain
+untested at that offline checkpoint. Review, HUMAN visual acceptance and
+guarded TEST migration approval were pending.
+
+Prompt 319-R2 records HUMAN acceptance of the overall inbox design subject to
+HD-56 (three rows per page, content-sized panel, list-only overflow) and HD-57
+(icon-only close control with a 44 px target and visible keyboard focus).
+Prompt 320 records HUMAN visual acceptance **PASS** for desktop and mobile
+after HD-56 and HD-57. The final initial and subsequent page size is three.
+
+Prompt 320 stopped at the schema drift gate.
+The tenant-qualified session pooler targeted Supabase TEST
+`afyqslnhjiykkjogaqpy`. Live read-only checks verified 16 successful
+migrations, Google Authentication already applied, and only Notification V1
+pending. The migration checksum and explicit transaction boundaries matched.
+Prisma reported an additional default difference on
+`GOOGLE_AUTH_CHALLENGE.created_at` beyond the five approved HD-33 exceptions
+and the expected Notification V1 DDL. Prompt 320-R verified that the explicit
+`::text` cast on the UTC literal has equivalent PostgreSQL semantics. HD-58
+approved this exact sixth difference and preserved the five HD-33 exceptions.
+
+Prompt 320-R2 validated a fresh TEST backup with `pg_restore --list`, then
+applied the approved migration once. The TEST ledger, schema, runtime role
+privileges, RLS and 21 existing-table fingerprints passed verification.
+Local TEST uses the fixed activation instant `2026-11-27T00:00:00.000Z`
+in the process environment. With isolated fixtures, missing or invalid
+activation did not generate notifications. Real PostgreSQL verification
+covered Vietnam midnight, interruption after 1, 2 and 30 days, a restarted
+streak, repeated streak awards across runs, all six vocabulary thresholds,
+source UUID uniqueness, concurrent refresh and hidden deduplication keys.
+It also covered the exact 90-day boundary, tied-timestamp cursor ordering,
+three-item pages, unread counts across unloaded pages and idempotent
+mark-one and mark-all. Real Express sessions verified guest 401, ADMIN 403
+and cross-user 404 with no foreign inbox rows.
+
+Representative TEST `EXPLAIN ANALYZE` execution times were 2.306 ms for the
+source query (60 streak days, 1,000 progress rows), 0.160 ms for the first
+page with unread count (16 notifications), and 0.056 ms for standalone unread
+count (8 unread). PostgreSQL used user-scoped source indexes, the inbox index
+and the partial unread index. The refresh code issues at most three data
+statements within its transaction. These measurements exclude network time
+and cover the TEST fixtures only.
+
+Real localhost Chromium used the Vite application and Express against TEST.
+It verified learner login and re-login, shell refresh and badge, opening the
+inbox without marking it read, three initial rows and three more, mark-one
+and mark-all, read persistence after reload and re-login, cache invalidation
+after successful learning completion, and retry after a real PostgreSQL
+refresh failure. The first learning fixture selection received the expected
+CEFR lock. The resumed verification selected a public A1 set. The existing
+learning completion and Streak write committed even with notification refresh
+failing. This verification did not rerun the full CEFR acceptance suite.
+
+Both synthetic fixture batches were removed by exact IDs. The final check
+found zero fixture users or notifications, and all 21 existing table
+fingerprints still matched the pre-migration baseline.
+
+Prompt 321 records HUMAN local TEST real-stack acceptance **PASS** for the
+scenarios checked manually. No scenario-by-scenario manual inventory was
+supplied. The desktop and mobile visual acceptance after HD-56 and HD-57
+also remains **PASS**. The automated Prompt 320-R2 evidence above is separate.
+Backup archive validation passed. Restore remains **NOT TESTED**.
+
+Final local review verified HD-48 through HD-58, the unchanged transactional
+Notification migration and its SHA-256, and preservation of historical
+migrations, CEFR learning transactions, Google Authentication, Flashcard Speech,
+Footer and transient toast behavior. Scoped ESLint, offline Prisma validation,
+embedded generated-schema and model checks, offline Express initialization,
+frontend production-mode build, strict UTF-8, diff hygiene and an added-line
+secret/artifact review passed. No regression suite was repeated. Only local
+TEST uses the fixed documented cutoff. Production activation remains a release
+configuration gate.
+
+Ready for separate Prompt 322 commit/push approval. Prompt 323 still requires
+PR checks and protected dev integration. The standard backend CI commands use
+explicit file lists and currently exclude the Notification-specific backend
+spec. Its focused offline pass remains local evidence. Dev Preview acceptance
+and hosted routing review, Production OAuth configuration, guarded Production
+migrations and backup, fixed Production activation and Production verification
+remain pending. Google Dev Preview manual acceptance remains deferred.
+Hosted Production performance is **NOT TESTED**. HD-43, HD-44 and HD-46 and
+the existing 2026-12-26 reassessment deadline remain in effect.

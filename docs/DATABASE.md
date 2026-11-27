@@ -2027,3 +2027,132 @@ Ephemeral PostgreSQL run [`43402432992`](https://github.com/Hau-2251220056/EngLi
 
 `LOGIN_ABUSE_STATE` is bounded shared security state keyed by the composite HMAC-SHA-256 pair `(identifier_key, source_key)`. It stores `failure_count` (constrained to 1-5), `last_failed_at`, nullable `blocked_until`, and `updated_at`; it has no USER foreign key so unknown and existing identifiers receive equivalent handling. Raw email, client address and password values are never persisted. The composite primary key supports one serialized state per identifier/source pair, and `updated_at` is indexed for bounded maintenance. The forward-only migration creates only this table, check constraint and index; it does not rewrite existing data.
 ```
+
+## 45 LEARNER_NOTIFICATION (Notification V1)
+
+One inbox row per `(user_id, type, event_key)`, with UUID primary key, USER
+foreign key (cascade on account deletion), JSON object payload, occurrence and
+creation timestamps, and nullable read timestamp. The enum is limited to
+`STREAK_INTERRUPTED`, `STREAK_MILESTONE`, and `VOCABULARY_MILESTONE`, with
+respective payloads `{}`, `{ days }`, and `{ started }`. The inbox index is
+`(user_id, occurred_at DESC, id DESC)`. The SQL migration maintains the partial
+unread index on `(user_id, occurred_at DESC)` and check constraints.
+
+The additive migration is explicitly transactional. It enables RLS without a
+public policy and revokes direct PUBLIC, anon and authenticated privileges where
+those roles exist. Confirm the existing Prisma runtime role can operate on the
+table before enabling the feature in TEST. The migration updates no existing
+application rows.
+
+Prompt 320 authorized execution on Supabase TEST only. Read-only preflight
+confirmed 16 successful migrations, with Google Authentication applied and
+only Notification V1 pending. The approved SQL matched SHA-256
+`A92F879DA8AD852A5A0D57E230FA7F846ADAE9434F74B2C1E64354E48A72AE73`
+and retained explicit transaction boundaries. The Prisma schema diff reported
+the five previously approved HD-33 differences and an additional default
+difference on `GOOGLE_AUTH_CHALLENGE.created_at` beyond the expected
+notification DDL. The Google migration source and current Prisma schema both
+specify UTC. Prompt 320-R verified the catalog default
+`(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)` on a
+`timestamp(3) without time zone NOT NULL` column. Both expressions used
+`timezone(text, timestamp with time zone)` and returned the same UTC value
+under the UTC and Asia/Ho_Chi_Minh session settings in one read-only
+transaction. HD-58 approves only this sixth difference, alongside the five
+existing HD-33 exceptions.
+
+Prompt 320-R2 verified TEST project `afyqslnhjiykkjogaqpy` and captured a
+fresh PostgreSQL custom-format backup before deployment.
+`pg_dump` and `pg_restore --list` both exited 0. The archive contains 704
+inventory entries and is 707,306 bytes. Its SHA-256 is
+`4EAC6D9239FEF0F1730A32C4E6DF7540BF3314C03FC2DB05BF86F2498F627E17`.
+Archive path:
+`F:\ELVocab\Backups\Prompt320-R2_TEST_20261127T020048Z_e534818a\ELVocab_TEST_afyqslnhjiykkjogaqpy_20261127T020048Z_e534818a.dump`.
+Archive validation checked inventory and readability. Restore was outside scope.
+
+Guarded `prisma migrate deploy` ran once and exited 0. The ledger contains
+17 successful migrations and the preceding 16 entries matched their baseline.
+The empty Notification table, three enum values, column types and nullability,
+check constraints, cascading USER foreign key, unique event index, inbox
+index and partial unread index matched the approved SQL. The TEST Prisma role
+`postgres` owns the table and has DML access. RLS is enabled without FORCE or
+policies. PUBLIC, anon and authenticated have no table grants. Repeatable-read
+counts and SHA-256 row fingerprints matched across all 21 existing application
+tables immediately after deploy and after exact-ID fixture cleanup. The final
+aggregate baseline fingerprint was
+`17AAF283A130F04987E25EDC5F1C78C6A9DF29E959F9C68ADF77BF663AC1AF1F`.
+
+### Guarded local TEST startup for Notification V1
+
+In a PowerShell window for the backend, use the fixed TEST activation instant
+`2026-11-27T00:00:00.000Z`. The cutoff is scoped to the local process.
+
+```powershell
+Set-Location -LiteralPath 'F:\English Vocabulary\backend'
+$env:NOTIFICATIONS_ACTIVATED_AT = '2026-11-27T00:00:00.000Z'
+$guardedStartup = @'
+import { configureTestEnvironment } from "./test/helpers/test-environment.js";
+import { PrismaClient } from "./src/generated/prisma/client.ts";
+import { createApp } from "./src/create-app.js";
+let prisma;
+try {
+  const ref = "afyqslnhjiykkjogaqpy";
+  const { databaseUrl } = configureTestEnvironment({ requireReset: false });
+  const target = new URL(databaseUrl);
+  const user = decodeURIComponent(target.username);
+  const sessionPooler = /^aws-\d+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(target.hostname)
+    && user === "postgres." + ref;
+  const direct = target.hostname === "db." + ref + ".supabase.co" && user === "postgres";
+  const allowed = new Set(["sslmode", "schema", "connection_limit", "connect_timeout", "pool_timeout", "socket_timeout"]);
+  if ((!sessionPooler && !direct) || target.port !== "5432" || target.pathname !== "/postgres"
+    || !/^postgres(?:ql)?:$/.test(target.protocol) || !target.password || target.hash
+    || ![null, "public"].includes(target.searchParams.get("schema"))
+    || [...target.searchParams.keys()].some(key => !allowed.has(key))) throw new Error("Invalid TEST target");
+  prisma = new PrismaClient({ datasourceUrl: databaseUrl });
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+    await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '8s'");
+    const [identity] = await tx.$queryRawUnsafe(
+      "SELECT current_database() AS db, current_user::text AS role, current_setting('transaction_read_only') AS ro");
+    if (identity.db !== "postgres" || identity.role !== "postgres" || identity.ro !== "on") {
+      throw new Error("Unexpected TEST identity");
+    }
+  }, { maxWait: 8000, timeout: 12000 });
+  const server = createApp({ prisma }).listen(5000, "127.0.0.1", () =>
+    console.log("ELVocab TEST backend ready at http://127.0.0.1:5000"));
+  server.on("error", async () => {
+    console.error("TEST backend startup failed.");
+    await prisma.$disconnect().catch(() => {});
+    process.exitCode = 1;
+  });
+} catch {
+  console.error("Guarded TEST startup failed.");
+  if (prisma) await prisma.$disconnect().catch(() => {});
+  process.exitCode = 1;
+}
+'@
+$guardedStartup | node --env-file=.env.test --input-type=module -
+```
+
+After the TEST backend reports ready, start the frontend in a separate
+PowerShell window and open `http://127.0.0.1:5173`.
+
+```powershell
+Set-Location -LiteralPath 'F:\English Vocabulary\frontend'
+$env:API_PROXY_TARGET = 'http://127.0.0.1:5000'
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Only the latest 90 days by `occurred_at` are visible or eligible for read
+mutations. Older rows retain their deduplication keys. Vocabulary thresholds
+derive from the Nth surviving Progress row by `created_at, id`. Deleting older
+Progress can shift inferred crossing times for unsent milestones. An existing
+milestone key prevents repeating a threshold. V1 keeps no historical vocabulary
+ledger.
+
+For the combined Production release, verify the Production migration ledger,
+approved drift and fresh backup under the separate release gate. Apply pending
+migrations in repository order: Google Authentication before Notification V1.
+Verify the resulting schema and data preservation before deploying application
+code that uses the new tables. Notification inbox reads require the table even
+with generation disabled. Separately select the fixed Production activation
+instant and coordinate Production OAuth configuration and acceptance.
