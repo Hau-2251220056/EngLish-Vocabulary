@@ -2187,9 +2187,9 @@ request.
 
 ## Leaderboard V1
 
-Local implementation and integration are complete. Prompt 332 verified the
-read-only query against the available PostgreSQL TEST data. Dev CI, Preview
-and Production release are pending.
+Released to Production in PR #44. Prompt 332 verified the read-only query
+against available PostgreSQL TEST data and Prompt 335 verified it against
+available Production data. [Release and acceptance evidence](FEATURE_STATUS.md#prompt-337--leaderboard-v1-production-release-and-stable-graduation-checkpoint-2026-11-27)
 
 `GET /api/leaderboard?period=weekly|monthly|all&page=1` uses the existing
 session cookie and requires an active `USER`. The default is weekly, page 1,
@@ -2214,5 +2214,6 @@ and normalized email-local-part labels use neutral fallbacks. The envelope
 omits email addresses, internal UUIDs and external avatar URLs. `avatar_url`
 is null for every result. Under HD-71 the frontend derives initials locally
 using only the projected label. Prompt 332 supported the UTC interpretation
-for all 15 existing TEST reward timestamps. Production history remains
-unverified. [Full field contract and evidence](plans/LEADERBOARD_V1_PLAN.md)
+for all 15 existing TEST reward timestamps. Prompt 335 supported it for all
+112 existing Production reward timestamps in the observed snapshot.
+[Full field contract and evidence](plans/LEADERBOARD_V1_PLAN.md)

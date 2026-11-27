@@ -2466,6 +2466,59 @@ and viewport fit in the opened drawer. All seven affected Chromium cases
 and the related Guest and ADMIN cases passed locally with mocks (9/9).
 Scoped ESLint passed. Application code and CI configuration are unchanged.
 
-The next Dev CI and Guarded Integration results, Preview acceptance and
-Production release remain pending. Prior Leaderboard limitations and
-Feature Freeze boundaries still apply.
+At the Prompt 334-R checkpoint, the next Dev CI and Guarded Integration
+results, Preview acceptance and Production release were pending.
+
+## Prompt 337 — Leaderboard V1 Production release and stable graduation checkpoint (2026-11-27)
+
+**Leaderboard V1 DONE. HUMAN Production acceptance PASS.** HUMAN confirmed
+acceptance using the manual checklist. Individual scenario results were not
+reported. HUMAN UI acceptance and local final integration passed previously.
+The session cache recovery and navigation regressions both passed their
+targeted remediation checks. CI #109's seven stale navigation count failures
+are retained above. [CI #110](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265320)
+and [Guarded Integration #156](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265306)
+passed on `66411d0dbe0b738230109703e84710d545dc20f6`.
+
+Both Dev Preview deployment checks succeeded. HUMAN Dev Preview acceptance
+was **PARTIAL** and the intermittent loading limitation was explicitly accepted.
+Its root cause remains **INCONCLUSIVE**.
+
+[PR #44](https://github.com/Hau-2251220056/EngLish-Vocabulary/pull/44) merged the
+candidate into `main` at `570f5dc0662527d29c12a3220ef97579740b93d6`.
+The released tree `55ef3fdedf4da78ea8b94c19461c56bd6c17ac54` matches the
+approved candidate. GitHub deployment records associate both deployments with
+the release SHA. One-time Vercel inspection independently verified that each
+Production alias resolves to its corresponding READY deployment. The aliases
+serve the same release. No schema changes or migrations were required.
+
+| Project | Production alias | Verified deployment |
+| --- | --- | --- |
+| Frontend | [elvocab.vercel.app](https://elvocab.vercel.app) | [READY](https://frontend-elvocab-rnuvxjero-hau-2251220056s-projects.vercel.app) |
+| Backend | [eng-lish-vocabulary.vercel.app](https://eng-lish-vocabulary.vercel.app) | [READY](https://eng-lish-vocabulary-mwqgac71z-hau-2251220056s-projects.vercel.app) |
+
+**Historical Production evidence from Prompt 335.** Read-only verification
+passed for available data in Supabase `cmkhnvsgrjcnorcztapb`. All 112 existing
+reward timestamps were consistent with UTC. Independent calculations matched
+weekly, monthly and lifetime ranking and streak results. There were four
+active USER accounts, one ADMIN and two ranked learners per period. Aggregate
+XP was 307, 334 and 334 respectively. Ranking and streak used the same
+read-only repeatable-read snapshot. Five sequential measurements per period
+gave service p50 about 0.88–0.90 seconds, p95 about 0.94–1.08 seconds and
+PostgreSQL ranking execution about 0.181–0.483 ms. Retain approximately
+60-second visible-page polling for that observed dataset.
+
+Concurrent load, pool saturation and snapshot behavior under a concurrent
+writer remain **NOT TESTED**. Real-data cases for ties, a full podium, a
+populated second page and inactive accounts remain uncovered. Filtering
+cannot identify all personal text in display names. Persistent opt-out and
+external avatars remain deferred. XP fairness and historical ledger limits
+still apply. Existing security, licensing and infrastructure limitations
+and deadlines, including HD-46 reassessment by 2026-12-26 or the first
+compatible fix if earlier, remain in force.
+
+**Stable non-AI graduation baseline** is the verified Production commit and
+tree above. The scoped HD-70 reopening is closed and the graduation
+**Feature Freeze is restored in full**. AI integration is planned as an
+optional future enhancement. The completed graduation baseline has no AI
+requirement. A separate authorization is required for any AI development.

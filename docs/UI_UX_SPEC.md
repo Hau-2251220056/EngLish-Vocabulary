@@ -1775,7 +1775,7 @@ system independently of the inbox.
 
 ## Leaderboard V1
 
-The local learner route `/my/leaderboard` appears as **Bảng xếp hạng** after
+The learner route `/my/leaderboard` appears as **Bảng xếp hạng** after
 **Tiến độ học tập** in the desktop sidebar and mobile drawer. The page uses
 the existing Bright & Clean shell. The Gemini-based header places
 **Tuần này**, **Tháng này** and **Toàn thời gian** in a segmented control.
@@ -1805,5 +1805,6 @@ rollover retains old data, the period label identifies it explicitly.
 HD-72 retains the approximately 60-second visible-page poll. Polling stops
 while hidden or unmounted and refreshes on visibility restoration.
 HUMAN accepted the implemented visual design and mobile podium. Chromium mock
-verification covered 320, 390, 768 and 1440px. Production performance and release
-remain pending.
+verification covered 320, 390, 768 and 1440px. HUMAN confirmed Production
+acceptance after release. Individual Production scenario results were not
+reported. [Acceptance and performance evidence](FEATURE_STATUS.md#prompt-337--leaderboard-v1-production-release-and-stable-graduation-checkpoint-2026-11-27)
