@@ -2154,8 +2154,8 @@ Production migration remain release gates.
 
 ## Prompt 319 / 319-R learner notifications (2026-11-27)
 
-Status: **IN_PROGRESS — integrated on dev and accepted locally on TEST;
-Production release pending**. HD-48 covers interruption of any positive streak and
+Status: **DONE — released with bounded Production acceptance under HD-64**.
+HD-48 covers interruption of any positive streak and
 3/7/14/30-day milestones in Vietnam time. HD-49 uses started vocabulary
 milestones 25/50/100/250/500/1000 and existing exact Vocabulary identities.
 Final HD-50 excludes all CEFR and learning-path notifications from V1.
@@ -2249,9 +2249,9 @@ migrations, CEFR learning transactions, Google Authentication, Flashcard Speech,
 Footer and transient toast behavior. Scoped ESLint, offline Prisma validation,
 embedded generated-schema and model checks, offline Express initialization,
 frontend production-mode build, strict UTF-8, diff hygiene and an added-line
-secret/artifact review passed. No regression suite was repeated. Only local
-TEST uses the fixed documented cutoff. Production activation remains a release
-configuration gate.
+secret/artifact review passed. No regression suite was repeated. Prompt 321
+verified the fixed local TEST cutoff. Prompt 326 later verified the separate
+saved Production cutoff.
 
 PR #42 merged to dev at `3f518e05a5bf68a64d041f8abb4556d65de483b3`.
 Dev CI #106 and Guarded Integration #152 passed on that commit. The approved
@@ -2261,22 +2261,22 @@ backend spec. Its focused offline pass remains local evidence.
 
 ## Google Authentication table hardening and combined release
 
-**TEST hardening PASS. Production hardening and release PENDING.**
+**DONE — Production hardening verified and Google Authentication accepted.**
 
 - **HD-59.** Keep the shared Google OAuth project in Testing for the graduation
   release, with separate TEST and Production Web Clients. Defer Branding,
   publishing and brand verification. The test-user list is separate from
   application access control. The saved Production client IDs matched and
-  allowed origin matched the verified frontend alias. Actual Production
-  Google sign-in acceptance is pending. Google Dev Preview manual acceptance
-  remains deferred by HUMAN.
+  allowed origin matched the verified frontend alias. HUMAN completed actual
+  Production sign-in acceptance in Prompt 327. Google Dev Preview manual
+  acceptance remains deferred by HUMAN.
 - **HD-60.** Accepted temporary Dev Preview loading behavior. HUMAN verified
   the Notification panel and empty state, and the Dashboard recommendation
   loaded after Retry. TEST data identification was HUMAN-confirmed from
   distinctive vocabulary sets and covers. The exact Sensitive database ref,
   effective runtime routing and Notification deployment attribution were
-  unverified. Root cause remains INCONCLUSIVE. Full Production acceptance is
-  required.
+  unverified. Root cause remains INCONCLUSIVE. The Production acceptance
+  results and the HD-64 exception are recorded below.
 - **HD-61.** Approved exactly the five equivalent Production drift items listed
   in DATABASE.md. Preserve the existing defaults and SRS receipt index name.
   The additional HD-58 exception remains TEST-only.
@@ -2285,8 +2285,13 @@ backend spec. Its focused offline pass remains local evidence.
   privileges from PUBLIC, anon, authenticated and service_role on these two
   tables. Prisma ownership and access are preserved.
 - **HD-63.** One-time approval to integrate HD-62 directly into dev, skipping
-  the intermediate feature branch CI cycle. Existing Dev CI and Guarded
-  Integration remain the verification gates for the resulting dev commit.
+  the intermediate feature branch CI cycle. Dev CI #107 and Guarded
+  Integration #153 passed on `8c890839ad11293fe2597980a17b18bf5e127901`.
+- **HD-64.** Bounded Notification Production acceptance. Defer three
+  scenarios until real eligible notifications appear: initial three plus
+  append-three pagination, mark individual and all as read, and read-state
+  persistence after reload. Prompt 320-R2 verified these scenarios on TEST.
+  The three scenarios remain **NOT TESTED** on Production.
 
 Prompt 325-R3 applied the hardening migration once on guarded TEST. The ledger
 advanced from 17 to 18 successful migrations. Fresh backup archive validation
@@ -2296,12 +2301,50 @@ passed 4/4 groups for challenge issuance and cleanup, first and repeat login,
 identity update, nonce concurrency and replay, collision handling and password
 login. Fixture cleanup followed exact IDs and left zero residue. Fingerprints
 of all 22 existing application tables, unrelated ACLs and auth index and
-constraint definitions matched. Backup restore and real Google OAuth browser
-acceptance after hardening are **NOT TESTED**.
+constraint definitions matched. Restore and actual Google OAuth browser
+acceptance were outside Prompt 325-R3. HUMAN later verified Google OAuth
+in Production. Backup restore remains **NOT TESTED**.
 
-Production Data API OFF is HUMAN-confirmed. Automatic exposure of new tables
-is unverified. The combined Production plan now has three migrations and
-requires fresh verified backup, guarded migration and preservation checks,
-HUMAN-approved fixed activation, authorized release and Production acceptance.
-Hosted routing and performance limitations remain. HD-43, HD-44 and HD-46
-and the existing 2026-12-26 reassessment deadline remain in effect.
+## Prompt 327 — Production acceptance and graduation feature freeze (2026-11-27)
+
+**FEATURE FREEZE ACTIVE.** No new feature development for this graduation
+release. The remaining risks and deferred checks carry forward.
+
+[Release PR #43](https://github.com/Hau-2251220056/EngLish-Vocabulary/pull/43)
+merged to main at `7ab9a963bf357379e88c3d2cf5e0ff332b3383c1`. Its tree
+`acf8c698f58af7e2339d62200e02b44cb94ab26b` matches the approved dev candidate.
+The [backend Production deployment](https://vercel.com/hau-2251220056s-projects/eng-lish-vocabulary/GGqvCqNTWaS9Gnhp9BfsmNhTDZHT)
+and [frontend Production deployment](https://vercel.com/hau-2251220056s-projects/frontend-elvocab/5poXiiZ14icDfH1UAkBq4kZ6sUhK)
+were READY on the release SHA, including their respective Production aliases.
+Prompt 325-R5 validated a fresh backup archive, applied the three migrations
+and preserved the pre-migration fingerprints for 19 application tables.
+The Prompt 327 read-only check found 18 successful migrations, retained auth
+and Notification access controls, one valid post-release Google-only USER
+with a linked identity, and zero duplicates, orphans or unlinked
+passwordless accounts in the checked scopes.
+
+HUMAN Production acceptance was **20 PASS, 3 NOT TESTED, 0 FAIL**.
+
+| Area | HUMAN result |
+| --- | --- |
+| Google Authentication | 6/6 PASS for button placement, first and repeat sign-in, session navigation and logout, password login, and rejection of an arbitrary password for a Google-only account. |
+| Notification V1 | 3/6 PASS for desktop and mobile bell placement, opening without API errors, and the empty state. Three scenarios deferred under HD-64. |
+| Learning | 7/7 PASS across Dashboard, vocabulary and catalog, NORMAL Flashcard speech completion, SRS, Quiz, Speaking, and existing learning data. |
+| Admin and UI | 4/4 PASS for Admin authentication and Dashboard, management surfaces, footer and attribution, and mobile UI. |
+
+The saved Production cutoff is `2026-11-27T06:15:00.000Z` (13:15 in
+Asia/Ho_Chi_Minh). The deployed backend metadata includes the key.
+The effective runtime value is **INCONCLUSIVE**. The read-only snapshot
+found zero stored notifications and zero eligible projected events for the
+four active learners evaluated at the saved cutoff. This is consistent with
+HUMAN empty-state acceptance.
+
+Production Data API OFF remains HUMAN-confirmed. Automatic exposure of new
+tables is unverified. Broader Supabase security remediation remains deferred.
+Hosted matcher reachability is **INCONCLUSIVE** and hosted Production
+performance is **NOT TESTED**. HD-43, HD-44 and HD-46 remain in force with
+reassessment at the first compatible fix or by 2026-12-26, whichever comes
+first. Backup restore remains **NOT TESTED**. Public attribution acceptance
+is recorded above. CEFR-J permission ambiguity, independently unverified
+ShareAlike completeness and the existing editorial and IPA limitations remain
+open. Daily Goal and Leaderboard remain deferred.
