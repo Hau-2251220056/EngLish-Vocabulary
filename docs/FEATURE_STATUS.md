@@ -2525,9 +2525,10 @@ requirement. A separate authorization is required for any AI development.
 
 ## Prompt 342-HF-B — Ordinary SRS snapshot reconciliation (2026-11-27)
 
-**Implemented locally on `hotfix/srs-learning-pass-conflict`. Production fix
-and deployment remain pending.** Prompt 342-HF-A confirmed that an accepted
-CEFR completion can fall back to ordinary SRS while the current due result
+**At this checkpoint, the fix was implemented locally on
+`hotfix/srs-learning-pass-conflict` and deployment was pending.**
+Prompt 342-HF-A confirmed that an accepted CEFR completion can fall back
+to ordinary SRS while the current due result
 is empty and the restored STANDARD snapshot is still ACTIVE. The frontend
 previously tried to render an unresolved snapshot card absent from that due
 result. The historical trigger that changed eligibility while the old
@@ -2547,14 +2548,15 @@ Targeted Chromium mock verification passed **10/10** scenarios, including
 7 hotfix scenarios and 3 existing regressions for managed CEFR SRS,
 dedicated Set review and Global Review. Scoped ESLint and the local frontend
 production build passed. Real multi-device scheduling and Production
-acceptance are **NOT TESTED**. The Graduation Release freeze remains in
-effect outside this scoped hotfix.
+acceptance were untested at this checkpoint. The Graduation Release freeze
+remains in effect outside this scoped hotfix.
 
 ## Prompt 342-HF-B-R2 — Explicit STANDARD SRS recovery (2026-11-27)
 
 **HUMAN approved Option A. Implemented and verified locally on
 `hotfix/srs-learning-pass-conflict`. HUMAN local acceptance is PASS.
-Production release remains pending. AI Integration V1 remains paused.**
+Production release followed in Prompt 342-HF-E-R. AI Integration V1 remains
+paused.**
 
 For a nonempty list with an incompatible independent STANDARD snapshot,
 **Tiếp tục ôn tập** replaces the retry-only HF-B action. It checks the
@@ -2589,9 +2591,9 @@ learning, and return and re-entry. The displayed next review time was
 **12:34 on 29/11/2026 (Vietnam time, UTC+7)**, matching the previously
 observed Production API response.
 
-Actual PostgreSQL concurrency, real multi-device behavior and acceptance
-on the deployed Production application remain **NOT TESTED**. The
-historical Production trigger remains **INCONCLUSIVE**.
+Actual PostgreSQL concurrency, real multi-device behavior and deployed
+Production acceptance were untested at this checkpoint. The historical
+Production trigger remains **INCONCLUSIVE**.
 
 ## Prompt 342-HF-D-R — SRS hotfix browser-smoke remediation (2026-11-28)
 
@@ -2637,6 +2639,75 @@ NORMAL, CEFR full-pass, Set Review and Global Review regressions passed **10/10*
 **81/81** frontend unit cases passed. Scoped ESLint, strict UTF-8, scoped
 secret checks and Git whitespace checks passed. Existing backend and
 production-build evidence still applies to this test-only change.
-Corrected Linux verification remains with dev CI. Real multi-device
-concurrency and deployed Production acceptance remain **NOT TESTED**.
-AI Integration V1 remains paused.
+The corrected Linux result and deployed Production acceptance are recorded
+in the final checkpoint below. AI Integration V1 remains paused.
+
+## Prompt 342-HF-F — SRS hotfix Production release closure (2026-11-28)
+
+**SRS hotfix implementation and Production release CLOSED. HUMAN Production
+acceptance PASS.** On 2026-11-28, HUMAN confirmed overall acceptance of the
+deployed hotfix with “ổn rồi ní”. The confirmation covers the overall
+result. Individual Production scenario results were not reported.
+
+### Incident and resolution
+
+The Production investigation confirmed that the current SRS due queue could
+be empty while an older STANDARD snapshot remained ACTIVE after CEFR
+completion. The learning screen attempted to render an unresolved snapshot
+card absent from that queue. The fix displays the empty-due state, the
+server-provided next review time, **Học thường**, and **Quay lại bộ từ**.
+
+When eligible cards remain and the snapshot is incompatible, Option A
+offers an explicit **Tiếp tục ôn tập** action. Recovery rereads the original
+session and eligibility, then requests a new independent STANDARD snapshot
+if needed. It persists an operation UUID before the request and reuses it
+on retry. Pending ratings keep their original session and event IDs, and
+evidence and receipts stay with the original session. The older ACTIVE
+session remains subject to existing rating, completion, expiry and access
+rules. Backend, API, database, CEFR, Progress, XP and Streak contracts are
+unchanged.
+
+### Verification and release
+
+- HF-B-R2 reported **145/145 targeted tests PASS** across 81 frontend unit,
+  30 offline backend and 34 Chromium mock cases. HUMAN local acceptance
+  using Production data was **PASS**.
+- Initial Linux Browser Smoke reported **501 PASS / 4 FAIL**. A shared
+  assertion expected Vietnam time while the browser displayed UTC for the
+  same fixture instant. Commit
+  [3244846](https://github.com/Hau-2251220056/EngLish-Vocabulary/commit/32448464ea13412647867cf2966f7291883b78fa)
+  fixed the test expectation and browser timezone setup. Cross-environment
+  targeted verification passed. The application still uses browser-local
+  time for the display.
+- [CI #114](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46105227515)
+  passed Frontend Quality, Backend Unit and Frontend Browser Smoke.
+  [Guarded Integration #160](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46105227501)
+  passed Trust Gate, Backend DB Integration, Real Stack Browser and Summary.
+  XP Migration Verification, XP Migration Cleanup, Streak Migration
+  Verification, Streak Migration Recovery Cleanup, Streak Foundation
+  Verification and TASK-249 Streak Integrated Verification were **SKIPPED**.
+- Both Dev Preview deployments were **READY**. Dev Preview HUMAN acceptance
+  was **WAIVED BY HUMAN** for this release only because TEST and Production
+  learning data and session states differ. Functional Dev Preview acceptance
+  remains unverified.
+
+[PR #46](https://github.com/Hau-2251220056/EngLish-Vocabulary/pull/46) merged
+`dev` into `main` at `e926bd1f9c29f8f0c7d704b3fc00a583dd22ee17`. Production
+tree `1173ee446c008c0898a9c5d3bca87d75ed05923f` exactly matches the approved
+candidate `32448464ea13412647867cf2966f7291883b78fa`. Both Vercel deployments
+were **READY** from `main` at the same Production SHA. The Production
+aliases resolved to the corresponding deployments.
+
+| Project | Production alias | Verified deployment |
+| --- | --- | --- |
+| Frontend | [elvocab.vercel.app](https://elvocab.vercel.app) | [READY](https://frontend-elvocab-qd4h4qtxk-hau-2251220056s-projects.vercel.app) |
+| Backend | [eng-lish-vocabulary.vercel.app](https://eng-lish-vocabulary.vercel.app) | [READY](https://eng-lish-vocabulary-mgbwutzhf-hau-2251220056s-projects.vercel.app) |
+
+### Remaining limitations
+
+- Real multi-device concurrency is **NOT TESTED**. Nonempty incompatible
+  snapshot recovery passed automated mock verification. Real-device
+  reproduction of that path is **NOT TESTED**.
+- The exact historical trigger of the stale snapshot is **INCONCLUSIVE**.
+- Existing unrelated deferred items remain in force. AI Integration V1
+  remains **PAUSED** pending safe synchronization of the updated dev baseline.
