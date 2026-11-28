@@ -2592,3 +2592,51 @@ observed Production API response.
 Actual PostgreSQL concurrency, real multi-device behavior and acceptance
 on the deployed Production application remain **NOT TESTED**. The
 historical Production trigger remains **INCONCLUSIVE**.
+
+## Prompt 342-HF-D-R — SRS hotfix browser-smoke remediation (2026-11-28)
+
+[Dev CI](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46099017918)
+on `f2fa799253c1c17b56a850d66dec50c194639ff4` passed Frontend Quality and
+Backend Unit. Frontend Browser Smoke ran with two workers and reported
+**501 passed / 4 failed**. All four failures used the same exact next-review
+assertion in the new SRS regression spec. [Guarded Integration](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46099017928)
+passed Trust Gate, Backend DB Integration, Real Stack Browser, and Summary.
+Its six migration, cleanup, and foundation jobs were skipped.
+
+The browser-smoke logs expected **12:34 on 29/11/2026** in Vietnam time.
+The failure screenshot, error contexts, and retry traces showed **05:34**
+in the UTC Chromium context for the same fixture timestamp,
+`2026-11-29T05:34:59.699Z`. The old assertion formatted the fixture using
+Node's Vietnamese locale data and a fixed Vietnam timezone, while the
+application formats the server timestamp using Vietnamese locale and the
+browser's timezone. All four cases reproduced before the fix on Windows
+with Node and Chromium set to UTC.
+
+The spec now defaults its Chromium context to `Asia/Ho_Chi_Minh` and
+honors an explicit Playwright project timezone. It verifies the browser
+timezone and formats the same fixture instant in Chromium, then retains
+the exact visible-text assertion. No application formatter, fixture
+instant, workflow, test count, or backend contract changed.
+
+The suite audit found no other fixes in scope. Lifecycle outcomes are
+explicit mock projections, the fixed expiry timestamps do not depend on
+the execution date, and each test owns its route handlers, storage, and
+async gates. URL matching and Playwright artifact paths are platform
+independent. The same 34 Vite `ECONNREFUSED` proxy errors occurred in
+[the passing pre-hotfix Browser Smoke job](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265320/job/140421973659),
+with identical counts by endpoint: Admin Vocabulary 23, Admin Vocabulary
+Sets 8, Learning Session read 1, and Global Review session requests 2.
+These historical mock gaps are outside the hotfix spec, which handles
+unmocked API requests locally.
+
+Targeted Windows verification used Node 22, Chromium and two workers:
+**18/18** with matching UTC zones, **18/18** with matching Vietnam zones,
+and **18/18** with Node UTC and the spec's default Vietnam browser zone.
+The four UTC failure cases passed **8/8** repeat executions. The adjacent
+NORMAL, CEFR full-pass, Set Review and Global Review regressions passed **10/10**.
+**81/81** frontend unit cases passed. Scoped ESLint, strict UTF-8, scoped
+secret checks and Git whitespace checks passed. Existing backend and
+production-build evidence still applies to this test-only change.
+Corrected Linux verification remains with dev CI. Real multi-device
+concurrency and deployed Production acceptance remain **NOT TESTED**.
+AI Integration V1 remains paused.

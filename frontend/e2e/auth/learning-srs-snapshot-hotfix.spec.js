@@ -1,6 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
 import { installAuthApiMock, publicUser, responses } from "./fixtures/auth-api.js";
 import { createLearningRunState } from "../../src/learning/learning-run-state.js";
+
+const DEFAULT_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const test = base.extend({
+  timezoneId: async ({ timezoneId }, applyTimezone) => {
+    await applyTimezone(timezoneId ?? DEFAULT_TIME_ZONE);
+  },
+});
 
 const SET_ID = "0fe7e89b-26fa-409e-8fa5-f9e74480e4a1";
 const SESSION_ID = "923277a3-c26a-495b-a6c8-c8c9322777ff";
@@ -120,7 +127,19 @@ function itemsFor(ids) {
 async function expectEmpty(page) {
   await expect(page.getByRole("heading", { name: RESULT, exact: true })).toBeVisible();
   await expect(page.getByText(/Hiện chưa có từ nào đến hạn/)).toBeVisible();
-  const nextReview = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(NEXT_REVIEW));
+  const timeZone = test.info().project.use.timezoneId ?? DEFAULT_TIME_ZONE;
+  // Chromium and Node may ship different locale data. Format the fixture instant in the browser.
+  const { nextReview, browserZone, expectedZone } = await page.evaluate(({ instant, timeZone }) => {
+    const formatter = new Intl.DateTimeFormat("vi-VN", {
+      dateStyle: "medium", timeStyle: "short", timeZone,
+    });
+    return {
+      nextReview: formatter.format(new Date(instant)),
+      browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      expectedZone: formatter.resolvedOptions().timeZone,
+    };
+  }, { instant: NEXT_REVIEW, timeZone });
+  expect(browserZone).toBe(expectedZone);
   await expect(page.getByText("Lần ôn tập tiếp theo: " + nextReview, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Học thường", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Quay lại bộ từ", exact: true })).toHaveAttribute("href", SET_DETAIL);
