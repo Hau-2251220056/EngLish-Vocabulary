@@ -2522,3 +2522,73 @@ tree above. The scoped HD-70 reopening is closed and the graduation
 **Feature Freeze is restored in full**. AI integration is planned as an
 optional future enhancement. The completed graduation baseline has no AI
 requirement. A separate authorization is required for any AI development.
+
+## Prompt 342-HF-B — Ordinary SRS snapshot reconciliation (2026-11-27)
+
+**Implemented locally on `hotfix/srs-learning-pass-conflict`. Production fix
+and deployment remain pending.** Prompt 342-HF-A confirmed that an accepted
+CEFR completion can fall back to ordinary SRS while the current due result
+is empty and the restored STANDARD snapshot is still ACTIVE. The frontend
+previously tried to render an unresolved snapshot card absent from that due
+result. The historical trigger that changed eligibility while the old
+snapshot remained ACTIVE is **INCONCLUSIVE**.
+
+The frontend now shows the existing up-to-date screen with the server's
+`next_review_at`, **Học thường** and **Quay lại bộ từ** for this empty-due
+case. A nonempty due result that lacks an unresolved snapshot card shows
+a distinct recovery state with retry and return navigation. Compatible
+snapshots keep existing exact resume and genuine COMPLETED snapshots keep
+their completion summary. Neither recovery branch issues a session or
+learning mutation. Existing CEFR guards, fallback, NORMAL, SRS scheduling,
+XP, Streak and Progress contracts apply. Any new policy to replace or
+abandon an incompatible active snapshot requires separate approval.
+
+Targeted Chromium mock verification passed **10/10** scenarios, including
+7 hotfix scenarios and 3 existing regressions for managed CEFR SRS,
+dedicated Set review and Global Review. Scoped ESLint and the local frontend
+production build passed. Real multi-device scheduling and Production
+acceptance are **NOT TESTED**. The Graduation Release freeze remains in
+effect outside this scoped hotfix.
+
+## Prompt 342-HF-B-R2 — Explicit STANDARD SRS recovery (2026-11-27)
+
+**HUMAN approved Option A. Implemented and verified locally on
+`hotfix/srs-learning-pass-conflict`. HUMAN local acceptance is PASS.
+Production release remains pending. AI Integration V1 remains paused.**
+
+For a nonempty list with an incompatible independent STANDARD snapshot,
+**Tiếp tục ôn tập** replaces the retry-only HF-B action. It checks the
+original session and current cards first. A compatible snapshot resumes
+exactly, an empty list keeps the HF-B up-to-date state and NORMAL action,
+and completion, expiry and access results retain their existing meaning.
+If recovery is still needed, the frontend requests a new independent
+session using the existing API and verifies current card content and
+revisions against the backend-selected snapshot before enabling ratings.
+
+The frontend persists the UUID by USER, Set, mode, intent and original
+session before sending the create request, reuses it after an unknown
+result or refresh, and keeps the old reference until the new reference is
+stored durably. Recovery creates only on learner action. Pending rating
+requests retain their original session, event, vocabulary, rating and
+revision, and may be retried explicitly against that original session.
+Evidence and receipts stay with their original sessions. The backend
+lifecycle stays the same, so an older ACTIVE session may still accept
+valid ratings until completion, expiry or loss of access.
+
+Local checks passed **81/81 frontend unit**, **30/30 offline backend** and
+**34/34 targeted Chromium mock** tests, plus scoped ESLint, the frontend
+production build, strict UTF-8 and `git diff --check`. Focused UI/UX review
+covered keyboard recovery, loading and error states, and responsive
+containment. Shared-Progress changes, delayed ratings and replay were
+simulated.
+
+**HUMAN local acceptance — PASS (2026-11-28, Prompt 342-HF-C).**
+Using the local application connected to Production, HUMAN verified the
+previously affected Daily Routines SRS entry, the empty SRS state, NORMAL
+learning, and return and re-entry. The displayed next review time was
+**12:34 on 29/11/2026 (Vietnam time, UTC+7)**, matching the previously
+observed Production API response.
+
+Actual PostgreSQL concurrency, real multi-device behavior and acceptance
+on the deployed Production application remain **NOT TESTED**. The
+historical Production trigger remains **INCONCLUSIVE**.

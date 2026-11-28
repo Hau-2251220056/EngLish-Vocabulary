@@ -46,6 +46,9 @@ export function reconcileLearningSessionState(
     pass_id: passId,
     session_id: session.id,
     creation_operation_id: matchingStored?.creation_operation_id ?? null,
+    ...(matchingStored?.recovered_from_session_id ? {
+      recovered_from_session_id: matchingStored.recovered_from_session_id,
+    } : {}),
     expires_at: session.expires_at,
     cursor_vocabulary_id: cursor,
     view_state: viewState,
@@ -94,7 +97,7 @@ export function listStoredStandardSrsSessionIdentities(storage, userId) {
   return identities;
 }
 
-export function saveLearningSessionState(storage, state) {
+export function saveLearningSessionState(storage, state, options) {
   if (!isRuntimeState(state)) return false;
   const stored = {
     version: VERSION,
@@ -105,6 +108,7 @@ export function saveLearningSessionState(storage, state) {
     pass_id: state.pass_id,
     session_id: state.session_id,
     creation_operation_id: state.creation_operation_id,
+    ...(state.recovered_from_session_id ? { recovered_from_session_id: state.recovered_from_session_id } : {}),
     expires_at: state.expires_at,
     cursor_vocabulary_id: state.cursor_vocabulary_id,
     view_state: state.view_state,
@@ -112,7 +116,7 @@ export function saveLearningSessionState(storage, state) {
   return writeSessionValue(storage, storageKey({
     userId: state.user_id, setId: state.set_id, mode: state.mode, passId: state.pass_id,
     sessionIntent: state.session_intent ?? "STANDARD",
-  }), stored);
+  }), stored, options);
 }
 
 export function clearLearningSessionState(storage, identity) {
@@ -248,6 +252,9 @@ function isStoredRecord(value, userId, setId, mode, passId = null, sessionIntent
     && value.mode === mode && value.pass_id === passId
     && (value.session_intent ?? "STANDARD") === sessionIntent && UUID_PATTERN.test(value.session_id)
     && (value.creation_operation_id === null || UUID_PATTERN.test(value.creation_operation_id))
+    && (value.recovered_from_session_id === undefined || (mode === "SRS" && passId === null
+      && sessionIntent === "STANDARD" && UUID_PATTERN.test(value.recovered_from_session_id)
+      && value.recovered_from_session_id !== value.session_id))
     && typeof value.expires_at === "string" && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.expires_at)
     && !Number.isNaN(Date.parse(value.expires_at))
     && UUID_PATTERN.test(value.cursor_vocabulary_id)
