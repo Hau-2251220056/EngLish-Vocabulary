@@ -56,7 +56,7 @@ export function readSessionValue(storage, key, validate = () => true) {
   }
 }
 
-export function writeSessionValue(storage, key, value) {
+export function writeSessionValue(storage, key, value, { durableOnly = false } = {}) {
   if (!isNonEmptyString(key)) return false;
   let raw;
   try {
@@ -66,14 +66,17 @@ export function writeSessionValue(storage, key, value) {
   }
   if (raw === undefined) return false;
 
-  MEMORY_VALUES.set(key, raw);
   try {
     if (typeof storage?.setItem !== "function") throw new TypeError("Session storage is unavailable.");
     storage.setItem(key, raw);
+    MEMORY_VALUES.set(key, raw);
     MEMORY_FIRST_KEYS.delete(key);
     return true;
   } catch {
-    MEMORY_FIRST_KEYS.add(key);
+    if (!durableOnly) {
+      MEMORY_VALUES.set(key, raw);
+      MEMORY_FIRST_KEYS.add(key);
+    }
     return false;
   }
 }

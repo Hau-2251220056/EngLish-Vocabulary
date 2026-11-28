@@ -41,7 +41,7 @@ export function createLearningRunState(userId, setId, srsPayload = null, normalC
   };
 }
 
-export function reconcileLearningRunState(stored, userId, setId, payload) {
+export function reconcileLearningRunState(stored, userId, setId, payload, { preserveSrsQueue = false } = {}) {
   const fresh = createLearningRunState(
     userId,
     setId,
@@ -51,6 +51,7 @@ export function reconcileLearningRunState(stored, userId, setId, payload) {
   if (!isStoredState(stored, userId, setId)) return fresh;
 
   if (payload.mode === "SRS") {
+    if (preserveSrsQueue) return stored;
     if (stored.srs.status === "COMPLETED") {
       return {
         ...stored,
@@ -120,7 +121,9 @@ export function reconcileSrsSessionRun(state, sessionState) {
   const initialIds = [...sessionState.item_ids];
   const passedIds = initialIds.filter((id) => sessionState.acknowledged_ids.includes(id));
   const unresolved = initialIds.filter((id) => !passedIds.includes(id));
-  const preservedQueue = state.srs.queue.filter((id) => unresolved.includes(id));
+  const isReplacement = sessionState.recovered_from_session_id
+    && state.srs.session_id !== sessionState.session_id;
+  const preservedQueue = isReplacement ? [] : state.srs.queue.filter((id) => unresolved.includes(id));
   const queue = uniqueStrings([...preservedQueue, ...unresolved]);
   const status = sessionState.view_state === "COMPLETED" ? "COMPLETED"
     : sessionState.view_state === "ACTIVE" && queue.length > 0 ? "ACTIVE" : state.srs.status;
@@ -128,10 +131,13 @@ export function reconcileSrsSessionRun(state, sessionState) {
     ...state,
     srs: {
       ...state.srs,
+      session_id: sessionState.session_id,
       initial_ids: initialIds,
       queue,
       passed_ids: passedIds,
-      retry_context: sanitizeRetry(state.srs.retry_context, queue[0]),
+      ...(isReplacement ? { presentation_count: 0, last_progress: undefined } : {}),
+      retry_context: state.srs.retry_context?.session_id === sessionState.session_id
+        ? sanitizeRetry(state.srs.retry_context, queue[0]) : null,
       status,
     },
   };
