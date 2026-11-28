@@ -1129,6 +1129,39 @@ This approved SRS extension supersedes section 12.4's two-outcome action wording
 
 The SRS up-to-date state uses the helper text **Hiện chưa có từ nào đến hạn. Bạn có thể ôn tập thường hoặc quay lại bộ từ.** It exposes only **Ôn tập thường** and **Quay lại bộ từ**; it does not expose **Làm mới SRS**. This server-empty up-to-date state remains distinct from a just-completed client session, where the approved completion summary and restart behavior remain available.
 
+For ordinary STANDARD SRS, an ACTIVE snapshot can coexist with an empty
+current due result. Show the up-to-date presentation in that case, including
+the current result's next review time when present, **Học thường** and
+**Quay lại bộ từ**. Compatible ACTIVE snapshots resume with their original
+order, evidence and same-tab AGAIN queue. A completed session shows its
+completion summary.
+
+HUMAN-approved Option A (342-HF-B-R2) applies when the current list is nonempty
+and an unresolved card from an independent STANDARD snapshot is missing.
+Use the existing learning state with **Tiến độ ôn tập đã thay đổi**, the
+description **Tiến độ từ vựng của bạn đã được cập nhật. Bạn có thể tiếp tục
+ôn tập theo danh sách từ đến hạn mới nhất.**, a primary **Tiếp tục ôn tập**
+button and **Quay lại bộ từ**. Keep the primary button disabled while recovery
+is pending and announce loading and retryable errors.
+
+On demand, reread the original session and current SRS list. Give completion,
+expiry and access results their existing meaning. If the list is empty or the
+original becomes compatible, use the corresponding existing presentation.
+If the original is still ACTIVE and incompatible, request a new independent
+STANDARD session with the existing create API. Keep the original reference
+until the new reference is stored durably. Reuse the persisted operation UUID
+when retrying the same recovery after a refresh or unknown result. Reload
+card content and revisions and check the server-selected snapshot before
+enabling ratings. A pending recovery sends no create on page entry, and a
+later eligibility change requires another explicit learner action.
+
+Keep unresolved ratings bound to the original session, event, vocabulary,
+rating and expected revision. A retry is an explicit learner action and
+sends that original request. An old retry does not block ratings in the new
+snapshot, even when both snapshots contain the same vocabulary. The Backend
+lifecycle stays the same: the original session retains evidence and receipts
+and may still accept valid ratings until completion, expiry or loss of access.
+
 #### 12.4.2 Learning Session V1 Active UX Contract
 
 Opening NORMAL Flashcard, SRS Flashcard, Multiple Choice Quiz or Speaking Practice starts or restores that USER/Set/mode automatically; there is no session-selection screen. A batch contains at most 10 distinct Vocabulary IDs. NORMAL, Quiz and Speaking retain the original Backend-authored Set Item order for the full run, including unstarted batches. Set additions wait for **Học lại từ đầu**; removals are reconciled without refill/substitution, and reordering never repeats or skips a valid original ID. SRS keeps its Backend eligibility/order and `AGAIN` queue rather than a full-Set remainder.
@@ -1775,7 +1808,7 @@ system independently of the inbox.
 
 ## Leaderboard V1
 
-The local learner route `/my/leaderboard` appears as **Bảng xếp hạng** after
+The learner route `/my/leaderboard` appears as **Bảng xếp hạng** after
 **Tiến độ học tập** in the desktop sidebar and mobile drawer. The page uses
 the existing Bright & Clean shell. The Gemini-based header places
 **Tuần này**, **Tháng này** and **Toàn thời gian** in a segmented control.
@@ -1805,5 +1838,6 @@ rollover retains old data, the period label identifies it explicitly.
 HD-72 retains the approximately 60-second visible-page poll. Polling stops
 while hidden or unmounted and refreshes on visibility restoration.
 HUMAN accepted the implemented visual design and mobile podium. Chromium mock
-verification covered 320, 390, 768 and 1440px. Production performance and release
-remain pending.
+verification covered 320, 390, 768 and 1440px. HUMAN confirmed Production
+acceptance after release. Individual Production scenario results were not
+reported. [Acceptance and performance evidence](FEATURE_STATUS.md#prompt-337--leaderboard-v1-production-release-and-stable-graduation-checkpoint-2026-11-27)

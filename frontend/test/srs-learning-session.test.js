@@ -9,7 +9,16 @@ import {
 import {
   clearLearningSessionState,
   loadLearningSessionState,
+  reconcileLearningSessionState,
+  saveLearningSessionState,
 } from "../src/session-storage/learning-session-state.js";
+import {
+  preserveOrdinarySrsRating,
+  readOrdinarySrsRatingAttempts,
+  recoverOrdinarySrsSession,
+  settleOrdinarySrsRating,
+} from "../src/learning/ordinary-srs-recovery.js";
+import { createLearningRunState, reconcileSrsSessionRun } from "../src/learning/learning-run-state.js";
 
 const IDENTITY = Object.freeze({
   userId: "user",
@@ -238,6 +247,149 @@ test("CEFR SRS can restore a Backend-listed exact session without local storage"
   assert.equal(created, false);
   assert.equal(loadLearningSessionState(storage, identity).session_id, SESSION);
   clearLearningSessionState(storage, identity);
+});
+
+const RECOVERY_IDENTITY = { ...IDENTITY, userId: "recovery-user" };
+const eligiblePayload = (ids) => ({
+  id: IDENTITY.setId, mode: "SRS", eligible_count: ids.length, cards: ids.map((id) => ({ id })),
+});
+
+function recoveryFixture({ original = projection({ can_continue: true }), cards, create } = {}) {
+  const storage = memoryStorage();
+  const calls = [];
+  const replacement = projection({
+    id: FRESH_SESSION, items: [{ ...item(null), vocabulary_id: sessionItems(2)[1].vocabulary_id }],
+  });
+  assert.equal(saveLearningSessionState(storage, reconcileLearningSessionState(null, RECOVERY_IDENTITY, original)), true);
+  return {
+    storage, calls, replacement,
+    input: {
+      storage, identity: RECOVERY_IDENTITY, originalId: SESSION,
+      randomUuid: () => OPERATION, isCurrent: () => true,
+      readCards: cards ?? (async () => eligiblePayload([replacement.items[0].vocabulary_id])),
+      sessionService: {
+        async readSession(id) {
+          calls.push(["read", id]);
+          return id === SESSION ? original : { ...replacement, can_continue: true };
+        },
+        async createSession(request) {
+          calls.push(["create", request]);
+          return create ? create(request, replacement) : { session: replacement };
+        },
+      },
+    },
+  };
+}
+
+for (const scenario of [
+  { name: "compatible", original: projection(), due: [ITEM], state: "ACTIVE" },
+  { name: "empty", original: projection(), due: [], state: "ACTIVE_EMPTY_DUE" },
+  { name: "expired", original: projection({ state: "EXPIRED" }), due: [ITEM], state: "EXPIRED" },
+  { name: "completed", original: projection({
+    state: "COMPLETED", items: [item("SRS_GOOD")], completed_items: 1,
+    completed_at: "2026-10-18T01:00:00.000Z",
+  }), due: [], state: "COMPLETED" },
+  { name: "inaccessible", original: projection({
+    can_continue: false, restart_reason: "SESSION_INACCESSIBLE",
+  }), due: [ITEM], state: "INACCESSIBLE" },
+]) {
+  test(`recovery reads but does not create when the original becomes ${scenario.name}`, async () => {
+    const { input, calls } = recoveryFixture({
+      original: scenario.original, cards: async () => eligiblePayload(scenario.due),
+    });
+    const result = await recoverOrdinarySrsSession(input);
+    assert.equal(result.presentation, scenario.state);
+    assert.equal(result.session.session_id, SESSION);
+    assert.deepEqual(calls, [["read", SESSION]]);
+  });
+}
+
+test("recovery preserves original reference after lost response and failed durable successor write", async () => {
+  let sends = 0;
+  const { input, storage, calls } = recoveryFixture({
+    create(_request, replacement) {
+      if (++sends === 1) throw new Error("response lost after commit");
+      return { session: replacement };
+    },
+  });
+  await assert.rejects(recoverOrdinarySrsSession(input), /response lost/);
+  const write = storage.setItem;
+  storage.setItem = (key, value) => {
+    if (key.includes("backend-learning-session")) throw new Error("storage denied");
+    return write(key, value);
+  };
+  await assert.rejects(recoverOrdinarySrsSession(input), /Replacement SRS session could not be stored/);
+  assert.equal(loadLearningSessionState(storage, RECOVERY_IDENTITY).session_id, SESSION);
+  storage.setItem = write;
+  const result = await recoverOrdinarySrsSession({ ...input, randomUuid: () => FRESH_OPERATION });
+  assert.equal(result.session.session_id, FRESH_SESSION);
+  assert.equal(result.presentation, "ACTIVE");
+  assert.equal(loadLearningSessionState(storage, RECOVERY_IDENTITY).recovered_from_session_id, SESSION);
+  assert.deepEqual(calls.filter(([kind]) => kind === "create").map(([, request]) => request),
+    Array(3).fill({ operation_id: OPERATION, set_id: IDENTITY.setId, mode: "SRS" }));
+});
+
+test("recovery does not send create if UUID storage fails and ignores a response after navigation", async () => {
+  const { input, storage, calls } = recoveryFixture();
+  const write = storage.setItem;
+  storage.setItem = () => { throw new Error("storage unavailable"); };
+  await assert.rejects(recoverOrdinarySrsSession(input), /storage unavailable/);
+  assert.deepEqual(calls, [["read", SESSION]]);
+  storage.setItem = write;
+  let current = true;
+  const result = await recoverOrdinarySrsSession({
+    ...input, isCurrent: () => current,
+    sessionService: {
+      ...input.sessionService,
+      async createSession(...args) {
+        const result = await input.sessionService.createSession(...args);
+        current = false;
+        return result;
+      },
+    },
+  });
+  assert.equal(result, null);
+  assert.equal(loadLearningSessionState(storage, RECOVERY_IDENTITY).session_id, SESSION);
+});
+
+test("an empty create response rereads eligibility and preserves the original session", async () => {
+  let due = true;
+  const { input, storage, calls } = recoveryFixture({
+    cards: async () => eligiblePayload(due ? [sessionItems(2)[1].vocabulary_id] : []),
+    create() {
+      due = false;
+      return { session: null, reason: "SRS_UP_TO_DATE" };
+    },
+  });
+  const result = await recoverOrdinarySrsSession(input);
+  assert.equal(result.presentation, "ACTIVE_EMPTY_DUE");
+  assert.equal(loadLearningSessionState(storage, RECOVERY_IDENTITY).session_id, SESSION);
+  assert.deepEqual(calls.map(([kind]) => kind), ["read", "create", "read"]);
+});
+
+test("pending ratings retain the original request even when a replacement contains the same vocabulary", () => {
+  const storage = memoryStorage();
+  const request = { session_id: SESSION, set_id: IDENTITY.setId, event_id: OPERATION,
+    vocabulary_id: ITEM, rating: "AGAIN", expected_revision: 3 };
+  assert.deepEqual(preserveOrdinarySrsRating(storage, RECOVERY_IDENTITY, request), [{ request, superseded: false }]);
+  assert.deepEqual(readOrdinarySrsRatingAttempts(storage, IDENTITY), []);
+  assert.deepEqual(readOrdinarySrsRatingAttempts(storage, { ...RECOVERY_IDENTITY, setId: ITEM }), []);
+  for (const identity of [
+    { ...RECOVERY_IDENTITY, sessionIntent: "DUE_ONLY" },
+    { ...RECOVERY_IDENTITY, passId: PASS },
+  ]) {
+    assert.throws(() => readOrdinarySrsRatingAttempts(storage, identity), /ordinary STANDARD/);
+  }
+  const run = createLearningRunState(RECOVERY_IDENTITY.userId, IDENTITY.setId, eligiblePayload([ITEM]));
+  run.srs.retry_context = request;
+  const replacement = reconcileSrsSessionRun(run, {
+    mode: "SRS", session_id: FRESH_SESSION, recovered_from_session_id: SESSION,
+    view_state: "ACTIVE", item_ids: [ITEM], acknowledged_ids: [],
+  });
+  assert.equal(replacement.srs.retry_context, null);
+  assert.deepEqual(readOrdinarySrsRatingAttempts(storage, RECOVERY_IDENTITY), [{ request, superseded: false }]);
+  assert.deepEqual(settleOrdinarySrsRating(storage, RECOVERY_IDENTITY, request.event_id, { superseded: true }),
+    [{ request, superseded: true }]);
 });
 
 function projection(overrides = {}) {

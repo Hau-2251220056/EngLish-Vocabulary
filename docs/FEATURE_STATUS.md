@@ -2466,6 +2466,177 @@ and viewport fit in the opened drawer. All seven affected Chromium cases
 and the related Guest and ADMIN cases passed locally with mocks (9/9).
 Scoped ESLint passed. Application code and CI configuration are unchanged.
 
-The next Dev CI and Guarded Integration results, Preview acceptance and
-Production release remain pending. Prior Leaderboard limitations and
-Feature Freeze boundaries still apply.
+At the Prompt 334-R checkpoint, the next Dev CI and Guarded Integration
+results, Preview acceptance and Production release were pending.
+
+## Prompt 337 — Leaderboard V1 Production release and stable graduation checkpoint (2026-11-27)
+
+**Leaderboard V1 DONE. HUMAN Production acceptance PASS.** HUMAN confirmed
+acceptance using the manual checklist. Individual scenario results were not
+reported. HUMAN UI acceptance and local final integration passed previously.
+The session cache recovery and navigation regressions both passed their
+targeted remediation checks. CI #109's seven stale navigation count failures
+are retained above. [CI #110](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265320)
+and [Guarded Integration #156](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265306)
+passed on `66411d0dbe0b738230109703e84710d545dc20f6`.
+
+Both Dev Preview deployment checks succeeded. HUMAN Dev Preview acceptance
+was **PARTIAL** and the intermittent loading limitation was explicitly accepted.
+Its root cause remains **INCONCLUSIVE**.
+
+[PR #44](https://github.com/Hau-2251220056/EngLish-Vocabulary/pull/44) merged the
+candidate into `main` at `570f5dc0662527d29c12a3220ef97579740b93d6`.
+The released tree `55ef3fdedf4da78ea8b94c19461c56bd6c17ac54` matches the
+approved candidate. GitHub deployment records associate both deployments with
+the release SHA. One-time Vercel inspection independently verified that each
+Production alias resolves to its corresponding READY deployment. The aliases
+serve the same release. No schema changes or migrations were required.
+
+| Project | Production alias | Verified deployment |
+| --- | --- | --- |
+| Frontend | [elvocab.vercel.app](https://elvocab.vercel.app) | [READY](https://frontend-elvocab-rnuvxjero-hau-2251220056s-projects.vercel.app) |
+| Backend | [eng-lish-vocabulary.vercel.app](https://eng-lish-vocabulary.vercel.app) | [READY](https://eng-lish-vocabulary-mwqgac71z-hau-2251220056s-projects.vercel.app) |
+
+**Historical Production evidence from Prompt 335.** Read-only verification
+passed for available data in Supabase `cmkhnvsgrjcnorcztapb`. All 112 existing
+reward timestamps were consistent with UTC. Independent calculations matched
+weekly, monthly and lifetime ranking and streak results. There were four
+active USER accounts, one ADMIN and two ranked learners per period. Aggregate
+XP was 307, 334 and 334 respectively. Ranking and streak used the same
+read-only repeatable-read snapshot. Five sequential measurements per period
+gave service p50 about 0.88–0.90 seconds, p95 about 0.94–1.08 seconds and
+PostgreSQL ranking execution about 0.181–0.483 ms. Retain approximately
+60-second visible-page polling for that observed dataset.
+
+Concurrent load, pool saturation and snapshot behavior under a concurrent
+writer remain **NOT TESTED**. Real-data cases for ties, a full podium, a
+populated second page and inactive accounts remain uncovered. Filtering
+cannot identify all personal text in display names. Persistent opt-out and
+external avatars remain deferred. XP fairness and historical ledger limits
+still apply. Existing security, licensing and infrastructure limitations
+and deadlines, including HD-46 reassessment by 2026-12-26 or the first
+compatible fix if earlier, remain in force.
+
+**Stable non-AI graduation baseline** is the verified Production commit and
+tree above. The scoped HD-70 reopening is closed and the graduation
+**Feature Freeze is restored in full**. AI integration is planned as an
+optional future enhancement. The completed graduation baseline has no AI
+requirement. A separate authorization is required for any AI development.
+
+## Prompt 342-HF-B — Ordinary SRS snapshot reconciliation (2026-11-27)
+
+**Implemented locally on `hotfix/srs-learning-pass-conflict`. Production fix
+and deployment remain pending.** Prompt 342-HF-A confirmed that an accepted
+CEFR completion can fall back to ordinary SRS while the current due result
+is empty and the restored STANDARD snapshot is still ACTIVE. The frontend
+previously tried to render an unresolved snapshot card absent from that due
+result. The historical trigger that changed eligibility while the old
+snapshot remained ACTIVE is **INCONCLUSIVE**.
+
+The frontend now shows the existing up-to-date screen with the server's
+`next_review_at`, **Học thường** and **Quay lại bộ từ** for this empty-due
+case. A nonempty due result that lacks an unresolved snapshot card shows
+a distinct recovery state with retry and return navigation. Compatible
+snapshots keep existing exact resume and genuine COMPLETED snapshots keep
+their completion summary. Neither recovery branch issues a session or
+learning mutation. Existing CEFR guards, fallback, NORMAL, SRS scheduling,
+XP, Streak and Progress contracts apply. Any new policy to replace or
+abandon an incompatible active snapshot requires separate approval.
+
+Targeted Chromium mock verification passed **10/10** scenarios, including
+7 hotfix scenarios and 3 existing regressions for managed CEFR SRS,
+dedicated Set review and Global Review. Scoped ESLint and the local frontend
+production build passed. Real multi-device scheduling and Production
+acceptance are **NOT TESTED**. The Graduation Release freeze remains in
+effect outside this scoped hotfix.
+
+## Prompt 342-HF-B-R2 — Explicit STANDARD SRS recovery (2026-11-27)
+
+**HUMAN approved Option A. Implemented and verified locally on
+`hotfix/srs-learning-pass-conflict`. HUMAN local acceptance is PASS.
+Production release remains pending. AI Integration V1 remains paused.**
+
+For a nonempty list with an incompatible independent STANDARD snapshot,
+**Tiếp tục ôn tập** replaces the retry-only HF-B action. It checks the
+original session and current cards first. A compatible snapshot resumes
+exactly, an empty list keeps the HF-B up-to-date state and NORMAL action,
+and completion, expiry and access results retain their existing meaning.
+If recovery is still needed, the frontend requests a new independent
+session using the existing API and verifies current card content and
+revisions against the backend-selected snapshot before enabling ratings.
+
+The frontend persists the UUID by USER, Set, mode, intent and original
+session before sending the create request, reuses it after an unknown
+result or refresh, and keeps the old reference until the new reference is
+stored durably. Recovery creates only on learner action. Pending rating
+requests retain their original session, event, vocabulary, rating and
+revision, and may be retried explicitly against that original session.
+Evidence and receipts stay with their original sessions. The backend
+lifecycle stays the same, so an older ACTIVE session may still accept
+valid ratings until completion, expiry or loss of access.
+
+Local checks passed **81/81 frontend unit**, **30/30 offline backend** and
+**34/34 targeted Chromium mock** tests, plus scoped ESLint, the frontend
+production build, strict UTF-8 and `git diff --check`. Focused UI/UX review
+covered keyboard recovery, loading and error states, and responsive
+containment. Shared-Progress changes, delayed ratings and replay were
+simulated.
+
+**HUMAN local acceptance — PASS (2026-11-28, Prompt 342-HF-C).**
+Using the local application connected to Production, HUMAN verified the
+previously affected Daily Routines SRS entry, the empty SRS state, NORMAL
+learning, and return and re-entry. The displayed next review time was
+**12:34 on 29/11/2026 (Vietnam time, UTC+7)**, matching the previously
+observed Production API response.
+
+Actual PostgreSQL concurrency, real multi-device behavior and acceptance
+on the deployed Production application remain **NOT TESTED**. The
+historical Production trigger remains **INCONCLUSIVE**.
+
+## Prompt 342-HF-D-R — SRS hotfix browser-smoke remediation (2026-11-28)
+
+[Dev CI](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46099017918)
+on `f2fa799253c1c17b56a850d66dec50c194639ff4` passed Frontend Quality and
+Backend Unit. Frontend Browser Smoke ran with two workers and reported
+**501 passed / 4 failed**. All four failures used the same exact next-review
+assertion in the new SRS regression spec. [Guarded Integration](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/46099017928)
+passed Trust Gate, Backend DB Integration, Real Stack Browser, and Summary.
+Its six migration, cleanup, and foundation jobs were skipped.
+
+The browser-smoke logs expected **12:34 on 29/11/2026** in Vietnam time.
+The failure screenshot, error contexts, and retry traces showed **05:34**
+in the UTC Chromium context for the same fixture timestamp,
+`2026-11-29T05:34:59.699Z`. The old assertion formatted the fixture using
+Node's Vietnamese locale data and a fixed Vietnam timezone, while the
+application formats the server timestamp using Vietnamese locale and the
+browser's timezone. All four cases reproduced before the fix on Windows
+with Node and Chromium set to UTC.
+
+The spec now defaults its Chromium context to `Asia/Ho_Chi_Minh` and
+honors an explicit Playwright project timezone. It verifies the browser
+timezone and formats the same fixture instant in Chromium, then retains
+the exact visible-text assertion. No application formatter, fixture
+instant, workflow, test count, or backend contract changed.
+
+The suite audit found no other fixes in scope. Lifecycle outcomes are
+explicit mock projections, the fixed expiry timestamps do not depend on
+the execution date, and each test owns its route handlers, storage, and
+async gates. URL matching and Playwright artifact paths are platform
+independent. The same 34 Vite `ECONNREFUSED` proxy errors occurred in
+[the passing pre-hotfix Browser Smoke job](https://github.com/Hau-2251220056/EngLish-Vocabulary/actions/runs/45974265320/job/140421973659),
+with identical counts by endpoint: Admin Vocabulary 23, Admin Vocabulary
+Sets 8, Learning Session read 1, and Global Review session requests 2.
+These historical mock gaps are outside the hotfix spec, which handles
+unmocked API requests locally.
+
+Targeted Windows verification used Node 22, Chromium and two workers:
+**18/18** with matching UTC zones, **18/18** with matching Vietnam zones,
+and **18/18** with Node UTC and the spec's default Vietnam browser zone.
+The four UTC failure cases passed **8/8** repeat executions. The adjacent
+NORMAL, CEFR full-pass, Set Review and Global Review regressions passed **10/10**.
+**81/81** frontend unit cases passed. Scoped ESLint, strict UTF-8, scoped
+secret checks and Git whitespace checks passed. Existing backend and
+production-build evidence still applies to this test-only change.
+Corrected Linux verification remains with dev CI. Real multi-device
+concurrency and deployed Production acceptance remain **NOT TESTED**.
+AI Integration V1 remains paused.
